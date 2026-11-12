@@ -58,6 +58,7 @@ pub struct FakeMpcContractState {
     /// override their registration.
     ignored_registration_signers: BTreeSet<AccountId>,
     foreign_chain_whitelist: BTreeMap<dtos::ForeignChain, dtos::ChainEntry>,
+    outcome_keys: dtos::OutcomeKeys,
     pub migration_service: NodeMigrations,
 }
 
@@ -80,6 +81,7 @@ impl FakeMpcContractState {
             foreign_chains_configs: dtos::ForeignChainsConfigs::default(),
             ignored_registration_signers: BTreeSet::new(),
             foreign_chain_whitelist: BTreeMap::new(),
+            outcome_keys: dtos::OutcomeKeys::default(),
             migration_service: NodeMigrations::default(),
         }
     }
@@ -90,6 +92,25 @@ impl FakeMpcContractState {
 
     pub fn foreign_chains_configs(&self) -> &dtos::ForeignChainsConfigs {
         &self.foreign_chains_configs
+    }
+
+    pub fn outcome_keys(&self) -> &dtos::OutcomeKeys {
+        &self.outcome_keys
+    }
+
+    /// Accepts any participant account, without the real endpoint's attestation check.
+    pub fn register_outcome_key(
+        &mut self,
+        account_id: AccountId,
+        outcome_key: dtos::Ed25519PublicKey,
+    ) {
+        if self.participant_tls_key(&account_id).is_none() {
+            tracing::info!(
+                "register_outcome_key transaction ignored because signer is not a participant"
+            );
+            return;
+        }
+        self.outcome_keys.insert(account_id, outcome_key);
     }
 
     pub fn whitelist_foreign_chain_providers(
@@ -438,6 +459,7 @@ impl FakeMpcContractState {
             panic!("keyset mismatch");
         }
         self.migration_service.remove_migration(&account_id);
+        self.outcome_keys.remove(&account_id);
         self.update_participant_info(account_id, node_info.destination_node_info.into());
     }
 }
@@ -502,6 +524,8 @@ struct FakeIndexerCore {
     foreign_chain_whitelist_sender: watch::Sender<ForeignChainWhitelist>,
     /// Mirrors the real indexer's foreign-chains configs watch channel.
     foreign_chains_configs_sender: watch::Sender<dtos::ForeignChainsConfigs>,
+    /// Mirrors the real indexer's outcome keys watch channel.
+    outcome_keys_sender: watch::Sender<dtos::OutcomeKeys>,
 
     /// When the core receives signature response txns, it processes them by sending them through
     /// this sender. The receiver end of this is in FakeIndexManager to be received by the test
@@ -537,6 +561,7 @@ impl FakeIndexerCore {
             let foreign_chain_supporters_sender = self.foreign_chain_supporters_sender.clone();
             let foreign_chain_whitelist_sender = self.foreign_chain_whitelist_sender.clone();
             let foreign_chains_configs_sender = self.foreign_chains_configs_sender.clone();
+            let outcome_keys_sender = self.outcome_keys_sender.clone();
             async move {
                 loop {
                     {
@@ -575,6 +600,14 @@ impl FakeIndexerCore {
                         foreign_chains_configs_sender.send_if_modified(|previous| {
                             if previous != state.foreign_chains_configs() {
                                 *previous = state.foreign_chains_configs().clone();
+                                true
+                            } else {
+                                false
+                            }
+                        });
+                        outcome_keys_sender.send_if_modified(|previous| {
+                            if previous != state.outcome_keys() {
+                                *previous = state.outcome_keys().clone();
                                 true
                             } else {
                                 false
@@ -774,6 +807,10 @@ impl FakeIndexerCore {
                         contract
                             .register_foreign_chains_config(account_id, args.foreign_chains_config);
                     }
+                    ChainSendTransactionRequest::RegisterOutcomeKey(args) => {
+                        let mut contract = contract.lock().await;
+                        contract.register_outcome_key(account_id, args.outcome_key);
+                    }
                     ChainSendTransactionRequest::StartKeygen(start) => {
                         // TODO: timeout logic in fake indexer?
                         let mut contract = contract.lock().await;
@@ -856,6 +893,8 @@ pub struct FakeIndexerManager {
     foreign_chain_whitelist_receiver: watch::Receiver<ForeignChainWhitelist>,
     /// Cloned into each node's [`IndexerAPI`]; tracks the fake contract's registered configs.
     foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
+    /// Cloned into each node's [`IndexerAPI`]. Tracks the fake contract's outcome keys.
+    outcome_keys_receiver: watch::Receiver<dtos::OutcomeKeys>,
 
     account_id_by_uid: Arc<std::sync::Mutex<HashMap<TestNodeUid, AccountId>>>,
 }
@@ -1054,6 +1093,8 @@ impl FakeIndexerManager {
             watch::channel(contract_state.foreign_chain_whitelist.clone());
         let (foreign_chains_configs_sender, foreign_chains_configs_receiver) =
             watch::channel(contract_state.foreign_chains_configs().clone());
+        let (outcome_keys_sender, outcome_keys_receiver) =
+            watch::channel(contract_state.outcome_keys().clone());
         let contract = Arc::new(tokio::sync::Mutex::new(contract_state));
         let account_id_by_uid = Arc::new(std::sync::Mutex::new(HashMap::new()));
         let core = FakeIndexerCore {
@@ -1069,6 +1110,7 @@ impl FakeIndexerManager {
             foreign_chain_supporters_sender,
             foreign_chain_whitelist_sender,
             foreign_chains_configs_sender,
+            outcome_keys_sender,
             signature_response_sender,
             ckd_response_sender,
             block_time,
@@ -1093,6 +1135,7 @@ impl FakeIndexerManager {
             foreign_chain_supporters_receiver,
             foreign_chain_whitelist_receiver,
             foreign_chains_configs_receiver,
+            outcome_keys_receiver,
             account_id_by_uid,
             verify_foreign_tx_response_receiver,
             verify_foreign_tx_request_sender,
@@ -1186,6 +1229,7 @@ impl FakeIndexerManager {
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             foreign_chain_whitelist_receiver: self.foreign_chain_whitelist_receiver.clone(),
             foreign_chains_configs_receiver: self.foreign_chains_configs_receiver.clone(),
+            outcome_keys_receiver: self.outcome_keys_receiver.clone(),
         };
 
         let currently_running_job_name = Arc::new(std::sync::Mutex::new("".to_string()));

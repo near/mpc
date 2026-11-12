@@ -126,7 +126,7 @@ The MPC node exposes web endpoints over which the backup service can submit requ
 
 The exposed endpoints are:
 
-- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract.
+- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract for the node's account and the contract has confirmed the node as that account's active node.
 - **PUT /set_keyshares** - Accepts encrypted keyshares from the backup service to restore a recovering node.
 
 ### Operators
@@ -422,7 +422,7 @@ We grant access to all contract methods rather than an explicit allow-list becau
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
 
-Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`) reject the operator key: the contract requires the signer key to be the attested node account key.
+Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`, `register_outcome_key`) reject the operator key: the contract requires the signer key to be the attested node account key.
 
 ## Remote Attestation
 

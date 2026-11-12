@@ -22,6 +22,7 @@ use crate::network::wire_format::{EcdsaTaskId, EddsaTaskId, MpcTaskId};
 use crate::network::{
     MeshNetworkClient, MeshNetworkTransportSender, NetworkTaskChannel, run_network_client,
 };
+use crate::outcome_key_registrar::spawn_outcome_key_registrar;
 use crate::p2p::{new_tls_mesh_network, new_tls_mesh_network_with_address_updates};
 use crate::primitives::ParticipantId;
 use crate::providers::ckd::CKDProvider;
@@ -183,6 +184,7 @@ where
                                 self.indexer.foreign_chain_supporters_receiver.clone(),
                                 self.indexer.foreign_chain_whitelist_receiver.clone(),
                                 self.indexer.foreign_chains_configs_receiver.clone(),
+                                self.indexer.outcome_keys_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -383,6 +385,7 @@ where
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         foreign_chain_whitelist_receiver: watch::Receiver<ForeignChainWhitelist>,
         foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
+        outcome_keys_receiver: watch::Receiver<dtos::OutcomeKeys>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -445,6 +448,17 @@ where
             foreign_chains_configs_receiver,
             dtos::Ed25519PublicKey::from(&p2p_key.verifying_key()),
             config_file.foreign_chains.clone(),
+        );
+        let _outcome_key_registrar = spawn_outcome_key_registrar(
+            chain_txn_sender.clone(),
+            outcome_keys_receiver,
+            config_file.my_near_account_id.clone(),
+            dtos::Ed25519PublicKey::from(
+                &secrets
+                    .persistent_secrets
+                    .outcome_signing_key
+                    .verifying_key(),
+            ),
         );
 
         let resolve_peer_address =

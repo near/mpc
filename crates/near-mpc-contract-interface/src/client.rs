@@ -15,13 +15,14 @@ use crate::call_args::{
     DerivedPublicKeyArgs, GetAttestationArgs, GetPendingCKDRequestArgs,
     GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs, InitArgs,
     InitRunningArgs, PrepayAttestationStorageArgs, PublicKeyArgs, ReadRpcArgs,
-    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs,
-    SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
-    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
-    VerifyForeignTransactionRespondArgs, VerifyForeignTransactionRespondV2Args, VoteAddDomainsArgs,
-    VoteAddLauncherHashArgs, VoteAddOsMeasurementArgs, VoteCancelKeygenArgs,
-    VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs,
-    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
+    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RegisterOutcomeKeyArgs,
+    RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs, StartKeygenArgs,
+    StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
+    VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
+    VerifyForeignTransactionRespondV2Args, VoteAddDomainsArgs, VoteAddLauncherHashArgs,
+    VoteAddOsMeasurementArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
+    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs, VoteResharedArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -35,12 +36,13 @@ use crate::method_names::{
     GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
     GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
     LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, READ_RPC,
-    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
-    REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, RESPOND_VERIFY_FOREIGN_TX_V2, SIGN, START_KEYGEN_INSTANCE,
-    START_NODE_MIGRATION, START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE,
-    SUBMIT_PARTICIPANT_INFO, TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
+    OS_MEASUREMENT_VOTES, OUTCOME_KEYS, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
+    READ_RPC, REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REGISTER_OUTCOME_KEY,
+    REMOVE_CONTRACT_UPDATE_VOTE, REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES,
+    REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX,
+    RESPOND_VERIFY_FOREIGN_TX_V2, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
+    START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
+    TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
     VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
     VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
@@ -54,9 +56,9 @@ use crate::types::{
     ForeignChainsConfigs, ForeignTxVerificationOutcome, GovernanceThresholdParameters,
     GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
     LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
-    ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState,
-    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation,
-    TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
+    OutcomeKeys, ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters,
+    ProtocolContractState, PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse,
+    StoredAttestation, TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionRequestV2,
     VerifyForeignTransactionResponse, YieldId, YieldIndex,
 };
@@ -554,6 +556,21 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    /// Sets the outcome key of the caller's account. The contract accepts it only from the
+    /// account's attested node.
+    pub async fn register_outcome_key(
+        &self,
+        outcome_key: Ed25519PublicKey,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&RegisterOutcomeKeyArgs::new(outcome_key))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REGISTER_OUTCOME_KEY,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
     pub async fn vote_update_foreign_chain_providers(
         &self,
         batch: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
@@ -705,6 +722,10 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
 
     pub fn get_foreign_chains_configs(&self) -> ViewCall<C, ForeignChainsConfigs> {
         self.view(ViewArgs::no_args(GET_FOREIGN_CHAINS_CONFIGS))
+    }
+
+    pub fn outcome_keys(&self) -> ViewCall<C, OutcomeKeys> {
+        self.view(ViewArgs::no_args(OUTCOME_KEYS))
     }
 
     pub fn allowed_foreign_chain_providers(
@@ -1139,6 +1160,10 @@ mod tests {
             .unwrap();
         handle.cancel_node_migration().await.unwrap();
         handle
+            .register_outcome_key(Ed25519PublicKey::from([7u8; 32]))
+            .await
+            .unwrap();
+        handle
             .vote_update_foreign_chain_providers(NonEmptyBTreeMap::new(
                 ForeignChain::Bitcoin,
                 ChainEntry {
@@ -1213,6 +1238,7 @@ mod tests {
         let _ = handle.migration_info().await;
         let _ = handle.get_available_foreign_chains().await;
         let _ = handle.get_foreign_chains_configs().await;
+        let _ = handle.outcome_keys().await;
         let _ = handle.allowed_foreign_chain_providers().await;
         let _ = handle.version().await;
         let _ = handle.tee_verifier_account_id().await;
