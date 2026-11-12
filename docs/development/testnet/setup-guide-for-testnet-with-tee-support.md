@@ -297,6 +297,7 @@ Example:
 ```json
 {
   "tee_verifier_account_id": "yourusername-test_verifier.testnet",
+  "genesis_hash": "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
   "parameters": {
     "threshold": 2,
     "participants": {
