@@ -5,6 +5,136 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.19.0] - 2026-11-12
+
+### 🚀 Features
+
+- [#4951](https://github.com/near/mpc/pull/4951)(@pbeza): *(contract)* Require an attested destination node to start a node migration (#4951)
+
+- [#4990](https://github.com/near/mpc/pull/4990)(@gilcu3): *(node)* Robust ecdsa stub signing without presignatures (#4990)
+
+- [#5000](https://github.com/near/mpc/pull/5000)(@gilcu3): *(node)* Remove support for presignature generation (#5000)
+
+- [#4872](https://github.com/near/mpc/pull/4872)(@SimonRastikian): *(contract)* Report pending parameter votes by proposal hash in state() (#4872)
+
+- [#4910](https://github.com/near/mpc/pull/4910)(@barakeinav1): *(contract)* [**breaking**] Take the attestation expiry from the collateral (#4910)
+
+- [#5052](https://github.com/near/mpc/pull/5052)(@haiyuechen-nearone): *(node)* Rerun the foreign chain probe when the whitelist changes (#5052)
+
+- [#5067](https://github.com/near/mpc/pull/5067)(@gilcu3): *(devnet)* Prepay attestations and use existing transport patterns (#5067)
+
+- [#5074](https://github.com/near/mpc/pull/5074)(@haiyuechen-nearone): *(node)* Log only problems in each foreign chain probe round, then one summary line (#5074)
+
+
+### 🐛 Bug Fixes
+
+- [#4992](https://github.com/near/mpc/pull/4992)(@anodar): Provider matching (#4992)
+
+- [#4952](https://github.com/near/mpc/pull/4952)(@pbeza): *(contract)* Stop clean_invalid_attestations from deleting nodes in use (#4952)
+
+- [#5066](https://github.com/near/mpc/pull/5066)(@gilcu3): Add RUSTSEC-2026-0441 exception, pin-utils is unmaintained (#5066)
+
+- [#5041](https://github.com/near/mpc/pull/5041)(@anodar): Resend foreign-chain registration until the contract reflects it (#5041)
+
+
+### 🚜 Refactor
+
+- [#4981](https://github.com/near/mpc/pull/4981)(@anodar): Drop rpc quorum statuses for non-whitelisted chains (#4981)
+
+- [#4869](https://github.com/near/mpc/pull/4869)(@SimonRastikian): *(contract)* Move parameter votes from RunningContractState to MpcContract (#4869)
+
+- [#4870](https://github.com/near/mpc/pull/4870)(@SimonRastikian): *(contract)* Store parameter votes hash-only via Votes (#4870)
+
+- [#4247](https://github.com/near/mpc/pull/4247)(@SimonRastikian): Redundant code extermination in running.rs (#4247)
+
+- [#4961](https://github.com/near/mpc/pull/4961)(@SimonRastikian): *(primitives)* Move BlockHeight into mpc-primitives and re-export it from near-contract-transport (#4961)
+
+- [#5051](https://github.com/near/mpc/pull/5051)(@haiyuechen-nearone): *(node)* Split the foreign chain probe into modules (#5051)
+
+- [#4953](https://github.com/near/mpc/pull/4953)(@pbeza): *(contract)* Take TLS-key ownership from the node alone (#4953)
+
+- [#4964](https://github.com/near/mpc/pull/4964)(@SimonRastikian): *(contract)* Type key event heights and timeout with BlockHeight (#4964)
+
+- [#5006](https://github.com/near/mpc/pull/5006)(@SimonRastikian): *(node)* Type node-side block heights and deltas with BlockHeight and BlockCount (#5006)
+
+- [#5031](https://github.com/near/mpc/pull/5031)(@pbeza): *(contract)* Simplify the node types and their tests (#5031)
+
+- [#5071](https://github.com/near/mpc/pull/5071)(@gilcu3): *(crypto)* Presign_and_sign removal step 1 (#5071)
+
+- [#5072](https://github.com/near/mpc/pull/5072)(@gilcu3): *(crypto)* Remove presign_and_sign part 2 (#5072)
+
+- [#5053](https://github.com/near/mpc/pull/5053)(@haiyuechen-nearone): *(node)* Fold the whitelist verifier into the foreign chain probe (#5053)
+
+- [#5107](https://github.com/near/mpc/pull/5107)(@haiyuechen-nearone): *(interface)* Move the foreign chain hash, provider and chain support types into their own files (#5107)
+
+- [#5108](https://github.com/near/mpc/pull/5108)(@haiyuechen-nearone): *(interface)* Move the foreign tx request and RPC request types into their own files (#5108)
+
+- [#5131](https://github.com/near/mpc/pull/5131)(@SimonRastikian): *(crypto)* Move OT protocols into their own ecdsa/ot module (#5131)
+
+
+### 📚 Documentation
+
+- [#4972](https://github.com/near/mpc/pull/4972)(@netrome): Tidy up the top level readme (#4972)
+
+- [#5007](https://github.com/near/mpc/pull/5007)(@pbeza): Tell agents to avoid `as` numeric conversions (#5007)
+
+- [#4897](https://github.com/near/mpc/pull/4897)(@barakeinav1): Update the TEE verifier runbook for rotations (#4897)
+
+- [#5043](https://github.com/near/mpc/pull/5043)(@barakeinav1): Clarify upgrade order and node/contract compatibility in RELEASES.md (#5043)
+
+- [#4208](https://github.com/near/mpc/pull/4208)(@AmHelm): Added design doc for debug information service (#4208)
+
+- [#5026](https://github.com/near/mpc/pull/5026)(@gilcu3): *(crypto)* Update docs after Cait-Sith presignature removal (#5026)
+
+- [#5084](https://github.com/near/mpc/pull/5084)(@kevindeforth): Update engineering standards about wire type and internal type separation (#5084)
+
+- [#5129](https://github.com/near/mpc/pull/5129)(@haiyuechen-nearone): Ask for files under 500 lines in AGENTS.md (#5129)
+
+
+### 🧪 Testing
+
+- [#4986](https://github.com/near/mpc/pull/4986)(@barakeinav1): *(localnet)* Check localnet genesis protocol version matches nearcore (#4986)
+
+- [#4941](https://github.com/near/mpc/pull/4941)(@netrome): E2E test for leader failover (#4941)
+
+- [#5064](https://github.com/near/mpc/pull/5064)(@gilcu3): Ensure participants have valid attestations after contract initialization (#5064)
+
+- [#5012](https://github.com/near/mpc/pull/5012)(@barakeinav1): Run the contract and a cluster at mainnet's protocol version (#5012)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4994](https://github.com/near/mpc/pull/4994)(@SimonRastikian): Update contract migrations after 3.18.0 release (#4994)
+
+- [#4998](https://github.com/near/mpc/pull/4998)(@gilcu3): Address libz-sys advisory (#4998)
+
+- [#5001](https://github.com/near/mpc/pull/5001)(@gilcu3): *(crypto)* Remove presignature support from robust ecdsa stub (#5001)
+
+- [#5016](https://github.com/near/mpc/pull/5016)(@gilcu3): Ignore RUSTSEC-2026-0424 wasmtime (#5016)
+
+- [#5022](https://github.com/near/mpc/pull/5022)(@gilcu3): Switch to opus 5.5 for reviews to improve efficiency (#5022)
+
+- [#4912](https://github.com/near/mpc/pull/4912)(@barakeinav1): Remove support for responder keys (#4912)
+
+- [#5024](https://github.com/near/mpc/pull/5024)(@gilcu3): *(crypto)* Benchmark only presign_and_sign for OT-based ECDSA (#5024)
+
+- [#5032](https://github.com/near/mpc/pull/5032)(@dependabot[bot]): Bump the github-actions group across 1 directory with 4 updates (#5032)
+
+- [#5033](https://github.com/near/mpc/pull/5033)(@dependabot[bot]): Bump httpmock from 0.8.3 to 0.9.0 (#5033)
+
+- [#5025](https://github.com/near/mpc/pull/5025)(@gilcu3): *(crypto)* Remove presignatures from Cait-Sith (#5025)
+
+- [#5040](https://github.com/near/mpc/pull/5040)(@gilcu3): Bump dcap-qvl to benefit from upstream changes in attestation-cli (#5040)
+
+- [#4747](https://github.com/near/mpc/pull/4747)(@anodar): Update release process documentation and release workflow (#4747)
+
+- [#5082](https://github.com/near/mpc/pull/5082)(@gilcu3): Bump near-sdk so that minimum protocol version is 85 again (#5082)
+
+- [#5103](https://github.com/near/mpc/pull/5103)(@pbeza): Bump rustix to 1.1.6 for RUSTSEC-2026-0486 (#5103)
+
+- [#5106](https://github.com/near/mpc/pull/5106)(@gilcu3): Bump nearcore to 2.14.1 (#5106)
+
+
 ## [3.18.0] - 2026-10-28
 
 ### 🚀 Features

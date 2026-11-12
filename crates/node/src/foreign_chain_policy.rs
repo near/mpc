@@ -173,7 +173,7 @@ impl RefineEligibleLeaders<VerifyForeignTxRequestV2> for ForeignChainLeadersRefi
         request: &VerifyForeignTxRequestV2,
         eligible: &HashSet<ParticipantId>,
     ) -> HashSet<ParticipantId> {
-        self.refine_for_chain(request.request.request.chain(), eligible)
+        self.refine_for_chain(request.request.chain(), eligible)
     }
 }
 

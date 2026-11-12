@@ -63,6 +63,11 @@ impl PendingVerifyForeignTxRequestsV2 {
     pub(crate) fn get(&self, yield_id: &YieldId) -> Option<&PendingVerifyForeignTxRequestV2> {
         self.by_yield_id.get(yield_id)
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_next_yield_counter(&mut self, counter: u64) {
+        self.next_yield_counter = counter;
+    }
 }
 
 impl PendingVerifyForeignTxRequestV2 {

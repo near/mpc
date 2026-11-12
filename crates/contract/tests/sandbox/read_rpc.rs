@@ -7,9 +7,7 @@ use crate::sandbox::common::{
 use crate::sandbox::utils::transactions::CallMpcContract;
 use mpc_contract::errors::{InvalidParameters, RequestError};
 use near_jsonrpc_client::{JsonRpcClient, methods};
-use near_mpc_contract_interface::events::{
-    MPC_CONTRACT_EVENT_STANDARD, VerifyForeignTxV2YieldCreated,
-};
+use near_mpc_contract_interface::events::VerifyForeignTxV2YieldCreated;
 use near_mpc_contract_interface::types::{
     self as dtos, ForeignTxSignPayload, ForeignTxSignPayloadV2,
     ForeignTxVerificationNegativeVerdict, ForeignTxVerificationOutcome,
@@ -21,7 +19,6 @@ use std::time::Duration;
 use test_utils::sandbox::SandboxWorker;
 
 const SIGNATURE_TIMEOUT_BLOCKS: u64 = 200;
-const EVENT_JSON_PREFIX: &str = "EVENT_JSON:";
 
 /// The yield a V2 request waits on, as a node's indexer learns it.
 struct AnnouncedYield {
@@ -31,14 +28,7 @@ struct AnnouncedYield {
 
 fn yield_created_events(logs: &[&str]) -> Vec<VerifyForeignTxV2YieldCreated> {
     logs.iter()
-        .filter_map(|line| line.strip_prefix(EVENT_JSON_PREFIX))
-        .map(|json| serde_json::from_str::<serde_json::Value>(json).unwrap())
-        .filter(|event| {
-            event["standard"] == MPC_CONTRACT_EVENT_STANDARD
-                && event["event"] == VerifyForeignTxV2YieldCreated::EVENT
-                && event["version"] == VerifyForeignTxV2YieldCreated::VERSION
-        })
-        .map(|event| serde_json::from_value(event["data"].clone()).unwrap())
+        .filter_map(|line| VerifyForeignTxV2YieldCreated::from_log_line(line))
         .collect()
 }
 

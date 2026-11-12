@@ -2,7 +2,7 @@ use crate::network::wire_format::VerifyForeignTxTaskId;
 use std::collections::HashSet;
 
 use anyhow::bail;
-use foreign_chain_inspector::{RpcQuorum, Verdict};
+use foreign_chain_inspector::{ForeignChainInspectionError, RpcQuorum, Verdict};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
@@ -11,7 +11,9 @@ use crate::metrics;
 use crate::primitives::ParticipantId;
 use crate::providers::ecdsa::triple::participants_from_triples;
 use crate::providers::verify_foreign_tx::inspect_request::inspect_request;
-use crate::providers::verify_foreign_tx::inspection::{Inspection, TransientErrors};
+use crate::providers::verify_foreign_tx::inspection::{
+    FOREIGN_CHAIN_INSPECTION_TIMEOUT, Inspection, TransientErrors,
+};
 use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
@@ -23,7 +25,7 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
-const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
+pub(crate) const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -54,7 +56,7 @@ fn build_signature_request(
 
 // Awaits on the future for specified grace duration, and calls on_slow
 // if grace period expires.
-async fn await_with_slow_hook<F: Future>(
+pub(crate) async fn await_with_slow_hook<F: Future>(
     grace: Duration,
     fut: F,
     on_slow: impl FnOnce(),
@@ -165,6 +167,7 @@ impl VerifyForeignTxProvider {
                 channel,
                 paired_triple_id,
                 sign_request,
+                Duration::from_secs(self.config.signature.timeout_sec),
             )
             .await
     }
@@ -216,7 +219,14 @@ impl VerifyForeignTxProvider {
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
         let verdict = self
             .inspect_foreign_chain_request(request, TransientErrors::Fail)
-            .await??;
+            .await?
+            .map_err(|error| match error {
+                ForeignChainInspectionError::Timeout => anyhow::Error::new(error).context(format!(
+                    "foreign chain inspection exceeded the {} second cap",
+                    FOREIGN_CHAIN_INSPECTION_TIMEOUT.as_secs()
+                )),
+                error => error.into(),
+            })?;
         let values = require_extracted(verdict)?;
         let payload = match payload_version {
             dtos::ForeignTxPayloadVersion::V1 => {
@@ -230,17 +240,18 @@ impl VerifyForeignTxProvider {
         Ok(payload)
     }
 
-    /// Inspects the foreign transaction and checks the extracted values against the expected
-    /// ones. An error means this node could not inspect. That is a refusal, not a
-    /// [`NodeOutcome`].
+    /// Inspects the foreign transaction and checks the extracted values against
+    /// [`dtos::VerifyForeignTransactionRequestV2::expected_values_hash`]. An error means this
+    /// node could not inspect. That is a refusal, not a [`NodeOutcome`].
     pub(crate) async fn reach_node_outcome(
         &self,
-        request: &dtos::VerifyForeignTransactionRequestV2,
+        request: &dtos::ForeignChainRpcRequest,
+        expected_values_hash: &dtos::Hash256,
     ) -> anyhow::Result<NodeOutcome> {
         let inspection = self
-            .inspect_foreign_chain_request(&request.request, TransientErrors::Retry)
+            .inspect_foreign_chain_request(request, TransientErrors::Retry)
             .await?;
-        Ok(NodeOutcome::new(inspection, &request.expected_values))
+        Ok(NodeOutcome::new(inspection, expected_values_hash))
     }
 
     async fn inspect_foreign_chain_request(

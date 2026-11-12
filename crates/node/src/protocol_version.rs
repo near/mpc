@@ -4,6 +4,16 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 /// the current protocol version
 pub const CURRENT_PROTOCOL_VERSION: NetworkProtocolVersion = NetworkProtocolVersion::Nov2026;
 
+/// Lowest handshake protocol version that decodes the V2 foreign tx messages:
+/// [`Packet::NodeOutcome`], [`VerifyForeignTxTaskId::SignOutcome`] and
+/// [`MpcMessageKind::Evidence`]. A V2 signing round includes only participants that support it.
+///
+/// [`Packet::NodeOutcome`]: crate::network::wire_format::Packet::NodeOutcome
+/// [`VerifyForeignTxTaskId::SignOutcome`]: crate::network::wire_format::VerifyForeignTxTaskId::SignOutcome
+/// [`MpcMessageKind::Evidence`]: crate::network::wire_format::MpcMessageKind::Evidence
+pub(crate) const V2_FOREIGN_TX_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
+    NetworkProtocolVersion::Nov2026;
+
 /// This must be extended every time we introduce an incompatible protocol
 /// change.
 #[derive(Debug, Copy, Clone, IntoPrimitive, FromPrimitive, PartialEq, Display)]
@@ -22,9 +32,7 @@ pub enum NetworkProtocolVersion {
     /// instead of requiring it to equal
     /// [`TripleBatchSize::LEGACY`](mpc_node_config::TripleBatchSize::LEGACY).
     Oct2026 = 10,
-    /// Adds [`MpcMessageKind::NodeOutcomes`](crate::network::wire_format::MpcMessageKind::NodeOutcomes)
-    /// and [`VerifyForeignTxTaskId::Inconclusive`](crate::network::wire_format::VerifyForeignTxTaskId::Inconclusive)
-    /// for V2 foreign tx requests.
+    /// Adds the V2 foreign tx messages listed at [`V2_FOREIGN_TX_MIN_PROTOCOL_VERSION`].
     Nov2026 = 11,
     #[num_enum(catch_all)]
     Unknown(u32),

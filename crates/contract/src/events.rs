@@ -18,12 +18,11 @@ pub enum MpcContractEvent {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use near_mpc_contract_interface::events::MPC_CONTRACT_EVENT_STANDARD;
     use near_mpc_contract_interface::types::YieldId;
-    use serde_json::json;
+    use near_sdk::AsNep297Event;
 
     #[test]
-    fn verify_foreign_tx_v2_yield_created__should_match_the_interface_names() {
+    fn verify_foreign_tx_v2_yield_created__should_parse_with_the_interface_parser() {
         // Given
         let data = VerifyForeignTxV2YieldCreated {
             yield_id: YieldId([0xab; 32]),
@@ -31,17 +30,12 @@ mod tests {
         let event = MpcContractEvent::VerifyForeignTxV2YieldCreated(data.clone());
 
         // When
-        let encoded = event.to_json();
+        let line = event.to_nep297_event().to_event_log();
 
         // Then
         assert_eq!(
-            encoded,
-            json!({
-                "standard": MPC_CONTRACT_EVENT_STANDARD,
-                "version": VerifyForeignTxV2YieldCreated::VERSION,
-                "event": VerifyForeignTxV2YieldCreated::EVENT,
-                "data": serde_json::to_value(&data).unwrap(),
-            })
+            VerifyForeignTxV2YieldCreated::from_log_line(&line),
+            Some(data)
         );
     }
 }

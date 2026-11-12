@@ -1,33 +1,27 @@
-pub(crate) mod attempt_evidence;
 pub(crate) mod node_outcome;
 pub(crate) mod node_outcome_statement;
+pub(crate) mod node_outcomes;
 pub(crate) mod open_requests;
 
+#[expect(dead_code)]
 mod acting_leader;
-mod attempt_assets;
-mod attempt_outcomes;
-mod inconclusive_evidence;
-mod inconclusive_round;
+mod counting_rule;
 mod inspect_request;
 mod inspection;
-mod leader_attempts;
-mod outcome_signing;
 mod provider_call_metrics;
 mod sign;
 mod sign_v2;
 
 pub(crate) use inspection::FOREIGN_CHAIN_INSPECTION_TIMEOUT;
-pub(crate) use outcome_signing::SignedOutcome;
-pub(crate) use sign_v2::VerifyForeignTxV2Context;
+pub(crate) use sign_v2::{RoundsEnd, SignedOutcome, StopLeading, VerifyForeignTxV2Context};
 
 use crate::foreign_chain_policy::{ForeignChainLeadersRefiner, SupportersByForeignChain};
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::network::NetworkTaskChannel;
 use crate::network::wire_format::{MpcTaskId, VerifyForeignTxTaskId};
-use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::EcdsaSignatureProvider;
+use crate::providers::verify_foreign_tx::counting_rule::InconclusiveCause;
 use crate::storage::VerifyForeignTransactionRequestStorage;
-use crate::tracking::AutoAbortTaskCollection;
 use foreign_chain_inspector::FanOut;
 use foreign_chain_inspector::abstract_chain::inspector::AbstractInspector;
 use foreign_chain_inspector::adi::inspector::AdiInspector;
@@ -55,22 +49,6 @@ use provider_call_metrics::ProviderCallMetrics;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::watch;
-
-/// The number of attempts one leader makes at a V2 request, and the number of attempts of one
-/// leader a follower joins per request. It bounds the assets one leader can use up on a request.
-pub(crate) const MAX_ATTEMPTS_PER_LEADER: usize = 3;
-
-/// The number of inconclusive rounds one leader runs for a V2 request, and the number of rounds
-/// of one leader a node joins per request.
-pub(crate) const MAX_INCONCLUSIVE_ROUNDS_PER_LEADER: usize = 3;
-
-/// Handshake protocol version from which a peer decodes the V2 foreign tx messages:
-/// [`MpcMessageKind::NodeOutcomes`] and [`VerifyForeignTxTaskId::Inconclusive`]. A V2 attempt or
-/// inconclusive round includes only participants that support it.
-///
-/// [`MpcMessageKind::NodeOutcomes`]: crate::network::wire_format::MpcMessageKind::NodeOutcomes
-pub(crate) const V2_FOREIGN_TX_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
-    NetworkProtocolVersion::Nov2026;
 
 /// Pre-built HTTP clients for each foreign chain, one per configured provider and named by its
 /// [`ProviderId`].
@@ -239,8 +217,6 @@ pub struct VerifyForeignTxProvider {
     verify_foreign_tx_request_store: Arc<VerifyForeignTransactionRequestStorage>,
     ecdsa_signature_provider: Arc<EcdsaSignatureProvider>,
     v2: VerifyForeignTxV2Context,
-    /// The leader's own inspections of V2 attempts, which may outlive their attempt.
-    own_inspections: std::sync::Mutex<AutoAbortTaskCollection<()>>,
 }
 
 impl VerifyForeignTxProvider {
@@ -254,6 +230,12 @@ impl VerifyForeignTxProvider {
         v2: VerifyForeignTxV2Context,
     ) -> anyhow::Result<Self> {
         let inspectors = ForeignChainInspectors::build(&config.foreign_chains)?;
+        for (chain, _) in config.foreign_chains.iter_chains() {
+            for cause in InconclusiveCause::ALL {
+                crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_INCONCLUSIVES
+                    .with_label_values(&[cause.label(), chain.label()]);
+            }
+        }
         Ok(Self {
             config,
             inspectors,
@@ -263,7 +245,6 @@ impl VerifyForeignTxProvider {
             verify_foreign_tx_request_store,
             ecdsa_signature_provider,
             v2,
-            own_inspections: std::sync::Mutex::new(AutoAbortTaskCollection::new()),
         })
     }
 
@@ -285,26 +266,16 @@ impl VerifyForeignTxProvider {
                 self.make_verify_foreign_tx_online_presign_follower(channel, id, paired_triple_id)
                     .await?;
             }
-            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTxV2 {
-                id,
-                paired_triple_id,
-            }) => {
-                self.make_verify_foreign_tx_v2_follower(channel, id, paired_triple_id)
-                    .await?;
-            }
-            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::Inconclusive {
-                yield_id,
-                paired_triple_id,
-            }) => {
-                self.make_verify_foreign_tx_inconclusive_follower(
-                    channel,
-                    yield_id,
-                    paired_triple_id,
-                )
-                .await?;
-            }
             MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
                 anyhow::bail!("Retired stored-presignature task rejected");
+            }
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::SignOutcome {
+                yield_id,
+                outcome,
+                paired_triple_id,
+            }) => {
+                self.make_sign_outcome_follower(channel, yield_id, outcome, paired_triple_id)
+                    .await?;
             }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",

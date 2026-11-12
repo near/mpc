@@ -58,14 +58,14 @@ pub(crate) async fn inspect_request(
                 .solana
                 .as_ref()
                 .context("no inspector configured for Solana")?;
-            execute_svm_request(inspector, quorum, request, transient_errors).await?
+            inspect_svm_request(inspector, quorum, request, transient_errors).await?
         }
         dtos::ForeignChainRpcRequest::Fogo(request) => {
             let inspector = inspectors
                 .fogo
                 .as_ref()
                 .context("no inspector configured for Fogo")?;
-            execute_svm_request(inspector, quorum, request, transient_errors).await?
+            inspect_svm_request(inspector, quorum, request, transient_errors).await?
         }
         dtos::ForeignChainRpcRequest::Bitcoin(request) => {
             let inspector = inspectors
@@ -365,7 +365,7 @@ pub(crate) async fn inspect_request(
     Ok(inspection)
 }
 
-async fn execute_svm_request<Chain>(
+async fn inspect_svm_request<Chain>(
     inspector: &MeasuredFanOut<SvmInspector<HttpClient, Chain>>,
     quorum: &RpcQuorum,
     request: &dtos::SvmRpcRequest,
