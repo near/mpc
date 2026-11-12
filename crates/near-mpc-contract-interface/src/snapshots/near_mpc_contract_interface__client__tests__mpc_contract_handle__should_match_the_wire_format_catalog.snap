@@ -195,6 +195,12 @@ deposit:  1 yoctoNEAR
 args:     {}
 
 contract: mpc.near
+method:   register_outcome_key
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"outcome_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}
+
+contract: mpc.near
 method:   vote_update_foreign_chain_providers
 gas:      30.0 Tgas
 deposit:  0 NEAR
