@@ -232,8 +232,8 @@ signing round, since nodes queue them by receipt id.
 
 ### Node outcomes
 
-Every node that supports the chain inspects a V2 request as soon as its indexer has it. It
-retries transient provider errors within its 5 second inspection cap, signs its node outcome
+Every node that supports the chain inspects a V2 request once the request's block is final, so
+a fork can't hand two requests the same yield id. It retries transient provider errors within its 5 second inspection cap, signs its node outcome
 once, and sends it to every other participant. The leader inspects too, and its outcome counts
 like any other.
 
@@ -252,8 +252,13 @@ struct NodeOutcomeStatement {
 }
 
 enum NodeOutcome {
-    Verdict(ForeignTxVerificationOutcome),
+    Verdict(NodeVerdict),
     NoVerdict(NoVerdictReason),
+}
+
+enum NodeVerdict {
+    Verified,
+    Negative(ForeignTxVerificationNegativeVerdict),
 }
 
 enum NoVerdictReason {
@@ -267,12 +272,14 @@ statement.
 
 - **One outcome per node and request.** An honest node signs a single statement for a yield,
   and never inspects that request again. A transaction that isn't final yet can end
-  inconclusive, and the caller asks again later.
+  inconclusive, and the caller asks again later. Nodes don't store statements, so a node that
+  restarts may inspect again and sign a second one.
 - **Every node gets every outcome.** A statement is about 100 bytes, so sending it to all
   participants is cheap. Any acting leader, including a backup that takes over, then holds the
   same evidence.
 - **Outcomes can arrive before the request.** A node keeps an outcome for a request it hasn't
-  indexed yet for up to 3 seconds (5 blocks), and one per sender and yield id.
+  indexed yet for up to 3 seconds (5 blocks), one per sender and yield id, and for at most
+  256 such yield ids per sender.
 
 ### Deciding and signing
 
@@ -285,14 +292,16 @@ to 3 seconds (5 blocks) early, to allow for indexer lag.
 threshold. From the signed outcomes it holds, an acting leader counts, for each verdict, how
 many nodes signed it, and how many nodes it hasn't heard from yet.
 
-- **Verdict.** When t nodes signed the same verdict, the leader signs that verdict.
+- **Verdict.** When t nodes signed the same verdict, the leader signs that verdict. If two
+  verdicts reach t, which needs s ≥ 2t, it signs the first.
 - **Inconclusive.** When no verdict can reach t, even if every node not yet heard from signed
   it, the leader signs an inconclusive. For example, transient errors from s − t + 1 nodes, or
   a split where no verdict and the missing nodes together make t.
 - **Otherwise** the leader waits for more outcomes, until the request closes.
 
-Each node counts once. A node that signed two different outcomes for one yield counts for
-neither, and the leader logs both statements, which prove the node misbehaved.
+Each node counts once. A node that signed two different outcomes for one yield counts as
+heard, but for no verdict, and takes part in no round. The leader logs both statements. They
+show a faulty or restarted node, not necessarily a malicious one.
 
 ![Deciding: an acting leader counts signed node outcomes. When t nodes signed the same verdict, it runs a signing round for that verdict with an asset among those nodes. When no verdict can reach t, it runs a signing round for the inconclusive. Otherwise it waits for more outcomes, and the request times out if they never come. A round that fails is retried with a fresh asset while rounds remain. Then this leader stops, and the request times out unless another leader answers.](attachments/decision.png)
 
@@ -302,13 +311,15 @@ statements that meet the counting rule.
 1. **Asset.** For a verdict, every participant of the asset signed that verdict. For an
    inconclusive, every participant sent an outcome. So every signer has indexed the request.
    If no such asset is free, the leader waits for one, and the wait doesn't use up a round.
+   A leader is part of every asset it owns, so a leader that didn't sign the verdict stops,
+   and a backup leads.
 2. **Signers check.** A signer joins only if:
    - the request is open in its view,
    - the sender is an acting leader in its view,
    - every statement in the evidence verifies against its signer's outcome key on chain, and
      names this yield id,
-   - the evidence meets the counting rule for the outcome, and for a verdict, includes the
-     signer's own statement for that verdict, and
+   - the evidence meets the counting rule for the outcome and includes the signer's own
+     statement, for a verdict that same verdict, and
    - it has joined fewer than three rounds for this request and leader.
 
    Otherwise it refuses with the network abort. Signers don't need their own count to agree
@@ -456,7 +467,7 @@ threshold.
 | Old _not found_ replayed after the transaction lands | Each signature is tied to one request, which is closed once it is answered. A new request gets its own check. |
 | Signature replayed on another caller's request | The signature names its yield id, and the contract only answers that yield. |
 | Old _not found_ relayed off NEAR later | The signature carries the request's block height, and honest nodes only sign within 200 blocks of it. The receiver can see how old the answer is. |
-| Two different outcomes signed for one yield | Honest nodes sign one outcome each, so two leaders can hold evidence for different outcomes only if some node signed two. The contract takes the first and rejects the other, but the rejected signature stays public on chain. |
+| Two different outcomes signed for one yield | Honest nodes sign one outcome each, so two leaders can hold evidence for different outcomes only if some node signed two, or if s ≥ 2t and two verdicts each reach t. The contract takes the first and rejects the other, but the rejected signature stays public on chain. |
 | Leader reruns an answered or expired request | Honest nodes refuse to join once their indexer shows the request answered or older than 200 blocks. |
 | Responder submits a signature with a different outcome | The contract rebuilds the hash from the submitted outcome, and rejects the response if the signature doesn't match. |
 | Provider details split honest nodes | Negative verdicts carry no provider data, so honest nodes sign the same bytes. |
@@ -465,7 +476,7 @@ threshold.
 | Signer refuses, goes silent or sends a bad share | Fails that round, and the leader retries with an asset without that node when it can. The node's outcome still counts, so it can't block the decision. |
 | Malicious leader uses up assets on a request it leads | A signer joins at most three rounds per request and leader, only from acting leaders, and only with evidence. A leader can only use assets it owns. |
 | Leader forges or replays another node's outcome | Node outcomes are signed with each node's outcome key and name the yield id, so a leader can't forge them or reuse them for another request. Any acting leader may use them for the same request, which is intended. |
-| Node signs two different outcomes for one yield | It counts for neither, and the two statements prove it misbehaved. |
+| Node signs two different outcomes for one yield | It counts for no verdict and takes part in no round. The leader logs both statements. |
 | A node that isn't an acting leader sends Start | Signers refuse it, since it isn't an acting leader in their view (see "Deciding and signing"). |
 | Caller plants a fake yield id | Nodes read the id only from the log of the MPC contract's own V2 receipt. Only the contract's code can log there, and it logs only the id it generated. |
 | Late timeout removes an open request | Each request is stored under its own yield id, and a timeout only removes its own entry. |
@@ -490,7 +501,7 @@ threshold.
   inconclusive instead of a timeout.
 - **Malicious follower M.** If M signs a false node outcome, the honest nodes still reach t
   without it, and the verdict's asset leaves M out. If M signs two different outcomes, it
-  counts for neither. If M only refuses or stays silent in a round, the leader retries with an
+  counts for no verdict. If M only refuses or stays silent in a round, the leader retries with an
   asset without M.
 - **Eve steers a copy of Bob's request to a malicious leader M.** Eve wants a false answer
   about Bob's transaction, or to block Bob's request. A request's leaders follow from a hash
