@@ -40,10 +40,12 @@ pub async fn spawn_recovery_server_and_run_onboarding(
     tx_sender: impl TransactionSender,
 ) -> anyhow::Result<()> {
     let (import_keyshares_sender, import_keyshares_receiver) = tokio::sync::watch::channel(vec![]);
+    let (onboarded_sender, onboarded_receiver) = tokio::sync::watch::channel(false);
     let web_server_state = web::types::WebServerState {
         import_keyshares_sender,
         keyshare_storage: keyshare_storage.clone(),
         backup_encryption_key: migration_secrets.backup_encryption_key,
+        onboarded: onboarded_receiver,
     };
 
     web::server::start_web_server(
@@ -63,5 +65,6 @@ pub async fn spawn_recovery_server_and_run_onboarding(
         import_keyshares_receiver,
     )
     .await?;
+    onboarded_sender.send_replace(true);
     Ok(())
 }
