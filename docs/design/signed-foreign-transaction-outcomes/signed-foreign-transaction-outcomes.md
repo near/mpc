@@ -29,11 +29,11 @@ In short:
   the network checked.
 - The caller states the values it expects. Nodes check them, so a success means the values
   the caller asked for.
-- V2 attempts fail fast. Each follower signs what it found and sends it to the leader with its
-  share, so the leader ends a failed attempt at the first sign of trouble instead of waiting
-  out the deadline.
-- Only an acting leader (see "Attempts that fail fast") can get the network to sign an
-  inconclusive, and only with signed node outcomes as evidence.
+- V2 collects outcomes before it signs. Every node inspects once, signs what it found with a
+  dedicated Ed25519 key, and sends it to the other nodes. The leader signs a verdict as soon as
+  t nodes signed the same one, with an asset among those nodes. Inspections are never retried.
+- Only an acting leader (see "Deciding and signing") can get the network to sign, and only
+  with signed node outcomes as evidence.
 
 ## Vocabulary
 
@@ -42,35 +42,32 @@ The doc uses these terms for the levels of an answer, from the bottom up.
 | Term | Who | Meaning |
 |---|---|---|
 | Verdict | One inspector, so one provider | What one provider says about the transaction: found, with the extracted values, or a negative verdict such as not found. |
-| Node outcome | One node | What one node concludes from its verdicts, after retrying transient errors: a verdict all its answering inspectors agree on, checked against the caller's expected values, or no verdict, because of transient errors or because its inspectors disagree. Every node signs its node outcome, and a follower sends it to the leader. A node that does not inspect at all, for example because the request is closed, refuses, and a refusal is not a node outcome. |
-| Attempt result | The leader | What the leader does with the node outcomes: sign when they all match, end the request with an inconclusive when two nodes' verdicts differ or a node's inspectors disagree, and retry in every other case. |
+| Node outcome | One node | What one node concludes from its verdicts, after retrying transient errors: a verdict all its answering inspectors agree on, checked against the caller's expected values, or no verdict, because of transient errors or because its inspectors disagree. Every node signs its node outcome once per request and sends it to the other nodes. |
+| Decision | An acting leader | What the leader does with the node outcomes: sign a verdict once t nodes signed it, sign an inconclusive once no verdict can reach t, and wait in every other case. |
 | Signed outcome | The network | The answer the caller gets: success, negative verdict, or inconclusive. |
 
 ---
 
 ## Architecture
 
-Callers talk to the contract as they do today. What changes is what the nodes sign, and when
-they stop trying.
+Callers talk to the contract as they do today. What changes is what the nodes sign, and how
+they agree on it.
 
-![Overview: the caller makes V2 requests with expected values to the MPC contract, which returns the signed outcome. Among the MPC nodes, the leader observes requests and sends responses to the contract, and coordinates attempts and inconclusive rounds with the followers. The followers observe requests too, and send the leader their signed outcomes and shares.](attachments/overview.png)
+![Overview: the caller makes V2 requests with expected values to the MPC contract, which returns the signed outcome. All MPC nodes observe requests and send each other their signed node outcomes. The leader decides from those outcomes, coordinates the signing rounds with the followers, and sends responses to the contract.](attachments/overview.png)
 
 1. **Request.** The caller calls `verify_foreign_transaction_v2` with the values it expects.
    The contract picks a yield id, stores the request, the hash of the expected values and the
    current block height under it, and announces the id in an event. Every node's indexer picks
    up the request and the id together.
-2. **Start.** The leader takes an asset if needed and sends Start. A node takes part only while
-   the request is unanswered, inside its 200 block window, and the sender is an acting leader
-   in its view (see "Attempts that fail fast").
-3. **Inspect.** The leader and followers inspect in parallel. Every node signs what it found,
-   and each follower sends it to the leader, followed by its share if it found a verdict.
-4. **Sign or fail.** If all node outcomes match, the shares combine into a signature. If
-   nodes disagree, the request goes straight to the inconclusive. Otherwise the leader
-   retries.
-5. **Inconclusive.** When nodes disagree, or enough nodes report transient errors, the leader
-   runs one more round to sign an inconclusive for the request. Signers only join if the node
-   asking is an acting leader and shows signed evidence.
-6. **Respond.** The leader submits the yield id, the outcome and the signature. The contract
+2. **Inspect.** Every node that supports the chain inspects the request once. It signs its node
+   outcome with its outcome key and sends it to every other participant.
+3. **Decide.** An acting leader counts the signed outcomes. Once t nodes signed the same
+   verdict, it signs that verdict. Once no verdict can reach t, it signs an inconclusive.
+   Until then it waits for more outcomes.
+4. **Sign.** The leader picks an asset among the nodes that back the outcome and sends Start
+   with the outcome and its evidence. Each signer checks the request, the leader and the
+   evidence, then sends its share.
+5. **Respond.** The leader submits the yield id, the outcome and the signature. The contract
    looks up the request, rebuilds the hash, checks the signature and resumes that yield.
 
 ### Payload and response types
@@ -113,9 +110,8 @@ enum ForeignTxVerificationNegativeVerdict {
   between nodes during a reorg. Every node must sign the same bytes, so we leave them out of
   the payload. The node logs them, so failures can still be debugged.
 - **Provider errors never become verdicts.** A node retries transient provider errors within
-  its 5 second inspection cap. If its inspectors still give no verdict, it reports no verdict
-  for that attempt. If its inspectors disagree, it reports that, and the request ends with an
-  inconclusive, because a disagreement is final (see
+  its 5 second inspection cap. If its inspectors still give no verdict, or they disagree, it
+  reports no verdict with the reason. A node never picks between its inspectors (see
   [Calculating supported foreign chains](../calculating-supported-foreign-chains.md)).
 - **The inconclusive outcome is not a verdict.** A verdict is a fact about the foreign chain.
   It says nothing about the transaction, so it has its own variant instead of being one of the
@@ -232,58 +228,23 @@ requests. What is new is that a V2 signature includes `request_block_height`, so
 outside NEAR can check that window too.
 
 **One signature, one request.** Identical requests made at the same time each get their own
-attempt, since nodes queue them by receipt id.
+signing round, since nodes queue them by receipt id.
 
-### Attempts that fail fast
+### Node outcomes
 
-Today a follower that fails before signing sends nothing, and the leader waits out the
-attempt deadline. A V2 attempt runs like this:
+Every node that supports the chain inspects a V2 request as soon as its indexer has it. It
+retries transient provider errors within its 5 second inspection cap, signs its node outcome
+once, and sends it to every other participant. The leader inspects too, and its outcome counts
+like any other.
 
-1. **Open.** The leader takes an asset if needed and sends Start right away, without waiting
-   for its own inspection. The asset's participants must all be within the indexer margin. So
-   every attempt uses up an asset, even one that fails. V1 inspects first, so a bad request
-   costs no asset. V2 gives that up for the fastest happy path.
-2. **Inspect.** Everyone inspects in parallel. A node retries transient provider errors within
-   its local 5 second inspection cap.
-3. **Report.** Each follower signs its node outcome and sends it to the leader: a verdict
-   followed by its share, or no verdict with the reason. It sends its outcome even after the
-   attempt ends, so evidence builds up. The leader counts an outcome only from a node in that
-   attempt. A follower refuses with the network abort, without inspecting, when:
-   - the request is closed,
-   - it hasn't indexed the request within 3 seconds of receiving Start,
-   - the sender isn't an acting leader of the request in its view, or
-   - it has already joined three attempts for this request and leader.
-4. **Fail fast.** The leader ends the attempt as soon as:
-   - two node outcomes differ, between two followers or between a follower and the leader, or
-   - a node, including leader nodes, has no node outcome: it reports no verdict, or it
-     refuses.
-
-   Neither waits for the deadline. As today, a share that doesn't combine, or a follower silent
-   past the deadline, also fails the attempt.
-
-What happens next depends on why the attempt ended:
-
-| Why the attempt ended | Next |
-|---|---|
-| Two nodes' verdicts differ, or a node's inspectors disagree, the leader's included | The request ends with an inconclusive at once (see "The signed inconclusive"). A disagreement is never retried. |
-| A node, the leader included, has no verdict because of transient errors | The leader retries. Once its evidence holds transient errors from s − t + 1 nodes, it asks for the inconclusive instead (see "The signed inconclusive"). |
-| A follower refuses, goes silent, or its share fails after every node agreed | The leader retries. This is a problem within the cluster, not a finding about the transaction, so it is never evidence. |
-
-**Acting leaders.** An acting leader is a node the request queue lets lead the request now,
-in the view of the node that checks: the first node eligible to lead it, or a backup whose
-turn has started. A follower times a backup's turn from its own index time, and accepts it up
-to 3 seconds early, the same margin it has to index a request.
-
-**Signed node outcomes.** Every node signs its node outcome as a `NodeOutcomeStatement`, with
-the Ed25519 key of its TLS identity. A leader keeps the statements from its attempts for a
-yield. These statements are its **evidence** when it asks for an inconclusive (see "The signed
-inconclusive").
+**Outcome keys.** Every node holds a dedicated Ed25519 key pair for node outcomes, its
+**outcome key**. The public key is stored on chain in the node's participant info, next to its
+TLS key, so every node can check every other node's outcomes. Nodes don't sign outcomes with
+their TLS key, so that one key never signs for two purposes.
 
 ```rust
 struct NodeOutcomeStatement {
     yield_id: YieldId,
-    leader: ParticipantId,
-    attempt: AttemptId,                // unique per attempt
     signer: ParticipantId,
     outcome: NodeOutcome,
 }
@@ -299,99 +260,91 @@ enum NoVerdictReason {
 }
 ```
 
-A node signs the prefix `near-mpc foreign tx v2 node outcome` followed by the Borsh
-encoded statement. Refusals are not signed. They are problems within the cluster, not
-findings, so they stay the plain network abort and never count as evidence.
+A node signs the prefix `near-mpc foreign tx v2 node outcome` followed by the Borsh encoded
+statement.
 
-**Attempt deadline: 13 seconds from Start.** That is 3 seconds (5 blocks) for a follower's
-indexer to pick up the request, 5 seconds for inspection, and 5 seconds for the network
-communication within the cluster. These are targets until load tests confirm them. V1 keeps
-its default of 60 seconds.
+- **One outcome per node and request.** An honest node signs a single statement for a yield,
+  and never inspects that request again. A transaction that isn't final yet can end
+  inconclusive, and the caller asks again later.
+- **Every node gets every outcome.** A statement is about 100 bytes, so sending it to all
+  participants is cheap. Any acting leader, including a backup that takes over, then holds the
+  same evidence.
+- **Outcomes can arrive before the request.** A node keeps an outcome for a request it hasn't
+  indexed yet for up to 3 seconds (5 blocks), and one per sender and yield id.
 
-If no suitable asset is available, the leader waits for one before Start. The wait is outside
-the attempt deadline and doesn't use up an attempt. A request that gets no asset within its
-window times out.
+### Deciding and signing
 
-**Indexer margin: 5 blocks.** The V2 leader only takes an asset whose participants are all
-within 5 blocks of its own indexer. A mainnet block takes about 0.6 seconds, so the 3 second
-wait covers 5 blocks. Today an asset may include a node 50 blocks behind the leader, which
-would miss that wait. In mainnet samples from 30 September to 7 October 2026, an online node's
-indexer was within 5 blocks of the most advanced one 99.94% of the time.
+**Acting leaders.** An acting leader is a node the request queue lets lead the request now,
+in the view of the node that checks: the first node eligible to lead it, or a backup whose
+turn has started. A node times a backup's turn from its own index time, and accepts it up
+to 3 seconds (5 blocks) early, to allow for indexer lag.
 
-![Attempts: matching node outcomes sign the attempt. A disagreement goes straight to the inconclusive round. A node without a verdict because of transient errors adds signed evidence, and once the evidence holds transient outcomes from s − t + 1 nodes, the leader runs the inconclusive round. Until then, and after a refusal, a silent follower or a bad share, the leader retries while attempts remain. Then it stops, and the request times out unless another leader answers.](attachments/attempts.png)
+**The counting rule.** Let s be the number of nodes that support the chain and t the signing
+threshold. From the signed outcomes it holds, an acting leader counts, for each verdict, how
+many nodes signed it, and how many nodes it hasn't heard from yet.
 
-**Retries: up to three attempts per leader.** The leader retries at once after a failed
-attempt, preferring a free asset without the nodes that just reported transient errors,
-refused or stayed silent.
+- **Verdict.** When t nodes signed the same verdict, the leader signs that verdict.
+- **Inconclusive.** When no verdict can reach t, even if every node not yet heard from signed
+  it, the leader signs an inconclusive. For example, transient errors from s − t + 1 nodes, or
+  a split where no verdict and the missing nodes together make t.
+- **Otherwise** the leader waits for more outcomes, until the request closes.
 
-- **Only cluster problems and transient provider errors are retried.** A disagreement ends the
-  request at once, and so do transient errors from s − t + 1 nodes.
-- **A follower joins at most three attempts per request and leader.** This bounds the assets
-  one leader can use up. A new leader starts its own attempts.
-- **A transaction that isn't final yet ends inconclusive.** The caller asks again later.
-- **Sign, CKD and V1 keep their limit of ten.**
+Each node counts once. A node that signed two different outcomes for one yield counts for
+neither, and the leader logs both statements, which prove the node misbehaved.
 
-"How long a request takes" in "The signed inconclusive" lists the time for each case.
+![Deciding: an acting leader counts signed node outcomes. When t nodes signed the same verdict, it runs a signing round for that verdict with an asset among those nodes. When no verdict can reach t, it runs a signing round for the inconclusive. Otherwise it waits for more outcomes, and the request times out if they never come. A round that fails is retried with a fresh asset while rounds remain. Then this leader stops, and the request times out unless another leader answers.](attachments/decision.png)
 
-### The signed inconclusive
+**The signing round.** The leader sends Start with the outcome and its evidence: the signed
+statements that meet the counting rule.
 
-1. **The leader runs one more signing round**, this time over a V2 payload whose outcome is
-   `Inconclusive`. The payload only depends on the request, its expected values hash, its
-   block height and the yield id, so every signer derives the same hash, and only a missing or bad
-   share can fail the round.
-2. **Signers check the leader and the evidence.** A node signs this round only if the request is
-   still open and the node asking is an acting leader in its own view (see "Attempts that fail
-   fast").
+1. **Asset.** For a verdict, every participant of the asset signed that verdict. For an
+   inconclusive, every participant sent an outcome. So every signer has indexed the request.
+   If no such asset is free, the leader waits for one, and the wait doesn't use up a round.
+2. **Signers check.** A signer joins only if:
+   - the request is open in its view,
+   - the sender is an acting leader in its view,
+   - every statement in the evidence verifies against its signer's outcome key on chain, and
+     names this yield id,
+   - the evidence meets the counting rule for the outcome, and for a verdict, includes the
+     signer's own statement for that verdict, and
+   - it has joined fewer than three rounds for this request and leader.
 
-   The node asking sends its evidence with the round's Start. A signer checks each
-   `NodeOutcomeStatement` against the TLS key of the node that signed it. It joins only if the
-   evidence shows one of these:
-   - Two different nodes signed different verdicts in the same attempt.
-   - One node's inspectors disagreed.
-   - At least s − t + 1 different nodes reported transient errors, where s is the number of
-     nodes that support the chain and t is the signing threshold. Then fewer than t nodes
-     answered without a transient error, too few to sign a verdict.
+   Otherwise it refuses with the network abort. Signers don't need their own count to agree
+   with the leader's. The evidence is enough.
+3. **Retries.** A round has a 5 second deadline, a target until load tests confirm it. A
+   refusal, a silent signer or a share that doesn't combine fails the round. The leader then
+   retries with a fresh asset, preferring one without the nodes that failed it, up to three
+   rounds. After the third it stops. A retry never repeats an inspection, because the evidence
+   stays valid.
 
-   A disagreement ends the request at once (see "Attempts that fail fast"). Transient errors can
-   build up over several attempts, the leader starts the inconclusive signing round as soon as
-   s − t + 1 nodes have reported transient errors. A transient error report counts even if it
-   arrives after its attempt ended.
-
-   Signers don't check how many attempts the leader made, only the evidence.
-
-3. **Up to three rounds.** Like the attempts, the inconclusive gets three rounds, to ride out a
-   flaky network. Each round has a fresh asset and a 5 second deadline, which is also a target
-   until load tests confirm it. A signer joins at most three rounds per request and leader. If
-   all three fail, this leader stops.
-4. **The contract resumes that yield**, and the caller gets `Inconclusive {}`.
+Sign, CKD and V1 keep their attempt deadline of 60 seconds and their limit of ten attempts.
 
 **What inconclusive means.** The nodes disagreed about the transaction, or transient errors kept too many
 of them from reaching a verdict. To a caller both lead to the same next step, so both are
 reported the same way: the network couldn't decide right now, and the caller may try again.
-Each inconclusive raises a metric labelled with its cause, the chain and, for a disagreement,
-the two nodes. The leader also logs their signed outcomes. The outcomes can't show whether a
-node lags or lies, so the metric shows where to look, not who is malicious.
+Each inconclusive raises a metric labelled with its cause and the chain, and the leader logs
+the evidence. The outcomes can't show whether a node lags or lies, so the logs show where to
+look, not who is malicious.
 
 **Why only acting leaders.** Today followers accept Start from any participant. Without the
-leadership check, one malicious node could end any request before its honest leader answers.
+leadership check, any node could race the honest leader and use up assets on its requests.
 
-**When there is no evidence.** Silence, refusals, bad shares and "transient outcomes from too
-few nodes" leave nothing to show for evidence, so the leader stops after its attempts, and the request times
-out unless another leader answers.
+**When there is no decision.** Silent nodes send no outcome. If too many stay silent for any
+outcome to meet the counting rule, the request times out.
 
-**How long a request takes.** Times count from the first leader's first Start and assume it
-stays an acting leader. They leave out any wait for an asset and the time for the response to
-land on NEAR. Other acting leaders can only end a request sooner. The worst cases assume that
-each attempt runs to its 13 second deadline, the inconclusive takes three rounds of 5 seconds,
-and 1 second passes before each new attempt or round.
+**How long a request takes.** Times count from the moment the leader holds enough outcomes for
+the counting rule. Each node's outcome arrives within its indexer lag, at most 5 seconds of
+inspection, and one message within the cluster. The times leave out any wait for an asset and
+the time for the response to land on NEAR. The worst cases assume that each round runs to its
+5 second deadline and 1 second passes before each new round.
 
 | Scenario | How the request ends | Time to the answer | Answer |
 |---|---|---|---|
-| Every node reaches the same verdict | The first attempt signs | At most 13 seconds | Success or negative verdict |
-| A follower disconnects, stays silent, or its providers keep failing | The next attempt can use an asset without it | At most about 14 seconds more | Success or negative verdict |
-| Nodes, or the inspectors of one node, disagree | The first mismatch ends the attempt, then the inconclusive | At most about 31 seconds if the first attempt finds it, about 59 if the third does | Inconclusive |
-| Attempts reach s − t + 1 nodes with provider errors | The inconclusive as soon as the evidence holds that many | At most about 31 seconds if one attempt is enough, about 59 if it takes three | Inconclusive |
-| A silent follower is in every asset the leader can use | The leader can't prove silence. A backup with an asset that leaves the follower out can still answer | Up to 200 blocks, about 120 seconds | The verdict, or none |
+| t nodes reach the same verdict | The first round signs | At most 5 seconds | Success or negative verdict |
+| Some nodes differ, or report transient errors, but t still agree | The same, with an asset among the t | At most 5 seconds | Success or negative verdict |
+| A signer is silent, refuses, or sends a bad share | The next round uses a fresh asset | At most about 17 seconds for three rounds | The same outcome |
+| No verdict can reach t | The inconclusive round | At most 5 seconds, 17 if it takes three rounds | Inconclusive |
+| Too many nodes stay silent to decide | The yield times out | 200 blocks, about 120 seconds | None |
 | Any failure in V1 today | The yield times out | 200 blocks, about 120 seconds | None |
 
 ---
@@ -411,8 +364,8 @@ V1 must not change, so V2 has to be opt in.
   is what the caller passes and what the contract stores under the yield id.
 
 C leaves every V1 caller untouched, and gives V2 its own types from end to end. V2 needs that,
-since it changes more than request processing: the payload, the response and how nodes run
-attempts.
+since it changes more than request processing: the payload, the response and how nodes agree
+on an outcome.
 
 ### Why does the contract pick the yield id?
 
@@ -436,44 +389,55 @@ that is the only place nodes can read it from:
   the call runs. The logs are in the same block the node already reads for the request, so
   the node gets the request and its `yield_id` together, without an extra lookup.
 
-### When does the network give up?
+### Why collect node outcomes before signing?
 
-Nodes fail to answer for two kinds of reasons: they disagree about the transaction, or
-something breaks within the cluster or at a provider. Only the second kind is worth a retry.
+- **A. Inspect and sign in one attempt, as V1 does.** The asset fixes the t nodes before
+  anyone inspects. One node that differs or has a provider error fails the attempt, so the
+  leader retries, and every retry uses up an asset and inspects again.
+- **B. Collect signed outcomes from every node first, then sign (chosen).** The leader picks
+  the asset once it knows which nodes agree.
 
-- **A. After one failed attempt.** Gives up on requests a single retry would have completed,
-  for example after a provider blip.
-- **B. Retry every failure up to the budget.** Retries disagreements that should end the
-  request at once.
-- **C. End a disagreement, or transient errors at too many nodes, at once, retry everything
-  else up to three attempts, and require signed node outcomes as evidence for the inconclusive
-  (chosen).**
+B costs one more message round within the cluster, about 200 ms, against a P90 response time
+of 5.58 seconds today. In return it needs no inspection retries, uses at most three assets per
+leader, and one node that differs or has a provider error no longer blocks a verdict. Every
+answer comes with evidence a signer can check.
 
-C keeps a disagreement final and a failed request short. It needs signed node outcomes, which
-use each node's existing TLS key. Every inconclusive comes with evidence, and a metric can
-show the nodes involved.
+This works for foreign transactions because the inspection comes before any cryptography, so
+the leader can pick the asset afterwards. For sign requests there is nothing to collect first,
+and a larger signing set would need triples for more nodes.
+
+### Which key signs node outcomes?
+
+- **A. The TLS key.** Already on chain, but one key would then sign for two purposes.
+- **B. The node's share of a threshold key.** Needs each node's public key share, which the
+  current DKG doesn't keep, and uses that key for a second purpose too.
+- **C. A dedicated Ed25519 key per node, on chain next to the TLS key (chosen).** The same
+  plain signature scheme as TLS, with no cryptography changes.
 
 ### How does V2 behave when the leader changes?
 
-V2 relies only on the request queue's answer to who may lead right now (see "Attempts that fail
-fast"). This has two costs.
+V2 relies only on the request queue's answer to who may lead right now (see "Deciding and
+signing"). Every node sends its outcome to every participant, so a backup holds the same
+evidence as the leader and signs without inspecting again. This has two costs.
 
-- Nodes can disagree on who may lead. While they do, followers refuse the leaders they don't
-  accept, and every refused attempt counts against that leader, so a request can time out if
+- Nodes can disagree on who may lead. While they do, signers refuse the leaders they don't
+  accept, and every refused round counts against that leader, so a request can time out if
   the network stays partitioned for long enough time.
-- A backup can start while a slow leader is still trying. With four planned leaders, each with
-  three attempts and three rounds, a request can use up to 4 × (3 + 3) = 24 assets instead of
-  only 6 (3 + 3) with a single leader.
+- A backup can start while a slow leader is still trying. With four planned leaders, each
+  with three rounds, a request can use up to 4 × 3 = 12 assets instead of 3 with a single
+  leader.
 
 ### How does V2 roll out?
 
 V1 stays untouched, so no upgrade order breaks existing callers.
 
-- **The V2 method ships in its own contract release**, once every node supports V2. Until
-  then, old nodes would ignore V2 requests and they would time out.
-- **P2P needs one protocol version bump**, for the follower's signed node outcome as a new
-  message kind, and for the inconclusive round as a new task kind. Aborts reuse the existing
+- **Outcome keys come first.** Participant info gets the outcome key, and every node registers
+  one before V2 is enabled.
+- **P2P needs one protocol version bump**, for the signed node outcome as a new message kind,
+  and for the signing round with evidence as a new task kind. Aborts reuse the existing
   message.
+- **The V2 method ships in its own contract release**, once every node supports V2 and has an
+  outcome key on chain. Until then, old nodes would ignore V2 requests and they would time out.
 
 ---
 
@@ -482,63 +446,60 @@ V1 stays untouched, so no upgrade order breaks existing callers.
 We assume, as V1 does, that fewer than t nodes are malicious, where t is the signing
 threshold.
 
-| Threat                                                 | Defense                                                                                                                                                                                       |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Malicious leader forges a verdict                      | Every follower checks the transaction itself, and shares signed over different outcomes don't combine into a signature.                                                                       |
-| Leader asks to sign for a request that doesn't exist   | Honest nodes only sign for requests their own indexer has seen.                                                                                                                               |
-| Old _not found_ replayed after the transaction lands   | Each signature is tied to one request, which is closed once it is answered. A new request gets its own check.                                                                                 |
-| Signature replayed on another caller's request         | The signature names its yield id, and the contract only answers that yield.                                                                                                                   |
-| Old _not found_ relayed off NEAR later                 | The signature carries the request's block height, and honest nodes only sign within 200 blocks of it. The receiver can see how old the answer is.                                             |
-| Two different verdicts signed for one yield            | A backup and a slow leader can check at different times, and get for example _not found_ and then success. The contract takes the first and rejects the other, but the rejected signature stays public on chain. Both are honest checks, and a _not found_ never proves that the transaction won't land later. |
-| Leader reruns an answered or expired request           | Honest nodes refuse to join once their indexer shows the request answered or older than 200 blocks.                                                                                           |
-| Responder submits a signature with a different outcome | The contract rebuilds the hash from the submitted outcome, and rejects the response if the signature doesn't match.                                                                           |
-| Provider details split honest nodes                    | Negative verdicts carry no provider data, so honest nodes sign the same bytes.                                                                                                                |
-| Faulty provider drives a verdict                       | Blocked as long as the node's other providers answer, because they would disagree. If they are all down, the faulty provider decides that node's outcome, and other nodes would disagree. Only a provider that decides the outcome at every node in an attempt can drive a verdict, just as it can drive a success today. |
-| Follower refuses, goes silent or sends a bad share     | Fails that attempt, and the leader retries. When it can, it uses an asset without a follower that refused or stayed silent (see "Attempts that fail fast"). None of these is evidence for an inconclusive, so a request can time out if every attempt includes that follower. |
-| Node forces an inconclusive                            | A follower can end any request whose attempt includes it, where V1 would retry (see "Attempts that fail fast"). An acting leader can end any request it leads, which it could already let time out ("The signed inconclusive", step 2). Only liveness is affected, and the metric records the nodes involved. |
-| Malicious leader uses up assets on a request it leads  | A follower joins at most three attempts and three inconclusive rounds per request and leader, and only from acting leaders. A leader can only use assets it owns.                             |
-| Leader forges or replays another node's outcome        | Node outcomes are signed with each node's attested TLS key and name the yield id, the leader and the attempt. So a leader can't forge them or reuse them for another request or leader. Each node counts once toward the evidence. |
-| Node outside an attempt sends an outcome               | The leader counts an outcome only from a node in that attempt (see "Attempts that fail fast").                                                                                                |
-| A node that isn't an acting leader sends Start         | Followers and signers refuse it, since it isn't an acting leader in their view (see "Attempts that fail fast" and "The signed inconclusive").                                                 |
-| Caller plants a fake yield id                          | Nodes read the id only from the log of the MPC contract's own V2 receipt. Only the contract's code can log there, and it logs only the id it generated.                                       |
-| Late timeout removes an open request                   | Each request is stored under its own yield id, and a timeout only removes its own entry.                                                                                                      |
-| Node overstates its indexer height to lead more        | Not new. V2 uses the queue's leader rule unchanged. Such a node can already let those requests time out, and in V2 end them inconclusive instead (see "The signed inconclusive").             |
-| Caller floods requests the network can't decide        | Every attempt and inconclusive round uses an asset, so such a request uses up to six per leader, where a sign request uses one for the same deposit. We accept that as the cost of signing every answer. |
-| Caller trusts the outcome label                        | On NEAR the contract checked the signature over the caller's own expected values hash, so the label is safe to trust. Outside NEAR the receiver must check the signature (see "Payload and response types").       |
-| Caller states wrong expected values                    | Nodes sign the negative verdict `ValuesMismatch`. It answers only that request.                                                                                                               |
+| Threat | Defense |
+| --- | --- |
+| Malicious leader forges a verdict | A verdict needs t node outcomes for it, each signed with an outcome key, so at least one comes from an honest node. Every signer also signed that verdict itself. |
+| Leader asks to sign for a request that doesn't exist | Honest nodes only sign for requests their own indexer has seen. |
+| Old _not found_ replayed after the transaction lands | Each signature is tied to one request, which is closed once it is answered. A new request gets its own check. |
+| Signature replayed on another caller's request | The signature names its yield id, and the contract only answers that yield. |
+| Old _not found_ relayed off NEAR later | The signature carries the request's block height, and honest nodes only sign within 200 blocks of it. The receiver can see how old the answer is. |
+| Two different outcomes signed for one yield | Honest nodes sign one outcome each, so two leaders can hold evidence for different outcomes only if some node signed two. The contract takes the first and rejects the other, but the rejected signature stays public on chain. |
+| Leader reruns an answered or expired request | Honest nodes refuse to join once their indexer shows the request answered or older than 200 blocks. |
+| Responder submits a signature with a different outcome | The contract rebuilds the hash from the submitted outcome, and rejects the response if the signature doesn't match. |
+| Provider details split honest nodes | Negative verdicts carry no provider data, so honest nodes sign the same bytes. |
+| Faulty provider drives a verdict | Blocked as long as the node's other providers answer, because they would disagree. If they are all down, the faulty provider decides that node's outcome. It drives a verdict only if it decides the outcome at t nodes, just as it can drive a success today. |
+| Node forces an inconclusive | The evidence must show that no verdict can reach t. Leaving statements out only makes that harder to show, so a leader can't hide outcomes to force it. Fewer than t malicious nodes can force it only when the honest nodes themselves don't reach t on one verdict. |
+| Signer refuses, goes silent or sends a bad share | Fails that round, and the leader retries with an asset without that node when it can. The node's outcome still counts, so it can't block the decision. |
+| Malicious leader uses up assets on a request it leads | A signer joins at most three rounds per request and leader, only from acting leaders, and only with evidence. A leader can only use assets it owns. |
+| Leader forges or replays another node's outcome | Node outcomes are signed with each node's outcome key and name the yield id, so a leader can't forge them or reuse them for another request. Any acting leader may use them for the same request, which is intended. |
+| Node signs two different outcomes for one yield | It counts for neither, and the two statements prove it misbehaved. |
+| A node that isn't an acting leader sends Start | Signers refuse it, since it isn't an acting leader in their view (see "Deciding and signing"). |
+| Caller plants a fake yield id | Nodes read the id only from the log of the MPC contract's own V2 receipt. Only the contract's code can log there, and it logs only the id it generated. |
+| Late timeout removes an open request | Each request is stored under its own yield id, and a timeout only removes its own entry. |
+| Node overstates its indexer height to lead more | Not new. V2 uses the queue's leader rule unchanged. Such a node can already let those requests time out. |
+| Caller floods requests the network can't decide | Every node that supports the chain inspects each request, where V1 only has an asset's t nodes inspect, and each request can use up to three assets per leader, where a sign request uses one for the same deposit. We accept that as the cost of signing every answer. |
+| Caller trusts the outcome label | On NEAR the contract checked the signature over the caller's own expected values hash, so the label is safe to trust. Outside NEAR the receiver must check the signature (see "Payload and response types"). |
+| Caller states wrong expected values | Nodes sign the negative verdict `ValuesMismatch`. It answers only that request. |
 
 ---
 
 ## Worked examples
 
-- **One divergent node F on an honest network.** When an attempt includes F, F's node outcome
-  differs from another node's, so the request ends with an inconclusive at once, and F is one
-  of the two nodes in each disagreement. Today a retry without F can succeed, but in V2 a
-  disagreement is final. When the asset excludes F, the request succeeds at once.
-- **A transaction lands during the request.** One node's provider already has the block and
-  reports success. Another node's provider, or another provider of the same node, hasn't seen
-  it yet and reports _not found_. The request ends with an inconclusive, and the caller asks
+- **One divergent node F on an honest network.** F's outcome differs from the others, but t
+  other nodes agree, so the leader signs their verdict with an asset without F. F only shows
+  up in the logs.
+- **A transaction lands during the request.** Some nodes' providers already have the block and
+  report success. Others haven't seen it yet and report _not found_. If t nodes agree on one,
+  that is the answer. Otherwise the request ends with an inconclusive, and the caller asks
   again.
 - **Provider outage.** Each node retries its providers within the inspection cap, then reports
   transient errors. As soon as s − t + 1 nodes have reported them, the caller gets an
   inconclusive instead of a timeout.
-- **Malicious follower M.** If M signs a false node outcome, every request whose attempt
-  includes M ends in an inconclusive, where V1 would retry. Its outcomes look the same as those
-  of a node whose provider lags. M is one of the two nodes in each of these disagreements. If M
-  only refuses or stays silent, the leader retries with an asset without M when it can, so a
-  request times out only if every attempt includes M.
+- **Malicious follower M.** If M signs a false node outcome, the honest nodes still reach t
+  without it, and the verdict's asset leaves M out. If M signs two different outcomes, it
+  counts for neither. If M only refuses or stays silent in a round, the leader retries with an
+  asset without M.
 - **Eve steers a copy of Bob's request to a malicious leader M.** Eve wants a false answer
   about Bob's transaction, or to block Bob's request. A request's leaders follow from a hash
   of its receipt id, which Eve can't pick, but she can submit identical copies of Bob's
   request until one of them lands on M. What M can and cannot do with that copy:
-  - **Can end it with an inconclusive**, as its leader ("The signed inconclusive", step 2),
-    which costs only liveness on Eve's own copy.
-  - **Cannot get a false verdict signed**, for the copy or any other request (Security
-    analysis, "Malicious leader forges a verdict").
-  - **Gains nothing on Bob's request.** The inconclusive names the copy's yield id, and the
-    contract only answers that copy. M can't run an inconclusive round for Bob's request
-    either, unless it acts as one of Bob's leaders, which Eve's copies don't change.
+  - **Can let it time out**, as its leader, until a backup's turn starts.
+  - **Cannot get a false verdict or an unfounded inconclusive signed**, for the copy or any
+    other request (Security analysis, "Malicious leader forges a verdict" and "Node forces
+    an inconclusive").
+  - **Gains nothing on Bob's request.** Any answer names the copy's yield id, and the
+    contract only answers that copy. M can't run a round for Bob's request either, unless it
+    acts as one of Bob's leaders, which Eve's copies don't change.
 
-  So steering a request to M gets Eve at most a timeout or a signed inconclusive on her own
-  copy, which is no worse than today. Each copy costs her a transaction and costs the network
-  an asset.
+  So steering a request to M gets Eve at most a delay on her own copy, which is no worse than
+  today. Each copy costs her a transaction, and costs the network an inspection at every node.

@@ -1,0 +1,13 @@
+flowchart TD
+    O["Signed node outcomes<br/>arrive from every node"] --> Q{"Counting rule"}
+    Q -->|"t nodes signed<br/>the same verdict"| V["Signing round for the verdict,<br/>asset among those nodes"]
+    Q -->|"no verdict<br/>can reach t"| I["Signing round<br/>for the inconclusive"]
+    Q -->|"neither yet"| W["Wait for more outcomes"]
+    W --> Q
+    W -.->|"request closes"| T
+    V -->|"all sign"| S["Signed success or<br/>signed negative verdict"]
+    I -->|"all sign"| IS["Signed inconclusive<br/>for this request's yield"]
+    V -->|"fails"| R{"Rounds left?"}
+    I -->|"fails"| R
+    R -->|"yes: fresh asset,<br/>same evidence"| Q
+    R -.->|"no"| T["This leader stops.<br/>Timeout unless another<br/>leader answers"]
