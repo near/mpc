@@ -88,6 +88,8 @@ pub(crate) enum StopLeading {
         "this node signed two different outcomes for the request, so it takes part in no round"
     )]
     ConflictingOwnOutcome,
+    #[error("this node no longer supports the chain of the request in its own view")]
+    NotASupporter,
     #[error("the V2 request closed before its signing round could start")]
     RequestClosed,
 }
@@ -453,7 +455,7 @@ impl TakeOwnedMatching for TripleStorage {
 }
 
 /// Applies the counting rule to the kept `outcomes`. Returns `None` while the leader waits for
-/// more of them. When two verdicts reach t, it picks the one `me` signed. For an inconclusive it
+/// more of them. A leader outside `supporters` stops. When two verdicts reach t, it picks the one `me` signed. For an inconclusive it
 /// waits for the outcome of `me`, and the evidence holds every statement of a supporter, since
 /// leaving one out only makes the rule harder to meet.
 fn evidence_to_sign(
@@ -462,6 +464,9 @@ fn evidence_to_sign(
     supporters: &BTreeSet<ParticipantId>,
     threshold: usize,
 ) -> Result<Option<RoundEvidence>, StopLeading> {
+    if !supporters.contains(&me) {
+        return Err(StopLeading::NotASupporter);
+    }
     let tally = outcomes
         .iter()
         .map(VerifiedNodeOutcome::statement)
