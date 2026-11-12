@@ -146,3 +146,79 @@ fn evidence_check__should_refuse_more_than_two_statements_per_supporter_before_v
         })
     );
 }
+
+#[tokio::test]
+async fn check_round__should_refuse_an_inconclusive_from_a_sender_that_is_not_an_acting_leader() {
+    // Given
+    let participants: Vec<_> = (0..3).map(participant).collect();
+    let order = leader_selection_order(&participants, bitcoin_request().id);
+    let (backup, me) = (order[1], order[2]);
+    let (open_requests, _chain) = open_with(bitcoin_request(), FakeClock::default().clock());
+    let node = TestProvider::new(
+        new_test_client(order.clone(), me),
+        open_requests,
+        bitcoin_request().request.chain(),
+        order.iter().copied().collect(),
+    );
+    let (mut channel, _from_peers) = new_task_channel_for_test(
+        VerifyForeignTxTaskId::SignOutcome {
+            yield_id: bitcoin_request().yield_id,
+            outcome: RoundOutcome::Inconclusive,
+            paired_triple_id: UniqueId::new(backup, 1, 0),
+        }
+        .into(),
+        backup,
+        me,
+        order,
+    );
+
+    // When
+    let checked = node
+        .provider
+        .check_round(
+            &mut channel,
+            bitcoin_request().yield_id,
+            RoundOutcome::Inconclusive,
+        )
+        .await;
+
+    // Then
+    assert_matches!(
+        checked.unwrap_err().downcast_ref::<RoundRefusal>(),
+        Some(RoundRefusal::Leader(LeaderRefusal::NotActing(leader))) if *leader == backup
+    );
+}
+
+#[tokio::test]
+async fn join_round_with_evidence__should_count_verdict_and_inconclusive_rounds_against_one_limit()
+{
+    // Given
+    let signer = JoiningSigner::new();
+    let leader = participant(1);
+    let inconclusive_evidence = || {
+        vec![
+            signed_for_request(0, TRANSIENT),
+            signed_for_request(1, TRANSIENT),
+        ]
+    };
+    let verdict_rounds: Vec<_> = (0..MAX_ROUNDS_PER_LEADER - 1)
+        .map(|_| signer.join(leader, &[0, 1]))
+        .collect();
+    let inconclusive_round =
+        signer.join_with(leader, RoundOutcome::Inconclusive, inconclusive_evidence());
+
+    // When
+    let past_the_limit =
+        signer.join_with(leader, RoundOutcome::Inconclusive, inconclusive_evidence());
+
+    // Then
+    assert!(
+        verdict_rounds.iter().all(Result::is_ok),
+        "{verdict_rounds:?}"
+    );
+    inconclusive_round.unwrap();
+    assert_matches!(
+        past_the_limit,
+        Err(RoundRefusal::Join(JoinRoundRefusal::RoundLimit(refused))) if refused == leader
+    );
+}
