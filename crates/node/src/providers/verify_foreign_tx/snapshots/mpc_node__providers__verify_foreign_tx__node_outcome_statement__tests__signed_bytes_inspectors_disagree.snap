@@ -1,0 +1,5 @@
+---
+source: crates/node/src/providers/verify_foreign_tx/node_outcome_statement.rs
+expression: "hex::encode(bytes)"
+---
+6e6561722d6d706320666f726569676e207478207632206e6f6465206f7574636f6d65abababababababababababababababababababababababababababababababab010000000101

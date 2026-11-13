@@ -52,6 +52,7 @@ mod indexer;
 mod key_events;
 mod mpc_client;
 mod network;
+mod outcome_key_registrar;
 mod protocol;
 mod protocol_version;
 mod providers;
