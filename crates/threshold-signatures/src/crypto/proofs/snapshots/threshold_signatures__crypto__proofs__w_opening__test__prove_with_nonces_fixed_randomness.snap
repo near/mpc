@@ -1,0 +1,9 @@
+---
+source: crates/threshold-signatures/src/crypto/proofs/w_opening.rs
+expression: "format!(\"e: {:?}\\nz_a: {:?}\\nz_b: {:?}\\nz_rho: {:?}\\nz_sigma: {:?}\",\nproof.e.0, proof.z_a.0, proof.z_b.0, proof.z_rho.0, proof.z_sigma.0)"
+---
+e: Scalar(Uint(0x3C190B43CB6B178233AE1AAD140A51445C2B89FDBD10E2CBE63E2DEC4375418F))
+z_a: Scalar(Uint(0x589F838DFEA5C6E50E0CF51BB2585810CA0B20279F57E8B48A4BFC6A443C7626))
+z_b: Scalar(Uint(0xDCC13A10C9FAEAEA1B1C93E7277B960962F479EAE4F153282CAD406B717B2BF1))
+z_rho: Scalar(Uint(0x6A0F0EB3BC88D40652827E10C5D4FE75C05B6437EC0CF35F395AD02B3F18F23E))
+z_sigma: Scalar(Uint(0xC274A8A4391816BEB349C3DC1FCBB35E81B87D9903375B2E73CAAB441D9D6422))
