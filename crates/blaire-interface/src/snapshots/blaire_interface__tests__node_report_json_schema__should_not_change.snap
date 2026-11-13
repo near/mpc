@@ -1,0 +1,248 @@
+---
+source: crates/blaire-interface/src/lib.rs
+expression: schema
+---
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NodeReport",
+  "description": "Report an MPC node publishes to Blaire at startup.",
+  "type": "object",
+  "required": [
+    "redacted_config",
+    "version"
+  ],
+  "properties": {
+    "redacted_config": {
+      "$ref": "#/definitions/RedactedForeignChainsConfig"
+    },
+    "version": {
+      "type": "string"
+    }
+  },
+  "definitions": {
+    "AuthKind": {
+      "description": "The kind of authentication a provider uses, without any token data.",
+      "type": "string",
+      "enum": [
+        "none",
+        "header",
+        "path",
+        "query"
+      ]
+    },
+    "RedactedForeignChainConfig": {
+      "description": "Debug-relevant settings for one foreign chain.",
+      "type": "object",
+      "required": [
+        "max_retries",
+        "providers",
+        "timeout_sec"
+      ],
+      "properties": {
+        "expected_network_fingerprint": {
+          "description": "Chain id or genesis hash the operator expects providers to report.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_retries": {
+          "description": "Total attempts per provider; `1` means a single try.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 1.0
+        },
+        "providers": {
+          "description": "Keyed by the operator's provider name, e.g. \"alchemy\".",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/RedactedProviderConfig"
+          }
+        },
+        "timeout_sec": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 1.0
+        }
+      }
+    },
+    "RedactedForeignChainsConfig": {
+      "description": "Foreign chain configuration published by an MPC node at startup.\n\nBuilt field-by-field from the node's `ForeignChainsConfig` as an allowlist: a field added upstream is not published until it is added here. Secrets never leave the node.",
+      "type": "object",
+      "properties": {
+        "abstract": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "adi": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "aptos": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "arbitrum": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "avalanche": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "base": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bitcoin": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bnb": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ethereum": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fogo": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hyper_evm": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "polygon": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "solana": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "starknet": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sui": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RedactedForeignChainConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "RedactedProviderConfig": {
+      "description": "One RPC provider, with all credentials removed.",
+      "type": "object",
+      "required": [
+        "auth",
+        "rpc_origin"
+      ],
+      "properties": {
+        "auth": {
+          "description": "How the provider authenticates. The credential itself is never published.",
+          "allOf": [
+            {
+              "$ref": "#/definitions/AuthKind"
+            }
+          ]
+        },
+        "rpc_origin": {
+          "description": "Scheme and host of the RPC URL only, e.g. `https://eth-mainnet.g.alchemy.com`. Path, query and userinfo are dropped because they can contain API keys.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

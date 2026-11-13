@@ -6,6 +6,7 @@ use std::num::NonZeroU64;
 
 /// Report an MPC node publishes to Blaire at startup.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct NodeReport {
     pub version: Version,
     pub redacted_config: RedactedForeignChainsConfig,
@@ -13,6 +14,7 @@ pub struct NodeReport {
 
 /// Version of the MPC node software that sent the report, e.g. "3.2.0".
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(transparent)]
 pub struct Version(pub String);
 
@@ -22,6 +24,7 @@ pub struct Version(pub String);
 /// a field added upstream is not published until it is added here.
 /// Secrets never leave the node.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RedactedForeignChainsConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solana: Option<RedactedForeignChainConfig>,
@@ -58,6 +61,7 @@ pub struct RedactedForeignChainsConfig {
 
 /// Debug-relevant settings for one foreign chain.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RedactedForeignChainConfig {
     pub timeout_sec: NonZeroU64,
     /// Total attempts per provider; `1` means a single try.
@@ -70,6 +74,7 @@ pub struct RedactedForeignChainConfig {
 
 /// One RPC provider, with all credentials removed.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct RedactedProviderConfig {
     /// Scheme and host of the RPC URL only, e.g. `https://eth-mainnet.g.alchemy.com`.
     /// Path, query and userinfo are dropped because they can contain API keys.
@@ -80,6 +85,7 @@ pub struct RedactedProviderConfig {
 
 /// The kind of authentication a provider uses, without any token data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum AuthKind {
     None,
@@ -90,70 +96,15 @@ pub enum AuthKind {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::collections::BTreeMap;
-    use std::num::NonZeroU64;
-
-    /// A report that exercises every serde attribute of the wire format.
-    fn example_report() -> NodeReport {
-        let providers = BTreeMap::from([
-            provider("public", "https://rpc.example.org", AuthKind::None),
-            provider(
-                "alchemy",
-                "https://eth-mainnet.g.alchemy.com",
-                AuthKind::Header,
-            ),
-            provider("infura", "https://mainnet.infura.io", AuthKind::Path),
-            provider("quicknode", "https://example.quiknode.pro", AuthKind::Query),
-        ]);
-        let chain = RedactedForeignChainConfig {
-            timeout_sec: NonZeroU64::new(30).expect("30 is non-zero"),
-            max_retries: NonZeroU64::new(3).expect("3 is non-zero"),
-            expected_network_fingerprint: Some("1".to_string()),
-            providers,
-        };
-        NodeReport {
-            version: Version("3.18.0".to_string()),
-            redacted_config: RedactedForeignChainsConfig {
-                ethereum: Some(chain.clone()),
-                abstract_chain: Some(chain),
-                ..Default::default()
-            },
-        }
-    }
-
-    fn provider(name: &str, origin: &str, auth: AuthKind) -> (String, RedactedProviderConfig) {
-        (
-            name.to_string(),
-            RedactedProviderConfig {
-                rpc_origin: origin.to_string(),
-                auth,
-            },
-        )
-    }
+    use super::NodeReport;
 
     #[test]
-    fn node_report_serializes_to_expected_json() {
-        // Given
-        let report = example_report();
-
+    #[expect(non_snake_case)]
+    fn node_report_json_schema__should_not_change() {
         // When
-        let json = serde_json::to_value(&report).expect("serialization succeeds");
+        let schema = schemars::schema_for!(NodeReport);
 
         // Then
-        insta::assert_json_snapshot!(json);
-    }
-
-    #[test]
-    fn node_report_survives_json_round_trip() {
-        // Given
-        let report = example_report();
-
-        // When
-        let json = serde_json::to_string(&report).expect("serialization succeeds");
-        let parsed: NodeReport = serde_json::from_str(&json).expect("deserialization succeeds");
-
-        // Then
-        assert_eq!(parsed, report);
+        insta::assert_json_snapshot!(schema);
     }
 }
