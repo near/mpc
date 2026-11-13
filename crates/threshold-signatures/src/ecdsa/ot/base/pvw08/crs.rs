@@ -71,6 +71,53 @@ impl<C: Ciphersuite> Crs<C> {
     }
 }
 
+#[cfg(test)]
+impl<C: Ciphersuite> Crs<C> {
+    /// Samples a decryption-mode string together with its trapdoor.
+    pub fn decryption_mode_with_trapdoor(
+        rng: &mut impl rand_core::CryptoRngCore,
+    ) -> (Self, DecryptionTrapdoor<C>) {
+        let g0 =
+            <C::Group as frost_core::Group>::generator() * frost_core::random_nonzero::<C, _>(rng);
+        let ratio = frost_core::random_nonzero::<C, _>(rng);
+        let x = frost_core::random_nonzero::<C, _>(rng);
+        let g1 = g0 * ratio;
+        let crs = Self {
+            g0,
+            h0: g0 * x,
+            g1,
+            h1: g1 * x,
+        };
+        (crs, DecryptionTrapdoor { ratio })
+    }
+}
+
+/// The exponent `ratio` with `g1 = ratio * g0` and `h1 = ratio * h0`.
+#[cfg(test)]
+pub struct DecryptionTrapdoor<C: Ciphersuite> {
+    ratio: crate::Scalar<C>,
+}
+
+#[cfg(test)]
+impl<C: Ciphersuite> DecryptionTrapdoor<C> {
+    /// Returns the exponent that maps the pair of the branch other than
+    /// `choice` to the public key that `exponent` maps the pair of `choice` to.
+    pub fn exponent_on_other_branch(
+        &self,
+        choice: u8,
+        exponent: crate::Scalar<C>,
+    ) -> crate::Scalar<C> {
+        let inverse =
+            <<C::Group as frost_core::Group>::Field as frost_core::Field>::invert(&self.ratio)
+                .unwrap();
+        if choice == 0 {
+            exponent * inverse
+        } else {
+            exponent * self.ratio
+        }
+    }
+}
+
 /// The exponents `x0` and `x1` with `h0 = x0 * g0` and `h1 = x1 * g1`.
 #[cfg(test)]
 pub struct MessyTrapdoor<C: Ciphersuite> {

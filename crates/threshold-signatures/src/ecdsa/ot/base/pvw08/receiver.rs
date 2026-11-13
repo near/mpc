@@ -4,8 +4,15 @@ use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use super::crs::Crs;
-use crate::{Ciphersuite, Element, Scalar};
+use super::{
+    crs::Crs,
+    kdf::{derive_key, serialize},
+    sender::SenderCiphertext,
+};
+use crate::{
+    Ciphersuite, Element, Scalar, ecdsa::ot::bits::BitMatrix, errors::ProtocolError,
+    participants::Participant,
+};
 
 /// The receiver's choice bits and secret exponents for a batch of transfers.
 #[derive(ZeroizeOnDrop)]
@@ -54,7 +61,81 @@ where
             })
             .collect()
     }
+
+    /// Derives the chosen key of every transfer from `ciphertexts`, the
+    /// message received from `sender`.
+    ///
+    /// `public_keys` must be the output of [`Self::public_keys`]. The message
+    /// is rejected if it does not hold one ciphertext per transfer.
+    pub fn decapsulate(
+        &self,
+        sid: &[u8],
+        public_keys: &[ReceiverPublicKey<C>],
+        sender: Participant,
+        ciphertexts: &[SenderCiphertext<C>],
+    ) -> Result<ReceiverOutput, ProtocolError>
+    where
+        Element<C>: ConditionallySelectable,
+    {
+        let batch_size = self.choices.len();
+        if public_keys.len() != batch_size {
+            return Err(ProtocolError::AssertionFailed(format!(
+                "got {} public keys for {batch_size} transfers",
+                public_keys.len()
+            )));
+        }
+        if ciphertexts.len() != batch_size {
+            return Err(ProtocolError::UnexpectedLength {
+                expected: batch_size,
+                actual: ciphertexts.len(),
+                participant: sender,
+            });
+        }
+
+        let transfers = self.choices.iter().zip(&self.exponents);
+        let messages = public_keys.iter().zip(ciphertexts);
+        let keys = transfers
+            .zip(messages)
+            .enumerate()
+            .map(
+                |(index, ((&choice, &exponent), (public_key, ciphertext)))| {
+                    let u = <Element<C>>::conditional_select(
+                        &ciphertext.u0.value(),
+                        &ciphertext.u1.value(),
+                        Choice::from(choice),
+                    );
+                    derive_key(
+                        sid,
+                        index,
+                        choice,
+                        serialize::<C>(&public_key.p.value())?.as_ref(),
+                        serialize::<C>(&public_key.q.value())?.as_ref(),
+                        serialize::<C>(&u)?.as_ref(),
+                        serialize::<C>(&(u * exponent))?.as_ref(),
+                    )
+                },
+            )
+            .collect::<Result<BitMatrix, ProtocolError>>()?;
+
+        Ok(ReceiverOutput {
+            choices: self
+                .choices
+                .iter()
+                .map(|&choice| Choice::from(choice))
+                .collect(),
+            keys,
+        })
+    }
 }
+
+/// The receiver's choice bit and chosen key for every transfer: row `i` of
+/// `keys` is the key of bit `choices[i]`.
+pub struct ReceiverOutput {
+    pub choices: Vec<Choice>,
+    pub keys: BitMatrix,
+}
+
+impl_secret_debug!(ReceiverOutput);
 
 /// The receiver's message for one transfer. Deserialization rejects the
 /// identity.
@@ -69,11 +150,162 @@ pub struct ReceiverPublicKey<C: Ciphersuite> {
 #[expect(non_snake_case)]
 mod test {
     use rand::SeedableRng;
+    use rstest::rstest;
 
     use super::*;
-    use crate::{ecdsa::Secp256K1Sha256, test_utils::MockCryptoRng};
+    use crate::{
+        ecdsa::{
+            Secp256K1Sha256,
+            ot::{
+                base::pvw08::{SenderOutput, SenderRandomness},
+                bits::{BitVector, SquareBitMatrix},
+            },
+        },
+        test_utils::MockCryptoRng,
+    };
 
     type C = Secp256K1Sha256;
+
+    const SID: &[u8] = b"session";
+
+    fn sender() -> Participant {
+        Participant::from(0u32)
+    }
+
+    fn receiver() -> Participant {
+        Participant::from(1u32)
+    }
+
+    fn run(batch_size: usize) -> (SenderOutput, ReceiverOutput) {
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let crs = Crs::<C>::derive(SID).unwrap();
+        let secrets = ReceiverSecrets::<C>::random(batch_size, &mut rng);
+        let public_keys = secrets.public_keys(&crs);
+        let (ciphertexts, sender_output) = SenderRandomness::<C>::random(batch_size, &mut rng)
+            .encapsulate(&crs, SID, receiver(), &public_keys)
+            .unwrap();
+        let receiver_output = secrets
+            .decapsulate(SID, &public_keys, sender(), &ciphertexts)
+            .unwrap();
+        (sender_output, receiver_output)
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(128)]
+    #[case(1000)]
+    fn decapsulate__should_output_the_chosen_key_only(#[case] batch_size: usize) {
+        // Given / When
+        let (sender_output, receiver_output) = run(batch_size);
+
+        // Then
+        assert_eq!(receiver_output.choices.len(), batch_size);
+        assert_eq!(receiver_output.keys.height(), batch_size);
+        let sender_keys = sender_output.k0.rows().zip(sender_output.k1.rows());
+        let receiver_keys = receiver_output
+            .choices
+            .iter()
+            .zip(receiver_output.keys.rows());
+        for ((k0, k1), (&choice, key)) in sender_keys.zip(receiver_keys) {
+            assert_eq!(*key, BitVector::conditional_select(k0, k1, choice));
+            assert_ne!(*key, BitVector::conditional_select(k0, k1, !choice));
+        }
+    }
+
+    #[test]
+    fn decapsulate__should_output_what_an_ot_extension_expects_for_128_transfers() {
+        // Given
+        let (sender_output, receiver_output) = run(128);
+
+        // When
+        let k0 = SquareBitMatrix::try_from(sender_output.k0);
+        let k1 = SquareBitMatrix::try_from(sender_output.k1);
+        let keys = SquareBitMatrix::try_from(receiver_output.keys);
+
+        // Then
+        assert!(k0.is_ok());
+        assert!(k1.is_ok());
+        assert!(keys.is_ok());
+    }
+
+    #[test]
+    fn decapsulate__should_reject_a_batch_of_the_wrong_length() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let crs = Crs::<C>::derive(SID).unwrap();
+        let secrets = ReceiverSecrets::<C>::random(4, &mut rng);
+        let public_keys = secrets.public_keys(&crs);
+        let (mut ciphertexts, _) = SenderRandomness::<C>::random(4, &mut rng)
+            .encapsulate(&crs, SID, receiver(), &public_keys)
+            .unwrap();
+        ciphertexts.pop();
+
+        // When
+        let result = secrets.decapsulate(SID, &public_keys, sender(), &ciphertexts);
+
+        // Then
+        assert_eq!(
+            result.err(),
+            Some(ProtocolError::UnexpectedLength {
+                expected: 4,
+                actual: 3,
+                participant: sender(),
+            })
+        );
+    }
+
+    #[test]
+    fn decapsulate__should_reject_public_keys_of_another_batch() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let crs = Crs::<C>::derive(SID).unwrap();
+        let secrets = ReceiverSecrets::<C>::random(4, &mut rng);
+        let public_keys = secrets.public_keys(&crs);
+        let (ciphertexts, _) = SenderRandomness::<C>::random(4, &mut rng)
+            .encapsulate(&crs, SID, receiver(), &public_keys)
+            .unwrap();
+
+        // When
+        let result = secrets.decapsulate(SID, &public_keys[..3], sender(), &ciphertexts);
+
+        // Then
+        assert!(matches!(result, Err(ProtocolError::AssertionFailed(_))));
+    }
+
+    /// Shows why the string must be messy: in decryption mode, a receiver
+    /// holding the trapdoor recovers the key of the branch it did not choose.
+    #[test]
+    fn decapsulate__should_open_both_keys_under_a_decryption_mode_string() {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let (crs, trapdoor) = Crs::<C>::decryption_mode_with_trapdoor(&mut rng);
+        let secrets = ReceiverSecrets::<C>::random(20, &mut rng);
+        let public_keys = secrets.public_keys(&crs);
+        let (ciphertexts, sender_output) = SenderRandomness::<C>::random(20, &mut rng)
+            .encapsulate(&crs, SID, receiver(), &public_keys)
+            .unwrap();
+
+        // When
+        let other_branch = ReceiverSecrets::<C> {
+            choices: secrets.choices.iter().map(|choice| choice ^ 1).collect(),
+            exponents: secrets
+                .choices
+                .iter()
+                .zip(&secrets.exponents)
+                .map(|(&choice, &exponent)| trapdoor.exponent_on_other_branch(choice, exponent))
+                .collect(),
+        };
+        let other_output = other_branch
+            .decapsulate(SID, &public_keys, sender(), &ciphertexts)
+            .unwrap();
+
+        // Then
+        let sender_keys = sender_output.k0.rows().zip(sender_output.k1.rows());
+        let other_keys = other_output.choices.iter().zip(other_output.keys.rows());
+        for ((k0, k1), (&choice, key)) in sender_keys.zip(other_keys) {
+            assert_eq!(*key, BitVector::conditional_select(k0, k1, choice));
+        }
+    }
 
     #[test]
     fn random__should_sample_one_bit_and_one_exponent_per_transfer() {
