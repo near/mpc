@@ -94,7 +94,7 @@ API keys for authentication will need to be redacted for security reasons and th
 
 #### Redaction table
 
-The payload published by nodes is `RedactedConfig`, constructed
+The payload published by nodes is `RedactedForeignChainsConfig`, constructed
 field-by-field from `ForeignChainsConfig`. It is an allowlist: any field added
 upstream and not listed in the table below is **not** published.
 
@@ -106,7 +106,7 @@ upstream and not listed in the table below is **not** published.
 | `ForeignChainConfig::expected_network_fingerprint` | verbatim | A mismatch here is a bug we want to detect; not a credential. |
 | `ForeignChainConfig::providers` map keys (`RpcProviderName`) | verbatim | Identifies the provider; carries no credential. |
 | `ForeignChainProviderConfig::rpc_url` | scheme and host only, path/query/userinfo dropped (`https://eth-mainnet.g.alchemy.com/v2/<key>` → `https://eth-mainnet.g.alchemy.com`) | Provider URLs frequently carry an API key in the path, and `AuthConfig::Path` places a token inside the URL by design. Host alone is enough to tell which provider a node uses. Some providers include an MPC node operator-specific slug in the host, but this can be kept as redacting the API key will be enough. |
-| `ForeignChainProviderConfig::auth` | variant name only (`"none"` / `"header"` / `"path"`) | Knowing *how* a provider authenticates is useful for debugging; the credential never is. |
+| `ForeignChainProviderConfig::auth` | variant name only (`"none"` / `"header"` / `"path"` / `"query"`) | Knowing *how* a provider authenticates is useful for debugging; the credential never is. |
 | `TokenConfig::Val { val }` | **dropped entirely** | Literal secret. |
 | `TokenConfig` environment-variable / file-path variants | **dropped entirely** | The name or path is not itself a secret, but publishing it gives an attacker a map of where credentials live for no debugging benefit. |
 
@@ -136,7 +136,7 @@ Blaire will expose the following endpoints:
 |--------|----------|-------------|-------|
 | POST | `/api/v1/reports` | Publish config info | `config:write` |
 | GET | `/api/v1/nodes` | List currently participating nodes | `nodes:read` |
-| GET | `/api/v1/nodes/{account_id}/{tls_public_key}/config` | Fetch latest reported config from a node | `config:read` |
+| GET | `/api/v1/nodes/{tls_key}}/config` | Fetch latest reported config from a node | `config:read` |
 | GET | `/api/v1/nodes/{account_id}/history` | Fetch the config history of an account's nodes | `config:read` |
 | GET | `/api/v1/configs?account_id=X&account_id=Y` | Compare the latest configs of the given accounts' nodes | `config:read` |
 | GET | `/api/v1/activity` | List all users' actions/requests | `audit:read` |
@@ -173,8 +173,8 @@ Among potential functions users will be able to compare different node configs s
 async fn get_node_config(
     State(state): State<AppState>,
     user: AuthenticatedUser,
-    Path(node_id): Path<NodeId>
-) -> Result<Json<ReportedData>,ApiError> {}
+    Path(tls_key): Path<TlsKey>,
+) -> Result<Json<ReportedData>, ApiError> {}
 ```
 
 #### Audit log
@@ -185,7 +185,7 @@ There will be an endpoint that serves the audit log, so that users can track pos
 async fn list_audit_log(
     State(state): State<AppState>,
     user: AuthenticatedUser,
-) -> Result<Json<Vec<AuditEvent>>,ApiError> {}
+) -> Result<Json<Vec<AuditEvent>>, ApiError> {}
 ```
 
 ## Data model
@@ -197,20 +197,13 @@ async fn list_audit_log(
 ```rust
 pub struct NodeReport {
     pub version: Version,
-    pub redacted_report: RedactedConfig,
+    pub redacted_config: RedactedForeignChainsConfig,
 }
 ```
 
 ### User <--> Blaire Interface
 
-`NodeId` identifies a node in URLs and as the lookup key. An account may be associated to multiple nodes, so the TLS key is part of the identity.
-
-```rust
-pub struct NodeId {
-    pub account_id: AccountId,
-    pub tls_public_key: Ed25519PublicKey,
-}
-```
+A node will be identified using its public TLS key ('TlsKey'), both in URLs and as the lookup key in the database. An account may be associated to multiple nodes, so the TLS key is part of the identity.
 
 ```rust
 pub struct AuthenticatedUser {
@@ -221,15 +214,23 @@ pub struct AuthenticatedUser {
 ### Database
 
 ```rust
+pub struct WhitelistedAccount {
+    pub account_id: AccountId,
+    pub added_by: UserId,
+    pub added_at: Timestamp,
+}
+
 pub struct MpcNode {
-    pub node_id: NodeId,
+    pub account_id: AccountId,
+    pub tls_key: TlsKey,
     pub added_at: Timestamp,
     pub block_height: BlockHeight,
 }
 
 pub struct ReportedData {
-    pub node_id: NodeId,
-    pub report: NodeReport,
+    pub account_id: AccountId,
+    pub tls_key: TlsKey,
+    pub node_report: NodeReport,
     pub received_at: Timestamp,
 }
 
@@ -241,7 +242,7 @@ pub struct AuditEvent {
 
 pub enum AuditAction {
     ListNodes,
-    ReadConfig(NodeId),
+    ReadConfig(TlsKey),
     ReadHistory(AccountId),
     ReadAuditLog,
 }

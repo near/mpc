@@ -1,0 +1,55 @@
+---
+source: crates/blaire-interface/src/lib.rs
+expression: json
+---
+{
+  "redacted_config": {
+    "abstract": {
+      "expected_network_fingerprint": "1",
+      "max_retries": 3,
+      "providers": {
+        "alchemy": {
+          "auth": "header",
+          "rpc_origin": "https://eth-mainnet.g.alchemy.com"
+        },
+        "infura": {
+          "auth": "path",
+          "rpc_origin": "https://mainnet.infura.io"
+        },
+        "public": {
+          "auth": "none",
+          "rpc_origin": "https://rpc.example.org"
+        },
+        "quicknode": {
+          "auth": "query",
+          "rpc_origin": "https://example.quiknode.pro"
+        }
+      },
+      "timeout_sec": 30
+    },
+    "ethereum": {
+      "expected_network_fingerprint": "1",
+      "max_retries": 3,
+      "providers": {
+        "alchemy": {
+          "auth": "header",
+          "rpc_origin": "https://eth-mainnet.g.alchemy.com"
+        },
+        "infura": {
+          "auth": "path",
+          "rpc_origin": "https://mainnet.infura.io"
+        },
+        "public": {
+          "auth": "none",
+          "rpc_origin": "https://rpc.example.org"
+        },
+        "quicknode": {
+          "auth": "query",
+          "rpc_origin": "https://example.quiknode.pro"
+        }
+      },
+      "timeout_sec": 30
+    }
+  },
+  "version": "3.18.0"
+}

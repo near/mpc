@@ -1430,6 +1430,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "blaire"
+version = "3.18.0"
+dependencies = [
+ "blaire-interface",
+ "near-account-id",
+ "near-block-primitives",
+ "near-mpc-crypto-types",
+]
+
+[[package]]
+name = "blaire-interface"
+version = "3.18.0"
+dependencies = [
+ "insta",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "blake2"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
