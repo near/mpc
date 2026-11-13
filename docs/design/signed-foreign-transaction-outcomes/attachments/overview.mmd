@@ -1,0 +1,9 @@
+flowchart RL
+    C["Caller"] -->|"makes V2 requests<br/>with expected values"| K["MPC contract"]
+    K -->|"returns the signed outcome"| C
+    subgraph N["MPC nodes"]
+        L["Leader"] -->|"coordinates signing rounds<br/>with evidence"| F["Followers"]
+        F -->|"send signed outcomes<br/>to every node, and shares"| L
+    end
+    L -->|"observes requests,<br/>sends responses"| K
+    F -.->|"observe requests"| K
