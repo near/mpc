@@ -96,10 +96,11 @@ impl EcdsaSignatureProvider {
 
     /// Reports the owned-asset gauges of every triple store of this provider,
     /// labelled by their `t`.
-    pub fn report_asset_metrics(&self) {
+    pub fn report_asset_metrics(&self) -> anyhow::Result<()> {
         for (t, store) in &self.triple_stores {
-            report_store(&TRIPLE_GAUGES, t.value(), store);
+            report_store(&TRIPLE_GAUGES, t.value(), store)?
         }
+        Ok(())
     }
 
     /// Returns the triple store for `t`, or an error if no store was

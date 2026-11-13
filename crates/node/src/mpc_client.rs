@@ -159,7 +159,7 @@ impl MpcClient {
             async move {
                 let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
                 loop {
-                    ecdsa.report_asset_metrics();
+                    ecdsa.report_asset_metrics().expect("should report metrics");
                     tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
                 }
             }
@@ -171,17 +171,14 @@ impl MpcClient {
                 MpcClient::monitor_passive_channels_inner(channel_receiver, self.clone()),
             )
         };
-
+        let self_clone = self.clone();
         let monitor_chain = {
             let chain_txn_sender = chain_txn_sender.clone();
-            tracking::spawn(
-                "monitor chain",
-                self.clone().monitor_block_updates(
-                    block_update_receiver,
-                    chain_txn_sender,
-                    debug_receiver,
-                ),
-            )
+            tracking::spawn("monitor chain", async {
+                self_clone
+                    .monitor_block_updates(block_update_receiver, chain_txn_sender, debug_receiver)
+                    .await
+            })
         };
 
         let tee_verification_handle = {
@@ -239,7 +236,7 @@ impl MpcClient {
 
         let _ = monitor_passive_channels.await?;
         asset_metrics_reporter.await?;
-        monitor_chain.await?;
+        let _ = monitor_chain.await?;
         let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
@@ -256,7 +253,7 @@ impl MpcClient {
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-    ) {
+    ) -> anyhow::Result<bool> {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
@@ -296,7 +293,7 @@ impl MpcClient {
                     let Some(block_update) = block_update else {
                         // If this branch hits, it means the channel is closed, meaning the
                         // indexer is being shutdown. So just quit this task.
-                        break;
+                        return Err(anyhow::anyhow!("Block update channel closed"));
                     };
 
                     self.network_client.update_indexer_height(block_update.block.height.into());
@@ -312,7 +309,7 @@ impl MpcClient {
 
                     // TODO(#3031): add batch request and unify stores
                     for request in &signature_requests.requests {
-                        self.sign_request_store.add(request);
+                        self.sign_request_store.add(request)?;
                     }
 
                     // TODO(#3032): remove completed & finalized requests from store
@@ -325,7 +322,7 @@ impl MpcClient {
                         block_update.completed_ckds
                     );
                     for request in &ckd_requests.requests {
-                        self.ckd_request_store.add(request);
+                        self.ckd_request_store.add(request)?;
                     }
 
                     pending_ckds.notify_new_block(ckd_requests);
@@ -338,7 +335,7 @@ impl MpcClient {
                     );
 
                     for request in &verify_foreign_tx_requests.requests {
-                        self.verify_foreign_tx_request_store.add(request);
+                        self.verify_foreign_tx_request_store.add(request)?;
                     }
                     pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                 }
@@ -519,7 +516,7 @@ impl MpcClient {
                             .unwrap()
                             .last_response_submission = Some(Clock::real().now());
 
-                        anyhow::Ok(())
+                        anyhow::Ok(true)
                     },
                 );
             }
