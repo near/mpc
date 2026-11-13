@@ -123,6 +123,20 @@ BorshSchemaContainer {
             length_range: 0..=4294967295,
             elements: "AuthenticatedParticipantId",
         },
+        "BlockCount": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "BlockHeight": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
         "Bls12381G2PublicKey": Struct {
             fields: UnnamedFields(
                 [
@@ -140,7 +154,7 @@ BorshSchemaContainer {
                 [
                     (
                         "key_event_timeout_blocks",
-                        "u64",
+                        "BlockCount",
                     ),
                     (
                         "tee_upgrade_deadline_duration_seconds",
@@ -456,11 +470,11 @@ BorshSchemaContainer {
                     ),
                     (
                         "started_in",
-                        "u64",
+                        "BlockHeight",
                     ),
                     (
                         "expires_on",
-                        "u64",
+                        "BlockHeight",
                     ),
                     (
                         "completed",

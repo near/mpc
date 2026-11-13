@@ -119,6 +119,16 @@ impl NearBlockchain {
         &self.rpc_url
     }
 
+    pub async fn protocol_version(&self) -> anyhow::Result<u32> {
+        let status = self
+            .root_client
+            .rpc()
+            .status()
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to query node status: {e}"))?;
+        Ok(status.protocol_version)
+    }
+
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
         let sk = key.to_near_secret_key();
         let signer = near_kit::signer::InMemorySigner::from_secret_key(account_id, sk)

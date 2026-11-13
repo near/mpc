@@ -3,4 +3,4 @@
 
 mod block_height;
 
-pub use block_height::BlockHeight;
+pub use block_height::{BlockCount, BlockHeight};

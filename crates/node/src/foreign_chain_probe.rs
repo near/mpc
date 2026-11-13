@@ -1,5 +1,6 @@
 //! Periodic probe of every configured foreign-chain RPC provider, via
-//! [`foreign_chain_health_check::probe`].
+//! [`foreign_chain_health_check::probe`], with the local config compared against the on chain
+//! provider whitelist.
 
 use std::future::Future;
 
@@ -7,7 +8,6 @@ use foreign_chain_health_check::probe::{ProbeReport, probe_all_providers};
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
 use tokio::sync::watch;
-use tracing::{info, warn};
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::tick::Tick;
@@ -15,40 +15,81 @@ use crate::tick::Tick;
 mod report;
 #[cfg(test)]
 mod test_utils;
+mod whitelist_diagnostics;
 
 /// Asks every configured RPC provider which network it serves, once per tick of `ticker` and
 /// whenever `whitelist_rx` changes, and reports the verdicts as logs and metrics. Diagnostic only:
 /// nothing gates on the result.
 ///
-/// The probe starts before the indexer has read the whitelist from the contract, so `whitelist_rx`
-/// holds `None` until then, and each round logs that the whitelist is not read yet.
+/// Each round logs a line per unhealthy provider and per difference between the local config and
+/// the whitelist, see [`whitelist_diagnostics`], then one summary line. The probe starts before the
+/// indexer has read the whitelist from the contract, so `whitelist_rx` holds `None` until then, and
+/// the summary says the whitelist is not read yet.
 pub async fn run_periodic_probe(
     foreign_chains: ForeignChainsConfig,
     whitelist_rx: watch::Receiver<Option<ForeignChainWhitelist>>,
     ticker: impl Tick,
 ) {
     if foreign_chains.is_empty() {
-        warn!("no foreign chain is configured: this node cannot verify foreign-chain transactions");
+        tracing::warn!(
+            "no foreign chain is configured: this node cannot verify foreign-chain transactions"
+        );
         return;
     }
 
     probe_periodically(
         || probe_all_providers(&foreign_chains, &InspectorFactory),
-        finish_round,
+        |report, whitelist| finish_round(report, &foreign_chains, whitelist),
         whitelist_rx,
         ticker,
     )
     .await;
 }
 
-const WHITELIST_NOT_READ: &str = "foreign chain whitelist: not read from the contract yet";
+const ROUND_COMPLETE: &str = "foreign chain probe round complete";
+const WHITELIST_NOT_READ: &str = "not read yet";
+const WHITELIST_MATCHES: &str = "matches the local config";
 
-fn finish_round(report: &ProbeReport, whitelist: Option<&ForeignChainWhitelist>) {
+fn finish_round(
+    report: &ProbeReport,
+    local: &ForeignChainsConfig,
+    whitelist: Option<&ForeignChainWhitelist>,
+) {
     report::publish_metrics(report);
-    report::log_report(report);
-    if whitelist.is_none() {
-        info!("{WHITELIST_NOT_READ}");
+    let rows = report.rows();
+    rows.iter()
+        .filter(|row| report::provider_is_unhealthy(row))
+        .for_each(report::log_unhealthy_provider);
+    let report::Summary {
+        probed,
+        healthy,
+        unchecked,
+        unchecked_chains,
+    } = report::summarize(rows);
+    if probed == 0 {
+        report::log_nothing_checked(rows);
     }
+
+    let whitelist_differences =
+        whitelist.map(|whitelist| whitelist_diagnostics::compare(local, whitelist));
+    whitelist_differences
+        .iter()
+        .flatten()
+        .for_each(whitelist_diagnostics::log_diagnostic);
+    let whitelist_state = match whitelist_differences.map(|differences| differences.len()) {
+        None => WHITELIST_NOT_READ.to_string(),
+        Some(0) => WHITELIST_MATCHES.to_string(),
+        Some(1) => "1 difference from the local config".to_string(),
+        Some(count) => format!("{count} differences from the local config"),
+    };
+    tracing::info!(
+        healthy,
+        probed,
+        unchecked,
+        ?unchecked_chains,
+        whitelist = whitelist_state,
+        "{ROUND_COMPLETE}"
+    );
 }
 
 /// Each round ends with `finish_round`, given the whitelist as read after the probe, so a change
@@ -68,7 +109,6 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
             Ok(()) = whitelist_rx.changed() => {}
         }
 
-        info!("probing foreign-chain RPC providers");
         let report = probe().await;
         let whitelist = whitelist_rx.borrow_and_update().clone();
         finish_round(&report, whitelist.as_ref());
@@ -79,9 +119,10 @@ async fn probe_periodically<Probe: Future<Output = ProbeReport>>(
 #[expect(non_snake_case)]
 mod tests {
     use std::cell::{Cell, RefCell};
-    use std::collections::VecDeque;
+    use std::collections::{BTreeMap, VecDeque};
 
     use foreign_chain_health_check::probe::{ProviderCounts, ProviderStatus};
+    use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
     use near_mpc_contract_interface::types as dtos;
     use rstest::rstest;
     use tracing_test::traced_test;
@@ -89,7 +130,8 @@ mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
-        empty_report, gauges, mock_finish_round, mock_probe, no_whitelist, row, whitelist_of,
+        chain_config, empty_report, foreign_chains, gauges, mock_finish_round, mock_probe,
+        no_whitelist, row, whitelist_of,
     };
     use crate::tick::MockTicker;
 
@@ -132,7 +174,7 @@ mod tests {
         // When
         let MaybeReady::Future(parked_probe_loop) = run_future_once(probe_periodically(
             probe_dispatch,
-            finish_round,
+            |report, whitelist| finish_round(report, &ForeignChainsConfig::default(), whitelist),
             no_whitelist(),
             ticker.clone(),
         )) else {
@@ -257,19 +299,109 @@ mod tests {
         assert_eq!(*whitelists_seen.borrow(), vec![Some(whitelist)]);
     }
 
+    fn polygon_config() -> ForeignChainsConfig {
+        let alchemy = ForeignChainProviderConfig {
+            rpc_url: "https://polygon-mainnet.g.alchemy.com/v2".to_string(),
+            auth: AuthConfig::None,
+        };
+        foreign_chains([(
+            dtos::ForeignChain::Polygon,
+            chain_config(&[("alchemy", alchemy)]),
+        )])
+    }
+
     #[traced_test]
     #[rstest]
-    #[case::without_a_whitelist(None, true)]
-    #[case::with_a_whitelist(Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)), false)]
-    fn finish_round__should_log_that_the_whitelist_is_not_read_only_without_one(
+    #[case::without_a_whitelist(ForeignChainsConfig::default(), None, WHITELIST_NOT_READ)]
+    #[case::with_a_matching_whitelist(
+        ForeignChainsConfig::default(),
+        Some(BTreeMap::new()),
+        WHITELIST_MATCHES
+    )]
+    #[case::with_a_differing_whitelist(
+        polygon_config(),
+        Some(BTreeMap::new()),
+        "1 difference from the local config"
+    )]
+    fn finish_round__should_end_with_one_line_that_says_how_the_config_compares_with_the_whitelist(
+        #[case] local: ForeignChainsConfig,
         #[case] whitelist: Option<ForeignChainWhitelist>,
-        #[case] expect_logged: bool,
+        #[case] whitelist_state: &str,
     ) {
         // When
-        finish_round(&empty_report(), whitelist.as_ref());
+        finish_round(&empty_report(), &local, whitelist.as_ref());
 
         // Then
-        assert_eq!(logs_contain(WHITELIST_NOT_READ), expect_logged);
+        logs_assert(|lines: &[&str]| {
+            let round_lines: Vec<_> = lines
+                .iter()
+                .filter(|line| line.contains(ROUND_COMPLETE))
+                .collect();
+            match round_lines.as_slice() {
+                [line] if line.contains(whitelist_state) => Ok(()),
+                _ => Err(format!(
+                    "expected one round line with {whitelist_state:?}, got {round_lines:?}"
+                )),
+            }
+        });
+    }
+
+    #[test]
+    #[traced_test]
+    fn finish_round__should_log_each_problem_then_one_summary_line() {
+        // Given
+        let report = ProbeReport::from(vec![
+            row(
+                dtos::ForeignChain::Polygon,
+                "alchemy",
+                ProviderStatus::Healthy,
+            ),
+            row(
+                dtos::ForeignChain::Polygon,
+                "quicknode",
+                ProviderStatus::Unreachable,
+            ),
+            row(
+                dtos::ForeignChain::Ton,
+                "toncenter",
+                ProviderStatus::ProbeNotImplemented,
+            ),
+        ]);
+        let whitelist = ForeignChainWhitelist::new();
+
+        // When
+        finish_round(&report, &polygon_config(), Some(&whitelist));
+
+        // Then
+        logs_assert(|lines: &[&str]| {
+            let matching = |text: &str| -> Vec<&&str> {
+                lines.iter().filter(|line| line.contains(text)).collect()
+            };
+            let unhealthy = matching("provider is unhealthy");
+            let not_whitelisted = matching("chain is not whitelisted yet");
+            let round = matching(ROUND_COMPLETE);
+            let checks = [
+                (
+                    "one unhealthy line, for quicknode",
+                    matches!(unhealthy.as_slice(), [line] if line.contains("quicknode")),
+                ),
+                ("one whitelist difference line", not_whitelisted.len() == 1),
+                (
+                    "no line for the healthy or the unchecked provider",
+                    matching("alchemy").is_empty() && matching("toncenter").is_empty(),
+                ),
+                (
+                    "one summary line with the counts and the whitelist state",
+                    matches!(round.as_slice(), [line] if line.contains(
+                        r#"healthy=1 probed=2 unchecked=1 unchecked_chains={"ton"} whitelist="1 difference from the local config""#
+                    )),
+                ),
+            ];
+            match checks.iter().find(|(_, passed)| !passed) {
+                Some((check, _)) => Err(format!("expected {check}, got {lines:#?}")),
+                None => Ok(()),
+            }
+        });
     }
 
     #[test]
