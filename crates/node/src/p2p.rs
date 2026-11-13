@@ -569,12 +569,13 @@ async fn run_echo_liveness(
         let next_timeout = echo_tracker.deadline();
         tokio::select! {
             _ = echo_interval.tick() => {
-                let nonce = echo_tracker.prepare_next_nonce();
-                echo_nonces.store(echo_tracker.next_nonce().0, Ordering::Relaxed);
+                let nonce = echo_tracker.next_nonce();
                 if !echo_tracker.start_echo(nonce, Instant::now(), ECHO_TIMEOUT) {
                     tracing::warn!(?nonce, "echo unsent, check tracker");
                     continue;
                 }
+                echo_tracker.prepare_next_nonce();
+                echo_nonces.store(echo_tracker.next_nonce().0, Ordering::Relaxed);
                 if sender.send(Packet::Echo(Heartbeat { nonce })).is_err() {
                     break;
                 }
@@ -583,10 +584,6 @@ async fn run_echo_liveness(
                 let Some(nonce) = ack else {
                     break;
                 };
-                if !echo_tracker.is_awaiting_ack() {
-                    tracing::debug!(?nonce, "ignoring EchoAck, no outstanding Echo");
-                    continue;
-                }
                 if let Some(rtt) = echo_tracker.receive_ack(nonce, Instant::now()) {
                     round_trip_time.observe(rtt.as_secs_f64());
                 } else if echo_tracker.is_stale(nonce) {
@@ -1001,6 +998,7 @@ async fn incoming_connection_handler(
     let peer_id_string = peer_id.to_string();
 
     let result: anyhow::Result<()> = async {
+        let supports_echo = peer_supports_echo(peer_network_protocol_version);
         let mut outgoing_check = interval_at(
             Instant::now().checked_add(OUTGOING_CHECK_INTERVAL).unwrap_or_else(Instant::now),
             OUTGOING_CHECK_INTERVAL,
@@ -1017,7 +1015,7 @@ async fn incoming_connection_handler(
                 loop {
                     tokio::select! {
                         biased;
-                        _ = outgoing_check.tick() => {
+                        _ = outgoing_check.tick(),if supports_echo => {
                             let outgoing_alive = peer
                                 .any_outgoing_connection()
                                 .is_some_and(|outgoing| !outgoing.closed.is_cancelled());

@@ -26,10 +26,11 @@ impl Default for EchoTracker {
 
 impl EchoTracker {
     pub fn with_capacity(max_outstanding: usize) -> Self {
+        let max = max_outstanding.min(127);
         Self {
             next_nonce: Rfc1982SerialU8::default(),
-            outstanding: Vec::with_capacity(max_outstanding),
-            max_outstanding,
+            outstanding: Vec::with_capacity(max),
+            max_outstanding: max,
         }
     }
 
@@ -82,7 +83,11 @@ impl EchoTracker {
             .outstanding
             .iter()
             .find(|echo| echo.nonce == incoming_nonce)?;
-        self.outstanding.retain(|echo| echo.sent_at > acked.sent_at);
+        if now >= acked.deadline {
+            return None;
+        }
+        self.outstanding
+            .retain(|echo| echo.nonce.greater_than(acked.nonce));
         Some(now.saturating_duration_since(acked.sent_at))
     }
 
@@ -96,12 +101,13 @@ impl EchoTracker {
         self.outstanding.iter().map(|echo| echo.deadline).min()
     }
 
-    pub fn is_awaiting_ack(&self) -> bool {
-        !self.outstanding.is_empty()
-    }
-
     pub fn max_outstanding(&self) -> usize {
         self.max_outstanding
+    }
+    
+    #[cfg(test)]
+    pub fn is_awaiting_ack(&self) -> bool {
+        !self.outstanding.is_empty()
     }
 }
 
@@ -130,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn echo__tracker__should_wraparound_for_nonce_sequence() {
+    fn echo_tracker__should_wraparound_for_nonce_sequence() {
         // Given
         let mut tracker = EchoTracker::default().with_next_nonce(Rfc1982SerialU8::new(254));
 
