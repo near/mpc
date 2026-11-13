@@ -1,0 +1,4 @@
+flowchart LR
+    L["Leader node<br/>(chosen by request hash)"] -->|"verifies first, then takes<br/>a presignature and opens<br/>a session with its exact set"| P["That presignature's participants<br/>(each verifies the request)"]
+    P -->|"all accept: sign"| S["Threshold signature"]
+    P -.->|"any reject: abort at once,<br/>leader retries"| L
