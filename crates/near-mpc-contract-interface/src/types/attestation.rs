@@ -214,7 +214,7 @@ pub struct DstackAttestation {
     derive(schemars::JsonSchema)
 )]
 pub enum MockAttestation {
-    /// Always pass validation
+    /// Always pass validation. Deliberately permitted for local testing and transitional phases.
     Valid,
     /// Always fails validation
     Invalid,
