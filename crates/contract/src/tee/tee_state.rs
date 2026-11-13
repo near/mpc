@@ -295,7 +295,8 @@ impl TeeState {
 
     /// Removes the launchers no participant in `current_participants` uses once their TTL has
     /// passed, after restamping the ones they do use. Pass the running participants: a launcher
-    /// used only by a participant missing here can be removed, which kicks that participant.
+    /// used only by a participant missing here can be removed, which invalidates that
+    /// participant's attestation.
     pub(crate) fn remove_unused_launchers(
         &mut self,
         current_participants: &Participants,
