@@ -47,7 +47,7 @@ members = [
 ]
 
 [workspace.package]
-version = "3.18.0"
+version = "3.19.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/near/mpc"
