@@ -1,4 +1,5 @@
 use crate::assets::DistributedAssetStorage;
+use crate::assets::retention::RecentPeer;
 use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
 use crate::db::{DBCol, SecretDB};
@@ -27,6 +28,8 @@ use std::time::Duration;
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::TripleGenerationOutput;
 use threshold_signatures::participants::Participant;
+
+const OFFLINE_TRIPLE_RETENTION: near_time::Duration = near_time::Duration::seconds(60);
 
 /// The distinct reconstruction thresholds `t` in `thresholds`. One triple store exists per `t`.
 pub fn distinct_thresholds(
@@ -106,9 +109,15 @@ impl EcdsaSignatureProvider {
             .iter()
             .map(|p| p.id)
             .collect();
+        let mut recently_alive = RecentPeer::new(
+            Clock::real(),
+            &running_participants,
+            OFFLINE_TRIPLE_RETENTION,
+        );
 
         loop {
-            let my_triples_count = triple_store.num_owned();
+            let available_triples_count = triple_store.num_owned();
+            let my_triples_count = triple_store.num_owned_with_parked();
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
 
@@ -195,10 +204,16 @@ impl EcdsaSignatureProvider {
             }
 
             // If the store is full, try to discard some triples which cannot be used right now
-            if my_triples_count >= config.desired_triples_to_buffer {
-                triple_store.maybe_discard_owned(32).await;
-            }
-
+            recently_alive.observe(&client.all_alive_participant_ids());
+            let discard_budget =
+                32 * usize::from(available_triples_count >= config.desired_triples_to_buffer);
+            triple_store
+                .maybe_discard_owned(
+                    discard_budget,
+                    &recently_alive.retained(),
+                    config.desired_triples_to_buffer,
+                )
+                .await;
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
