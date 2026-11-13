@@ -1,7 +1,11 @@
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_block_primitives::BlockHeight;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 
-use super::{ForeignChainRpcRequest, Hash256};
+use super::{
+    ExtractedValue, ForeignChainRpcRequest, ForeignTxVerificationOutcome, Hash256, YieldId,
+};
 use crate::types::SignatureResponse;
 use crate::types::primitives::DomainId;
 
@@ -103,6 +107,46 @@ pub struct VerifyForeignTransactionRequest {
     pub expected_payload_hash: Option<Hash256>,
 }
 
+/// Requests a [`ForeignTxSignPayload::V2`](super::ForeignTxSignPayload::V2) signature. Unlike V1 there is no
+/// expected payload hash: the V2 payload covers the [`YieldId`] and
+/// [`BlockHeight`] the contract assigns to the request, which the caller
+/// only learns from the response.
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct VerifyForeignTransactionRequestV2 {
+    pub request: ForeignChainRpcRequest,
+    pub domain_id: DomainId,
+    /// One value per extractor, in extractor order. A
+    /// [`ForeignTxVerificationOutcome::Verified`] answer means the extracted
+    /// values equal these.
+    pub expected_values: Vec<ExtractedValue>,
+}
+
+impl VerifyForeignTransactionRequestV2 {
+    /// SHA-256 of the Borsh encoded [`Self::expected_values`], as
+    /// [`ForeignTxSignPayloadV2::expected_values_hash`](super::ForeignTxSignPayloadV2::expected_values_hash) carries it.
+    pub fn expected_values_hash(&self) -> std::io::Result<Hash256> {
+        let mut hasher = sha2::Sha256::new();
+        borsh::BorshSerialize::serialize(&self.expected_values, &mut hasher)?;
+        Ok(Hash256(hasher.finalize().into()))
+    }
+}
+
 #[derive(
     Debug,
     Clone,
@@ -123,6 +167,36 @@ pub struct VerifyForeignTransactionRequest {
 pub struct VerifyForeignTransactionResponse {
     pub payload_hash: Hash256,
     pub signature: SignatureResponse,
+}
+
+/// Response to a [`VerifyForeignTransactionRequestV2`].
+///
+/// [`Self::payload_hash`] is the hash of the [`ForeignTxSignPayload::V2`](super::ForeignTxSignPayload::V2)
+/// built from the request, the hash of its expected values,
+/// [`Self::request_block_height`], [`Self::yield_id`] and [`Self::outcome`].
+#[derive(
+    Debug,
+    Clone,
+    Eq,
+    PartialEq,
+    Ord,
+    PartialOrd,
+    Hash,
+    Serialize,
+    Deserialize,
+    BorshSerialize,
+    BorshDeserialize,
+)]
+#[cfg_attr(
+    all(feature = "abi", not(target_arch = "wasm32")),
+    derive(schemars::JsonSchema, borsh::BorshSchema)
+)]
+pub struct VerifyForeignTransactionResponseV2 {
+    pub payload_hash: Hash256,
+    pub signature: SignatureResponse,
+    pub request_block_height: BlockHeight,
+    pub yield_id: YieldId,
+    pub outcome: ForeignTxVerificationOutcome,
 }
 
 #[cfg(test)]
