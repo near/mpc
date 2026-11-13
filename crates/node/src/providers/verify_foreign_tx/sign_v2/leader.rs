@@ -1,14 +1,19 @@
+mod rounds;
+
 use std::collections::{BTreeSet, HashSet};
 use std::future::Future;
+use std::sync::Arc;
 
 use anyhow::Context;
-use near_mpc_contract_interface::types::Tweak;
+use futures::FutureExt;
+use near_mpc_contract_interface::types::{self as dtos, Tweak};
 use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::ecdsa::KeygenOutput;
 use tokio::time::Instant;
 
 use super::{ROUND_DEADLINE, SignedVerdict};
 use crate::metrics;
+use crate::network::NetworkTaskChannel;
 use crate::network::computation::MpcLeaderCentricComputation;
 use crate::network::wire_format::VerifyForeignTxTaskId;
 use crate::primitives::{ParticipantId, UniqueId};
@@ -25,14 +30,27 @@ use crate::providers::verify_foreign_tx::node_outcomes::NodeOutcomes;
 use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
 use crate::providers::verify_foreign_tx::sign::TRIPLE_TAKE_GRACE_PERIOD;
 use crate::types::{VerifyForeignTxId, VerifyForeignTxRequestV2};
+pub(crate) use rounds::RoundsEnd;
+use rounds::{LeadSigningRounds, RoundFailure, lead_rounds};
 
-/// A signing round for a verdict, ready to start: the asset is taken, and every participant of
-/// the asset signed the verdict.
+/// The first signing round for a verdict, ready to start: the asset is taken, and every
+/// participant of the asset signed the verdict.
 pub(crate) struct VerdictRound {
     request: VerifyForeignTxRequestV2,
     evidence: VerdictEvidence,
-    paired_triple_id: UniqueId,
-    triples: PairedTriple,
+    asset: OwnedAsset<PairedTriple>,
+    triple_store: Arc<TripleStorage>,
+    keygen_out: KeygenOutput,
+    reconstruction_threshold: ReconstructionThreshold,
+}
+
+/// The signing rounds this node leads for a verdict. Every round reuses the evidence.
+struct VerdictRounds<'a> {
+    provider: &'a VerifyForeignTxProvider,
+    request: VerifyForeignTxRequestV2,
+    evidence: VerdictEvidence,
+    payload_hash: dtos::Hash256,
+    triple_store: Arc<TripleStorage>,
     keygen_out: KeygenOutput,
     reconstruction_threshold: ReconstructionThreshold,
 }
@@ -57,6 +75,12 @@ pub(crate) enum StopLeading {
     RequestClosed,
 }
 
+/// An owned asset this node took for a signing round it leads.
+struct OwnedAsset<T> {
+    id: UniqueId,
+    asset: T,
+}
+
 /// The owned assets of a leader, each shared with a set of participants.
 trait TakeOwnedMatching {
     type Asset;
@@ -79,6 +103,13 @@ struct RoundWait<'a, Assets> {
     threshold: usize,
 }
 
+/// The state a leader waits on for the asset of a retry.
+struct RetryAssetWait<'a, Assets> {
+    open_requests: &'a OpenVerifyForeignTxRequestsV2,
+    assets: &'a Assets,
+    request_id: VerifyForeignTxId,
+}
+
 impl VerifyForeignTxProvider {
     /// Waits until t supporters signed the same verdict for the open request `id`, and takes an
     /// asset whose participants all signed it. Fails with [`StopLeading`] when this node cannot
@@ -99,7 +130,6 @@ impl VerifyForeignTxProvider {
         let triple_store = self
             .ecdsa_signature_provider
             .triple_store_for_t(keyshare.reconstruction_threshold)?;
-        // TODO(#5125): take only a triple pair without the nodes that failed an earlier round.
         let (evidence, paired_triple_id, triples) = RoundWait {
             node_outcomes: self.v2.network.node_outcomes(),
             open_requests: &self.v2.open_requests,
@@ -122,58 +152,152 @@ impl VerifyForeignTxProvider {
         Ok(VerdictRound {
             request,
             evidence,
-            paired_triple_id,
-            triples,
+            asset: OwnedAsset {
+                id: paired_triple_id,
+                asset: triples,
+            },
+            triple_store,
             keygen_out: keyshare.keygen_output,
             reconstruction_threshold: ReconstructionThreshold::from(threshold),
         })
     }
 
-    /// Runs one signing round for the verdict. It ends at most [`ROUND_DEADLINE`] after Start.
-    pub(crate) async fn run_verdict_round(
+    /// Runs the signing rounds for the verdict of `round`, see [`lead_rounds`], and returns the
+    /// first signature.
+    pub(crate) async fn lead_verdict_rounds(
         &self,
         round: VerdictRound,
-    ) -> anyhow::Result<SignedVerdict> {
+    ) -> Result<SignedVerdict, RoundsEnd> {
         let VerdictRound {
             request,
             evidence,
-            paired_triple_id,
-            triples,
+            asset,
+            triple_store,
             keygen_out,
             reconstruction_threshold,
         } = round;
-        anyhow::ensure!(
-            self.v2.open_requests.get(request.id).is_some(),
-            "the V2 request closed before its signing round started"
-        );
-        let task_id = VerifyForeignTxTaskId::SignOutcome {
-            yield_id: request.yield_id,
-            outcome: RoundOutcome::Verdict(evidence.verdict),
-            paired_triple_id,
-        };
-        let channel = self.v2.network.new_channel_for_task_with_evidence(
-            task_id,
-            participants_from_triples(&triples.0, &triples.1),
-            evidence.statements,
-        )?;
         let payload_hash = request
             .sign_payload(evidence.verdict.into())
-            .compute_msg_hash()?;
-        let (signature, public_key) = OnlinePresignSignComputation {
+            .compute_msg_hash()
+            .map_err(|error| RoundsEnd::Local(error.into()))?;
+        let rounds = VerdictRounds {
+            provider: self,
+            request,
+            evidence,
+            payload_hash,
+            triple_store,
             keygen_out,
             reconstruction_threshold,
-            triples,
-            msg_hash: payload_hash.clone().into(),
-            tweak: Tweak::new([0; 32]),
+        };
+        lead_rounds(&rounds, asset).await
+    }
+}
+
+impl LeadSigningRounds for VerdictRounds<'_> {
+    type Asset = OwnedAsset<PairedTriple>;
+    type Signed = SignedVerdict;
+
+    async fn take_retry_asset(
+        &self,
+        avoid: &BTreeSet<ParticipantId>,
+    ) -> Result<OwnedAsset<PairedTriple>, StopLeading> {
+        let network = &self.provider.v2.network;
+        RetryAssetWait {
+            open_requests: &self.provider.v2.open_requests,
+            assets: self.triple_store.as_ref(),
+            request_id: self.request.id,
         }
-        .perform_leader_centric_computation(channel, ROUND_DEADLINE)
+        .take(
+            || {
+                let v2_capable = network
+                    .participants_supporting(V2_FOREIGN_TX_MIN_PROTOCOL_VERSION)
+                    .into_iter()
+                    .collect();
+                round_candidates(&self.evidence.backers, &v2_capable)
+            },
+            avoid,
+        )
+        .await
+    }
+
+    /// Runs one signing round. It ends at most [`ROUND_DEADLINE`] after Start.
+    async fn run_round(
+        &self,
+        triples: OwnedAsset<PairedTriple>,
+    ) -> Result<SignedVerdict, RoundFailure> {
+        if self
+            .provider
+            .v2
+            .open_requests
+            .get(self.request.id)
+            .is_none()
+        {
+            return Err(RoundFailure::Stopped(StopLeading::RequestClosed));
+        }
+        let task_id = VerifyForeignTxTaskId::SignOutcome {
+            yield_id: self.request.yield_id,
+            outcome: RoundOutcome::Verdict(self.evidence.verdict),
+            paired_triple_id: triples.id,
+        };
+        let channel = self.provider.v2.network.new_channel_for_task_with_evidence(
+            task_id,
+            participants_from_triples(&triples.asset.0, &triples.asset.1),
+            self.evidence.statements.clone(),
+        );
+        let (signature, public_key) = run_led_round(
+            channel,
+            OnlinePresignSignComputation {
+                keygen_out: self.keygen_out.clone(),
+                reconstruction_threshold: self.reconstruction_threshold,
+                triples: triples.asset,
+                msg_hash: self.payload_hash.clone().into(),
+                tweak: Tweak::new([0; 32]),
+            },
+        )
         .await?;
         Ok(SignedVerdict {
-            verdict: evidence.verdict,
-            payload_hash,
-            signature: signature.context("the leader should obtain a signature")?,
+            verdict: self.evidence.verdict,
+            payload_hash: self.payload_hash.clone(),
+            signature: signature
+                .context("the leader should obtain a signature")
+                .map_err(RoundFailure::Local)?,
             public_key,
         })
+    }
+}
+
+/// Runs `computation` as a signing round this node leads on `channel`, for at most
+/// [`ROUND_DEADLINE`] after Start, and counts the round. A channel that failed to open counts as
+/// a failed round.
+async fn run_led_round<T>(
+    channel: anyhow::Result<NetworkTaskChannel>,
+    computation: impl MpcLeaderCentricComputation<T>,
+) -> Result<T, RoundFailure> {
+    let result = match channel {
+        Ok(channel) => {
+            let channel_sender = channel.sender();
+            computation
+                .perform_leader_centric_computation(channel, ROUND_DEADLINE)
+                .await
+                .map_err(|error| RoundFailure::new(error, channel_sender.silent_participants()))
+        }
+        Err(error) => Err(RoundFailure::Unattributed(error)),
+    };
+    count_led_round(&result);
+    result
+}
+
+/// Counts a signing round this node led, with the label of its result.
+fn count_led_round<T>(result: &Result<T, RoundFailure>) {
+    let outcome_label = match result {
+        Ok(_) => metrics::SUCCEEDED_OUTCOME_LABEL,
+        Err(RoundFailure::DeadlineExceeded { .. }) => metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL,
+        Err(_) => metrics::FAILED_OUTCOME_LABEL,
+    };
+    for label in [metrics::TOTAL_RESULT_LABEL, outcome_label] {
+        metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED
+            .with_label_values(&[label])
+            .inc();
     }
 }
 
@@ -229,6 +353,41 @@ impl<Assets: TakeOwnedMatching> RoundWait<'_, Assets> {
                     return Ok((evidence, id, asset));
                 }
             }
+        }
+    }
+}
+
+impl<Assets: TakeOwnedMatching> RetryAssetWait<'_, Assets> {
+    /// Waits for a free asset whose participants all belong to `candidates`, and takes one
+    /// without any of `avoid` first. The candidates follow every indexed block. Fails with
+    /// [`StopLeading::RequestClosed`] once the request closes, and then takes no asset.
+    async fn take(
+        &self,
+        candidates: impl Fn() -> Vec<ParticipantId>,
+        avoid: &BTreeSet<ParticipantId>,
+    ) -> Result<OwnedAsset<Assets::Asset>, StopLeading> {
+        loop {
+            let block_indexed = self.open_requests.changed();
+            tokio::pin!(block_indexed);
+            block_indexed.as_mut().enable();
+            if self.open_requests.get(self.request_id).is_none() {
+                return Err(StopLeading::RequestClosed);
+            }
+            let candidates = candidates();
+            let preferred = candidates
+                .iter()
+                .filter(|participant| !avoid.contains(participant))
+                .copied()
+                .collect();
+            let (id, asset) = match self.assets.take_owned_matching(preferred).now_or_never() {
+                Some(taken) => taken,
+                None => tokio::select! {
+                    biased;
+                    _ = &mut block_indexed => continue,
+                    taken = self.assets.take_owned_matching(candidates) => taken,
+                },
+            };
+            return Ok(OwnedAsset { id, asset });
         }
     }
 }

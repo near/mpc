@@ -1,20 +1,21 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use mpc_primitives::domain::Protocol;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_time::Clock;
 
-use super::{MpcClient, run_led_computation};
+use super::MpcClient;
 use crate::foreign_chain_policy::ForeignChainLeadersRefiner;
 use crate::indexer::tx_sender::TransactionSender;
 use crate::indexer::types::{
     ChainSendTransactionRequest, VerifyForeignTransactionRespondV2ArgsExt,
 };
-use crate::metrics;
-use crate::providers::verify_foreign_tx::ROUND_DEADLINE;
 use crate::providers::verify_foreign_tx::node_outcomes::NodeOutcomes;
 use crate::providers::verify_foreign_tx::open_requests::OpenVerifyForeignTxRequestsV2;
-use crate::requests::queue::{GenerationAttempt, PendingRequests, RefineEligibleLeaders};
+use crate::providers::verify_foreign_tx::{RoundsEnd, StopLeading};
+use crate::requests::queue::{
+    ComputationProgress, GenerationAttempt, PendingRequests, RefineEligibleLeaders,
+};
 use crate::tracking::AutoAbortTaskCollection;
 use crate::types::{RequestsUpdate, VerifyForeignTxId, VerifyForeignTxRequestV2};
 
@@ -109,9 +110,11 @@ impl MpcClient {
         let response = match existing_response {
             Some(response) => response,
             None => {
-                let response = self
-                    .compute_verify_foreign_tx_v2_response(&attempt.request)
-                    .await?;
+                let response = stop_leading_on_failure(
+                    &attempt.computation_progress,
+                    self.compute_verify_foreign_tx_v2_response(&attempt.request),
+                )
+                .await?;
                 attempt
                     .computation_progress
                     .lock()
@@ -131,8 +134,8 @@ impl MpcClient {
         Ok(())
     }
 
-    /// Waits for a verdict t nodes signed, and runs one signing round for it. Only the round
-    /// counts as a led computation.
+    /// Waits for a verdict t nodes signed, and runs the signing rounds for it. Each round counts
+    /// as a led computation.
     async fn compute_verify_foreign_tx_v2_response(
         &self,
         request: &VerifyForeignTxRequestV2,
@@ -142,13 +145,7 @@ impl MpcClient {
             Some(Protocol::CaitSith) => {
                 let provider = &self.verify_foreign_tx_provider;
                 let round = provider.prepare_verdict_round(request.id).await?;
-                // TODO(#5125): retry a failed round with a fresh asset.
-                let signed_verdict = run_led_computation(
-                    &metrics::MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED,
-                    ROUND_DEADLINE,
-                    provider.run_verdict_round(round),
-                )
-                .await?;
+                let signed_verdict = provider.lead_verdict_rounds(round).await?;
                 contract_args::VerifyForeignTransactionRespondV2Args::from_signed_verdict(
                     request.yield_id,
                     signed_verdict,
@@ -160,6 +157,20 @@ impl MpcClient {
             None => anyhow::bail!("Signature scheme is not found for domain: {domain_id:?}"),
         }
     }
+}
+
+/// Runs `lead`, and marks in `progress` that this node stopped leading the request when `lead`
+/// ends with [`StopLeading`] or [`RoundsEnd`]. The queue then gives this node no further attempt
+/// at the request. Any other error leaves the request to a later attempt.
+async fn stop_leading_on_failure<T>(
+    progress: &Mutex<ComputationProgress<contract_args::VerifyForeignTransactionRespondV2Args>>,
+    lead: impl Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    lead.await.inspect_err(|error| {
+        if error.is::<StopLeading>() || error.is::<RoundsEnd>() {
+            progress.lock().unwrap().stopped_leading = true;
+        }
+    })
 }
 
 fn notify_v2_block<Refiner: RefineEligibleLeaders<VerifyForeignTxRequestV2>>(
