@@ -121,7 +121,7 @@ impl From<MpcContract> for crate::MpcContract {
             &old.node_migrations,
         );
 
-        crate::MpcContract {
+        crate::v3_19_0_state::MpcContract {
             protocol_state: ProtocolContractState::Running(running_state.into()),
             pending_signature_requests: old.pending_signature_requests,
             pending_ckd_requests: old.pending_ckd_requests,
@@ -137,6 +137,7 @@ impl From<MpcContract> for crate::MpcContract {
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: GovernanceThresholdParametersVotes::default(),
         }
+        .into()
     }
 }
 

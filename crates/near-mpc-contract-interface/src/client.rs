@@ -14,13 +14,14 @@ use crate::call_args::{
     AvailableAttestationGrantsArgs, CKDRespondArgs, CleanInvalidAttestationsArgs,
     DerivedPublicKeyArgs, GetAttestationArgs, GetPendingCKDRequestArgs,
     GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs, InitArgs,
-    InitRunningArgs, PrepayAttestationStorageArgs, PublicKeyArgs, RegisterBackupServiceArgs,
-    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs,
-    StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
-    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
-    VoteAddDomainsArgs, VoteAddLauncherHashArgs, VoteAddOsMeasurementArgs, VoteCancelKeygenArgs,
-    VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs,
-    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
+    InitRunningArgs, PrepayAttestationStorageArgs, PublicKeyArgs, ReadRpcArgs,
+    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs,
+    SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
+    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
+    VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs, VoteAddLauncherHashArgs,
+    VoteAddOsMeasurementArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
+    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs, VoteResharedArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -34,7 +35,7 @@ use crate::method_names::{
     GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
     GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
     LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
+    OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, READ_RPC,
     REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
@@ -56,7 +57,7 @@ use crate::types::{
     ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
     SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
     Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse, YieldIndex,
+    VerifyForeignTransactionRequestV2, VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -242,6 +243,21 @@ impl<C: CallContract> MpcContractHandle<C> {
             RESPOND_VERIFY_FOREIGN_TX,
             args,
             MAX_GAS,
+        ))
+        .await
+    }
+
+    /// Submits a V2 foreign transaction request, under its external name Read RPC.
+    pub async fn read_rpc(
+        &self,
+        request: VerifyForeignTransactionRequestV2,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&ReadRpcArgs::new(request))?;
+        self.call(FunctionCallArgs::new(
+            READ_RPC,
+            args,
+            SIGN_GAS,
+            NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         ))
         .await
     }
@@ -771,19 +787,19 @@ pub enum MpcContractHandleError<E> {
 mod tests {
     use super::MpcContractHandle;
     use crate::types::{
-        AccountId, AttemptId, Attestation, AuthScheme, BackupServiceInfo, BitcoinExtractor,
-        BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV,
-        CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, DestinationNodeInfo,
-        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ExpectedMeasurements,
-        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GovernanceThreshold,
-        GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint, K256Scalar,
-        K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
-        MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
-        ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
-        SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
-        VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-        VerifyForeignTransactionResponse,
+        AccountId, AttemptId, Attestation, AuthScheme, BackupServiceInfo, BitcoinExtractedValue,
+        BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey,
+        CKDAppPublicKeyPV, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting,
+        DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
+        ExpectedMeasurements, ExtractedValue, ForeignChain, ForeignChainRpcRequest,
+        ForeignTxPayloadVersion, GovernanceThreshold, GovernanceThresholdParameters, Hash256,
+        InitConfig, K256AffinePoint, K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest,
+        Keyset, LauncherImageHash, MockAttestation, MrtdHash, ParticipantId, ParticipantInfo,
+        Participants, Payload, ProposedGovernanceThresholdParameters, Protocol, ProviderConfig,
+        ProviderId, PublicKey, ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+        SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update,
+        UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+        VerifyForeignTransactionRequestV2, VerifyForeignTransactionResponse,
     };
     use near_contract_transport::{
         CallContract, FunctionCallArgs, NearToken, ObservedState, mock::MockViewContract,
@@ -989,6 +1005,20 @@ mod tests {
                     signature: signature_response,
                 },
             )
+            .await
+            .unwrap();
+        handle
+            .read_rpc(VerifyForeignTransactionRequestV2 {
+                request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                    tx_id: BitcoinTxId([7u8; 32]),
+                    confirmations: BlockConfirmations(1),
+                    extractors: [BitcoinExtractor::BlockHash].into(),
+                }),
+                domain_id: DomainId(0),
+                expected_values: vec![ExtractedValue::BitcoinExtractedValue(
+                    BitcoinExtractedValue::BlockHash(Hash256([7u8; 32])),
+                )],
+            })
             .await
             .unwrap();
         handle

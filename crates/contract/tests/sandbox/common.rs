@@ -221,6 +221,12 @@ impl SandboxTestSetupBuilder {
         self
     }
 
+    /// Deploys [`contract_build::current_contract_with_foreign_tx_v2`].
+    pub fn with_foreign_tx_v2(mut self) -> Self {
+        self.contract_wasm = contract_build::current_contract_with_foreign_tx_v2;
+        self
+    }
+
     /// Runs the sandbox at `protocol_version` instead of its binary's latest.
     pub fn at_protocol_version(mut self, protocol_version: u32) -> Self {
         self.protocol_version = Some(protocol_version);

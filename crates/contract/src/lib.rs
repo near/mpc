@@ -4,6 +4,7 @@ pub mod api;
 pub mod config;
 pub mod crypto_shared;
 pub mod errors;
+pub mod events;
 pub mod foreign_chain_rpc;
 pub mod foreign_chains_metadata;
 pub mod node_migrations;
@@ -16,11 +17,13 @@ pub mod update;
 pub mod utils;
 
 pub mod v3_18_0_state;
+pub mod v3_19_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
 mod dto_mapping;
 mod pending_requests;
+mod pending_verify_foreign_tx_v2;
 #[cfg(feature = "sandbox-test-methods")]
 mod sandbox_test_methods;
 
@@ -31,6 +34,7 @@ pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
     foreign_chains_metadata::ForeignChainsMetadata,
+    pending_verify_foreign_tx_v2::PendingVerifyForeignTxRequestsV2,
     primitives::threshold_votes::GovernanceThresholdParametersVotes, tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
@@ -69,6 +73,7 @@ pub struct MpcContract {
     available_attestation_grants: IterableMap<AccountId, u32>,
     /// Pending votes for new parameters; storage-backed, so kept outside [`ProtocolContractState`].
     parameters_votes: GovernanceThresholdParametersVotes,
+    pending_verify_foreign_tx_v2_requests: PendingVerifyForeignTxRequestsV2,
 }
 
 impl Default for MpcContract {

@@ -66,6 +66,15 @@ pub enum RequestError {
         "Pending-request queue is full for this request key (limit: {limit}). Try again once an in-flight response or timeout has cleared room."
     )]
     PendingRequestQueueFull { limit: u8 },
+    #[error("The yield id {yield_id:?} is already pending. This is a bug in the contract.")]
+    YieldIdCollision { yield_id: dtos::YieldId },
+    #[error(
+        "The request has {extractors} extractors but {expected_values} expected values. It needs one expected value per extractor."
+    )]
+    ExpectedValuesCountMismatch {
+        extractors: usize,
+        expected_values: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
