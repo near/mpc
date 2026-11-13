@@ -422,7 +422,7 @@ We grant access to all contract methods rather than an explicit allow-list becau
 > key never leaves the CVM, so it is only exposed if the TEE is broken or the
 > node has a code-execution exploit.
 
-Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`) reject the operator key: the contract requires the signer key to be the attested node account key.
+Node-only contract APIs (`respond`, `respond_ckd`, `respond_verify_foreign_tx`, the key-event calls, `register_foreign_chains_config`, `register_outcome_key`) reject the operator key: the contract requires the signer key to be the attested node account key.
 
 ## Remote Attestation
 
