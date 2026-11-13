@@ -47,6 +47,7 @@ pub const BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED: u16 = 29;
 pub const LEADER_FAILOVER_PORT_SEED: u16 = 30;
 pub const FOREIGN_TX_DOMAIN_AFTER_REGISTRATION_PORT_SEED: u16 = 31;
 pub const MAINNET_PROTOCOL_PORT_SEED: u16 = 32;
+pub const READ_RPC_PORT_SEED: u16 = 33;
 
 /// Start a cluster, wait for Running state and, if a domain uses [`Protocol::CaitSith`], for
 /// triples to buffer.
@@ -307,6 +308,17 @@ pub fn must_load_contract_wasm() -> Vec<u8> {
         "MPC_CONTRACT_WASM",
         "target/near/contract/mpc_contract.wasm",
         test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml"),
+    )
+}
+
+/// The contract with the V2 foreign transaction methods. Its release build leaves them out.
+pub fn must_load_contract_wasm_with_foreign_tx_v2() -> Vec<u8> {
+    test_utils::contract_build::must_load_wasm(
+        "MPC_CONTRACT_FOREIGN_TX_V2_WASM",
+        "target/near/mpc_contract_foreign_tx_v2/mpc_contract.wasm",
+        test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml")
+            .out_dir("target/near/mpc_contract_foreign_tx_v2")
+            .features(&["foreign-tx-v2"]),
     )
 }
 

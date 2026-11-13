@@ -643,6 +643,11 @@ where
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_REQUESTS_INDEXED_TOTAL,
             ),
+            types::RequestType::VerifyForeignTxV2 => (
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_RESPONSES_INDEXED_TOTAL,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL,
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_REQUESTS_INDEXED_TOTAL,
+            ),
         };
         let RequestsUpdate::<RequestType> {
             requests,
@@ -744,6 +749,11 @@ where
                 &metrics::MPC_PENDING_VERIFY_FOREIGN_TXS_QUEUE_FINALIZED_RESPONSES_INDEXED_TOTAL,
                 &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_BLOCKS,
                 &metrics::VERIFY_FOREIGN_TXS_REQUEST_RESPONSE_LATENCY_SECONDS,
+            ),
+            types::RequestType::VerifyForeignTxV2 => (
+                &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_FINALIZED_RESPONSES_INDEXED_TOTAL,
+                &metrics::VERIFY_FOREIGN_TX_V2S_REQUEST_RESPONSE_LATENCY_BLOCKS,
+                &metrics::VERIFY_FOREIGN_TX_V2S_REQUEST_RESPONSE_LATENCY_SECONDS,
             ),
         };
         let now = self.clock.now();
@@ -879,6 +889,10 @@ where
                 types::RequestType::VerifyForeignTx => (
                     &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_QUEUE_SIZE_TOTAL,
                     &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_QUEUE_ATTEMPTS_GENERATED_TOTAL,
+                ),
+                types::RequestType::VerifyForeignTxV2 => (
+                    &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_V2_QUEUE_SIZE_TOTAL,
+                    &metrics::MPC_PENDING_VERIFY_FOREIGN_TX_V2_QUEUE_ATTEMPTS_GENERATED_TOTAL,
                 ),
             };
 

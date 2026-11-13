@@ -729,6 +729,8 @@ impl FakeIndexerCore {
                 verify_foreign_tx_requests,
                 completed_verify_foreign_txs: Vec::new(),
                 verify_foreign_tx_v2_requests: Vec::new(),
+                answered_verify_foreign_tx_v2s: Vec::new(),
+                timed_out_verify_foreign_tx_v2s: Vec::new(),
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, uid) in transactions_to_process {
@@ -823,6 +825,9 @@ impl FakeIndexerCore {
                         contract.vote_abort_key_event(account_id, Into::into(abort.key_event_id));
                     }
                     ChainSendTransactionRequest::VerifyTee() => {}
+                    ChainSendTransactionRequest::VerifyForeignTransactionRespondV2(_) => {
+                        tracing::warn!("the fake indexer has no V2 foreign tx requests to answer");
+                    }
                     ChainSendTransactionRequest::SubmitParticipantInfo(_) => {
                         // TODO(#1203): Submitting participant info is not implemented for tests yet.
                     }

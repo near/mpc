@@ -10,7 +10,7 @@ use crate::indexer::foreign_chain::ForeignChainSupporters;
 use crate::primitives::ParticipantId;
 use crate::requests::queue::RefineEligibleLeaders;
 use crate::tracking::{self, AutoAbortTask};
-use crate::types::VerifyForeignTxRequest;
+use crate::types::{VerifyForeignTxRequest, VerifyForeignTxRequestV2};
 
 /// Participants supporting each available foreign chain; chains without a
 /// signing quorum are omitted.
@@ -163,18 +163,34 @@ impl RefineEligibleLeaders<VerifyForeignTxRequest> for ForeignChainLeadersRefine
         request: &VerifyForeignTxRequest,
         eligible: &HashSet<ParticipantId>,
     ) -> HashSet<ParticipantId> {
-        let refined = match self
-            .supporters_receiver
-            .borrow()
-            .get(&request.request.chain())
-        {
+        self.refine_for_chain(request.request.chain(), eligible)
+    }
+}
+
+impl RefineEligibleLeaders<VerifyForeignTxRequestV2> for ForeignChainLeadersRefiner {
+    fn refine(
+        &self,
+        request: &VerifyForeignTxRequestV2,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId> {
+        self.refine_for_chain(request.request.chain(), eligible)
+    }
+}
+
+impl ForeignChainLeadersRefiner {
+    fn refine_for_chain(
+        &self,
+        chain: dtos::ForeignChain,
+        eligible: &HashSet<ParticipantId>,
+    ) -> HashSet<ParticipantId> {
+        let refined = match self.supporters_receiver.borrow().get(&chain) {
             Some(supporters) => supporters & eligible,
             None => return HashSet::new(),
         };
         match self.quorum {
             None => {
                 tracing::error!(
-                    chain = ?request.request.chain(),
+                    ?chain,
                     "chain has supporters but there is no ForeignTx domain, this should never happen"
                 );
                 refined

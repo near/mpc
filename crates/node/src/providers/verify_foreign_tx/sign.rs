@@ -25,7 +25,7 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
-const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
+pub(crate) const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
     request: &VerifyForeignTxRequest,
@@ -56,7 +56,7 @@ fn build_signature_request(
 
 // Awaits on the future for specified grace duration, and calls on_slow
 // if grace period expires.
-async fn await_with_slow_hook<F: Future>(
+pub(crate) async fn await_with_slow_hook<F: Future>(
     grace: Duration,
     fut: F,
     on_slow: impl FnOnce(),
@@ -78,26 +78,7 @@ impl VerifyForeignTxProvider {
     ) -> anyhow::Result<((dtos::ForeignTxSignPayload, Signature), VerifyingKey)> {
         let foreign_tx_request = self.verify_foreign_tx_request_store.get(id).await?;
         let requested_chain = foreign_tx_request.request.chain();
-
-        let chain_supporters: HashSet<ParticipantId> = {
-            let snapshot = self.supporters_by_foreign_chain.borrow().clone();
-            ensure_chain_is_available(&snapshot, foreign_tx_request.request.chain()).inspect_err(
-                |_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc(),
-            )?;
-            snapshot.get(&requested_chain).cloned().unwrap_or_default()
-        };
-
-        // Leader selection already narrows to chain supporters. Re-check as
-        // defense-in-depth, since the supporters snapshot may have changed
-        // between leader selection and this attempt.
-        let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
-        if !chain_supporters.contains(&my_participant_id) {
-            metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
-            anyhow::bail!(
-                "selected as leader for a {requested_chain:?} request but this node no longer \
-                 supports that chain. Supporters must have changed since leader selection"
-            );
-        }
+        let chain_supporters = self.leader_chain_supporters(requested_chain)?;
 
         let response_payload = self
             .execute_foreign_chain_request(
@@ -146,6 +127,34 @@ impl VerifyForeignTxProvider {
         Ok(((response_payload, signature), public_key))
     }
 
+    /// The supporters of `requested_chain`. A leader takes the participants of an attempt from
+    /// them.
+    pub(crate) fn leader_chain_supporters(
+        &self,
+        requested_chain: dtos::ForeignChain,
+    ) -> anyhow::Result<HashSet<ParticipantId>> {
+        let chain_supporters: HashSet<ParticipantId> = {
+            let snapshot = self.supporters_by_foreign_chain.borrow().clone();
+            ensure_chain_is_available(&snapshot, requested_chain).inspect_err(|_| {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
+            })?;
+            snapshot.get(&requested_chain).cloned().unwrap_or_default()
+        };
+
+        // Leader selection already narrows to chain supporters. Re-check as
+        // defense-in-depth, since the supporters snapshot may have changed
+        // between leader selection and this attempt.
+        let my_participant_id = self.ecdsa_signature_provider.my_participant_id();
+        if !chain_supporters.contains(&my_participant_id) {
+            metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc();
+            anyhow::bail!(
+                "selected as leader for a {requested_chain:?} request but this node no longer \
+                 supports that chain. Supporters must have changed since leader selection"
+            );
+        }
+        Ok(chain_supporters)
+    }
+
     pub(super) async fn make_verify_foreign_tx_online_presign_follower(
         &self,
         channel: NetworkTaskChannel,
@@ -158,6 +167,7 @@ impl VerifyForeignTxProvider {
                 channel,
                 paired_triple_id,
                 sign_request,
+                Duration::from_secs(self.config.signature.timeout_sec),
             )
             .await
     }
@@ -233,8 +243,6 @@ impl VerifyForeignTxProvider {
     /// Inspects the foreign transaction and checks the extracted values against
     /// [`dtos::VerifyForeignTransactionRequestV2::expected_values_hash`]. An error means this
     /// node could not inspect. That is a refusal, not a [`NodeOutcome`].
-    // TODO(#5123): call from the V2 signing flow.
-    #[expect(dead_code)]
     pub(crate) async fn reach_node_outcome(
         &self,
         request: &dtos::ForeignChainRpcRequest,
