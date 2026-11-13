@@ -7082,10 +7082,13 @@ version = "0.0.1"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
+ "ed25519-dalek 2.2.0",
  "hex",
+ "k256 0.13.4",
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-signature-verifier",
+ "rstest",
  "serde_json",
  "sha2 0.10.9",
  "test-utils",
