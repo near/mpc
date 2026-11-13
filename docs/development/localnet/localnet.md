@@ -7,12 +7,12 @@ have been automated in `scripts/launch-localnet.sh` for faster deployment.
 
 ## Prerequisites
 
-neard, near CLI (>= 0.25.0), cargo, grep, envsubst, python3-keyring
+neard, near CLI (>= 0.30.1), cargo, grep, envsubst, python3-keyring
 MPC repositoy is cloned, and you are in the MPC root folder.
 
 Older versions of near CLI return from `send` before the transaction is final, which races with the immediately-following view queries used throughout this guide and `scripts/launch-localnet.sh`.
 
-To get all the pinned tooling (matching `near-cli`, `cargo-near`, and wasm toolchain versions) without installing it on your host, run the commands in this guide inside the repo's nix devshell: start it with `nix develop`, or prefix a single command with `nix develop --command`.
+To get all the pinned tooling (matching `near-cli`, `cargo-near`, and wasm toolchain versions) without installing it on your host, run the commands in this guide inside the repo's nix devshell: start it with `nix develop .#localnet`, or prefix a single command with `nix develop .#localnet --command`.
 
 ## Install neard and MPC node binary
 
@@ -31,8 +31,12 @@ You should install `neard` from the same nearcore tag this workspace pins (see t
 cargo install --git https://github.com/near/nearcore --tag <NEARCORE_TAG> neard --locked
 ```
 
+`nix develop .#localnet` already provides a matching `neard`, built from that tag with the `sandbox` feature, so skip this step there.
+
+Build the MPC node:
+
 ```shell
-cargo install --path crates/node --locked
+cargo build -p mpc-node --release --locked
 ```
 
 ## Compile the signer contract
@@ -55,6 +59,7 @@ export MPC_CONTRACT_PATH="$(pwd)/target/near/mpc_contract/mpc_contract.wasm"
 To run a local NEAR network, first create the configuration with the following command.
 
 ```shell
+rm -rf ~/.near/mpc-localnet ~/.near/mpc-frodo ~/.near/mpc-sam
 neard --home ~/.near/mpc-localnet init --chain-id mpc-localnet
 ```
 
@@ -94,29 +99,14 @@ export VALIDATOR_KEY=$(cat ~/.near/mpc-localnet/validator_key.json | jq ".secret
 ## 2. Deploy the MPC contract to the network
 
 Now we can deploy the MPC contract with NEAR CLI (that you can install from <https://docs.near.org/tools/near-cli>).
-First, add the mpc-localnet as a network connection in the CLI.
-
-To view existing connections and the location of your CLI config file use;
-
-```shell
-near config show-connections
-```
-
-In the CLI config file, add the following.
-
-```toml
-[network_connection.mpc-localnet]
-network_name = "mpc-localnet"
-rpc_url = "http://localhost:3030/"
-wallet_url = "http://localhost:3030/"
-explorer_transaction_url = "http://localhost:3030/"
-linkdrop_account_id = "test.near"
-```
+It needs the mpc-localnet network connection from [near-cli-config.template.toml](near-cli-config.template.toml).
+On Linux, `nix develop .#localnet` provides a `near` that uses this config in place of your own.
+Otherwise, add the `[network_connection.mpc-localnet]` table to the CLI config file that `near config show-connections` points to.
 
 Now, create an account for the contract with the following command.
 
 ```shell
-near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself mpc-contract.test.near '1000 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 We can verify that the account exists and has 1000 NEAR with this command.
@@ -147,11 +137,11 @@ In this guide we'll run two MPC nodes. We'll call the nodes `Frodo` and `Sam`, a
 Before we're ready to initialize the nodes, we should create the accounts.
 
 ```shell
-near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself frodo.test.near '100 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 ```shell
-near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself sam.test.near '100 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 ```
 
 Next, we need to know the public key of our NEAR validator.
@@ -193,11 +183,11 @@ data directory using the `[near_init]` settings in the TOML config.
 In two separate shells run the MPC binary for Frodo and Sam:
 
 ```shell
-RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.toml
+RUST_LOG=info ./target/release/mpc-node start-with-config-file ~/.near/mpc-frodo/mpc-config.toml
 ```
 
 ```shell
-RUST_LOG=info mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.toml
+RUST_LOG=info ./target/release/mpc-node start-with-config-file ~/.near/mpc-sam/mpc-config.toml
 ```
 
 Notes:
@@ -310,7 +300,7 @@ Create and deploy the verifier account. Like the MPC contract, it has no
 initializer, so we deploy without an init call:
 
 ```shell
-near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
+near account create-account fund-myself tee-verifier.test.near '5 NEAR' autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as test.near network-config mpc-localnet sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 
 near contract deploy tee-verifier.test.near use-file "$TEE_VERIFIER_PATH" without-init-call network-config mpc-localnet sign-with-keychain send
 ```

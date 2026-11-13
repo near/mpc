@@ -156,7 +156,7 @@ create_node_account() {
   fi
   log "Creating NEAR node account: $NODE_ACCOUNT (payer=$FUNDER_ACCOUNT, balance=$NODE_INITIAL_BALANCE)"
   near account create-account fund-myself "$NODE_ACCOUNT" "$NODE_INITIAL_BALANCE" \
-    autogenerate-new-keypair save-to-keychain \
+    autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain \
     sign-as "$FUNDER_ACCOUNT" network-config "$NEAR_NETWORK_CONFIG" \
     sign-with-plaintext-private-key "$VALIDATOR_KEY" send
 }
