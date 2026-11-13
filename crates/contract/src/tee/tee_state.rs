@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::primitives::test_utils::bogus_ed25519_public_key;
 use crate::{
     dto_mapping::IntoInterfaceType,
     primitives::{
@@ -57,7 +59,8 @@ pub struct TeeState {
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
     /// Invariant: each TLS key a participant uses (its current one and, during a node migration,
-    /// the destination one) maps to a node owned by that participant. Joining the participant set
+    /// the destination one) maps to a node owned by that participant, except that an initial
+    /// participant has no node until its first attestation. Joining the participant set
     /// and migrating require such a node, and [`crate::MpcContract::clean_invalid_attestations`]
     /// never removes it. This lets [`Self::assert_tls_key_claimable`] decide whether an account
     /// may store a node under a TLS key by looking only at this map, so code that changes how
@@ -94,15 +97,15 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
+    /// Creates a [`TeeState`] in which every participant has a valid mock attestation, signed
+    /// with a random signer public key.
+    #[cfg(test)]
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
         let mut tee_state = Self::default();
 
         for (account_id, _, participant_info) in participants.participants() {
             let tls_public_key = participant_info.tls_public_key.clone();
-            // TODO(#1087): the participant set carries no signer key, so the TLS key stands
-            // in for it and the participant fails every signer-key check until its node attests
-            let signer_public_key = tls_public_key.clone();
+            let signer_public_key = bogus_ed25519_public_key();
             tee_state.nodes.insert(
                 tls_public_key.clone(),
                 Node {
@@ -292,7 +295,8 @@ impl TeeState {
 
     /// Removes the launchers no participant in `current_participants` uses once their TTL has
     /// passed, after restamping the ones they do use. Pass the running participants: a launcher
-    /// used only by a participant missing here can be removed, which kicks that participant.
+    /// used only by a participant missing here can be removed, which invalidates that
+    /// participant's attestation.
     pub(crate) fn remove_unused_launchers(
         &mut self,
         current_participants: &Participants,
@@ -418,7 +422,8 @@ impl TeeState {
     }
 
     /// Fails if another account's node is stored under the TLS key. Checking only the stored node
-    /// is enough because of the invariant on [`Self::nodes`].
+    /// is enough because of the invariant on [`Self::nodes`]; attestation submission covers its
+    /// exception for initial participants by also checking the participant set.
     pub(crate) fn assert_tls_key_claimable(
         &self,
         account_id: &AccountId,
