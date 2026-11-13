@@ -134,8 +134,8 @@ impl MpcClient {
         Ok(())
     }
 
-    /// Waits for a verdict t nodes signed, and runs the signing rounds for it. Each round counts
-    /// as a led computation.
+    /// Waits for an outcome the counting rule allows, a verdict t nodes signed or an
+    /// inconclusive, and runs the signing rounds for it. Each round counts as a led computation.
     async fn compute_verify_foreign_tx_v2_response(
         &self,
         request: &VerifyForeignTxRequestV2,
@@ -144,11 +144,11 @@ impl MpcClient {
         match self.domain_to_protocol.get(&domain_id) {
             Some(Protocol::CaitSith) => {
                 let provider = &self.verify_foreign_tx_provider;
-                let round = provider.prepare_verdict_round(request.id).await?;
-                let signed_verdict = provider.lead_verdict_rounds(round).await?;
-                contract_args::VerifyForeignTransactionRespondV2Args::from_signed_verdict(
+                let round = provider.prepare_outcome_round(request.id).await?;
+                let signed_outcome = provider.lead_outcome_rounds(round).await?;
+                contract_args::VerifyForeignTransactionRespondV2Args::from_signed_outcome(
                     request.yield_id,
-                    signed_verdict,
+                    signed_outcome,
                 )
             }
             Some(Protocol::ConfidentialKeyDerivation | Protocol::RobustEcdsa | Protocol::Frost) => {

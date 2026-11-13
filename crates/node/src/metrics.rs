@@ -292,6 +292,18 @@ pub static MPC_NUM_VERIFY_FOREIGN_TX_COMPUTATIONS_LED: LazyLock<prometheus::IntC
         .unwrap()
     });
 
+pub static MPC_NUM_VERIFY_FOREIGN_TX_INCONCLUSIVES: LazyLock<prometheus::IntCounterVec> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter_vec!(
+            "mpc_num_verify_foreign_tx_inconclusives",
+            "Number of V2 verify foreign tx requests this node led to a signed inconclusive, by \
+             cause and chain. The cause is verdicts_differ when nodes signed different verdicts, \
+             inspectors_disagree when the providers of a node disagreed, and transient otherwise",
+            &["cause", "chain"],
+        )
+        .unwrap()
+    });
+
 pub static MPC_NUM_PASSIVE_SIGN_REQUESTS_RECEIVED: LazyLock<prometheus::IntCounter> =
     LazyLock::new(|| {
         prometheus::register_int_counter!(

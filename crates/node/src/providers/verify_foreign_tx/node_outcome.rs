@@ -99,6 +99,15 @@ impl NodeVerdict {
     }
 }
 
+impl From<RoundOutcome> for dtos::ForeignTxVerificationOutcome {
+    fn from(outcome: RoundOutcome) -> Self {
+        match outcome {
+            RoundOutcome::Verdict(verdict) => verdict.into(),
+            RoundOutcome::Inconclusive => Self::Inconclusive {},
+        }
+    }
+}
+
 impl From<NodeVerdict> for dtos::ForeignTxVerificationOutcome {
     fn from(verdict: NodeVerdict) -> Self {
         match verdict {

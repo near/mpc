@@ -298,3 +298,23 @@ async fn open_requests_wait_for_yield__should_return_a_request_indexed_after_the
     // Then
     assert_eq!(found.unwrap(), request(1));
 }
+
+#[tokio::test]
+async fn open_requests_wait_for_yield__should_return_the_open_request_of_a_yield_two_forks_share() {
+    // Given
+    let open = OpenVerifyForeignTxRequestsV2::default();
+    let mut chain = TestChain::starting_at(START_HEIGHT);
+    let (lost, kept) = (request_with_yield(1, 9), request_with_yield(2, 9));
+    let fork_point = chain.head.clone();
+    open.notify_new_block(&chain.extend(vec![lost.clone()], vec![]));
+    let other_fork_height = fork_point.height() + 2;
+    open.notify_new_block(&chain.add(&fork_point, other_fork_height, vec![kept.clone()], vec![]));
+
+    // When
+    let found =
+        tokio::time::timeout(Duration::from_secs(5), open.wait_for_yield(kept.yield_id)).await;
+
+    // Then
+    assert_eq!(found.unwrap(), kept);
+    assert_eq!(open.get(lost.id), None);
+}

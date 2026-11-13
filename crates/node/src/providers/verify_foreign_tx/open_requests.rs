@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -29,8 +29,16 @@ pub(crate) const MAX_ROUNDS_PER_LEADER: usize = 3;
 /// again.
 pub(crate) struct OpenVerifyForeignTxRequestsV2 {
     clock: Clock,
-    requests: Mutex<HashMap<VerifyForeignTxId, IndexedRequest>>,
+    requests: Mutex<Requests>,
     changed: Notify,
+}
+
+/// The tracked requests, with an index from each yield id to its requests. Requests on two
+/// forks can share a yield id.
+#[derive(Default)]
+struct Requests {
+    by_id: HashMap<VerifyForeignTxId, IndexedRequest>,
+    ids_by_yield: HashMap<YieldId, BTreeSet<VerifyForeignTxId>>,
 }
 
 struct IndexedRequest {
@@ -72,23 +80,26 @@ impl OpenVerifyForeignTxRequestsV2 {
         let now = self.clock.now();
         let mut requests = self.requests.lock().unwrap();
         for request in &update.requests {
-            requests
-                .entry(request.id)
-                .or_insert_with(|| IndexedRequest {
-                    request: request.clone(),
-                    block: update.block_status.clone(),
-                    indexed_at: now,
-                    joined_rounds: HashMap::new(),
-                    completions: Vec::new(),
-                    inspected: false,
-                });
+            requests.insert_new(IndexedRequest {
+                request: request.clone(),
+                block: update.block_status.clone(),
+                indexed_at: now,
+                joined_rounds: HashMap::new(),
+                completions: Vec::new(),
+                inspected: false,
+            });
         }
         let completed_yields: Vec<YieldId> = update
             .completed_requests
             .iter()
-            .filter_map(|id| requests.get(id).map(|indexed| indexed.request.yield_id))
+            .filter_map(|id| {
+                requests
+                    .by_id
+                    .get(id)
+                    .map(|indexed| indexed.request.yield_id)
+            })
             .collect();
-        for indexed in requests.values_mut() {
+        for indexed in requests.by_id.values_mut() {
             if completed_yields.contains(&indexed.request.yield_id) {
                 indexed.completions.push(update.block_status.clone());
             }
@@ -96,15 +107,7 @@ impl OpenVerifyForeignTxRequestsV2 {
                 .completions
                 .retain(|completion| completion.is_canonical().is_some());
         }
-        let mut settled = Vec::new();
-        requests.retain(|_, indexed| {
-            let keep = !indexed.is_settled_at(update.block_height);
-            if !keep {
-                settled.push(indexed.request.yield_id);
-            }
-            keep
-        });
-        settled.retain(|yield_id| !tracks(&requests, *yield_id));
+        let settled = requests.remove_settled_at(update.block_height);
         drop(requests);
         self.changed.notify_waiters();
         settled
@@ -112,13 +115,17 @@ impl OpenVerifyForeignTxRequestsV2 {
 
     /// True while the request `id` may still open or close.
     pub(crate) fn tracks(&self, id: VerifyForeignTxId) -> bool {
-        self.requests.lock().unwrap().contains_key(&id)
+        self.requests.lock().unwrap().by_id.contains_key(&id)
     }
 
     /// True while a request with `yield_id` may still open or close.
     #[cfg(test)]
     pub(crate) fn tracks_yield(&self, yield_id: YieldId) -> bool {
-        tracks(&self.requests.lock().unwrap(), yield_id)
+        self.requests
+            .lock()
+            .unwrap()
+            .ids_by_yield
+            .contains_key(&yield_id)
     }
 
     /// The open requests whose block is final and that no earlier call returned. A node
@@ -128,6 +135,7 @@ impl OpenVerifyForeignTxRequestsV2 {
         self.requests
             .lock()
             .unwrap()
+            .by_id
             .values_mut()
             .filter(|indexed| {
                 !indexed.inspected && indexed.is_open() && indexed.block.is_final() == Some(true)
@@ -143,6 +151,7 @@ impl OpenVerifyForeignTxRequestsV2 {
         self.requests
             .lock()
             .unwrap()
+            .by_id
             .get(&id)
             .filter(|indexed| indexed.is_open())
             .map(|indexed| indexed.request.clone())
@@ -154,6 +163,7 @@ impl OpenVerifyForeignTxRequestsV2 {
             .requests
             .lock()
             .unwrap()
+            .by_id
             .get(&id)
             .filter(|indexed| indexed.is_open())?
             .indexed_at;
@@ -165,6 +175,7 @@ impl OpenVerifyForeignTxRequestsV2 {
     pub(crate) fn join_round(&self, leader: ActingLeader) -> Result<(), JoinRoundRefusal> {
         let mut requests = self.requests.lock().unwrap();
         let indexed = requests
+            .by_id
             .get_mut(&leader.request())
             .filter(|indexed| indexed.is_open())
             .ok_or(JoinRoundRefusal::RequestClosed)?;
@@ -192,18 +203,57 @@ impl OpenVerifyForeignTxRequestsV2 {
             let changed = self.changed.notified();
             tokio::pin!(changed);
             changed.as_mut().enable();
-            let open = self
-                .requests
-                .lock()
-                .unwrap()
-                .values()
-                .find(|indexed| indexed.request.yield_id == yield_id && indexed.is_open())
-                .map(|indexed| indexed.request.clone());
+            let open = self.requests.lock().unwrap().open_with_yield(yield_id);
             if let Some(request) = open {
                 return request;
             }
             changed.await;
         }
+    }
+}
+
+impl Requests {
+    /// Adds `indexed` unless a request with its id is tracked already.
+    fn insert_new(&mut self, indexed: IndexedRequest) {
+        let id = indexed.request.id;
+        let yield_id = indexed.request.yield_id;
+        if self.by_id.contains_key(&id) {
+            return;
+        }
+        self.by_id.insert(id, indexed);
+        self.ids_by_yield.entry(yield_id).or_default().insert(id);
+    }
+
+    /// Drops the requests settled at `height`. Returns the yield ids no request tracks anymore.
+    fn remove_settled_at(&mut self, height: BlockHeight) -> Vec<YieldId> {
+        let settled: Vec<(VerifyForeignTxId, YieldId)> = self
+            .by_id
+            .values()
+            .filter(|indexed| indexed.is_settled_at(height))
+            .map(|indexed| (indexed.request.id, indexed.request.yield_id))
+            .collect();
+        let mut untracked_yields = Vec::new();
+        for (id, yield_id) in settled {
+            self.by_id.remove(&id);
+            let Some(ids) = self.ids_by_yield.get_mut(&yield_id) else {
+                continue;
+            };
+            ids.remove(&id);
+            if ids.is_empty() {
+                self.ids_by_yield.remove(&yield_id);
+                untracked_yields.push(yield_id);
+            }
+        }
+        untracked_yields
+    }
+
+    fn open_with_yield(&self, yield_id: YieldId) -> Option<VerifyForeignTxRequestV2> {
+        self.ids_by_yield
+            .get(&yield_id)?
+            .iter()
+            .filter_map(|id| self.by_id.get(id))
+            .find(|indexed| indexed.is_open())
+            .map(|indexed| indexed.request.clone())
     }
 }
 
@@ -214,12 +264,6 @@ pub(crate) enum JoinRoundRefusal {
     RequestClosed,
     #[error("this node already joined {MAX_ROUNDS_PER_LEADER} rounds of {0} for the V2 request")]
     RoundLimit(ParticipantId),
-}
-
-fn tracks(requests: &HashMap<VerifyForeignTxId, IndexedRequest>, yield_id: YieldId) -> bool {
-    requests
-        .values()
-        .any(|indexed| indexed.request.yield_id == yield_id)
 }
 
 impl IndexedRequest {

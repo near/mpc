@@ -159,6 +159,8 @@ fn notify_v2_block__should_count_the_outcomes_of_a_request_from_its_block_until_
 
 #[rstest::rstest]
 #[case::not_a_backer(anyhow::Error::new(StopLeading::NotABacker(NodeVerdict::Verified)))]
+#[case::conflicting_own_outcome(anyhow::Error::new(StopLeading::ConflictingOwnOutcome))]
+#[case::not_a_supporter(anyhow::Error::new(StopLeading::NotASupporter))]
 #[case::rounds_exhausted_or_local(anyhow::Error::new(RoundsEnd::Local(anyhow::anyhow!(
     "no signature"
 ))))]
