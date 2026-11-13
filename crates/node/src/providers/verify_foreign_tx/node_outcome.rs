@@ -1,4 +1,4 @@
-use borsh::BorshSerialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use foreign_chain_inspector::{ForeignChainInspectionError, Verdict};
 use near_mpc_contract_interface::types::{self as dtos, ForeignTxVerificationNegativeVerdict};
 
@@ -6,20 +6,27 @@ use crate::providers::verify_foreign_tx::inspection::Inspection;
 
 /// What one node concludes about a V2 foreign transaction request. Only the network concludes
 /// [`dtos::ForeignTxVerificationOutcome::Inconclusive`], so a node outcome cannot express it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) enum NodeOutcome {
     Verdict(NodeVerdict),
     NoVerdict(NoVerdictReason),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize)]
-pub(crate) enum NodeVerdict {
+/// The outcome a V2 signing round signs. Its Borsh encoding is part of the P2P wire format.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+pub enum RoundOutcome {
+    Verdict(NodeVerdict),
+    Inconclusive,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, BorshSerialize, BorshDeserialize)]
+pub enum NodeVerdict {
     /// The hash of the extracted values equals the expected values hash.
     Verified,
     Negative(ForeignTxVerificationNegativeVerdict),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) enum NoVerdictReason {
     /// Covers every provider error except an inspector disagreement, for example a failed
     /// provider or a transaction that is not final yet.

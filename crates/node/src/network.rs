@@ -14,6 +14,7 @@ use crate::primitives::{
     MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
 };
 use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
+use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
 use crate::requests::queue::NetworkAPIForRequests;
 use crate::tracking::{self, AutoAbortTask};
 use anyhow::Context as _;
@@ -197,6 +198,49 @@ impl MeshNetworkClient {
             )?;
         }
         Ok(channel)
+    }
+
+    /// Like [`Self::new_channel_for_task`], and sends `evidence` to every other participant
+    /// right after the Start.
+    // TODO(#5123): open the signing rounds of V2 requests.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub(crate) fn new_channel_for_task_with_evidence(
+        &self,
+        task_id: impl Into<MpcTaskId>,
+        participants: Vec<ParticipantId>,
+        evidence: Vec<SignedNodeOutcome>,
+    ) -> anyhow::Result<NetworkTaskChannel> {
+        let channel = self.new_channel_for_task(task_id, participants)?;
+        for participant in channel.participants() {
+            if *participant == self.my_participant_id() {
+                continue;
+            }
+            channel.sender.send_raw(
+                *participant,
+                MpcMessage {
+                    channel_id: channel.sender.channel_id,
+                    kind: MpcMessageKind::Evidence(evidence.clone()),
+                },
+            )?;
+        }
+        Ok(channel)
+    }
+
+    /// Sends `outcome` to every peer whose protocol version can parse it. An older peer gets
+    /// nothing.
+    // TODO(#5123): broadcast the node outcome of each V2 request.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub(crate) fn broadcast_node_outcome(&self, outcome: &SignedNodeOutcome) {
+        let packet = Packet::NodeOutcome(outcome.clone());
+        let me = self.my_participant_id();
+        for peer in self.participants_supporting(packet.min_protocol_version()) {
+            if peer == me {
+                continue;
+            }
+            if let Err(error) = self.transport_sender.send(peer, packet.clone(), None) {
+                tracing::debug!(%peer, %error, "node outcome not sent");
+            }
+        }
     }
 
     pub fn my_participant_id(&self) -> ParticipantId {
@@ -525,6 +569,10 @@ async fn run_receive_message(
             }
             // TODO(#398): store the sender's connected-peers list, so participant selection can
             // avoid pairs that cannot reach each other.
+        }
+        // TODO(#5123): hand the node outcome to the V2 request it answers.
+        PeerMessage::NodeOutcome(message) => {
+            tracing::debug!(from = %message.from, "dropping a node outcome");
         }
     }
     Ok(())
@@ -972,6 +1020,14 @@ impl NetworkTaskChannel {
                 // any `Start` messages.
                 anyhow::bail!("Unexpected Start message: {:?}", mpc_start_message);
             }
+            // TODO(#5123): hand the evidence to the signers of a V2 signing round.
+            MpcMessageKind::Evidence(outcomes) => {
+                anyhow::bail!(
+                    "Unexpected evidence from participant {} with {} outcomes",
+                    message.from,
+                    outcomes.len()
+                );
+            }
         }
         Ok(None)
     }
@@ -1020,7 +1076,7 @@ pub mod testing {
     use crate::network::wire_format::{MpcTaskId, Packet};
     use crate::primitives::{
         MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo, PeerIndexerHeightMessage,
-        PeerMessage, UniqueId,
+        PeerMessage, PeerNodeOutcome, UniqueId,
     };
     use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
     use crate::tracking;
@@ -1158,6 +1214,9 @@ pub mod testing {
                 }
                 Packet::ConnectedPeersInfo(info) => {
                     PeerMessage::ConnectedPeersInfo(PeerConnectedPeersInfo { from, info })
+                }
+                Packet::NodeOutcome(outcome) => {
+                    PeerMessage::NodeOutcome(PeerNodeOutcome { from, outcome })
                 }
             };
             sender
@@ -1365,15 +1424,23 @@ mod tests {
         TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
         new_test_client_over, new_test_client_with_versions, new_test_transports, run_test_clients,
     };
-    use crate::network::wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet};
+    use crate::network::wire_format::{
+        EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet, VerifyForeignTxTaskId,
+    };
     use crate::primitives::{
         ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, UniqueId,
     };
     use crate::protocol_version::NetworkProtocolVersion;
+    use crate::providers::verify_foreign_tx::node_outcome::{
+        NodeOutcome, NodeVerdict, RoundOutcome,
+    };
+    use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
+    use crate::providers::verify_foreign_tx::node_outcome_statement::testing::signed_node_outcome;
     use crate::tests::into_participant_ids;
     use crate::tracking::testing::start_root_task_with_periodic_dump;
     use crate::tracking::{self, AutoAbortTaskCollection};
     use borsh::{BorshDeserialize, BorshSerialize};
+    use near_mpc_contract_interface::types::YieldId;
     use rstest::rstest;
     use serial_test::serial;
     use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1538,6 +1605,83 @@ mod tests {
         // Then
         let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
         assert_eq!(message.peers, BTreeMap::from([(me, 100), (peer, 90)]));
+    }
+
+    fn node_outcome() -> SignedNodeOutcome {
+        signed_node_outcome(NodeOutcome::Verdict(NodeVerdict::Verified))
+    }
+
+    #[test]
+    fn broadcast_node_outcome__should_send_the_outcome_only_to_peers_negotiating_nov2026() {
+        // Given
+        let me = ParticipantId::from_raw(1);
+        let [older_peer, current_peer, newer_peer] = [2, 3, 4].map(ParticipantId::from_raw);
+        let participants = vec![me, older_peer, current_peer, newer_peer];
+        let versions = HashMap::from([
+            (older_peer, NetworkProtocolVersion::Oct2026),
+            (current_peer, NetworkProtocolVersion::Nov2026),
+            (newer_peer, NetworkProtocolVersion::Unknown(42)),
+        ]);
+        let (client, transport) = new_test_client_with_versions(participants, me, versions);
+
+        // When
+        client.broadcast_node_outcome(&node_outcome());
+
+        // Then
+        let sent: Vec<_> = transport
+            .take_packets_sent()
+            .into_iter()
+            .map(|(recipient, packet)| match packet {
+                Packet::NodeOutcome(outcome) => (recipient, outcome),
+                other => panic!("unexpected packet {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            sent,
+            vec![(current_peer, node_outcome()), (newer_peer, node_outcome())]
+        );
+    }
+
+    #[test]
+    fn new_channel_for_task_with_evidence__should_send_the_evidence_right_after_the_start() {
+        // Given
+        let [me, first, second] = [1, 2, 3].map(ParticipantId::from_raw);
+        let participants = vec![me, first, second];
+        let versions = current_protocol_versions(&participants);
+        let (client, transport) = new_test_client_with_versions(participants.clone(), me, versions);
+        let task_id = VerifyForeignTxTaskId::SignOutcome {
+            yield_id: YieldId([6; 32]),
+            outcome: RoundOutcome::Verdict(NodeVerdict::Verified),
+            paired_triple_id: UniqueId::new(me, 1, 2),
+        };
+
+        // When
+        let _channel = client
+            .new_channel_for_task_with_evidence(task_id, participants.clone(), vec![node_outcome()])
+            .unwrap();
+
+        // Then
+        let sent: Vec<_> = transport
+            .take_packets_sent()
+            .into_iter()
+            .map(|(recipient, packet)| match packet {
+                Packet::MpcMessage(message) => (recipient, message.kind),
+                other => panic!("unexpected packet {other:?}"),
+            })
+            .collect();
+        let start = MpcMessageKind::Start(MpcStartMessage {
+            task_id: task_id.into(),
+            participants,
+        });
+        let evidence = MpcMessageKind::Evidence(vec![node_outcome()]);
+        let sent_to = |recipient| {
+            sent.iter()
+                .filter(|(sent_to, _)| *sent_to == recipient)
+                .map(|(_, kind)| kind.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(sent_to(first), vec![start.clone(), evidence.clone()]);
+        assert_eq!(sent_to(second), vec![start, evidence]);
     }
 
     #[test]

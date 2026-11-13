@@ -20,7 +20,7 @@ use crate::{
     },
     primitives::{
         MpcMessage, MpcPeerMessage, ParticipantId, PeerConnectedPeersInfo,
-        PeerIndexerHeightMessage, PeerMessage,
+        PeerIndexerHeightMessage, PeerMessage, PeerNodeOutcome,
     },
     protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
     tracking::{self, AutoAbortTask, AutoAbortTaskCollection},
@@ -188,11 +188,13 @@ impl Packet {
             Packet::Ping => networking_metrics::PING_MESSAGE,
             Packet::IndexerHeight(_) => networking_metrics::INDEXER_HEIGHT_MESSAGE,
             Packet::ConnectedPeersInfo(_) => networking_metrics::CONNECTED_PEERS_MESSAGE,
+            Packet::NodeOutcome(_) => networking_metrics::NODE_OUTCOME_MESSAGE,
             Packet::MpcMessage(MpcMessage { kind, .. }) => match kind {
                 MpcMessageKind::Start(_) => networking_metrics::MPC_START_MESSAGE,
                 MpcMessageKind::Computation(_) => networking_metrics::MPC_COMPUTATION_MESSAGE,
                 MpcMessageKind::Abort(_) => networking_metrics::MPC_ABORT_MESSAGE,
                 MpcMessageKind::Success => networking_metrics::MPC_SUCCESS_MESSAGE,
+                MpcMessageKind::Evidence(_) => networking_metrics::MPC_EVIDENCE_MESSAGE,
             },
         }
     }
@@ -876,6 +878,12 @@ async fn incoming_connection_handler(
                         info,
                     }))?;
                 }
+                Packet::NodeOutcome(outcome) => {
+                    message_sender.send(PeerMessage::NodeOutcome(PeerNodeOutcome {
+                        from: peer_id,
+                        outcome,
+                    }))?;
+                }
             }
 
             let metric_labels = [peer_id_string.as_str(), INCOMING_CONNECTION, message_label];
@@ -1192,7 +1200,7 @@ mod tests {
         config::MpcConfig,
         network::{
             conn::{AllNodeConnectivities, ConnectionVersion, NodeConnectivity},
-            wire_format::{EcdsaTaskId, MpcTaskId, Packet},
+            wire_format::{EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet, VerifyForeignTxTaskId},
             {MeshNetworkTransportReceiver, MeshNetworkTransportSender},
         },
         p2p::testing::{generate_test_p2p_configs, port_seed},
@@ -1201,11 +1209,16 @@ mod tests {
             UniqueId,
         },
         protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion},
+        providers::verify_foreign_tx::{
+            node_outcome::{NodeOutcome, NodeVerdict, RoundOutcome},
+            node_outcome_statement::testing::signed_node_outcome,
+        },
         tracking::{self, testing::start_root_task_with_periodic_dump},
     };
     use ed25519_dalek::SigningKey;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
+    use near_mpc_contract_interface::types::YieldId;
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use rstest::rstest;
     use rustls::ClientConfig;
@@ -1510,25 +1523,10 @@ mod tests {
         #[case] expected_sent: bool,
     ) {
         // Given
-        let (sender, mut packets) = mpsc::unbounded_channel();
-        let connection = Arc::new(OutgoingConnection {
-            sender,
-            _sender_task: tokio::spawn(std::future::pending()).into(),
-            _keepalive_task: tokio::spawn(std::future::pending()).into(),
-            closed: CancellationToken::new(),
-            peer_network_protocol_version: peer_version,
-        });
-        let connectivity =
-            Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
-        connectivity.set_outgoing_connection(&connection);
-        let persistent_connection = PersistentConnection {
-            target_participant_id: ParticipantId::from_raw(1),
-            connectivity,
-            _task: tokio::spawn(std::future::pending()).into(),
-        };
+        let mut peer = ConnectedPeer::on(peer_version);
 
         // When
-        let result = persistent_connection.send(
+        let result = peer.persistent_connection.send(
             Packet::ConnectedPeersInfo(ConnectedPeersInfo {
                 peers: BTreeMap::from([(ParticipantId::from_raw(2), 7)]),
             }),
@@ -1537,8 +1535,104 @@ mod tests {
 
         // Then
         assert_eq!(result.is_ok(), expected_sent);
-        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
+        let sent = matches!(peer.packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
         assert_eq!(sent, expected_sent);
+    }
+
+    #[rstest]
+    #[case::node_outcome_to_older_peer(node_outcome(), NetworkProtocolVersion::Oct2026, false)]
+    #[case::node_outcome_to_current_peer(node_outcome(), NetworkProtocolVersion::Nov2026, true)]
+    #[case::node_outcome_to_newer_peer(node_outcome(), NetworkProtocolVersion::Unknown(42), true)]
+    #[case::evidence_to_older_peer(evidence(), NetworkProtocolVersion::Oct2026, false)]
+    #[case::evidence_to_current_peer(evidence(), NetworkProtocolVersion::Nov2026, true)]
+    #[case::sign_outcome_start_to_older_peer(
+        sign_outcome_start(),
+        NetworkProtocolVersion::Oct2026,
+        false
+    )]
+    #[case::sign_outcome_start_to_current_peer(
+        sign_outcome_start(),
+        NetworkProtocolVersion::Nov2026,
+        true
+    )]
+    #[tokio::test]
+    async fn persistent_connection__should_send_v2_foreign_tx_messages_only_to_peers_negotiating_nov2026(
+        #[case] packet: Packet,
+        #[case] peer_version: NetworkProtocolVersion,
+        #[case] expected_sent: bool,
+    ) {
+        // Given
+        let mut peer = ConnectedPeer::on(peer_version);
+
+        // When
+        let result = peer.persistent_connection.send(packet, None);
+
+        // Then
+        assert_eq!(result.is_ok(), expected_sent);
+        assert_eq!(peer.packets.try_recv().is_ok(), expected_sent);
+    }
+
+    fn node_outcome() -> Packet {
+        Packet::NodeOutcome(signed_node_outcome(NodeOutcome::Verdict(
+            NodeVerdict::Verified,
+        )))
+    }
+
+    fn evidence() -> Packet {
+        mpc_message(MpcMessageKind::Evidence(Vec::new()))
+    }
+
+    fn sign_outcome_start() -> Packet {
+        mpc_message(MpcMessageKind::Start(MpcStartMessage {
+            task_id: VerifyForeignTxTaskId::SignOutcome {
+                yield_id: YieldId([6; 32]),
+                outcome: RoundOutcome::Inconclusive,
+                paired_triple_id: UniqueId::new(ParticipantId::from_raw(0), 1, 2),
+            }
+            .into(),
+            participants: vec![ParticipantId::from_raw(0), ParticipantId::from_raw(1)],
+        }))
+    }
+
+    fn mpc_message(kind: MpcMessageKind) -> Packet {
+        Packet::MpcMessage(MpcMessage {
+            channel_id: ChannelId(UniqueId::new(ParticipantId::from_raw(0), 1, 1)),
+            kind,
+        })
+    }
+
+    /// A peer on `peer_version`, with the packets sent to it.
+    struct ConnectedPeer {
+        persistent_connection: PersistentConnection,
+        /// Keeps the connection alive, since `persistent_connection` only holds a weak reference.
+        _outgoing: Arc<OutgoingConnection>,
+        packets: mpsc::UnboundedReceiver<Packet>,
+    }
+
+    impl ConnectedPeer {
+        fn on(peer_version: NetworkProtocolVersion) -> Self {
+            let (sender, packets) = mpsc::unbounded_channel();
+            let outgoing = Arc::new(OutgoingConnection {
+                sender,
+                _sender_task: tokio::spawn(std::future::pending()).into(),
+                _keepalive_task: tokio::spawn(std::future::pending()).into(),
+                closed: CancellationToken::new(),
+                peer_network_protocol_version: peer_version,
+            });
+            let connectivity =
+                Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
+            connectivity.set_outgoing_connection(&outgoing);
+            let persistent_connection = PersistentConnection {
+                target_participant_id: ParticipantId::from_raw(1),
+                connectivity,
+                _task: tokio::spawn(std::future::pending()).into(),
+            };
+            Self {
+                persistent_connection,
+                _outgoing: outgoing,
+                packets,
+            }
+        }
     }
 
     #[tokio::test]
