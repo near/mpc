@@ -18,10 +18,10 @@ use crate::call_args::{
     RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs,
     SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
     SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
-    VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs, VoteAddLauncherHashArgs,
-    VoteAddOsMeasurementArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs,
-    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs, VoteResharedArgs,
-    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
+    VerifyForeignTransactionRespondArgs, VerifyForeignTransactionRespondV2Args, VoteAddDomainsArgs,
+    VoteAddLauncherHashArgs, VoteAddOsMeasurementArgs, VoteCancelKeygenArgs,
+    VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs,
+    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -38,9 +38,9 @@ use crate::method_names::{
     OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, READ_RPC,
     REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
-    START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
-    TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
+    RESPOND_VERIFY_FOREIGN_TX, RESPOND_VERIFY_FOREIGN_TX_V2, SIGN, START_KEYGEN_INSTANCE,
+    START_NODE_MIGRATION, START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE,
+    SUBMIT_PARTICIPANT_INFO, TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
     VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
     VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
@@ -51,13 +51,14 @@ use crate::types::{
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
     CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
-    InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes,
-    LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo, ParticipantUrl,
-    ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
-    Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionRequestV2, VerifyForeignTransactionResponse, YieldIndex,
+    ForeignChainsConfigs, ForeignTxVerificationOutcome, GovernanceThresholdParameters,
+    GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
+    LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
+    ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState,
+    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation,
+    TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionRequestV2,
+    VerifyForeignTransactionResponse, YieldId, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -241,6 +242,25 @@ impl<C: CallContract> MpcContractHandle<C> {
             serde_json::to_vec(&VerifyForeignTransactionRespondArgs::new(request, response))?;
         self.call(FunctionCallArgs::no_deposit(
             RESPOND_VERIFY_FOREIGN_TX,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    /// Answers the V2 foreign transaction request waiting on `yield_id` with a
+    /// signed `outcome`.
+    pub async fn respond_verify_foreign_tx_v2(
+        &self,
+        yield_id: YieldId,
+        outcome: ForeignTxVerificationOutcome,
+        signature: SignatureResponse,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VerifyForeignTransactionRespondV2Args::new(
+            yield_id, outcome, signature,
+        ))?;
+        self.call(FunctionCallArgs::no_deposit(
+            RESPOND_VERIFY_FOREIGN_TX_V2,
             args,
             MAX_GAS,
         ))
@@ -792,14 +812,15 @@ mod tests {
         CKDAppPublicKeyPV, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting,
         DestinationNodeInfo, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId,
         ExpectedMeasurements, ExtractedValue, ForeignChain, ForeignChainRpcRequest,
-        ForeignTxPayloadVersion, GovernanceThreshold, GovernanceThresholdParameters, Hash256,
+        ForeignTxPayloadVersion, ForeignTxVerificationNegativeVerdict,
+        ForeignTxVerificationOutcome, GovernanceThreshold, GovernanceThresholdParameters, Hash256,
         InitConfig, K256AffinePoint, K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest,
         Keyset, LauncherImageHash, MockAttestation, MrtdHash, ParticipantId, ParticipantInfo,
         Participants, Payload, ProposedGovernanceThresholdParameters, Protocol, ProviderConfig,
         ProviderId, PublicKey, ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
         SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update,
         UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-        VerifyForeignTransactionRequestV2, VerifyForeignTransactionResponse,
+        VerifyForeignTransactionRequestV2, VerifyForeignTransactionResponse, YieldId,
     };
     use near_contract_transport::{
         CallContract, FunctionCallArgs, NearToken, ObservedState, mock::MockViewContract,
@@ -1002,8 +1023,18 @@ mod tests {
                 foreign_tx_request,
                 VerifyForeignTransactionResponse {
                     payload_hash: Hash256([7u8; 32]),
-                    signature: signature_response,
+                    signature: signature_response.clone(),
                 },
+            )
+            .await
+            .unwrap();
+        handle
+            .respond_verify_foreign_tx_v2(
+                YieldId([7u8; 32]),
+                ForeignTxVerificationOutcome::Negative {
+                    verdict: ForeignTxVerificationNegativeVerdict::TransactionNotFound,
+                },
+                signature_response,
             )
             .await
             .unwrap();
