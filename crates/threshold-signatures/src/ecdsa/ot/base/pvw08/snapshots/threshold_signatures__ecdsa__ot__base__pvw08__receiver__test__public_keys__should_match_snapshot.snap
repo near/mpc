@@ -1,0 +1,14 @@
+---
+source: crates/threshold-signatures/src/ecdsa/ot/base/pvw08/receiver.rs
+expression: public_keys
+---
+[
+  {
+    "p": "02fb9f4361fa94f228ff972159fb2329902a4d09e2c47116fb52f1ba256bdf4122",
+    "q": "03241f45688113a94db4ac2c12602434b5a9b9648bec47f7cdf6eafe52564a9ff6"
+  },
+  {
+    "p": "024f1c11d47e34124d6627ced266f8c322e5373c75c0d76ea8c92e0403c50a919d",
+    "q": "02fc3f3f1bca8a5f839275e2aa2bf85c553d43a6a1a9b3e16f38e86406563b5d05"
+  }
+]

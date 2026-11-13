@@ -4,5 +4,7 @@
 //! The protocol is specified in `docs/ecdsa/pvw08.md`.
 
 mod crs;
+mod receiver;
 
 pub use crs::{Crs, HashToElement};
+pub use receiver::{ReceiverPublicKey, ReceiverSecrets};

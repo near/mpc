@@ -50,6 +50,43 @@ where
     }
 }
 
+#[cfg(test)]
+impl<C: Ciphersuite> Crs<C> {
+    /// Samples a messy-mode string together with its trapdoor.
+    pub fn messy_with_trapdoor(
+        rng: &mut impl rand_core::CryptoRngCore,
+    ) -> (Self, MessyTrapdoor<C>) {
+        let generator = <C::Group as frost_core::Group>::generator();
+        let g0 = generator * frost_core::random_nonzero::<C, _>(rng);
+        let g1 = generator * frost_core::random_nonzero::<C, _>(rng);
+        let x0 = frost_core::random_nonzero::<C, _>(rng);
+        let x1 = frost_core::random_nonzero::<C, _>(rng);
+        let crs = Self {
+            g0,
+            h0: g0 * x0,
+            g1,
+            h1: g1 * x1,
+        };
+        (crs, MessyTrapdoor { x0, x1 })
+    }
+}
+
+/// The exponents `x0` and `x1` with `h0 = x0 * g0` and `h1 = x1 * g1`.
+#[cfg(test)]
+pub struct MessyTrapdoor<C: Ciphersuite> {
+    x0: crate::Scalar<C>,
+    x1: crate::Scalar<C>,
+}
+
+#[cfg(test)]
+impl<C: Ciphersuite> MessyTrapdoor<C> {
+    /// Tells, for each branch, whether the public key `(p, q)` is a common
+    /// multiple of that branch's pair, i.e. whether its key can be recovered.
+    pub fn decryptable_branches(&self, p: &Element<C>, q: &Element<C>) -> [bool; 2] {
+        [*q == *p * self.x0, *q == *p * self.x1]
+    }
+}
+
 /// Hashing to a uniform group element of unknown discrete logarithm.
 pub trait HashToElement: Ciphersuite {
     /// Hashes the concatenation of `msg` under the domain separation tag `domain`.
