@@ -728,6 +728,25 @@ expression: abi
         }
       },
       {
+        "name": "read_rpc",
+        "doc": " Submits a V2 foreign transaction verification request. The MPC nodes\n answer it with a signed\n [`ForeignTxVerificationOutcome`](dtos::ForeignTxVerificationOutcome).\n\n The contract announces the [`dtos::YieldId`] of the request in a\n [`VerifyForeignTxV2YieldCreated`] event. Without an answer, the request\n times out like a V1 request.",
+        "kind": "call",
+        "modifiers": [
+          "payable"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "request",
+              "type_schema": {
+                "$ref": "#/definitions/VerifyForeignTransactionRequestV2"
+              }
+            }
+          ]
+        }
+      },
+      {
         "name": "register_backup_service",
         "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
@@ -1703,6 +1722,40 @@ expression: abi
         }
       },
       {
+        "name": "respond_verify_foreign_tx_v2",
+        "doc": " Answers the V2 request stored under `yield_id` with `outcome`. Only\n attested participants may call it.\n\n `signature` must sign the [`dtos::ForeignTxSignPayload::V2`] built from\n the stored request, `yield_id` and `outcome`, under the root key of the\n request's domain. The method then resumes the yield with a\n [`dtos::VerifyForeignTransactionResponseV2`] and removes the request, so\n a signature answers one request once.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "yield_id",
+              "type_schema": {
+                "$ref": "#/definitions/YieldId"
+              }
+            },
+            {
+              "name": "outcome",
+              "type_schema": {
+                "$ref": "#/definitions/ForeignTxVerificationOutcome"
+              }
+            },
+            {
+              "name": "signature",
+              "type_schema": {
+                "$ref": "#/definitions/SignatureResponse"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "return_ck_and_clean_state_on_success",
         "doc": " Yield-resume callback for a single queued CKD request.\n\n On success, returns the confidential key to the original caller. On timeout,\n pops this yield's slot (the head of the FIFO fan-out queue) from the\n pending-request map and fires `fail_on_timeout` to fail the original\n transaction. Sibling yields queued under the same request key remain pending\n and are cleaned up by their own timeouts (or drained together by a subsequent\n `respond_ckd`).",
         "kind": "call",
@@ -1798,6 +1851,39 @@ expression: abi
           "serialization_type": "json",
           "type_schema": {
             "$ref": "#/definitions/PromiseOrValueVerifyForeignTransactionResponse"
+          }
+        }
+      },
+      {
+        "name": "return_verify_foreign_tx_v2_and_clean_state_on_timeout",
+        "doc": " Yield callback of a V2 request. Returns the response to the caller. On\n timeout, removes the request stored under `yield_id` and fails the\n caller's transaction.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "yield_id",
+              "type_schema": {
+                "$ref": "#/definitions/YieldId"
+              }
+            }
+          ]
+        },
+        "callbacks": [
+          {
+            "serialization_type": "json",
+            "type_schema": {
+              "$ref": "#/definitions/VerifyForeignTransactionResponseV2"
+            }
+          }
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "$ref": "#/definitions/PromiseOrValueVerifyForeignTransactionResponseV2"
           }
         }
       },
@@ -2593,6 +2679,51 @@ expression: abi
             }
           }
         },
+        "AptosAddress": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "AptosEvent": {
+          "type": "object",
+          "required": [
+            "account_address",
+            "data",
+            "sequence_number",
+            "type_tag"
+          ],
+          "properties": {
+            "account_address": {
+              "$ref": "#/definitions/AptosAddress"
+            },
+            "data": {
+              "type": "string"
+            },
+            "sequence_number": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "type_tag": {
+              "type": "string"
+            }
+          }
+        },
+        "AptosExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Event"
+              ],
+              "properties": {
+                "Event": {
+                  "$ref": "#/definitions/AptosEvent"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "AptosExtractor": {
           "oneOf": [
             {
@@ -2794,6 +2925,22 @@ expression: abi
             }
           }
         },
+        "BitcoinExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "BlockHash"
+              ],
+              "properties": {
+                "BlockHash": {
+                  "$ref": "#/definitions/Hash256"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "BitcoinExtractor": {
           "type": "string",
           "enum": [
@@ -2873,6 +3020,14 @@ expression: abi
           "maxItems": 32,
           "minItems": 0
         },
+        "BoundedVec_Hash256_Min0_Max4": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Hash256"
+          },
+          "maxItems": 4,
+          "minItems": 0
+        },
         "BoundedVec_StarknetExtractor_Min0_Max32": {
           "type": "array",
           "items": {
@@ -2903,6 +3058,16 @@ expression: abi
             "$ref": "#/definitions/TonExtractor"
           },
           "maxItems": 32,
+          "minItems": 0
+        },
+        "BoundedVec_uint8_Min0_Max128": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint8",
+            "minimum": 0.0
+          },
+          "maxItems": 128,
           "minItems": 0
         },
         "CKDAppPublicKey": {
@@ -3473,6 +3638,34 @@ expression: abi
             }
           }
         },
+        "EvmExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "BlockHash"
+              ],
+              "properties": {
+                "BlockHash": {
+                  "$ref": "#/definitions/Hash256"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "$ref": "#/definitions/EvmLog"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "EvmExtractor": {
           "oneOf": [
             {
@@ -3512,6 +3705,58 @@ expression: abi
             "Safe",
             "Finalized"
           ]
+        },
+        "EvmLog": {
+          "type": "object",
+          "required": [
+            "address",
+            "block_hash",
+            "block_number",
+            "data",
+            "log_index",
+            "removed",
+            "topics",
+            "transaction_hash",
+            "transaction_index"
+          ],
+          "properties": {
+            "address": {
+              "$ref": "#/definitions/Hash160"
+            },
+            "block_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "block_number": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "data": {
+              "type": "string"
+            },
+            "log_index": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "removed": {
+              "type": "boolean"
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Hash256"
+              }
+            },
+            "transaction_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "transaction_index": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
         },
         "EvmRpcRequest": {
           "type": "object",
@@ -3563,6 +3808,94 @@ expression: abi
               "$ref": "#/definitions/Rtmr2Hash"
             }
           }
+        },
+        "ExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "BitcoinExtractedValue"
+              ],
+              "properties": {
+                "BitcoinExtractedValue": {
+                  "$ref": "#/definitions/BitcoinExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "EvmExtractedValue"
+              ],
+              "properties": {
+                "EvmExtractedValue": {
+                  "$ref": "#/definitions/EvmExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "StarknetExtractedValue"
+              ],
+              "properties": {
+                "StarknetExtractedValue": {
+                  "$ref": "#/definitions/StarknetExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "TonExtractedValue"
+              ],
+              "properties": {
+                "TonExtractedValue": {
+                  "$ref": "#/definitions/TonExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "AptosExtractedValue"
+              ],
+              "properties": {
+                "AptosExtractedValue": {
+                  "$ref": "#/definitions/AptosExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "SuiExtractedValue"
+              ],
+              "properties": {
+                "SuiExtractedValue": {
+                  "$ref": "#/definitions/SuiExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "SvmExtractedValue"
+              ],
+              "properties": {
+                "SvmExtractedValue": {
+                  "$ref": "#/definitions/SvmExtractedValue"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "ForeignChain": {
           "type": "string",
@@ -3796,6 +4129,78 @@ expression: abi
             "$ref": "#/definitions/ForeignChainsConfig"
           }
         },
+        "ForeignTxVerificationNegativeVerdict": {
+          "description": "The network's negative answer about the requested foreign chain transaction, as observed while the request was pending, which starts at [`ForeignTxSignPayloadV2::request_block_height`].\n\nA later check may answer differently, for example once a transaction that was not found lands.",
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": [
+                "TransactionFailed",
+                "LogIndexOutOfBounds",
+                "TransactionNotFound",
+                "AccountNotFound",
+                "NonCanonicalBlock"
+              ]
+            },
+            {
+              "description": "The transaction was found, but its extracted values differ from [`VerifyForeignTransactionRequestV2::expected_values`](super::VerifyForeignTransactionRequestV2::expected_values).",
+              "type": "string",
+              "enum": [
+                "ValuesMismatch"
+              ]
+            }
+          ]
+        },
+        "ForeignTxVerificationOutcome": {
+          "oneOf": [
+            {
+              "description": "The extracted values equal the expected ones.",
+              "type": "object",
+              "required": [
+                "Verified"
+              ],
+              "properties": {
+                "Verified": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Negative"
+              ],
+              "properties": {
+                "Negative": {
+                  "type": "object",
+                  "required": [
+                    "verdict"
+                  ],
+                  "properties": {
+                    "verdict": {
+                      "$ref": "#/definitions/ForeignTxVerificationNegativeVerdict"
+                    }
+                  }
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "description": "The network could not reach a verdict. This says nothing about the transaction.",
+              "type": "object",
+              "required": [
+                "Inconclusive"
+              ],
+              "properties": {
+                "Inconclusive": {
+                  "type": "object"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "GovernanceThreshold": {
           "description": "Network-wide governance threshold (`k`): the minimum number of participants that must agree to approve a governance action (participant set changes, resharing, parameter updates). Distinct from a domain's [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.",
           "type": "integer",
@@ -3817,6 +4222,10 @@ expression: abi
               "$ref": "#/definitions/GovernanceThreshold"
             }
           }
+        },
+        "Hash160": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "Hash256": {
           "type": "string",
@@ -4564,6 +4973,34 @@ expression: abi
             }
           }
         },
+        "PromiseOrValueVerifyForeignTransactionResponseV2": {
+          "description": "Response to a [`VerifyForeignTransactionRequestV2`].\n\n[`Self::payload_hash`] is the hash of the [`ForeignTxSignPayload::V2`](super::ForeignTxSignPayload::V2) built from the request, the hash of its expected values, [`Self::request_block_height`], [`Self::yield_id`] and [`Self::outcome`].",
+          "type": "object",
+          "required": [
+            "outcome",
+            "payload_hash",
+            "request_block_height",
+            "signature",
+            "yield_id"
+          ],
+          "properties": {
+            "outcome": {
+              "$ref": "#/definitions/ForeignTxVerificationOutcome"
+            },
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "request_block_height": {
+              "$ref": "#/definitions/BlockHeight"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse"
+            },
+            "yield_id": {
+              "$ref": "#/definitions/YieldId"
+            }
+          }
+        },
         "ProposedGovernanceThresholdParameters": {
           "description": "A proposed set of threshold parameters submitted to `vote_new_parameters`: the proposed [`GovernanceThresholdParameters`] plus per-domain [`ReconstructionThreshold`] updates for the resharing it would trigger. An empty `per_domain_thresholds` keeps the current ones; a populated map must reference only existing domains (contract-validated), is applied to the [`DomainRegistry`] on resharing, and never persists onto the stored [`GovernanceThresholdParameters`].",
           "type": "object",
@@ -4984,6 +5421,34 @@ expression: abi
             }
           ]
         },
+        "StarknetExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "BlockHash"
+              ],
+              "properties": {
+                "BlockHash": {
+                  "$ref": "#/definitions/StarknetFelt"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "$ref": "#/definitions/StarknetLog"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "StarknetExtractor": {
           "oneOf": [
             {
@@ -5027,6 +5492,41 @@ expression: abi
             "AcceptedOnL1"
           ]
         },
+        "StarknetLog": {
+          "type": "object",
+          "required": [
+            "block_hash",
+            "block_number",
+            "data",
+            "from_address",
+            "keys"
+          ],
+          "properties": {
+            "block_hash": {
+              "$ref": "#/definitions/StarknetFelt"
+            },
+            "block_number": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "data": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/StarknetFelt"
+              }
+            },
+            "from_address": {
+              "$ref": "#/definitions/StarknetFelt"
+            },
+            "keys": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/StarknetFelt"
+              }
+            }
+          }
+        },
         "StarknetRpcRequest": {
           "type": "object",
           "required": [
@@ -5067,6 +5567,55 @@ expression: abi
               "$ref": "#/definitions/VerifiedAttestation"
             }
           }
+        },
+        "SuiAddress": {
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "SuiEvent": {
+          "description": "A Sui Move event as observed on-chain.\n\n`type_tag` carries every address in canonical long form (`0x` + 64 lowercase hex), and `bcs` carries the BCS-serialized event contents. Both are provider-independent, unlike the API's `parsedJson` rendering, which may vary across node versions.",
+          "type": "object",
+          "required": [
+            "bcs",
+            "package_id",
+            "sender",
+            "transaction_module",
+            "type_tag"
+          ],
+          "properties": {
+            "bcs": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "package_id": {
+              "$ref": "#/definitions/SuiAddress"
+            },
+            "sender": {
+              "$ref": "#/definitions/SuiAddress"
+            },
+            "transaction_module": {
+              "type": "string"
+            },
+            "type_tag": {
+              "type": "string"
+            }
+          }
+        },
+        "SuiExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Event"
+              ],
+              "properties": {
+                "Event": {
+                  "$ref": "#/definitions/SuiEvent"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "SuiExtractor": {
           "oneOf": [
@@ -5125,9 +5674,53 @@ expression: abi
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
+        "SvmAccount": {
+          "type": "object",
+          "required": [
+            "data",
+            "owner"
+          ],
+          "properties": {
+            "data": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "owner": {
+              "$ref": "#/definitions/SvmAddress"
+            }
+          }
+        },
         "SvmAddress": {
           "type": "string",
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+        },
+        "SvmExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "InnerInstruction"
+              ],
+              "properties": {
+                "InnerInstruction": {
+                  "$ref": "#/definitions/SvmInnerInstruction"
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "required": [
+                "AccountState"
+              ],
+              "properties": {
+                "AccountState": {
+                  "$ref": "#/definitions/SvmAccount"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
         },
         "SvmExtractor": {
           "oneOf": [
@@ -5187,6 +5780,29 @@ expression: abi
             "Confirmed",
             "Finalized"
           ]
+        },
+        "SvmInnerInstruction": {
+          "type": "object",
+          "required": [
+            "accounts",
+            "data",
+            "program_id"
+          ],
+          "properties": {
+            "accounts": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/SvmAddress"
+              }
+            },
+            "data": {
+              "type": "string",
+              "pattern": "^(?:[0-9A-Fa-f]{2})*$"
+            },
+            "program_id": {
+              "$ref": "#/definitions/SvmAddress"
+            }
+          }
         },
         "SvmRpcRequest": {
           "type": "object",
@@ -5294,6 +5910,40 @@ expression: abi
             }
           }
         },
+        "TonCellBody": {
+          "description": "The data section of a TON message-body cell.\n\nA TON cell carries up to [`TON_CELL_MAX_DATA_BITS`] *bits*, which need not be a whole number of bytes, so we store the bits packed big-endian into bytes ([`TonCellData`], the final byte's unused low bits zeroed) alongside the exact significant bit count. The bit length is kept explicit so two cells that share trailing bytes but differ in bit length (e.g. 1015 vs 1023 bits) do not collide under [`ForeignTxSignPayload::compute_msg_hash`](crate::types::ForeignTxSignPayload::compute_msg_hash).",
+          "type": "object",
+          "required": [
+            "bit_length",
+            "bytes"
+          ],
+          "properties": {
+            "bit_length": {
+              "type": "integer",
+              "format": "uint16",
+              "minimum": 0.0
+            },
+            "bytes": {
+              "$ref": "#/definitions/BoundedVec_uint8_Min0_Max128"
+            }
+          }
+        },
+        "TonExtractedValue": {
+          "oneOf": [
+            {
+              "type": "object",
+              "required": [
+                "Log"
+              ],
+              "properties": {
+                "Log": {
+                  "$ref": "#/definitions/TonLog"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "TonExtractor": {
           "oneOf": [
             {
@@ -5325,6 +5975,26 @@ expression: abi
           "enum": [
             "MasterchainIncluded"
           ]
+        },
+        "TonLog": {
+          "description": "A TON outbound log message as observed on-chain. The message body is a [`TonCellBody`], which is well-formed by construction.",
+          "type": "object",
+          "required": [
+            "body",
+            "body_refs",
+            "from_address"
+          ],
+          "properties": {
+            "body": {
+              "$ref": "#/definitions/TonCellBody"
+            },
+            "body_refs": {
+              "$ref": "#/definitions/BoundedVec_Hash256_Min0_Max4"
+            },
+            "from_address": {
+              "$ref": "#/definitions/TonAddress"
+            }
+          }
         },
         "TonRpcRequest": {
           "type": "object",
@@ -5550,6 +6220,30 @@ expression: abi
             }
           }
         },
+        "VerifyForeignTransactionRequestV2": {
+          "description": "Requests a [`ForeignTxSignPayload::V2`](super::ForeignTxSignPayload::V2) signature. Unlike V1 there is no expected payload hash: the V2 payload covers the [`YieldId`] and [`BlockHeight`] the contract assigns to the request, which the caller only learns from the response.",
+          "type": "object",
+          "required": [
+            "domain_id",
+            "expected_values",
+            "request"
+          ],
+          "properties": {
+            "domain_id": {
+              "$ref": "#/definitions/DomainId"
+            },
+            "expected_values": {
+              "description": "One value per extractor, in extractor order. A [`ForeignTxVerificationOutcome::Verified`] answer means the extracted values equal these.",
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/ExtractedValue"
+              }
+            },
+            "request": {
+              "$ref": "#/definitions/ForeignChainRpcRequest"
+            }
+          }
+        },
         "VerifyForeignTransactionResponse": {
           "type": "object",
           "required": [
@@ -5564,6 +6258,39 @@ expression: abi
               "$ref": "#/definitions/SignatureResponse"
             }
           }
+        },
+        "VerifyForeignTransactionResponseV2": {
+          "description": "Response to a [`VerifyForeignTransactionRequestV2`].\n\n[`Self::payload_hash`] is the hash of the [`ForeignTxSignPayload::V2`](super::ForeignTxSignPayload::V2) built from the request, the hash of its expected values, [`Self::request_block_height`], [`Self::yield_id`] and [`Self::outcome`].",
+          "type": "object",
+          "required": [
+            "outcome",
+            "payload_hash",
+            "request_block_height",
+            "signature",
+            "yield_id"
+          ],
+          "properties": {
+            "outcome": {
+              "$ref": "#/definitions/ForeignTxVerificationOutcome"
+            },
+            "payload_hash": {
+              "$ref": "#/definitions/Hash256"
+            },
+            "request_block_height": {
+              "$ref": "#/definitions/BlockHeight"
+            },
+            "signature": {
+              "$ref": "#/definitions/SignatureResponse"
+            },
+            "yield_id": {
+              "$ref": "#/definitions/YieldId"
+            }
+          }
+        },
+        "YieldId": {
+          "description": "Identifies the yield a V2 verification request waits on. The contract picks it, so a signature naming it answers that one request only.",
+          "type": "string",
+          "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "YieldIndex": {
           "description": "The index into calling the YieldResume feature of NEAR. This will allow to resume a yield call after the contract has been called back via this index.",

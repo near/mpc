@@ -179,6 +179,26 @@ configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
 asks. The probe logs the differing provider each round, as described above.
 
+### Read RPC answers
+
+For a `read_rpc` request, the network signs an inconclusive answer when no
+verdict can reach the signing threshold: nodes found different verdicts, or
+provider errors or providers that disagree kept too many nodes from a verdict.
+The node that led the request counts each inconclusive it got signed:
+
+| Metric | What it tracks |
+| --- | --- |
+| `mpc_num_verify_foreign_tx_inconclusives` | inconclusive answers this node led, labeled with the `chain` and the `cause`: `verdicts_differ` when nodes signed different verdicts, `inspectors_disagree` when the providers of a node disagreed, or `transient` when provider errors kept too many nodes from a verdict. |
+
+The leading node also logs `signed an inconclusive for a V2 request` with the
+node outcomes behind it, by participant id. The log shows where to look, not
+who is at fault: a node whose providers lag behind the foreign chain looks the
+same as a node that lies. When your node shows up there with a verdict that
+differs from the others, or without a verdict, check its providers for that
+chain first. A node that signed two different outcomes for one request shows
+up in a `conflicting statements` warning. A restart of that node can cause it
+too.
+
 ## Recommended alerts
 
 ```promql
@@ -204,9 +224,11 @@ sum by (protocol_scheme, task) (rate(mpc_led_computation_duration_seconds_count{
   for 15m
 
 # Warn: computations are running out of headroom against the deadline that ends
-# them. Signature, CKD and foreign-tx verification run under a configured 60s
-# by default, and 45s is three quarters of it. Key generation and resharing are
-# left out: a handful per epoch cannot support a percentile.
+# them. Signature, CKD and verify_foreign_transaction checks run under a
+# configured 60s by default, and 45s is three quarters of it. read_rpc signing
+# rounds (5s) share task="verify_foreign_tx" with verify_foreign_transaction,
+# so they lower the p99 of that task. Key generation and resharing are left
+# out: a handful per epoch cannot support a percentile.
 histogram_quantile(0.99, sum by (protocol_scheme, task, le) (
   rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task!~"triple_generation|key_generation|key_resharing"}[15m])
 )) > 45  for 15m

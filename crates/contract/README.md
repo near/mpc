@@ -50,11 +50,13 @@ The contract tracks the following information:
 
 Participants vote on contract updates (code or configuration changes). They do so by voting on the hash of the contract code or config they want to include (via `vote_contract_update`). Once a hash has received sufficient votes, any participant can submit the matching code or config (via `submit_contract_update`).
 
+The first release with `read_rpc` is deployed only once every participant runs a node release that serves it and has registered an outcome key, so that `outcome_keys` lists a key for every participant account.
+
 ## Usage
 
 ### Deposit requirement
 
-`sign`, `request_app_private_key` and `verify_foreign_transaction` require a **deposit of at least 1 yoctonear**. Any excess deposit is automatically refunded.
+`sign`, `request_app_private_key`, `verify_foreign_transaction` and `read_rpc` require a **deposit of at least 1 yoctonear**. Any excess deposit is automatically refunded.
 
 The deposit exists to prevent abuse by malicious frontends. On NEAR, a dApp frontend can hold a function-call access key that lets it submit transactions on behalf of a user without prompting for approval each time. By default, however, function-call access keys **cannot attach a deposit**. Requiring a deposit therefore guarantees that the call was authorised by the user's full-access key (or a function-call key with an explicit deposit allowance), preventing a compromised or malicious frontend from silently submitting signature requests without the user's knowledge.
 
@@ -70,7 +72,7 @@ The sign request takes the following arguments:
   - `{"Eddsa": "<hex encoded between 32 and 1232 bytes>"}`
 - `domain_id` (integer): identifies the key to use for generating the signature. Note that the payload type must match the associated signature scheme.
 
-Submitting a signature request costs approximately 7 Tgas, but the contract requires that at least 10 Tgas are attached to the transaction.
+Submitting a signature request costs approximately 7 Tgas, but the contract requires that at least 15 Tgas are attached to the transaction.
 
 #### Example
 
@@ -112,9 +114,105 @@ A `Secp256k1` response carries `big_r`, `s` and `recovery_id`:
 
 - `r` is the x-coordinate of `big_r`, i.e. bytes `1..33` of its compressed encoding. `s` is low-s normalized.
 - `recovery_id` is the [ECDSA recovery ID](https://en.wikipedia.org/wiki/Elliptic_Curve_Digital_Signature_Algorithm#Public_key_recovery).
-- The signed message is the 32-byte `Ecdsa` payload (for `verify_foreign_transaction`, the response's `payload_hash`), without further hashing.
+- The signed message is the 32 byte `Ecdsa` payload (for `verify_foreign_transaction` and `read_rpc`, the response's `payload_hash`), without further hashing.
 
-Recovery returns some key even for forged signatures, so a signature is only valid if the recovered key equals the expected one: `derived_public_key(path, predecessor, domain_id)` for `sign`, or `public_key(domain_id)` for `verify_foreign_transaction`. See [`near-mpc-signature-verifier`](../near-mpc-signature-verifier/src/lib.rs) for a reference implementation.
+Recovery returns some key even for forged signatures, so a signature is only valid if the recovered key equals the expected one: `derived_public_key(path, predecessor, domain_id)` for `sign`, or `public_key(domain_id)` for `verify_foreign_transaction` and `read_rpc`. See [`near-mpc-signature-verifier`](../near-mpc-signature-verifier/src/lib.rs) for a reference implementation.
+
+### Submitting a Read RPC request
+
+`read_rpc` asks the MPC network to check a transaction on a foreign chain against the values you expect. Unlike `verify_foreign_transaction`, which only signs a transaction that checks out, `read_rpc` returns a signed answer when the check fails too.
+
+A `verify_foreign_transaction` response signs the values the nodes extracted, whatever they are. A caller of `verify_foreign_transaction` that knows the values to expect sets `expected_payload_hash`, so the contract rejects a response over other values, or checks the `payload_hash` of the response itself. `read_rpc` checks the values for you.
+
+The call requires a **deposit of 1 yoctonear** (see [Deposit requirement](#deposit-requirement)) and at least `sign_call_gas_attachment_requirement_tera_gas` of attached gas (15 Tgas by default, see `config`). The chain must be one that `get_available_foreign_chains` returns.
+
+It takes one argument, `request`, with these fields:
+
+- `request`: the foreign chain, the transaction and the extractors, in the same form as for `verify_foreign_transaction`. The [localnet arguments](../../docs/development/localnet/args/) hold examples.
+- `domain_id` (integer): a domain with purpose `ForeignTx`. Its key signs the answer.
+- `expected_values`: one extracted value per extractor, in extractor order. The call fails when the number of expected values differs from the number of extractors.
+
+```Json
+{
+  "request": {
+    "request": {
+      "Bitcoin": {
+        "tx_id": "58ee376171bcc4e2cc040c13848d420b5eaf2f634872055b0a08c1fc2ec6453c",
+        "confirmations": 1,
+        "extractors": ["BlockHash"]
+      }
+    },
+    "domain_id": 3,
+    "expected_values": [
+      { "BitcoinExtractedValue": { "BlockHash": "<hex encoded 32 bytes>" } }
+    ]
+  }
+}
+```
+
+#### Answers
+
+The call returns a `VerifyForeignTransactionResponseV2`. Its `outcome` is one of three answers:
+
+| `outcome` | Meaning |
+| --- | --- |
+| `{"Verified": {}}` | The transaction checked out, and its extracted values equal `expected_values`. |
+| `{"Negative": {"verdict": "<verdict>"}}` | The network found that the transaction does not check out: `TransactionFailed`, `TransactionNotFound`, `LogIndexOutOfBounds`, `AccountNotFound`, `NonCanonicalBlock`, or `ValuesMismatch` when the transaction was found but its values differ from `expected_values`. A negative verdict describes the foreign chain while the request was pending. A transaction that was not found can still land later. |
+| `{"Inconclusive": {}}` | The nodes disagreed about the transaction, or provider errors kept too many nodes from reaching a verdict. It says nothing about the transaction. You can try again. |
+
+If the network cannot sign any answer, the call fails with a timeout after 200 blocks, like the other requests.
+
+The response has these fields:
+
+- `payload_hash`: the hash the network signed, see [Verifying an answer](#verifying-an-answer).
+- `signature`: the signature over `payload_hash` under `public_key(domain_id)`, see [ECDSA signature response](#ecdsa-signature-response).
+- `request_block_height` (integer): the NEAR block the request was made in.
+- `yield_id`: the hex encoded id the contract picked for the request.
+- `outcome`: the answer.
+
+#### How the network answers
+
+1. Every node that supports the chain inspects the transaction once the block of the request is final. It signs what it found, its node outcome, with its outcome key and sends it to the other nodes. A node registers its outcome key with the contract by itself, and `outcome_keys` lists them.
+2. Once t nodes, where t is the signing threshold, signed the same verdict, the leader of the request runs a signing round for that verdict among nodes that signed it. Once no verdict can reach t, even with the nodes not heard from yet, it runs one for an inconclusive. Until then it waits for more node outcomes.
+3. The nodes that sign with the leader first check the signed node outcomes it sends. With fewer than t malicious nodes, a leader therefore cannot get a verdict or an inconclusive signed that the node outcomes do not support.
+4. A signing round that fails is retried with other nodes, up to three rounds per leader. If too many nodes stay silent for any answer, the request times out.
+
+#### One answer per request
+
+Every answer is bound to the one request it answers. The contract picks a new `yield_id` for every call, also for identical requests, and announces it in the call's logs:
+
+```text
+EVENT_JSON:{"standard":"mpc","version":"1.0.0","event":"verify_foreign_tx_v2_yield_created","data":{"yield_id":"<hex encoded 32 bytes>"}}
+```
+
+The signature covers the `yield_id` and the `request_block_height`, and the contract accepts a signed answer only once. An old answer, for example a `TransactionNotFound` from before the transaction landed, can therefore never answer a newer request. Nodes sign only while the request is pending, which ends at most 200 blocks after `request_block_height`, so a receiver of the signature can tell when the network checked.
+
+#### Verifying an answer
+
+A receiver outside NEAR, such as a contract on another chain, gets the request and the response and checks the signature itself. With the [`near-mpc-sdk`](../near-mpc-sdk/README.md) crate:
+
+```rust,ignore
+use near_mpc_sdk::foreign_chain::{ForeignChainSignatureVerifierV2, ForeignTxVerificationOutcome};
+
+let verified = ForeignChainSignatureVerifierV2::new(request).verify_signed_outcome(&response, &public_key)?;
+// The signature proves only that the network signed these fields, so compare them with yours.
+assert_eq!(verified.yield_id(), expected_yield_id);
+assert!(verified.request_block_height() >= oldest_accepted_height);
+match verified.outcome() {
+    ForeignTxVerificationOutcome::Verified {} => { /* the transaction checked out */ }
+    ForeignTxVerificationOutcome::Negative { verdict } => { /* it did not */ }
+    ForeignTxVerificationOutcome::Inconclusive {} => { /* no verdict, try again */ }
+}
+```
+
+Here `public_key` is `public_key(domain_id)` of the contract. Without the SDK, take these steps:
+
+1. Compute `expected_values_hash`: the `sha256` hash of the Borsh encoding of `expected_values`.
+2. Build a `ForeignTxSignPayload::V2` from the request's `request`, `expected_values_hash`, and the response's `request_block_height`, `yield_id` and `outcome`. The types are in [`sign_payload.rs`](../near-mpc-contract-interface/src/types/foreign_chain/sign_payload.rs). Borsh encodes the `V2` variant with the tag `1`.
+3. Check that the `sha256` hash of the Borsh encoding of that payload equals `payload_hash`.
+4. Verify `signature` over `payload_hash` under `public_key(domain_id)`, as [ECDSA signature response](#ecdsa-signature-response) describes.
+5. Check that `yield_id` and `request_block_height` are the ones you expect. A response to an earlier identical request also passes steps 1 to 4.
+6. Read `outcome`. A valid signature over a negative or inconclusive answer is not a success.
 
 ### Submitting a confidential key derivation (ckd) request
 
@@ -131,7 +229,7 @@ The ckd request takes the following arguments:
 - `domain_id` (integer): identifies the master key to use for deriving the ckd, and must correspond to bls12381.
 
 Submitting a ckd request costs approximately 7 Tgas, but the contract requires
-that at least 10 Tgas are attached to the transaction.
+that at least 15 Tgas are attached to the transaction.
 
 #### Examples
 
@@ -269,9 +367,10 @@ stateDiagram-v2
 
 | Function                                                                                     | Behavior                                                                                                 | Return Value               | Gas requirement | Effective Gas Cost |
 | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | -------------------------- | --------------- | ------------------ |
-| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, path, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`.             | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
-| `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (ckd) request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, derivation path, and app public key) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
-| `verify_foreign_transaction(request: VerifyForeignTransactionRequestArgs)`                   | Submits a foreign-chain transaction verification request to the contract. Requires a deposit of 1 yoctonear and that the requested foreign chain is in the contract's supported set. A request may carry at most 32 extractors. Duplicate submissions of the same request (same caller, domain, chain, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply; the queue is bounded — concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `10 Tgas`       | `~7 Tgas`          |
+| `sign(request: SignRequestArgs)`                                                             | Submits a signature request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, path, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply. The queue is bounded: concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`.             | deferred to promise        | `15 Tgas`       | `~7 Tgas`          |
+| `request_app_private_key(request: CKDRequestArgs)`                                           | Submits a confidential key derivation (ckd) request to the contract. Requires a deposit of 1 yoctonear. Duplicate submissions of the same request (same caller, domain, derivation path, and app public key) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply. The queue is bounded: concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `15 Tgas`       | `~7 Tgas`          |
+| `verify_foreign_transaction(request: VerifyForeignTransactionRequestArgs)`                   | Submits a foreign chain transaction verification request to the contract. Requires a deposit of 1 yoctonear and that the requested foreign chain is in the contract's supported set. A request may carry at most 32 extractors. Duplicate submissions of the same request (same caller, domain, chain, and payload) while an earlier one is still pending are queued and all receive the same response when the MPC nodes reply. The queue is bounded: concurrent duplicates beyond that bound are rejected with `PendingRequestQueueFull`. | deferred to promise        | `15 Tgas`       | `~7 Tgas`          |
+| `read_rpc(request: VerifyForeignTransactionRequestV2)`                                    | Submits a request to check a foreign chain transaction against the expected values, see [Submitting a Read RPC request](#submitting-a-read-rpc-request). Requires a deposit of 1 yoctonear and that the requested foreign chain is in the contract's supported set. Every call gets its own `yield_id` and its own answer. | deferred to promise        | `15 Tgas`       | TBD                |
 | `public_key(domain_id: Option<DomainId>)`                                                    | Read-only function; returns the public key used for the given domain (defaulting to first).              | `Result<PublicKey, Error>` |                 |                    |
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain_id: Option<DomainId>)`| Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 | `prepay_attestation_storage(account_id: AccountId, grants: u32)` | Prepays attestation-entry storage for `account_id`. One grant permits one stored attestation. Payable and permissionless — anyone may prepay for any account, which is how an operator funds a node whose function-call access key cannot attach a deposit. Requires an attached deposit of exactly `attestation_storage_fee_millinear × grants` (see `config`) and rejects anything else. Nothing is refunded and there is no withdrawal. | `Result<(), Error>` | 30Tgas | ~4Tgas |
@@ -307,7 +406,8 @@ These functions require the caller to be a participant or candidate.
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | --------------- | ------------------ |
 | `respond(request: SignatureRequest, response: SignatureResponse)`                   | Processes a response to a signature request, verifying its validity and ensuring proper state cleanup.                                                                                                                                  | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `respond_ckd(request: CKDRequest, response: CKDResponse)`                           | Processes a response to a ckd request, ensuring proper state cleanup.                                                                                                                                                                   | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
-| `respond_verify_foreign_tx(request: VerifyForeignTransactionRequest, response: VerifyForeignTransactionResponse)` | Processes a response to a foreign-chain transaction verification request, ensuring proper state cleanup.                                                                                              | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
+| `respond_verify_foreign_tx(request: VerifyForeignTransactionRequest, response: VerifyForeignTransactionResponse)` | Processes a response to a foreign chain transaction verification request, ensuring proper state cleanup.                                                                                              | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
+| `respond_verify_foreign_tx_v2(yield_id: YieldId, outcome: ForeignTxVerificationOutcome, signature: SignatureResponse)` | Answers the `read_rpc` request stored under `yield_id` with `outcome`, after checking `signature` over the payload rebuilt from the stored request. Removes the request, so a signature answers one request once. | `Result<(), Error>`       | TBD             | TBD                |
 | `register_outcome_key(outcome_key: Ed25519PublicKey)` | Sets the outcome key of the caller's account, replacing the one it had. The node signs its node outcomes for V2 foreign transaction requests with this key. Only the account's attested node can call it, with its attested account key. A concluded node migration, or a resharing that removes the participant, drops the key. | `()` | TBD | TBD |
 | `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous, and each domain must specify a `reconstruction_threshold` with `2 <= t <= n`.                       | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current)                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |

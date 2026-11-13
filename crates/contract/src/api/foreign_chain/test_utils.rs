@@ -5,7 +5,6 @@ use k256::ecdsa::SigningKey;
 use k256::{Secp256k1, elliptic_curve};
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
-#[cfg(feature = "foreign-tx-v2")]
 use near_mpc_contract_interface::events::VerifyForeignTxV2YieldCreated;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::test_utils::VMContextBuilder;
@@ -89,7 +88,6 @@ pub(crate) fn sign_payload_hash(
     ))
 }
 
-#[cfg(feature = "foreign-tx-v2")]
 pub(crate) fn bitcoin_request_v2() -> dtos::VerifyForeignTransactionRequestV2 {
     dtos::VerifyForeignTransactionRequestV2 {
         request: dtos::ForeignChainRpcRequest::Bitcoin(dtos::BitcoinRpcRequest {
@@ -105,7 +103,6 @@ pub(crate) fn bitcoin_request_v2() -> dtos::VerifyForeignTransactionRequestV2 {
 }
 
 /// The yield ids of the [`VerifyForeignTxV2YieldCreated`] events logged so far.
-#[cfg(feature = "foreign-tx-v2")]
 pub(crate) fn announced_yield_ids() -> Vec<dtos::YieldId> {
     near_sdk::test_utils::get_logs()
         .iter()
