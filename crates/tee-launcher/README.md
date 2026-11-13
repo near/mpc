@@ -22,6 +22,7 @@ All arguments are read from environment variables (set via docker-compose `envir
 | `PLATFORM` | Yes | `TEE` or `NONTEE` |
 | `DOCKER_CONTENT_TRUST` | Yes | Must be `1` |
 | `DEFAULT_IMAGE_DIGEST` | Yes | Fallback `sha256:...` digest when the approved-hashes file is absent |
+| `MPC_CONTRACT_ID` | Yes | Account id of the MPC contract the node serves |
 
 ## Configuration (TOML)
 
@@ -37,10 +38,11 @@ port_mappings = [
   { host = 2200, container = 2200 },
 ]
 
-# Opaque MPC node configuration.
-# The launcher does not interpret these fields — they are re-serialized
-# to TOML and mounted into the container at /mnt/shared/mpc-config.toml
-# for the MPC binary to consume via `start-with-config-file`.
+# MPC node configuration. The launcher passes these fields through and adds
+# `tee` and `node.indexer.mpc_contract_id`, rejecting a config that already
+# sets either of them. The result is re-serialized to TOML and written to
+# /mnt/shared/mpc-config.toml, on a volume shared with the MPC container, for
+# the MPC binary to consume via `start-with-config-file`.
 [mpc_node_config]
 # ... any fields the MPC node expects
 ```
@@ -55,7 +57,7 @@ port_mappings = [
 
 ### `[mpc_node_config]`
 
-Arbitrary TOML table passed through to the MPC node. The launcher writes this verbatim to `/mnt/shared/mpc-config.toml`, which the container reads on startup.
+Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section and `node.indexer.mpc_contract_id`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that already sets either of them is rejected.
 
 ## Supported Registries
 
@@ -90,15 +92,6 @@ Priority order:
 | `/mnt/shared/image-digest.bin` | JSON file with approved image hashes (written by the MPC node) |
 | `/mnt/shared/mpc-config.toml` | MPC node config (written by the launcher) |
 | `/var/run/dstack.sock` | dstack unix socket (TEE mode only) |
-
-## Key Differences from the Python Launcher
-
-| Aspect | Python (`launcher.py`) | Rust (`tee-launcher`) |
-|--------|----------------------|----------------------|
-| Config format | `.env` key-value file | TOML |
-| MPC node config | Environment variables passed to container | TOML file mounted into container |
-| Container launch | `docker run` with flags | `docker compose up -d` with rendered template |
-| RTMR3 extension | `curl` to unix socket | `dstack-sdk` native client |
 
 ## Building
 
