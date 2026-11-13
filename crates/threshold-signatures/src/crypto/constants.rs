@@ -78,6 +78,8 @@ pub const NEAR_BATCH_RANDOM_OT_HASH: &[u8] = b"Near threshold signatures batch R
 // PVW08 Batch Random OT Constants
 /// Hash-to-curve domain separation tag for the PVW08 common reference string.
 pub const NEAR_PVW08_CRS_DOMAIN: &[u8] = b"Near threshold signatures PVW08 CRS";
+/// PVW08 key derivation domain separator.
+pub const NEAR_PVW08_KDF_LABEL: &[u8] = b"Near threshold signatures PVW08 KDF";
 
 // Correlated OT PRG Constants
 /// Correlated OT PRG context.

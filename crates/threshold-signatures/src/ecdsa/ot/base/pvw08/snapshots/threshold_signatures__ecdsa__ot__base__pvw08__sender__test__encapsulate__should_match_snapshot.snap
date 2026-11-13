@@ -1,0 +1,36 @@
+---
+source: crates/threshold-signatures/src/ecdsa/ot/base/pvw08/sender.rs
+expression: "(ciphertexts, output.k0, output.k1)"
+---
+[
+  [
+    {
+      "u0": "022bcb63781263b2ff4c5b1b50a2e7d70eb231e195cf215bcf7e4f2a6e33427fd0",
+      "u1": "03f7d42a6753e6c9b0fcde5c7363768ba60e8b0e6c734c46b17d651b7b61e5a53a"
+    },
+    {
+      "u0": "0322dfec336e59ffef2179a40bf7bb470d397ec3c8de7587ec742708c1ad891750",
+      "u1": "024b1fce2e6b49d25004d3c1d8e9969390a5ff1a2abb36b36c164b7fe7d8912c0c"
+    }
+  ],
+  [
+    [
+      6543422749672736242,
+      5919902825860229874
+    ],
+    [
+      8280093045796340170,
+      11624444965073335685
+    ]
+  ],
+  [
+    [
+      14283389464902620170,
+      5956571925792429128
+    ],
+    [
+      6930051681943253805,
+      13100537355076464209
+    ]
+  ]
+]

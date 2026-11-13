@@ -61,8 +61,8 @@ where
 #[derive(Serialize, Deserialize)]
 #[serde(bound = "C: Ciphersuite")]
 pub struct ReceiverPublicKey<C: Ciphersuite> {
-    p: CoefficientCommitment<C>,
-    q: CoefficientCommitment<C>,
+    pub(super) p: CoefficientCommitment<C>,
+    pub(super) q: CoefficientCommitment<C>,
 }
 
 #[cfg(test)]
