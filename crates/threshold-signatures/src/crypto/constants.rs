@@ -75,6 +75,10 @@ pub const MERLIN_PROTOCOL_LABEL: &[u8] = b"Mini-Merlin";
 /// Batch random OT hash domain separator.
 pub const NEAR_BATCH_RANDOM_OT_HASH: &[u8] = b"Near threshold signatures batch ROT";
 
+// PVW08 Batch Random OT Constants
+/// Hash-to-curve domain separation tag for the PVW08 common reference string.
+pub const NEAR_PVW08_CRS_DOMAIN: &[u8] = b"Near threshold signatures PVW08 CRS";
+
 // Correlated OT PRG Constants
 /// Correlated OT PRG context.
 pub const NEAR_PRG_CTX: &[u8] = b"Near threshold signatures correlated OT PRG";

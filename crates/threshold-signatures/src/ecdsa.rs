@@ -20,6 +20,7 @@ pub type CoefficientCommitment = frost_core::keys::CoefficientCommitment<Secp256
 pub type Polynomial = crate::crypto::polynomials::Polynomial<Secp256K1Sha256>;
 pub type PolynomialCommitment = crate::crypto::polynomials::PolynomialCommitment<Secp256K1Sha256>;
 
+pub use ot::base::pvw08;
 pub(crate) use signature::x_coordinate;
 pub use signature::{Signature, SignatureOption};
 

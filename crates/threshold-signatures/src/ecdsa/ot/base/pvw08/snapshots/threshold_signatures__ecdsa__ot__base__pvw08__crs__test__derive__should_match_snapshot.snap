@@ -1,0 +1,10 @@
+---
+source: crates/threshold-signatures/src/ecdsa/ot/base/pvw08/crs.rs
+expression: serialized
+---
+[
+  "03383a0f742f12c9a0ebddbaa0a59178edc8382a7677aa2af2b45c7dae539a8eec",
+  "030533286ef651b8bb37c99871d2d60f02502c8196096dec25bd695b31362463ce",
+  "03455f5f244cda0503ec5bd87fd9176f4d932e9e10000692bb42be79e91f8988a8",
+  "03a7f103e65e37dd2e026fc7617596970ee33623798547025444b56f55952223f1"
+]
