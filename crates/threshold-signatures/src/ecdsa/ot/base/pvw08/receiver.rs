@@ -2,12 +2,13 @@ use frost_core::keys::CoefficientCommitment;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use subtle::{Choice, ConditionallySelectable};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::crs::Crs;
 use crate::{Ciphersuite, Element, Scalar};
 
 /// The receiver's choice bits and secret exponents for a batch of transfers.
+#[derive(ZeroizeOnDrop)]
 pub struct ReceiverSecrets<C: Ciphersuite>
 where
     Scalar<C>: Zeroize,
@@ -52,25 +53,6 @@ where
                 }
             })
             .collect()
-    }
-}
-
-impl<C: Ciphersuite> Zeroize for ReceiverSecrets<C>
-where
-    Scalar<C>: Zeroize,
-{
-    fn zeroize(&mut self) {
-        self.choices.zeroize();
-        self.exponents.zeroize();
-    }
-}
-
-impl<C: Ciphersuite> Drop for ReceiverSecrets<C>
-where
-    Scalar<C>: Zeroize,
-{
-    fn drop(&mut self) {
-        self.zeroize();
     }
 }
 
