@@ -112,6 +112,18 @@ fn verdict(make: impl Fn() -> Verdict<u32> + Send + Sync + 'static) -> ResponseF
     Arc::new(move || Ok(make()))
 }
 
+fn non_canonical_verdict(canonical_hash: u8) -> Verdict<u32> {
+    Verdict::NonCanonicalBlock {
+        block_number: 1,
+        receipt_hash: HexBytes(vec![1]),
+        canonical_hash: HexBytes(vec![canonical_hash]),
+    }
+}
+
+fn non_canonical(canonical_hash: u8) -> ResponseFn {
+    verdict(move || non_canonical_verdict(canonical_hash))
+}
+
 fn err(make: impl Fn() -> ForeignChainInspectionError + Send + Sync + 'static) -> ResponseFn {
     Arc::new(move || Err(make()))
 }
@@ -246,14 +258,46 @@ mod measurement {
     }
 }
 
-mod all_extract {
+mod agreeing_verdicts {
     use super::*;
 
+    #[rstest]
+    #[case::all_inspectors_agree_on_extracted_values(
+        vec![ok(vec![1, 2, 3]); 3],
+        Verdict::Extracted(vec![1, 2, 3]),
+    )]
+    #[case::built_from_a_single_inspector(vec![ok(vec![7])], Verdict::Extracted(vec![7]))]
+    #[case::all_inspectors_agree_on_transaction_failed(
+        vec![verdict(|| Verdict::TransactionFailed); 3],
+        Verdict::TransactionFailed,
+    )]
+    #[case::fielded_verdicts_are_identical(
+        vec![non_canonical(2); 2],
+        non_canonical_verdict(2),
+    )]
+    #[case::every_error_kind_is_tolerated_when_one_inspector_extracts(
+        vec![
+            err(|| ForeignChainInspectionError::NotFinalized),
+            ok(vec![7]),
+            err(|| ForeignChainInspectionError::RpcRequestRejected("HTTP status 401".to_string())),
+        ],
+        Verdict::Extracted(vec![7]),
+    )]
+    #[case::every_error_kind_is_tolerated_when_another_inspector_rules_the_tx_out(
+        vec![
+            err(|| ForeignChainInspectionError::MalformedRpcResponse("garbage".to_string())),
+            verdict(|| Verdict::TransactionFailed),
+            err(|| ForeignChainInspectionError::NotFinalized),
+        ],
+        Verdict::TransactionFailed,
+    )]
     #[tokio::test]
-    async fn fan_out__should_return_extracted_values_when_all_inspectors_agree() {
+    async fn fan_out__should_return_the_agreed_verdict(
+        #[case] responses: Vec<ResponseFn>,
+        #[case] expected: Verdict<u32>,
+    ) {
         // Given
-        let make = || mock_returning(ok(vec![1, 2, 3]));
-        let fan_out = fan_out_of(vec![make(), make(), make()]);
+        let fan_out = fan_out_of(responses.into_iter().map(mock_returning).collect());
 
         // When
         let result = fan_out
@@ -261,22 +305,7 @@ mod all_extract {
             .await;
 
         // Then
-        assert_eq!(result.unwrap(), Verdict::Extracted(vec![1, 2, 3]));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_succeed_when_built_from_a_single_inspector() {
-        // Given: the smallest valid NonEmptyVec — a single inspector.
-        let only = mock_returning(ok(vec![7]));
-        let fan_out = fan_out_of(vec![only]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_eq!(result.unwrap(), Verdict::Extracted(vec![7]));
+        assert_eq!(result.unwrap(), expected);
     }
 
     #[tokio::test]
@@ -298,54 +327,26 @@ mod all_extract {
     }
 }
 
-mod extracted_values_disagree {
+mod inspectors_disagree {
     use super::*;
 
+    #[rstest]
+    // Agreement is unanimity, not majority
+    #[case::one_of_three_disagrees(vec![ok(vec![1, 2, 3]), ok(vec![9, 9, 9]), ok(vec![1, 2, 3])])]
+    #[case::successes_differ_in_length(vec![ok(vec![1, 2, 3]), ok(vec![1, 2])])]
+    // Vec equality is order-sensitive, so a permutation must be a mismatch
+    #[case::successes_are_permutations(vec![ok(vec![1, 2, 3]), ok(vec![3, 2, 1])])]
+    #[case::different_verdict_variants(vec![
+        verdict(|| Verdict::TransactionFailed),
+        verdict(|| Verdict::LogIndexOutOfBounds),
+    ])]
+    #[case::verdicts_share_a_variant_but_differ_in_fields(vec![non_canonical(2), non_canonical(3)])]
     #[tokio::test]
-    async fn fan_out__should_return_mismatch_error_when_inspectors_disagree() {
-        // Given: two inspectors agree on [1, 2, 3], one disagrees with [9, 9, 9].
-        // Agreement is unanimity, not majority.
-        let agreeing = || mock_returning(ok(vec![1, 2, 3]));
-        let disagreeing = mock_returning(ok(vec![9, 9, 9]));
-        let fan_out = fan_out_of(vec![agreeing(), disagreeing, agreeing()]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::InspectorResponseMismatch)
-        );
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_mismatch_when_successes_differ_in_length() {
+    async fn fan_out__should_return_mismatch_when_inspectors_disagree(
+        #[case] responses: Vec<ResponseFn>,
+    ) {
         // Given
-        let a = mock_returning(ok(vec![1, 2, 3]));
-        let b = mock_returning(ok(vec![1, 2]));
-        let fan_out = fan_out_of(vec![a, b]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::InspectorResponseMismatch)
-        );
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_mismatch_when_successes_are_permutations() {
-        // Given: Vec equality is order-sensitive, so a permutation must be a mismatch.
-        let a = mock_returning(ok(vec![1, 2, 3]));
-        let b = mock_returning(ok(vec![3, 2, 1]));
-        let fan_out = fan_out_of(vec![a, b]);
+        let fan_out = fan_out_of(responses.into_iter().map(mock_returning).collect());
 
         // When
         let result = fan_out
@@ -382,94 +383,6 @@ mod split_extracted_and_failing {
         let failing = mock_returning(verdict(move || ruling_out.clone()));
         let erring = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
         let fan_out = fan_out_of(vec![extracting, failing, erring]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::InspectorResponseMismatch)
-        );
-    }
-}
-
-mod failing_verdicts_agree {
-    use super::*;
-
-    #[tokio::test]
-    async fn fan_out__should_return_transaction_failed_when_all_inspectors_agree() {
-        // Given
-        let make = || mock_returning(verdict(|| Verdict::TransactionFailed));
-        let fan_out = fan_out_of(vec![make(), make(), make()]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::TransactionFailed));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_the_verdict_when_fielded_verdicts_are_identical() {
-        // Given
-        let non_canonical = || {
-            mock_returning(verdict(|| Verdict::NonCanonicalBlock {
-                block_number: 1,
-                receipt_hash: HexBytes(vec![1]),
-                canonical_hash: HexBytes(vec![2]),
-            }))
-        };
-        let fan_out = fan_out_of(vec![non_canonical(), non_canonical()]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::NonCanonicalBlock { .. }));
-    }
-}
-
-mod failing_verdicts_disagree {
-    use super::*;
-
-    #[tokio::test]
-    async fn fan_out__should_return_mismatch_when_inspectors_report_different_verdict_variants() {
-        // Given
-        let a = mock_returning(verdict(|| Verdict::TransactionFailed));
-        let b = mock_returning(verdict(|| Verdict::LogIndexOutOfBounds));
-        let fan_out = fan_out_of(vec![a, b]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::InspectorResponseMismatch)
-        );
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_return_mismatch_when_verdicts_share_a_variant_but_differ_in_fields() {
-        // Given: both providers call the block non canonical but name different canonical
-        // hashes, so they describe different chains.
-        let non_canonical = |canonical_hash: Vec<u8>| {
-            mock_returning(verdict(move || Verdict::NonCanonicalBlock {
-                block_number: 1,
-                receipt_hash: HexBytes(vec![1]),
-                canonical_hash: HexBytes(canonical_hash.clone()),
-            }))
-        };
-        let fan_out = fan_out_of(vec![non_canonical(vec![2]), non_canonical(vec![3])]);
 
         // When
         let result = fan_out
@@ -549,49 +462,6 @@ mod all_err {
     }
 }
 
-mod tolerate_errors {
-    use super::*;
-
-    #[tokio::test]
-    async fn fan_out__should_tolerate_every_error_kind_when_one_inspector_extracts() {
-        // Given: a transient condition and a deterministic provider fault around a single
-        // extraction; both error kinds are tolerated alike.
-        let not_finalized = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
-        let rejected = mock_returning(err(|| {
-            ForeignChainInspectionError::RpcRequestRejected("HTTP status 401".to_string())
-        }));
-        let extracting = mock_returning(ok(vec![7]));
-        let fan_out = fan_out_of(vec![not_finalized, extracting, rejected]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_eq!(result.unwrap(), Verdict::Extracted(vec![7]));
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_tolerate_every_error_kind_when_another_inspector_rules_the_tx_out() {
-        // Given: the failing verdict wins over a transient condition and a provider fault.
-        let not_finalized = mock_returning(err(|| ForeignChainInspectionError::NotFinalized));
-        let malformed = mock_returning(err(|| {
-            ForeignChainInspectionError::MalformedRpcResponse("garbage".to_string())
-        }));
-        let failing = mock_returning(verdict(|| Verdict::TransactionFailed));
-        let fan_out = fan_out_of(vec![malformed, failing, not_finalized]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&any_single_provider(&fan_out), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::TransactionFailed));
-    }
-}
-
 mod quorum {
     use super::*;
 
@@ -629,81 +499,55 @@ mod quorum {
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![1]));
     }
 
-    /// Providers 0 and 1 are whitelisted with a quorum of two; provider 1 fails. An extra
-    /// agreeing provider outside the whitelist must not make up for it.
     #[rstest]
-    #[case::whitelisted_provider_fails(vec![ok(vec![1]), transient()])]
-    #[case::provider_outside_the_whitelist_agrees(vec![ok(vec![1]), transient(), ok(vec![1])])]
+    #[case::whitelisted_provider_fails(vec![ok(vec![1]), transient()], quorum(2, &[0, 1]), 1)]
+    #[case::agreeing_provider_outside_the_whitelist_does_not_make_up_for_the_failed_one(
+        vec![ok(vec![1]), transient(), ok(vec![1])],
+        quorum(2, &[0, 1]),
+        1,
+    )]
+    #[case::verdict_reached_only_outside_the_whitelist(
+        vec![ok(vec![1]), transient()],
+        quorum(1, &[1]),
+        0,
+    )]
     #[tokio::test]
     async fn fan_out__should_return_sub_quorum_when_too_few_whitelisted_providers_agree(
         #[case] responses: Vec<ResponseFn>,
+        #[case] required_quorum: RpcQuorum,
+        #[case] expected_agreeing: usize,
     ) {
         // Given
         let fan_out = fan_out_of(responses.into_iter().map(mock_returning).collect());
 
         // When
         let result = fan_out
-            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
+            .extract_with_quorum(&required_quorum, (), (), vec![])
             .await;
 
         // Then
         assert_matches!(
             result,
             Err(ForeignChainInspectionError::SubQuorum {
-                agreeing: 1,
+                agreeing,
                 required,
-            }) if required.get() == 2
+            }) if agreeing == expected_agreeing && required == required_quorum.required
         );
     }
 
+    #[rstest]
+    #[case::provider_outside_the_whitelist_vetoes_the_verdict(vec![
+        ok(vec![1]),
+        ok(vec![1]),
+        ok(vec![9]),
+    ])]
+    #[case::disagreement_instead_of_sub_quorum(vec![ok(vec![1]), ok(vec![9])])]
     #[tokio::test]
-    async fn fan_out__should_never_accept_a_verdict_reached_only_outside_the_whitelist() {
+    async fn fan_out__should_return_mismatch_when_providers_disagree_under_a_quorum(
+        #[case] responses: Vec<ResponseFn>,
+    ) {
         // Given
-        let fan_out = fan_out_of(vec![
-            mock_returning(ok(vec![1])),
-            mock_returning(transient()),
-        ]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&quorum(1, &[1]), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::SubQuorum { agreeing: 0, .. })
-        );
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_let_a_provider_outside_the_whitelist_veto_the_verdict() {
-        // Given
-        let fan_out = fan_out_of(vec![
-            mock_returning(ok(vec![1])),
-            mock_returning(ok(vec![1])),
-            mock_returning(ok(vec![9])),
-        ]);
-
-        // When
-        let result = fan_out
-            .extract_with_quorum(&quorum(2, &[0, 1]), (), (), vec![])
-            .await;
-
-        // Then
-        assert_matches!(
-            result,
-            Err(ForeignChainInspectionError::InspectorResponseMismatch)
-        );
-    }
-
-    #[tokio::test]
-    async fn fan_out__should_report_disagreement_rather_than_sub_quorum() {
-        // Given
-        let fan_out = fan_out_of(vec![
-            mock_returning(ok(vec![1])),
-            mock_returning(ok(vec![9])),
-        ]);
+        let fan_out = fan_out_of(responses.into_iter().map(mock_returning).collect());
 
         // When
         let result = fan_out

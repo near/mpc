@@ -58,6 +58,27 @@ fn test_log() -> Log {
     }
 }
 
+fn receipt_at(
+    block_number: u64,
+    block_hash: [u8; 32],
+    status: U64,
+) -> GetTransactionReceiptResponse {
+    GetTransactionReceiptResponse {
+        transaction_hash: H256::from([3; 32]),
+        block_hash: H256::from(block_hash),
+        block_number: U64::from(block_number),
+        status,
+        logs: vec![test_log()],
+    }
+}
+
+fn canonical_block_of(tx_response: &GetTransactionReceiptResponse) -> GetBlockByNumberResponse {
+    GetBlockByNumberResponse {
+        number: tx_response.block_number,
+        hash: tx_response.block_hash,
+    }
+}
+
 macro_rules! evm_inspector_tests {
     ($chain:ty, $mod_name:ident) => {
         mod $mod_name {
@@ -69,6 +90,29 @@ macro_rules! evm_inspector_tests {
             type BlockHash = <$chain as EvmChain>::BlockHash;
             type ExtractedValue = EvmExtractedValue<$chain>;
 
+            async fn extract_from(
+                tx_response: &GetTransactionReceiptResponse,
+                finality: EthereumFinality,
+                finality_block_number: u64,
+                canonical_block: Option<GetBlockByNumberResponse>,
+                extractors: Vec<EvmExtractor>,
+            ) -> Result<Verdict<ExtractedValue>, ForeignChainInspectionError> {
+                let finality_block_response = GetBlockByNumberResponse {
+                    number: U64::from(finality_block_number),
+                    hash: H256::from([0xaa; 32]),
+                };
+                let mut mock_client = SequentialResponseMockClientBuilder::new()
+                    .with_response(tx_response)
+                    .with_response(&finality_block_response);
+                if let Some(canonical_block) = canonical_block {
+                    mock_client = mock_client.with_response(&canonical_block);
+                }
+                let inspector = Inspector::new(mock_client.build());
+                inspector
+                    .extract(TxHash::from(tx_response.transaction_hash.0), finality, extractors)
+                    .await
+            }
+
             #[rstest]
             #[tokio::test]
             async fn extract_returns_correct_value_when_finalized(
@@ -78,209 +122,100 @@ macro_rules! evm_inspector_tests {
                 extractor: EvmExtractor,
             ) {
                 // given
-                let tx_id = TxHash::from([3; 32]);
-
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([3; 32]),
-                    block_hash: H256::from([4; 32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
-                };
-
+                let tx_response = receipt_at(90, [4; 32], U64::one());
                 let expected = expected_extracted_value::<$chain>(&extractor, &tx_response);
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
 
                 // when
-                let extracted_values = inspector
-                    .extract(tx_id, finality, vec![extractor])
-                    .await
-                    .unwrap();
+                let extracted_values = extract_from(
+                    &tx_response,
+                    finality,
+                    100,
+                    Some(canonical_block_of(&tx_response)),
+                    vec![extractor],
+                )
+                .await
+                .unwrap();
 
                 // then
                 assert_eq!(Verdict::Extracted(vec![expected]), extracted_values);
             }
 
+            #[rstest]
+            #[case::finality_block_equals_tx_block(
+                50,
+                50,
+                U64::one(),
+                vec![EvmExtractor::BlockHash],
+                Verdict::Extracted(vec![ExtractedValue::BlockHash(BlockHash::from([4; 32]))]),
+            )]
+            // The status check happens after the canonical lookup, so all three RPC
+            // calls are exercised before TransactionFailed is returned.
+            #[case::transaction_failed(
+                90,
+                100,
+                U64::zero(),
+                vec![EvmExtractor::BlockHash],
+                Verdict::TransactionFailed,
+            )]
+            #[case::no_extractors_provided(
+                90,
+                100,
+                U64::one(),
+                Vec::new(),
+                Verdict::Extracted(Vec::new()),
+            )]
+            #[case::log_index_is_absent(
+                90,
+                100,
+                U64::one(),
+                vec![EvmExtractor::Log { log_index: 5 }],
+                Verdict::LogIndexOutOfBounds,
+            )]
             #[tokio::test]
-            async fn extract_succeeds_when_finality_block_equals_tx_block() {
-                // given
-                let tx_id = TxHash::from([3; 32]);
-                let expected_block_hash = BlockHash::from([4; 32]);
+            async fn extract__should_return_the_expected_verdict(
+                #[case] receipt_block_number: u64,
+                #[case] finality_block_number: u64,
+                #[case] status: U64,
+                #[case] extractors: Vec<EvmExtractor>,
+                #[case] expected: Verdict<ExtractedValue>,
+            ) {
+                // Given
+                let tx_response = receipt_at(receipt_block_number, [4; 32], status);
 
-                let block_number = U64::from(50);
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: block_number,
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([3; 32]),
-                    block_hash: H256::from([4; 32]),
-                    block_number,
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: block_number,
-                    hash: tx_response.block_hash,
-                };
+                // When
+                let response = extract_from(
+                    &tx_response,
+                    EthereumFinality::Finalized,
+                    finality_block_number,
+                    Some(canonical_block_of(&tx_response)),
+                    extractors,
+                )
+                .await
+                .unwrap();
 
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
-
-                // when
-                let extracted_values = inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::BlockHash],
-                    )
-                    .await
-                    .unwrap();
-
-                // then
-                let expected_extractions =
-                    vec![ExtractedValue::BlockHash(expected_block_hash)];
-                assert_eq!(Verdict::Extracted(expected_extractions), extracted_values);
+                // Then
+                assert_eq!(expected, response);
             }
 
             #[tokio::test]
             async fn extract_returns_error_when_not_finalized() {
                 // given
-                let tx_id = TxHash::from([1; 32]);
-
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(50),
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([1; 32]),
-                    block_hash: H256::from([2; 32]),
-                    block_number: U64::from(60),
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
-
-                // extract returns NotFinalized before the canonical lookup, so only two RPC
-                // calls are exercised.
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
+                let tx_response = receipt_at(60, [2; 32], U64::one());
 
                 // when
-                let response = inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::BlockHash],
-                    )
-                    .await;
+                let response = extract_from(
+                    &tx_response,
+                    EthereumFinality::Finalized,
+                    50,
+                    // extract returns NotFinalized before the canonical lookup, so only two RPC
+                    // calls are exercised.
+                    None,
+                    vec![EvmExtractor::BlockHash],
+                )
+                .await;
 
                 // then
                 assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
-            }
-
-            #[tokio::test]
-            async fn extract_returns_the_transaction_failed_verdict() {
-                // given
-                let tx_id = TxHash::from([1; 32]);
-
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([1; 32]),
-                    block_hash: H256::from([2; 32]),
-                    block_number: U64::from(90),
-                    status: U64::zero(),
-                    logs: vec![test_log()],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
-                };
-
-                // The status check happens after the canonical lookup, so all three RPC
-                // calls are exercised before TransactionFailed is returned.
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
-
-                // when
-                let response = inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::BlockHash],
-                    )
-                    .await;
-
-                // then
-                assert_matches!(
-                    response,
-                    Ok(Verdict::TransactionFailed)
-                );
-            }
-
-            #[tokio::test]
-            async fn extract_returns_empty_when_no_extractors_provided() {
-                // given
-                let tx_id = TxHash::from([11; 32]);
-
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([11; 32]),
-                    block_hash: H256::from([12; 32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
-                };
-
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
-
-                // when
-                let extracted_values = inspector
-                    .extract(tx_id, EthereumFinality::Finalized, Vec::new())
-                    .await
-                    .unwrap();
-
-                // then
-                let expected_extractions: Vec<ExtractedValue> = vec![];
-                assert_eq!(Verdict::Extracted(expected_extractions), extracted_values);
             }
 
             #[tokio::test]
@@ -308,21 +243,12 @@ macro_rules! evm_inspector_tests {
             async fn fan_out__should_return_mismatch_when_one_provider_fabricates_a_receipt() {
                 // given: single malicious provider returns finalized, two other providers answer null
                 let tx_id = TxHash::from([3;32]);
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([3;32]),
-                    block_hash: H256::from([4;32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
+                let tx_response = receipt_at(90, [4; 32], U64::one());
                 let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
                 };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
-                };
+                let canonical_block_response = canonical_block_of(&tx_response);
                 let malicious =  Inspector::new(
                     SequentialResponseMockClientBuilder::new()
                     .with_response(&tx_response)
@@ -482,54 +408,8 @@ macro_rules! evm_inspector_tests {
             }
 
             #[tokio::test]
-            async fn extract_returns_the_out_of_bounds_verdict_when_log_index_is_absent() {
-                // given
-                let tx_id = TxHash::from([1; 32]);
-
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([1; 32]),
-                    block_hash: H256::from([2; 32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
-                };
-
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
-
-                // when
-                let response = inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::Log { log_index: 5 }],
-                    )
-                    .await;
-
-                // then
-                assert_matches!(
-                    response,
-                    Ok(Verdict::LogIndexOutOfBounds)
-                );
-            }
-
-            #[tokio::test]
             async fn extract_returns_correct_log_by_evm_log_index() {
                 // given: logs with block-level logIndex values (not array positions)
-                let tx_id = TxHash::from([3; 32]);
-
                 let log_at_index_20 = Log {
                     removed: false,
                     log_index: U64::from(20),
@@ -554,38 +434,21 @@ macro_rules! evm_inspector_tests {
                 };
                 let expected_log = log_at_index_21.clone();
 
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
                 let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([3; 32]),
-                    block_hash: H256::from([4; 32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
                     logs: vec![log_at_index_20, log_at_index_21],
+                    ..receipt_at(90, [4; 32], U64::one())
                 };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
-                };
-
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
 
                 // when: request log by its EVM logIndex (21), not array position (1)
-                let extracted_values = inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::Log { log_index: 21 }],
-                    )
-                    .await
-                    .unwrap();
+                let extracted_values = extract_from(
+                    &tx_response,
+                    EthereumFinality::Finalized,
+                    100,
+                    Some(canonical_block_of(&tx_response)),
+                    vec![EvmExtractor::Log { log_index: 21 }],
+                )
+                .await
+                .unwrap();
 
                 // then
                 let expected_extractions = vec![ExtractedValue::Log(expected_log)];
@@ -596,39 +459,21 @@ macro_rules! evm_inspector_tests {
             async fn extract_rejects_a_canonical_lookup_answering_a_different_height() {
                 // given: the canonical block lookup answers with a block below the receipt's
                 // height, the provider's own fault rather than a statement about the chain.
-                let tx_id = TxHash::from([1; 32]);
-
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([1; 32]),
-                    block_hash: H256::from([0xbb; 32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
+                let tx_response = receipt_at(90, [0xbb; 32], U64::one());
+                let canonical_block = GetBlockByNumberResponse {
                     number: U64::from(89),
                     hash: tx_response.block_hash,
                 };
 
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
-
                 // when
-                let response = inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::BlockHash],
-                    )
-                    .await;
+                let response = extract_from(
+                    &tx_response,
+                    EthereumFinality::Finalized,
+                    100,
+                    Some(canonical_block),
+                    vec![EvmExtractor::BlockHash],
+                )
+                .await;
 
                 // then
                 assert_matches!(
@@ -642,39 +487,21 @@ macro_rules! evm_inspector_tests {
                 // given: the receipt is past the finality head (so the number-only check passes)
                 // but its block hash differs from the canonical block hash at that height,
                 // simulating an RPC that served a side-block receipt for a finalized height.
-                let tx_id = TxHash::from([1; 32]);
-
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
-                let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256::from([1; 32]),
-                    block_hash: H256::from([0xbb; 32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
-                    logs: vec![test_log()],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
+                let tx_response = receipt_at(90, [0xbb; 32], U64::one());
+                let canonical_block = GetBlockByNumberResponse {
                     number: tx_response.block_number,
                     hash: H256::from([0xcc; 32]),
                 };
 
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
-
                 // when
-                let response = inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::BlockHash],
-                    )
-                    .await;
+                let response = extract_from(
+                    &tx_response,
+                    EthereumFinality::Finalized,
+                    100,
+                    Some(canonical_block),
+                    vec![EvmExtractor::BlockHash],
+                )
+                .await;
 
                 // then
                 assert_matches!(
@@ -751,12 +578,11 @@ macro_rules! evm_inspector_tests {
             async fn extract__should_reject_log_not_bound_to_receipt(#[case] unbound_log: Log) {
                 // Given
                 let tx_id_bytes: [u8; 32] = [3; 32];
-                let tx_id = TxHash::from(tx_id_bytes);
                 let expected_log = unbound_log.clone();
                 let bound_log = test_log();
 
                 // When
-                let response = extract_log_from_receipt_with(tx_id, unbound_log).await;
+                let response = extract_log_from_receipt_with(unbound_log).await;
 
                 // Then
                 assert_matches!(
@@ -781,45 +607,26 @@ macro_rules! evm_inspector_tests {
             }
 
             /// Runs `extract` selecting `log` by its own `log_index` from a finalized,
-            /// canonical receipt for `tx_id` whose block fields match [`test_log`]'s.
+            /// canonical receipt whose block fields match [`test_log`]'s.
             async fn extract_log_from_receipt_with(
-                tx_id: TxHash,
                 log: Log,
             ) -> Result<Verdict<ExtractedValue>, ForeignChainInspectionError> {
-                let bound_log = test_log();
                 let target_log_index = log.log_index.as_u64();
-                let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
-                    hash: H256::from([0xaa; 32]),
-                };
                 let tx_response = GetTransactionReceiptResponse {
-                    transaction_hash: H256(tx_id.clone().into()),
-                    block_hash: bound_log.block_hash,
-                    block_number: bound_log.block_number,
-                    status: U64::one(),
                     logs: vec![log],
-                };
-                let canonical_block_response = GetBlockByNumberResponse {
-                    number: tx_response.block_number,
-                    hash: tx_response.block_hash,
+                    ..receipt_at(90, [4; 32], U64::one())
                 };
 
-                let mock_client = SequentialResponseMockClientBuilder::new()
-                    .with_response(&tx_response)
-                    .with_response(&finality_block_response)
-                    .with_response(&canonical_block_response)
-                    .build();
-                let inspector = Inspector::new(mock_client);
-
-                inspector
-                    .extract(
-                        tx_id,
-                        EthereumFinality::Finalized,
-                        vec![EvmExtractor::Log {
-                            log_index: target_log_index,
-                        }],
-                    )
-                    .await
+                extract_from(
+                    &tx_response,
+                    EthereumFinality::Finalized,
+                    100,
+                    Some(canonical_block_of(&tx_response)),
+                    vec![EvmExtractor::Log {
+                        log_index: target_log_index,
+                    }],
+                )
+                .await
             }
         }
     };
