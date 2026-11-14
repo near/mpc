@@ -59,6 +59,23 @@ fn committed_user_tx_body() -> serde_json::Value {
     })
 }
 
+async fn extract_from_response(
+    status: u16,
+    content_type: &str,
+    body: String,
+) -> Result<Verdict<AptosExtractedValue>, ForeignChainInspectionError> {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path(tx_path());
+        then.status(status)
+            .header("content-type", content_type)
+            .body(body);
+    });
+    inspector_for(&server)
+        .extract(tx_id(), AptosFinality::Committed, vec![])
+        .await
+}
+
 #[tokio::test]
 async fn extract__should_return_normalized_event_via_rest_client() {
     // Given
@@ -128,25 +145,16 @@ async fn extract__should_send_auth_header_when_configured() {
 #[tokio::test]
 async fn extract__should_return_not_finalized_for_pending_transaction() {
     // Given — a pending body: no execution result, no events.
-    let server = MockServer::start();
-    server.mock(|when, then| {
-        when.method(GET).path(tx_path());
-        then.status(200)
-            .header("content-type", "application/json")
-            .json_body(serde_json::json!({
-                "type": "pending_transaction",
-                "hash": tx_hash_hex(),
-                "sender": "0x1",
-                "sequence_number": "7",
-                "payload": { "type": "entry_function_payload" }
-            }));
+    let body = serde_json::json!({
+        "type": "pending_transaction",
+        "hash": tx_hash_hex(),
+        "sender": "0x1",
+        "sequence_number": "7",
+        "payload": { "type": "entry_function_payload" }
     });
-    let inspector = inspector_for(&server);
 
     // When
-    let response = inspector
-        .extract(tx_id(), AptosFinality::Committed, vec![])
-        .await;
+    let response = extract_from_response(200, "application/json", body.to_string()).await;
 
     // Then
     assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
@@ -155,22 +163,13 @@ async fn extract__should_return_not_finalized_for_pending_transaction() {
 #[tokio::test]
 async fn extract__should_return_transaction_not_found_on_404() {
     // Given
-    let server = MockServer::start();
-    server.mock(|when, then| {
-        when.method(GET).path(tx_path());
-        then.status(404)
-            .header("content-type", "application/json")
-            .json_body(serde_json::json!({
-                "message": "transaction not found",
-                "error_code": "transaction_not_found"
-            }));
+    let body = serde_json::json!({
+        "message": "transaction not found",
+        "error_code": "transaction_not_found"
     });
-    let inspector = inspector_for(&server);
 
     // When
-    let response = inspector
-        .extract(tx_id(), AptosFinality::Committed, vec![])
-        .await;
+    let response = extract_from_response(404, "application/json", body.to_string()).await;
 
     // Then
     assert_matches!(response, Ok(Verdict::TransactionNotFound));
@@ -209,19 +208,10 @@ async fn extract__should_classify_http_errors_by_status(
 #[tokio::test]
 async fn extract__should_reject_a_response_that_does_not_carry_the_resource() {
     // Given
-    let server = MockServer::start();
-    server.mock(|when, then| {
-        when.method(GET).path(tx_path());
-        then.status(200)
-            .header("content-type", "text/html")
-            .body("<html><body>Sign in to continue</body></html>");
-    });
-    let inspector = inspector_for(&server);
+    let body = "<html><body>Sign in to continue</body></html>".to_string();
 
     // When
-    let response = inspector
-        .extract(tx_id(), AptosFinality::Committed, vec![])
-        .await;
+    let response = extract_from_response(200, "text/html", body).await;
 
     // Then
     let error = response.expect_err("extract should fail");
@@ -232,24 +222,15 @@ async fn extract__should_reject_a_response_that_does_not_carry_the_resource() {
 #[tokio::test]
 async fn extract__should_reject_response_with_mismatched_hash() {
     // Given — the backend echoes a different transaction than queried.
-    let server = MockServer::start();
-    server.mock(|when, then| {
-        when.method(GET).path(tx_path());
-        then.status(200)
-            .header("content-type", "application/json")
-            .json_body(serde_json::json!({
-                "type": "user_transaction",
-                "hash": format!("0x{}", "cd".repeat(32)),
-                "success": true,
-                "events": []
-            }));
+    let body = serde_json::json!({
+        "type": "user_transaction",
+        "hash": format!("0x{}", "cd".repeat(32)),
+        "success": true,
+        "events": []
     });
-    let inspector = inspector_for(&server);
 
     // When
-    let response = inspector
-        .extract(tx_id(), AptosFinality::Committed, vec![])
-        .await;
+    let response = extract_from_response(200, "application/json", body.to_string()).await;
 
     // Then
     assert_matches!(

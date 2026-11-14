@@ -476,61 +476,40 @@ mod tests {
         ensure_signature_matches(&signature, Some(&encoded)).unwrap();
     }
 
-    #[test]
-    fn ensure_signature_matches__should_reject_different_signature() {
-        // Given
-        let encoded_other = bs58::encode([0xcd; 64]).into_string();
+    #[rstest]
+    #[case::different_signature(bs58::encode([0xcd; 64]).into_string())]
+    // Decodes fine but to 63 bytes, which simply differs from the requested 64.
+    #[case::shorter_signature(bs58::encode([0xab; 63]).into_string())]
+    fn ensure_signature_matches__should_reject_a_differing_signature_as_inconsistent(
+        #[case] encoded: String,
+    ) {
+        // When
+        let result = ensure_signature_matches(&[0xab; 64], Some(&encoded));
 
-        // When / Then
+        // Then
         assert_matches!(
-            ensure_signature_matches(&[0xab; 64], Some(&encoded_other)),
+            result,
             Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
         );
     }
 
-    #[test]
-    fn ensure_signature_matches__should_reject_missing_signature_as_malformed() {
-        // When / Then
+    #[rstest]
+    #[case::missing_signature(None)]
+    // 0, O, I and l are not part of the base58 alphabet.
+    #[case::non_base58_signature(Some("not-base58-0OIl".to_string()))]
+    // A base58 string far longer than any 64-byte signature. Decoding it with `bs58` is
+    // superlinear, so it must be rejected on length before the decode runs.
+    #[case::oversized_signature_without_decoding(Some("1".repeat(1_000_000)))]
+    fn ensure_signature_matches__should_reject_an_unusable_signature_as_malformed(
+        #[case] encoded: Option<String>,
+    ) {
+        // When
+        let result = ensure_signature_matches(&[0xab; 64], encoded.as_deref());
+
+        // Then
         assert_matches!(
-            ensure_signature_matches(&[0xab; 64], None),
+            result,
             Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn ensure_signature_matches__should_reject_non_base58_signature_as_malformed() {
-        // Given — 0, O, I and l are not part of the base58 alphabet.
-        // When / Then
-        assert_matches!(
-            ensure_signature_matches(&[0xab; 64], Some("not-base58-0OIl")),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn ensure_signature_matches__should_reject_oversized_signature_without_decoding() {
-        // Given — a base58 string far longer than any 64-byte signature. Decoding it
-        // with `bs58` is superlinear, so it must be rejected on length before the
-        // decode runs.
-        let oversized = "1".repeat(1_000_000);
-
-        // When / Then
-        assert_matches!(
-            ensure_signature_matches(&[0xab; 64], Some(&oversized)),
-            Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn ensure_signature_matches__should_reject_shorter_signature_as_inconsistent() {
-        // Given — decodes fine but to 63 bytes, which simply differs from the
-        // requested 64.
-        let short = bs58::encode([0xab; 63]).into_string();
-
-        // When / Then
-        assert_matches!(
-            ensure_signature_matches(&[0xab; 64], Some(&short)),
-            Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
         );
     }
 
