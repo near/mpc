@@ -175,6 +175,7 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
 
     use near_sdk::{
@@ -191,6 +192,7 @@ mod tests {
     use crate::primitives::proposal_hash::ProposalHash;
     use crate::primitives::test_utils::gen_authenticated_participants;
     use crate::primitives::votes::{VoterSet, Votes};
+    use rstest::rstest;
 
     #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, BorshDeserialize, BorshSerialize)]
     struct TestVoter(String);
@@ -513,44 +515,25 @@ mod tests {
         assert_eq!(count, ParticipantCount::new(2));
     }
 
-    #[test]
-    #[expect(non_snake_case)]
-    fn voter_set_remove__should_return_remaining_count() {
-        let alice = TestVoter("alice".to_string());
-        let bob = TestVoter("bob".to_string());
+    #[rstest]
+    #[case::remaining_count(&["alice", "bob"], "alice", Some(1), &["bob"])]
+    #[case::zero_when_removing_last_vote(&["alice"], "alice", Some(0), &[])]
+    #[case::none_and_unchanged_set_when_removing_unknown_vote(&["alice"], "bob", None, &["alice"])]
+    fn voter_set_remove__should_return_remaining_count_and_drop_the_voter(
+        #[case] initial: &[&str],
+        #[case] removed: &str,
+        #[case] expected_remaining: Option<usize>,
+        #[case] expected_set: &[&str],
+    ) {
+        // Given
+        let voter = |name: &&str| TestVoter(name.to_string());
+        let mut voter_set = VoterSet(initial.iter().map(voter).collect());
 
-        let mut voter_set = VoterSet([alice.clone(), bob.clone()].into());
+        // When
+        let remaining = voter_set.remove(&voter(&removed));
 
-        let remaining = voter_set.remove(&alice);
-
-        assert_eq!(remaining, Some(1));
-        assert_eq!(voter_set.0, [bob.clone()].into());
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn voter_set_remove__should_return_zero_when_removing_last_vote() {
-        let alice = TestVoter("alice".to_string());
-
-        let mut voter_set = VoterSet([alice.clone()].into());
-
-        let remaining = voter_set.remove(&alice);
-
-        assert_eq!(remaining, Some(0));
-        assert!(voter_set.0.is_empty());
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn voter_set_remove__should_return_none_and_leave_set_unchanged_when_removing_unknown_vote() {
-        let alice = TestVoter("alice".to_string());
-        let bob = TestVoter("bob".to_string());
-
-        let mut voter_set = VoterSet([alice.clone()].into());
-
-        let remaining = voter_set.remove(&bob);
-
-        assert_eq!(remaining, None);
-        assert_eq!(voter_set.0, [alice.clone()].into());
+        // Then
+        assert_eq!(remaining, expected_remaining);
+        assert_eq!(voter_set.0, expected_set.iter().map(voter).collect());
     }
 }
