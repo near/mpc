@@ -102,6 +102,8 @@ impl ToCompileError for anyhow::Result<proc_macro2::TokenStream> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     const TEST_TCB_INFO_JSON: &str = r#"{
@@ -142,23 +144,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn generate_measurements_tokens__should_fail_with_invalid_json() {
-        // Given
-        let invalid_json = "invalid json";
-
-        // When
-        let result = generate_measurements_tokens(invalid_json);
-
-        // Then
-        let err = result.expect_err("Invalid JSON should fail to parse");
-        assert!(err.to_string().contains("Failed to parse TCB info JSON"));
-    }
-
-    #[test]
-    fn generate_measurements_tokens__should_fail_with_missing_key_provider_event() {
-        // Given
-        let json_without_key_provider = r#"{
+    fn tcb_info_json_with_event_log(event_log: &str) -> String {
+        format!(
+            r#"{{
             "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
             "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
             "rtmr1": "a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15",
@@ -168,34 +156,12 @@ mod tests {
             "compose_hash": "3efecc42bdef4cb42fa354e9b84fe00e9d82b5397a739e0b03188ab80d72ed81",
             "device_id": "7a82191bd4dedb9d716e3aa422963cf1009f36e3068404a0322feca1ce517dc9",
             "app_compose": "test_compose",
-            "event_log": []
-        }"#;
-
-        // When
-        let result = generate_measurements_tokens(json_without_key_provider);
-
-        // Then
-        let err = result.expect_err("Missing key-provider event should fail");
-        assert!(
-            err.to_string()
-                .contains("Expected exactly one key-provider event, found 0")
-        );
+            "event_log": {event_log}
+        }}"#
+        )
     }
 
-    #[test]
-    fn generate_measurements_tokens__should_fail_with_multiple_key_provider_events() {
-        // Given
-        let json_with_multiple_key_providers = r#"{
-            "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
-            "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
-            "rtmr1": "a7b523278d4f914ee8df0ec80cd1c3d498cbf1152b0c5eaf65bad9425072874a3fcf891e8b01713d3d9937e3e0d26c15",
-            "rtmr2": "dbf4924c07f5066f3dc6859844184344306aa3263817153dcaee85af97d23e0c0b96efe0731d8865a8747e51b9e351ac",
-            "rtmr3": "e0d4a068296ebdfc4c9cbf4777663c65c0da4405b8380f28e344f1fab52490264944ff8ccfde112b85eb1d997785e2ac",
-            "os_image_hash": "",
-            "compose_hash": "3efecc42bdef4cb42fa354e9b84fe00e9d82b5397a739e0b03188ab80d72ed81",
-            "device_id": "7a82191bd4dedb9d716e3aa422963cf1009f36e3068404a0322feca1ce517dc9",
-            "app_compose": "test_compose",
-            "event_log": [
+    const TWO_KEY_PROVIDER_EVENTS: &str = r#"[
                 {
                     "imr": 3,
                     "event_type": 134217729,
@@ -210,17 +176,27 @@ mod tests {
                     "event": "key-provider",
                     "event_payload": "payload2"
                 }
-            ]
-        }"#;
+            ]"#;
 
+    #[rstest]
+    #[case::invalid_json("invalid json".to_string(), "Failed to parse TCB info JSON")]
+    #[case::missing_key_provider_event(
+        tcb_info_json_with_event_log("[]"),
+        "Expected exactly one key-provider event, found 0"
+    )]
+    #[case::multiple_key_provider_events(
+        tcb_info_json_with_event_log(TWO_KEY_PROVIDER_EVENTS),
+        "Expected exactly one key-provider event, found 2"
+    )]
+    fn generate_measurements_tokens__should_fail_with_invalid_input(
+        #[case] json_content: String,
+        #[case] expected_error_fragment: &str,
+    ) {
         // When
-        let result = generate_measurements_tokens(json_with_multiple_key_providers);
+        let result = generate_measurements_tokens(&json_content);
 
         // Then
-        let err = result.expect_err("Multiple key-provider events should fail");
-        assert!(
-            err.to_string()
-                .contains("Expected exactly one key-provider event, found 2")
-        );
+        let err = result.expect_err("Invalid input should fail");
+        assert!(err.to_string().contains(expected_error_fragment));
     }
 }
