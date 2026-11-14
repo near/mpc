@@ -1,11 +1,14 @@
+#![expect(non_snake_case)]
+
 use std::assert_matches;
 use std::path::PathBuf;
 
 use attestation_cli::cli::{Source, VerifyArgs};
 use attestation_cli::verify;
-use mpc_attestation::attestation::{Attestation, VerificationError};
+use mpc_attestation::attestation::{Attestation, MockAttestation, VerificationError};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
+use rstest::rstest;
 use test_utils::attestation::{
     TEST_LAUNCHER_IMAGE_COMPOSE_STRING, TEST_MPC_IMAGE_DIGEST_HEX, VALID_ATTESTATION_TIMESTAMP,
     account_key, collateral_dates, mock_dstack_attestation, p2p_tls_key,
@@ -70,20 +73,27 @@ fn full_verification_succeeds_with_valid_attestation() {
     );
 }
 
-#[test]
-fn verification_fails_with_wrong_image_hash() {
-    let attestation = mock_dstack_attestation();
-    let static_data = make_static_web_data(attestation);
-
+#[rstest]
+#[case::wrong_image_hash(
+    TEST_LAUNCHER_IMAGE_COMPOSE_STRING,
+    "0000000000000000000000000000000000000000000000000000000000000000"
+)]
+#[case::wrong_compose_file("wrong compose content", TEST_MPC_IMAGE_DIGEST_HEX)]
+fn verify_at_timestamp__should_reject_hashes_outside_the_allowed_list(
+    #[case] compose_content: &str,
+    #[case] image_hash: &str,
+) {
+    // Given
+    let static_data = make_static_web_data(mock_dstack_attestation());
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
-    std::fs::write(&compose_path, TEST_LAUNCHER_IMAGE_COMPOSE_STRING).unwrap();
+    std::fs::write(&compose_path, compose_content).unwrap();
+    let args = make_args(&compose_path, image_hash, Some(dev_measurements_path()));
 
-    let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let args = make_args(&compose_path, wrong_hash, Some(dev_measurements_path()));
-
+    // When
     let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
 
+    // Then
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -92,82 +102,38 @@ fn verification_fails_with_wrong_image_hash() {
     );
 }
 
-#[test]
-fn verification_fails_with_wrong_compose_file() {
-    let attestation = mock_dstack_attestation();
-    let static_data = make_static_web_data(attestation);
-
-    let dir = tempfile::tempdir().unwrap();
-    let compose_path = dir.path().join("launcher-compose.yaml");
-    std::fs::write(&compose_path, "wrong compose content").unwrap();
-
-    let args = make_args(
-        &compose_path,
-        TEST_MPC_IMAGE_DIGEST_HEX,
-        Some(dev_measurements_path()),
-    );
-
-    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
-
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("not in the allowed"),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
-fn run_verification_rejects_none_attestation() {
+#[rstest]
+#[case::none_attestation(None, "tee_participant_info is null")]
+#[case::mock_attestation(Some(Attestation::Mock(MockAttestation::Valid)), "Mock")]
+fn run_verification__should_reject_unverifiable_attestation(
+    #[case] tee_participant_info: Option<Attestation>,
+    #[case] expected_error_fragment: &str,
+) {
+    // Given
     let static_data = StaticWebData {
         near_signer_public_key: Ed25519PublicKey(account_key()),
         near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
-        tee_participant_info: None,
+        tee_participant_info,
     };
-
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
     std::fs::write(&compose_path, "content").unwrap();
-
     let args = make_args(
         &compose_path,
         "0000000000000000000000000000000000000000000000000000000000000000",
         None,
     );
 
+    // When
     let result = verify::run_verification(&static_data, &args);
+
+    // Then
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
-        err.contains("tee_participant_info is null"),
+        err.contains(expected_error_fragment),
         "unexpected error: {err}"
     );
-}
-
-#[test]
-fn run_verification_rejects_mock_attestation() {
-    let static_data = StaticWebData {
-        near_signer_public_key: Ed25519PublicKey(account_key()),
-        near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
-        tee_participant_info: Some(Attestation::Mock(
-            mpc_attestation::attestation::MockAttestation::Valid,
-        )),
-    };
-
-    let dir = tempfile::tempdir().unwrap();
-    let compose_path = dir.path().join("launcher-compose.yaml");
-    std::fs::write(&compose_path, "content").unwrap();
-
-    let args = make_args(
-        &compose_path,
-        "0000000000000000000000000000000000000000000000000000000000000000",
-        None,
-    );
-
-    let result = verify::run_verification(&static_data, &args);
-    assert!(result.is_err());
-    let err = result.unwrap_err().to_string();
-    assert!(err.contains("Mock"), "unexpected error: {err}");
 }
 
 #[test]
