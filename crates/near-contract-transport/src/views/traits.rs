@@ -111,9 +111,11 @@ pub trait WatchContractState {
 mod tests {
     use super::{PollInterval, WatchContractState};
     use crate::{ObservedState, TransportError, WaitError};
+    use rstest::rstest;
     use std::{collections::VecDeque, time::Duration};
 
     type Observation = Result<ObservedState<&'static str>, TransportError<&'static str>>;
+    type WaitResult = Result<ObservedState<&'static str>, WaitError<&'static str>>;
 
     struct ScriptedWatch {
         observations: VecDeque<Observation>,
@@ -155,69 +157,65 @@ mod tests {
         assert!(PollInterval::new(Duration::ZERO).is_none());
     }
 
+    #[rstest]
+    #[case::returns_an_observation_that_already_satisfies_the_predicate(
+        vec![observed(1, "ready")],
+        Duration::from_secs(10),
+        "ready",
+        observed(1, "ready").map_err(WaitError::Transport)
+    )]
+    #[case::returns_the_first_observation_satisfying_the_predicate(
+        vec![observed(1, "a"), observed(2, "b"), observed(3, "b")],
+        Duration::from_secs(10),
+        "b",
+        observed(2, "b").map_err(WaitError::Transport)
+    )]
+    #[case::skips_view_errors(
+        vec![Err(TransportError::View("view failed")), observed(2, "recovered")],
+        Duration::from_secs(10),
+        "recovered",
+        observed(2, "recovered").map_err(WaitError::Transport)
+    )]
+    #[case::accepts_an_unbounded_timeout(
+        vec![observed(1, "a"), observed(2, "b")],
+        Duration::MAX,
+        "b",
+        observed(2, "b").map_err(WaitError::Transport)
+    )]
+    #[case::fails_when_the_subscription_closes(
+        vec![observed(1, "value")],
+        Duration::from_secs(10),
+        "never",
+        Err(WaitError::Transport(TransportError::MonitoringClosed))
+    )]
     #[tokio::test]
-    async fn wait_for__should_return_an_observation_that_already_satisfies_the_predicate() {
+    async fn wait_for__should_resolve_against_a_closing_subscription(
+        #[case] observations: Vec<Observation>,
+        #[case] timeout: Duration,
+        #[case] target: &'static str,
+        #[case] expected: WaitResult,
+    ) {
         // Given
         let mut watch = ScriptedWatch {
-            observations: [observed(1, "ready")].into(),
+            observations: observations.into(),
             closes: true,
         };
 
         // When
-        let result = watch
-            .wait_for(Duration::from_secs(10), |value| *value == "ready")
-            .await;
+        let result = watch.wait_for(timeout, |value| *value == target).await;
 
         // Then
-        assert_eq!(result, observed(1, "ready").map_err(WaitError::Transport));
+        assert_eq!(result, expected);
     }
 
-    #[tokio::test]
-    async fn wait_for__should_return_the_first_observation_satisfying_the_predicate() {
-        // Given
-        let mut watch = ScriptedWatch {
-            observations: [observed(1, "a"), observed(2, "b"), observed(3, "b")].into(),
-            closes: true,
-        };
-
-        // When
-        let result = watch
-            .wait_for(Duration::from_secs(10), |value| *value == "b")
-            .await;
-
-        // Then
-        assert_eq!(result, observed(2, "b").map_err(WaitError::Transport));
-    }
-
-    #[tokio::test]
-    async fn wait_for__should_skip_view_errors() {
-        // Given
-        let mut watch = ScriptedWatch {
-            observations: [
-                Err(TransportError::View("view failed")),
-                observed(2, "recovered"),
-            ]
-            .into(),
-            closes: true,
-        };
-
-        // When
-        let result = watch
-            .wait_for(Duration::from_secs(10), |value| *value == "recovered")
-            .await;
-
-        // Then
-        assert_eq!(
-            result,
-            observed(2, "recovered").map_err(WaitError::Transport)
-        );
-    }
-
+    #[rstest]
+    #[case::keeps_waiting_while_view_errors_persist(Err(TransportError::View("view failed")))]
+    #[case::times_out_when_the_predicate_never_holds(observed(1, "value"))]
     #[tokio::test(start_paused = true)]
-    async fn wait_for__should_keep_waiting_while_view_errors_persist() {
+    async fn wait_for__should_time_out_on_an_open_subscription(#[case] observation: Observation) {
         // Given
         let mut watch = ScriptedWatch {
-            observations: [Err(TransportError::View("view failed"))].into(),
+            observations: [observation].into(),
             closes: false,
         };
         let timeout = Duration::from_secs(1);
@@ -227,56 +225,5 @@ mod tests {
 
         // Then
         assert_eq!(result, Err(WaitError::TimedOut(timeout)));
-    }
-
-    #[tokio::test]
-    async fn wait_for__should_accept_an_unbounded_timeout() {
-        // Given
-        let mut watch = ScriptedWatch {
-            observations: [observed(1, "a"), observed(2, "b")].into(),
-            closes: true,
-        };
-
-        // When
-        let result = watch.wait_for(Duration::MAX, |value| *value == "b").await;
-
-        // Then
-        assert_eq!(result, observed(2, "b").map_err(WaitError::Transport));
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn wait_for__should_time_out_when_the_predicate_never_holds() {
-        // Given
-        let mut watch = ScriptedWatch {
-            observations: [observed(1, "value")].into(),
-            closes: false,
-        };
-        let timeout = Duration::from_secs(1);
-
-        // When
-        let result = watch.wait_for(timeout, |value| *value == "never").await;
-
-        // Then
-        assert_eq!(result, Err(WaitError::TimedOut(timeout)));
-    }
-
-    #[tokio::test]
-    async fn wait_for__should_fail_when_the_subscription_closes() {
-        // Given
-        let mut watch = ScriptedWatch {
-            observations: [observed(1, "value")].into(),
-            closes: true,
-        };
-
-        // When
-        let result = watch
-            .wait_for(Duration::from_secs(10), |value| *value == "never")
-            .await;
-
-        // Then
-        assert_eq!(
-            result,
-            Err(WaitError::Transport(TransportError::MonitoringClosed))
-        );
     }
 }
