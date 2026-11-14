@@ -14,6 +14,7 @@ use foreign_chain_rpc_interfaces::sui::proto::{
 };
 use foreign_chain_rpc_interfaces::sui::{Status, SuiRpcClient};
 use near_mpc_contract_interface::types::{SuiAddress, SuiEvent};
+use rstest::rstest;
 use std::assert_matches;
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
@@ -116,31 +117,25 @@ fn expected_event() -> SuiEvent {
     }
 }
 
-#[tokio::test]
-async fn extract__should_return_normalized_event_for_checkpointed_transaction() {
-    // Given
-    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![
-        framework_event(),
-    ])));
+fn checkpointed_tx_with(modify: impl FnOnce(&mut ExecutedTransaction)) -> ExecutedTransaction {
+    let mut tx = checkpointed_tx(vec![]);
+    modify(&mut tx);
+    tx
+}
 
-    // When
-    let extracted_values = inspector
-        .extract(
-            tx_id(),
-            SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 0 }],
-        )
+fn framework_event_without_contents() -> Event {
+    let mut event = framework_event();
+    event.contents = None;
+    event
+}
+
+async fn extract_from(
+    client: MockSuiClient,
+    extractors: Vec<SuiExtractor>,
+) -> Result<Verdict<SuiExtractedValue>, ForeignChainInspectionError> {
+    SuiInspector::new(client)
+        .extract(tx_id(), SuiFinality::Checkpointed, extractors)
         .await
-        .expect("extract should succeed");
-    let Verdict::Extracted(extracted_values) = extracted_values else {
-        panic!("expected extracted values, got: {extracted_values}");
-    };
-
-    // Then — type_tag address padded to long form, bcs carried as raw bytes.
-    assert_eq!(
-        extracted_values,
-        vec![SuiExtractedValue::Event(expected_event())],
-    );
 }
 
 #[tokio::test]
@@ -181,124 +176,130 @@ async fn extract__should_return_correct_event_for_specific_index() {
 #[tokio::test]
 async fn extract__should_return_not_finalized_when_checkpoint_is_missing() {
     // Given — executed but not yet included in a certified checkpoint.
-    let mut tx = checkpointed_tx(vec![]);
-    tx.checkpoint = None;
-    let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
+    let tx = checkpointed_tx_with(|tx| tx.checkpoint = None);
 
     // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
+    let response = extract_from(MockSuiClient::transaction(tx), vec![]).await;
 
     // Then: transient, worth retrying once the transaction is checkpointed.
     assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
     assert!(response.unwrap_err().is_transient());
 }
 
-#[tokio::test]
-async fn extract__should_return_transaction_failed_when_execution_failed() {
-    // Given
-    let mut tx = checkpointed_tx(vec![]);
-    tx.effects = Some(
-        TransactionEffects::default().with_status(ExecutionStatus::default().with_success(false)),
-    );
-    let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
-
-    // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
-
-    // Then
-    assert_matches!(response, Ok(Verdict::TransactionFailed));
-}
-
-#[tokio::test]
-async fn extract__should_reject_response_missing_execution_status_as_malformed() {
-    // Given — the execution status was requested via the read mask, so its absence
-    // violates the API contract.
-    let mut tx = checkpointed_tx(vec![]);
-    tx.effects = None;
-    let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
-
-    // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
-
-    // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
-}
-
-#[tokio::test]
-async fn extract__should_reject_status_without_success_flag_as_malformed() {
-    // Given — a status message whose `success` flag is unset. Real servers always populate
-    // it (verified live for both outcomes); a response without it violates the API contract
-    // and no verdict is derived from it.
-    let mut tx = checkpointed_tx(vec![]);
-    tx.effects = Some(TransactionEffects::default().with_status(ExecutionStatus::default()));
-    let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
-
-    // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
-
-    // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
-    assert!(!response.unwrap_err().is_transient());
-}
-
-#[tokio::test]
-async fn extract__should_reject_response_missing_transaction_as_malformed() {
-    // Given — a `GetTransactionResponse` whose transaction section is absent entirely.
-    let inspector = SuiInspector::new(MockSuiClient::answering(GetTransactionResponse::default()));
-
-    // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
-
-    // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
-}
-
-#[tokio::test]
-async fn extract__should_return_transaction_not_found_for_unknown_digest() {
-    // Given — the status a node returns for an unknown or pruned digest.
-    let inspector = SuiInspector::new(MockSuiClient::status(Status::not_found(
+#[rstest]
+#[case::normalized_event_with_padded_type_tag_address_and_raw_bcs_bytes(
+    MockSuiClient::transaction(checkpointed_tx(vec![framework_event()])),
+    vec![SuiExtractor::Event { event_index: 0 }],
+    Verdict::Extracted(vec![SuiExtractedValue::Event(expected_event())]),
+)]
+#[case::event_without_optional_contents_type_name(
+    MockSuiClient::transaction(checkpointed_tx(vec![framework_event().with_contents(
+        Bcs::default().with_value(EVENT_BCS_BYTES.to_vec()),
+    )])),
+    vec![SuiExtractor::Event { event_index: 0 }],
+    Verdict::Extracted(vec![SuiExtractedValue::Event(expected_event())]),
+)]
+#[case::contents_type_long_form_address_reconciled_with_short_form_event_type(
+    MockSuiClient::transaction(checkpointed_tx(vec![framework_event().with_contents(
+        Bcs::default()
+            .with_name(format!(
+                "0x{}3::validator_set::ValidatorEpochInfoEventV2",
+                "0".repeat(63)
+            ))
+            .with_value(EVENT_BCS_BYTES.to_vec()),
+    )])),
+    vec![SuiExtractor::Event { event_index: 0 }],
+    Verdict::Extracted(vec![SuiExtractedValue::Event(expected_event())]),
+)]
+#[case::transaction_failed_when_execution_failed(
+    MockSuiClient::transaction(checkpointed_tx_with(|tx| {
+        tx.effects = Some(
+            TransactionEffects::default()
+                .with_status(ExecutionStatus::default().with_success(false)),
+        );
+    })),
+    vec![],
+    Verdict::TransactionFailed,
+)]
+#[case::transaction_not_found_for_unknown_or_pruned_digest(
+    MockSuiClient::status(Status::not_found(
         "Transaction 88XKXHJRmGzkfwJa8PhoeDkqt4kxz8AEsB1UTzAbtd29 not found",
-    )));
-
+    )),
+    vec![],
+    Verdict::TransactionNotFound,
+)]
+#[case::no_extractors_requested(
+    MockSuiClient::transaction(checkpointed_tx(vec![])),
+    vec![],
+    Verdict::Extracted(vec![]),
+)]
+#[case::out_of_bounds_for_an_absent_event_index(
+    MockSuiClient::transaction(checkpointed_tx(vec![framework_event()])),
+    vec![SuiExtractor::Event { event_index: 5 }],
+    Verdict::LogIndexOutOfBounds,
+)]
+#[tokio::test]
+async fn extract__should_return_the_expected_verdict(
+    #[case] client: MockSuiClient,
+    #[case] extractors: Vec<SuiExtractor>,
+    #[case] expected: Verdict<SuiExtractedValue>,
+) {
     // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
+    let response = extract_from(client, extractors).await;
 
     // Then
-    assert_matches!(response, Ok(Verdict::TransactionNotFound));
+    assert_eq!(response.unwrap(), expected);
+}
+
+#[rstest]
+#[case::missing_execution_status_requested_via_the_read_mask(
+    MockSuiClient::transaction(checkpointed_tx_with(|tx| tx.effects = None)),
+    vec![],
+)]
+#[case::status_without_success_flag_which_real_servers_always_populate(
+    MockSuiClient::transaction(checkpointed_tx_with(|tx| {
+        tx.effects = Some(TransactionEffects::default().with_status(ExecutionStatus::default()));
+    })),
+    vec![],
+)]
+#[case::missing_transaction_section(
+    MockSuiClient::answering(GetTransactionResponse::default()),
+    vec![],
+)]
+#[case::event_missing_bcs_contents(
+    MockSuiClient::transaction(checkpointed_tx(vec![framework_event_without_contents()])),
+    vec![SuiExtractor::Event { event_index: 0 }],
+)]
+#[case::event_whose_contents_type_disagrees_with_the_event_type(
+    MockSuiClient::transaction(checkpointed_tx(vec![framework_event().with_contents(
+        Bcs::default()
+            .with_name("0x3::validator::StakingRequestEvent")
+            .with_value(EVENT_BCS_BYTES.to_vec()),
+    )])),
+    vec![SuiExtractor::Event { event_index: 0 }],
+)]
+#[tokio::test]
+async fn extract__should_reject_the_response_as_malformed(
+    #[case] client: MockSuiClient,
+    #[case] extractors: Vec<SuiExtractor>,
+) {
+    // When
+    let error = extract_from(client, extractors).await.unwrap_err();
+
+    // Then
+    assert_matches!(error, ForeignChainInspectionError::MalformedRpcResponse(_));
+    assert!(!error.is_transient());
 }
 
 #[tokio::test]
 async fn extract__should_propagate_unavailable_provider_as_transient() {
     // Given — the status a lazy tonic channel yields when the endpoint is unreachable.
-    let inspector = SuiInspector::new(MockSuiClient::status(Status::unavailable(
+    let client = MockSuiClient::status(Status::unavailable(
         "error trying to connect: connection refused",
-    )));
+    ));
 
     // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
+    let response = extract_from(client, vec![]).await;
 
     // Then
     assert_matches!(
@@ -309,171 +310,18 @@ async fn extract__should_propagate_unavailable_provider_as_transient() {
 }
 
 #[tokio::test]
-async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_event_index() {
-    // Given
-    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![
-        framework_event(),
-    ])));
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 5 }],
-        )
-        .await;
-
-    // Then
-    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
-}
-
-#[tokio::test]
 async fn extract__should_reject_response_with_mismatched_digest() {
     // Given — the backend echoes a different transaction than queried.
-    let mut tx = checkpointed_tx(vec![]);
-    tx.digest = Some(bs58::encode([0xcd; 32]).into_string());
-    let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
+    let tx = checkpointed_tx_with(|tx| tx.digest = Some(bs58::encode([0xcd; 32]).into_string()));
 
     // When
-    let response = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, vec![])
-        .await;
+    let response = extract_from(MockSuiClient::transaction(tx), vec![]).await;
 
     // Then
     assert_matches!(
         response,
         Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
     );
-}
-
-#[tokio::test]
-async fn extract__should_reject_event_missing_bcs_contents_as_malformed() {
-    // Given — an event whose BCS payload is absent.
-    let mut event = framework_event();
-    event.contents = None;
-    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![event])));
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 0 }],
-        )
-        .await;
-
-    // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
-}
-
-#[tokio::test]
-async fn extract__should_reject_event_whose_contents_type_differs() {
-    // Given — the type name shipped with the BCS bytes disagrees with the event type.
-    let event = framework_event().with_contents(
-        Bcs::default()
-            .with_name("0x3::validator::StakingRequestEvent")
-            .with_value(EVENT_BCS_BYTES.to_vec()),
-    );
-    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![event])));
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 0 }],
-        )
-        .await;
-
-    // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
-}
-
-#[tokio::test]
-async fn extract__should_accept_event_without_contents_type_name() {
-    // Given — the type name inside the BCS message is optional metadata.
-    let event =
-        framework_event().with_contents(Bcs::default().with_value(EVENT_BCS_BYTES.to_vec()));
-    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![event])));
-
-    // When
-    let extracted_values = inspector
-        .extract(
-            tx_id(),
-            SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 0 }],
-        )
-        .await
-        .expect("extract should succeed");
-    let Verdict::Extracted(extracted_values) = extracted_values else {
-        panic!("expected extracted values, got: {extracted_values}");
-    };
-
-    // Then
-    assert_eq!(
-        extracted_values,
-        vec![SuiExtractedValue::Event(expected_event())],
-    );
-}
-
-#[tokio::test]
-async fn extract__should_accept_contents_type_in_different_address_form() {
-    // Given — the same type, rendered long-form in the contents name and short-form in the
-    // event type; normalization must reconcile the two.
-    let event = framework_event().with_contents(
-        Bcs::default()
-            .with_name(format!(
-                "0x{}3::validator_set::ValidatorEpochInfoEventV2",
-                "0".repeat(63)
-            ))
-            .with_value(EVENT_BCS_BYTES.to_vec()),
-    );
-    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![event])));
-
-    // When
-    let extracted_values = inspector
-        .extract(
-            tx_id(),
-            SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 0 }],
-        )
-        .await
-        .expect("extract should succeed");
-    let Verdict::Extracted(extracted_values) = extracted_values else {
-        panic!("expected extracted values, got: {extracted_values}");
-    };
-
-    // Then
-    assert_eq!(
-        extracted_values,
-        vec![SuiExtractedValue::Event(expected_event())],
-    );
-}
-
-#[tokio::test]
-async fn extract__should_return_empty_when_no_extractors_are_requested() {
-    // Given
-    let inspector = SuiInspector::new(MockSuiClient::transaction(checkpointed_tx(vec![])));
-
-    // When
-    let extracted_values = inspector
-        .extract(tx_id(), SuiFinality::Checkpointed, Vec::new())
-        .await
-        .expect("extract should succeed");
-    let Verdict::Extracted(extracted_values) = extracted_values else {
-        panic!("expected extracted values, got: {extracted_values}");
-    };
-
-    // Then
-    let expected: Vec<SuiExtractedValue> = vec![];
-    assert_eq!(expected, extracted_values);
 }
 
 #[tokio::test]
