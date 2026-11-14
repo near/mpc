@@ -576,50 +576,30 @@ mod tests {
         assert_eq!(tee_state.get_tee_accounts(), vec![fresh_node]);
     }
 
-    #[test]
-    fn clean_invalid_attestations__should_remove_accepted_mock_valid_after_expiry() {
-        // Given: a `MockAttestation::Valid` accepted via the normal submission path.
-        // It must be stamped with an expiry so it can eventually be cleaned up.
+    #[rstest]
+    #[case::accepted_valid_mock(MockAttestation::Valid)]
+    #[case::submitter_supplied_expiry_capped_at_the_default(
+        mock_expiring_at(attestation::MOCK_EXPIRATION_DURATION_SECONDS * 10).into_contract_type()
+    )]
+    fn clean_invalid_attestations__should_remove_mock_after_default_expiry_window(
+        #[case] mock: MockAttestation,
+    ) {
+        // Given
         testing_env!(VMContextBuilder::new().block_timestamp(0).build());
-
         let mut tee_state = TeeState::default();
         let node = node_for(&"alice.near".parse().unwrap());
-        submit_mock(&mut tee_state, &node, MockAttestation::Valid).unwrap();
-
-        // Before expiry: cleanup keeps the entry.
+        submit_mock(&mut tee_state, &node, mock).unwrap();
         assert!(
             tee_state
                 .clean_invalid_attestations(Duration::from_secs(0), 100, |_| false)
                 .is_empty()
         );
 
-        // When: the clock advances past the stamped expiry window and cleanup runs.
+        // When
         set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
         let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
 
-        // Then: the previously uncleanable mock entry is removed.
-        assert_eq!(removed, vec![node.account_id]);
-        assert!(tee_state.nodes.is_empty());
-    }
-
-    #[test]
-    fn verify_and_store_mock__should_cap_a_submitter_supplied_expiry_beyond_the_default() {
-        // Given: a mock submitted with an expiry far beyond the contract's default
-        // window. A submitter must not be able to extend its lifetime past the cap.
-        testing_env!(VMContextBuilder::new().block_timestamp(0).build());
-
-        let mut tee_state = TeeState::default();
-        let node = node_for(&"alice.near".parse().unwrap());
-        let oversized = mock_expiring_at(attestation::MOCK_EXPIRATION_DURATION_SECONDS * 10)
-            .into_contract_type();
-        submit_mock(&mut tee_state, &node, oversized).unwrap();
-
-        // When: the clock advances just past the contract's default window, well before the
-        // submitter's requested expiry.
-        set_block_timestamp((attestation::MOCK_EXPIRATION_DURATION_SECONDS + 1) * 1_000_000_000);
-        let removed = tee_state.clean_invalid_attestations(Duration::from_secs(0), 100, |_| false);
-
-        // Then: the entry is cleaned, so the submitted expiry was capped at the default.
+        // Then
         assert_eq!(removed, vec![node.account_id]);
         assert!(tee_state.nodes.is_empty());
     }
@@ -879,30 +859,19 @@ mod tests {
         (tee_state, newest)
     }
 
-    #[test]
-    fn remove_unused_launchers__should_not_count_attestation_of_non_participant() {
+    #[rstest]
+    #[case::non_participant(|_: &Participants| node_for(&gen_account_id()))]
+    #[case::another_account(|participants: &Participants| {
+        let (_, _, participant_info) = participants.participants()[0].clone();
+        create_node(&gen_account_id(), &participant_info.tls_public_key)
+    })]
+    fn remove_unused_launchers__should_not_count_attestation_of_unrelated_node(
+        #[case] attesting_node: fn(&Participants) -> dtos::NodeInfo,
+    ) {
         // Given
         let participants = gen_participants(1);
         let (mut tee_state, newest) =
-            tee_state_with_old_launcher_attested_by(node_for(&gen_account_id()));
-
-        // When
-        set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
-
-        // Then
-        assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
-    }
-
-    #[test]
-    fn remove_unused_launchers__should_not_count_attestation_of_another_account() {
-        // Given
-        let participants = gen_participants(1);
-        let (_, _, participant_info) = participants.participants()[0].clone();
-        let (mut tee_state, newest) = tee_state_with_old_launcher_attested_by(create_node(
-            &gen_account_id(),
-            &participant_info.tls_public_key,
-        ));
+            tee_state_with_old_launcher_attested_by(attesting_node(&participants));
 
         // When
         set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));

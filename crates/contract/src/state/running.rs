@@ -490,38 +490,35 @@ pub mod running_tests {
         );
     }
 
-    #[test]
-    fn vote_add_domains__should_reject_threshold_below_two() {
-        // Given
-        let mut state = setup(1, None);
-        let proposal = single_domain_proposal(
-            &state,
-            Protocol::CaitSith,
-            DomainPurpose::Sign,
-            ReconstructionThreshold::new(1),
-        );
-
-        // When
-        let err = state.vote_add_domains(proposal).unwrap_err();
-
-        // Then
-        assert!(
-            err.to_string()
-                .contains("Reconstruction threshold must be at least 2"),
-            "Expected ReconstructionThresholdTooLow, got: {err}"
-        );
-    }
-
-    #[test]
-    fn vote_add_domains__should_reject_threshold_exceeding_participants() {
+    #[rstest]
+    #[case::threshold_below_two(
+        Protocol::CaitSith,
+        |_| 1,
+        "Reconstruction threshold must be at least 2"
+    )]
+    #[case::threshold_exceeding_participants(
+        Protocol::CaitSith,
+        |n| n + 1,
+        "exceeds participant count"
+    )]
+    #[case::robust_ecdsa_threshold_violating_honest_majority(
+        Protocol::RobustEcdsa,
+        |n| n,
+        "requires at least"
+    )]
+    fn vote_add_domains__should_reject_invalid_threshold(
+        #[case] protocol: Protocol,
+        #[case] threshold_for: fn(u64) -> u64,
+        #[case] expected_error: &str,
+    ) {
         // Given
         let mut state = setup(1, None);
         let n = state.parameters.participants().count().value();
         let proposal = single_domain_proposal(
             &state,
-            Protocol::CaitSith,
+            protocol,
             DomainPurpose::Sign,
-            ReconstructionThreshold::new(n + 1),
+            ReconstructionThreshold::new(threshold_for(n)),
         );
 
         // When
@@ -529,8 +526,8 @@ pub mod running_tests {
 
         // Then
         assert!(
-            err.to_string().contains("exceeds participant count"),
-            "Expected ReconstructionThresholdExceedsParticipants, got: {err}"
+            err.to_string().contains(expected_error),
+            "Expected error containing {expected_error:?}, got: {err}"
         );
     }
 
@@ -567,28 +564,6 @@ pub mod running_tests {
     }
 
     #[test]
-    fn vote_add_domains__should_reject_robust_ecdsa_threshold_violating_honest_majority() {
-        // Given a RobustEcdsa proposal with t = n, so `2t - 1 > n` for any n >= 2.
-        let mut state = setup(1, None);
-        let n = state.parameters.participants().count().value();
-        let proposal = single_domain_proposal(
-            &state,
-            Protocol::RobustEcdsa,
-            DomainPurpose::Sign,
-            ReconstructionThreshold::new(n),
-        );
-
-        // When
-        let err = state.vote_add_domains(proposal).unwrap_err();
-
-        // Then
-        assert!(
-            err.to_string().contains("requires at least"),
-            "Expected InsufficientParticipantsForProtocol, got: {err}"
-        );
-    }
-
-    #[test]
     fn process_new_parameters_proposal__should_accept_empty_per_domain_threshold_updates() {
         // Given
         let mut state = setup(1, None);
@@ -609,17 +584,37 @@ pub mod running_tests {
         );
     }
 
-    #[test]
-    fn process_new_parameters_proposal__should_reject_threshold_update_with_unknown_domain_id() {
+    #[rstest]
+    #[case::unknown_domain_id(
+        |_: &RunningContractState| DomainId(9999),
+        |_| 2,
+        "not in the current registry"
+    )]
+    #[case::update_overriding_valid_stored_threshold_with_too_low_one(
+        |state: &RunningContractState| state.domains.domains()[0].id,
+        |_| 1,
+        "Reconstruction threshold must be at least"
+    )]
+    #[case::threshold_exceeding_participant_count(
+        |state: &RunningContractState| state.domains.domains()[0].id,
+        |n| n + 1,
+        "exceeds participant count"
+    )]
+    fn process_new_parameters_proposal__should_reject_invalid_threshold_update(
+        #[case] domain_for: fn(&RunningContractState) -> DomainId,
+        #[case] threshold_for: fn(u64) -> u64,
+        #[case] expected_error: &str,
+    ) {
         // Given
         let mut state = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
-
-        // When voting with a threshold update for a non-existent domain ID
+        let new_num_participants = proposal.participants().count().value();
         let proposal = proposal.with_per_domain_thresholds(BTreeMap::from([(
-            DomainId(9999),
-            ReconstructionThreshold::new(2),
+            domain_for(&state),
+            ReconstructionThreshold::new(threshold_for(new_num_participants)),
         )]));
+
+        // When
         let err = state
             .vote_new_parameters(
                 state.keyset.epoch_id.next(),
@@ -630,8 +625,8 @@ pub mod running_tests {
 
         // Then
         assert!(
-            err.to_string().contains("not in the current registry"),
-            "Expected UnknownDomainInProposal, got: {err}"
+            err.to_string().contains(expected_error),
+            "Expected error containing {expected_error:?}, got: {err}"
         );
     }
 
@@ -883,34 +878,6 @@ pub mod running_tests {
     }
 
     #[test]
-    fn process_new_parameters_proposal__should_apply_threshold_update_to_validation() {
-        // Given
-        let mut state = setup(1, None);
-        let proposal = gen_valid_params_proposal(&state.parameters);
-
-        // When a threshold update swaps a valid stored value for a too-low one
-        let domain_id = state.domains.domains()[0].id;
-        let proposal = proposal.with_per_domain_thresholds(BTreeMap::from([(
-            domain_id,
-            ReconstructionThreshold::new(1),
-        )]));
-        let err = state
-            .vote_new_parameters(
-                state.keyset.epoch_id.next(),
-                &proposal,
-                &mut GovernanceThresholdParametersVotes::default(),
-            )
-            .unwrap_err();
-
-        // Then the updated value, not the stored one, is validated
-        assert!(
-            err.to_string()
-                .contains("Reconstruction threshold must be at least"),
-            "Expected ReconstructionThresholdTooLow on updated value, got: {err}"
-        );
-    }
-
-    #[test]
     fn process_new_parameters_proposal__should_accept_valid_per_domain_threshold_update() {
         // Given governance 4 so a ReconstructionThreshold of 3 fits
         let mut state = setup(
@@ -939,35 +906,6 @@ pub mod running_tests {
         assert!(
             res.is_ok(),
             "Expected accept with valid threshold update: {res:?}"
-        );
-    }
-
-    #[test]
-    fn process_new_parameters_proposal__should_reject_threshold_update_exceeding_participant_count()
-    {
-        // Given
-        let mut state = setup(1, None);
-        let proposal = gen_valid_params_proposal(&state.parameters);
-
-        // When the update sets t above the proposed participant count
-        let domain_id = state.domains.domains()[0].id;
-        let new_num_participants = proposal.participants().count().value();
-        let proposal = proposal.with_per_domain_thresholds(BTreeMap::from([(
-            domain_id,
-            ReconstructionThreshold::new(new_num_participants + 1),
-        )]));
-        let err = state
-            .vote_new_parameters(
-                state.keyset.epoch_id.next(),
-                &proposal,
-                &mut GovernanceThresholdParametersVotes::default(),
-            )
-            .unwrap_err();
-
-        // Then the updated value is validated against the proposed participants
-        assert!(
-            err.to_string().contains("exceeds participant count"),
-            "Expected ReconstructionThresholdExceedsParticipants, got: {err}"
         );
     }
 
