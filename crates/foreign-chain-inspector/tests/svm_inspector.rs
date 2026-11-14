@@ -2,9 +2,7 @@
 
 pub mod common;
 
-use crate::common::{
-    FixedResponseRpcClient, SequentialResponseMockClientBuilder, mock_client_from_fixed_response,
-};
+use crate::common::{FixedResponseRpcClient, mock_client_from_fixed_response};
 
 use base64::Engine as _;
 use foreign_chain_inspector::{
@@ -28,7 +26,7 @@ use std::{
 
 const TX_SLOT: u64 = 296_112_296;
 
-/// Like [`SequentialResponseMockClientBuilder`], but records each request's method and
+/// Like `SequentialResponseMockClientBuilder`, but records each request's method and
 /// params — the `common` mocks discard both, so they cannot pin what the inspector sends.
 #[derive(Clone)]
 struct RecordingClient(Arc<RecordingClientInner>);
@@ -159,163 +157,34 @@ fn inner_instruction_extractor() -> SvmExtractor {
     }
 }
 
-#[tokio::test]
-async fn extract__should_return_resolved_inner_instruction() {
-    // Given
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await
-        .unwrap()
-        .into_extracted()
-        .unwrap();
-
-    // Then — program id and accounts resolved to pubkeys, data base58-decoded.
-    assert_eq!(
-        values,
-        vec![SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
-            program_id: SvmAddress([3; 32]),
-            accounts: vec![SvmAddress([1; 32]), SvmAddress([4; 32])],
-            data: vec![0xde, 0xad, 0xbe, 0xef],
-        })]
-    );
+fn account_state_extractor() -> SvmExtractor {
+    SvmExtractor::AccountState {
+        pubkey: SvmAddress([6; 32]),
+    }
 }
 
-#[tokio::test]
-async fn extract__should_resolve_program_id_from_loaded_addresses() {
-    // Given — the program is at combined index 4, i.e. in `loadedAddresses.readonly`,
-    // exercising the full static ++ writable ++ readonly ordering.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::InnerInstruction {
-                instruction_index: 1,
-                inner_instruction_index: 1,
-            }],
-        )
-        .await
-        .unwrap()
-        .into_extracted()
-        .unwrap();
-
-    // Then
-    assert_eq!(
-        values,
-        vec![SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
-            program_id: SvmAddress([5; 32]),
-            accounts: vec![],
-            data: vec![],
-        })]
-    );
+fn confirmed_tx_with(pointer: &str, value: serde_json::Value) -> serde_json::Value {
+    let mut tx = confirmed_tx();
+    *tx.pointer_mut(pointer).unwrap() = value;
+    tx
 }
 
-#[tokio::test]
-async fn extract__should_return_account_state() {
-    // Given
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .with_response(account_info(8, b"bridge message"))
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState {
-                pubkey: SvmAddress([6; 32]),
-            }],
-        )
-        .await
-        .unwrap()
-        .into_extracted()
-        .unwrap();
-
-    // Then — owner parsed, data base64-decoded.
-    assert_eq!(
-        values,
-        vec![SvmExtractedValue::AccountState(SvmAccount {
-            owner: SvmAddress([8; 32]),
-            data: b"bridge message".to_vec(),
-        })]
-    );
+fn resolved_inner_instruction() -> SvmExtractedValue {
+    SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
+        program_id: SvmAddress([3; 32]),
+        accounts: vec![SvmAddress([1; 32]), SvmAddress([4; 32])],
+        data: vec![0xde, 0xad, 0xbe, 0xef],
+    })
 }
 
-#[tokio::test]
-async fn extract__should_reject_an_account_read_answered_before_the_transaction_slot() {
-    // Given — a backend that has not yet seen the transaction.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .with_response(account_info_at_slot(8, b"stale", TX_SLOT - 1))
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let error = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState {
-                pubkey: SvmAddress([6; 32]),
-            }],
-        )
+async fn extract_from(
+    responses: Vec<serde_json::Value>,
+    finality: SvmFinality,
+    extractors: Vec<SvmExtractor>,
+) -> Result<Verdict<SvmExtractedValue>, ForeignChainInspectionError> {
+    SolanaInspector::new(RecordingClient::new(responses))
+        .extract(tx_id(), finality, extractors)
         .await
-        .unwrap_err();
-
-    // Then — transient, so the lagging provider is dropped from the quorum rather than
-    // its pre-transaction answer standing as a verdict.
-    assert_matches!(error, ForeignChainInspectionError::RpcRequestFailed(_));
-    assert!(error.is_transient());
-}
-
-#[tokio::test]
-async fn extract__should_accept_an_account_read_answered_at_the_transaction_slot() {
-    // Given — the boundary: the transaction's own slot is fresh enough.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .with_response(account_info_at_slot(8, b"fresh", TX_SLOT))
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState {
-                pubkey: SvmAddress([6; 32]),
-            }],
-        )
-        .await
-        .unwrap()
-        .into_extracted()
-        .unwrap();
-
-    // Then
-    assert_eq!(
-        values,
-        vec![SvmExtractedValue::AccountState(SvmAccount {
-            owner: SvmAddress([8; 32]),
-            data: b"fresh".to_vec(),
-        })]
-    );
 }
 
 #[tokio::test]
@@ -471,60 +340,19 @@ async fn extract__should_query_the_transaction_at_the_requested_commitment_with_
 }
 
 #[tokio::test]
-async fn extract__should_return_values_in_extractor_order() {
-    // Given
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .with_response(account_info(8, &[0xca, 0xfe]))
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![
-                inner_instruction_extractor(),
-                SvmExtractor::AccountState {
-                    pubkey: SvmAddress([6; 32]),
-                },
-            ],
-        )
-        .await
-        .unwrap()
-        .into_extracted()
-        .unwrap();
-
-    // Then
-    assert_matches!(
-        values.as_slice(),
-        [
-            SvmExtractedValue::InnerInstruction(_),
-            SvmExtractedValue::AccountState(_),
-        ]
-    );
-}
-
-#[tokio::test]
 async fn extract__should_accept_finalized_transaction_when_finality_is_finalized() {
     // Given — the provider serves the transaction at `finalized`, i.e. from a slot it rooted.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
 
     // When
-    let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Finalized,
-            vec![inner_instruction_extractor()],
-        )
-        .await
-        .unwrap()
-        .into_extracted()
-        .unwrap();
+    let values = extract_from(
+        vec![confirmed_tx()],
+        SvmFinality::Finalized,
+        vec![inner_instruction_extractor()],
+    )
+    .await
+    .unwrap()
+    .into_extracted()
+    .unwrap();
 
     // Then
     assert_eq!(values.len(), 1);
@@ -554,26 +382,140 @@ async fn extract__should_return_not_finalized_when_the_transaction_is_only_confi
     assert_eq!(requests[1].1[1]["commitment"], "confirmed");
 }
 
+#[rstest]
+#[case::resolved_inner_instruction(
+    vec![confirmed_tx()],
+    SvmFinality::Confirmed,
+    vec![inner_instruction_extractor()],
+    Verdict::Extracted(vec![resolved_inner_instruction()]),
+)]
+#[case::program_id_from_loaded_addresses(
+    vec![confirmed_tx()],
+    SvmFinality::Confirmed,
+    vec![SvmExtractor::InnerInstruction {
+        instruction_index: 1,
+        inner_instruction_index: 1,
+    }],
+    Verdict::Extracted(vec![SvmExtractedValue::InnerInstruction(SvmInnerInstruction {
+        program_id: SvmAddress([5; 32]),
+        accounts: vec![],
+        data: vec![],
+    })]),
+)]
+#[case::account_state(
+    vec![confirmed_tx(), account_info(8, b"bridge message")],
+    SvmFinality::Confirmed,
+    vec![account_state_extractor()],
+    Verdict::Extracted(vec![SvmExtractedValue::AccountState(SvmAccount {
+        owner: SvmAddress([8; 32]),
+        data: b"bridge message".to_vec(),
+    })]),
+)]
+#[case::account_read_answered_at_the_transaction_slot(
+    vec![confirmed_tx(), account_info_at_slot(8, b"fresh", TX_SLOT)],
+    SvmFinality::Confirmed,
+    vec![account_state_extractor()],
+    Verdict::Extracted(vec![SvmExtractedValue::AccountState(SvmAccount {
+        owner: SvmAddress([8; 32]),
+        data: b"fresh".to_vec(),
+    })]),
+)]
+#[case::values_in_extractor_order(
+    vec![confirmed_tx(), account_info(8, &[0xca, 0xfe])],
+    SvmFinality::Confirmed,
+    vec![inner_instruction_extractor(), account_state_extractor()],
+    Verdict::Extracted(vec![
+        resolved_inner_instruction(),
+        SvmExtractedValue::AccountState(SvmAccount {
+            owner: SvmAddress([8; 32]),
+            data: vec![0xca, 0xfe],
+        }),
+    ]),
+)]
+#[case::transaction_not_found_only_when_neither_commitment_has_it(
+    vec![serde_json::Value::Null, serde_json::Value::Null],
+    SvmFinality::Finalized,
+    vec![inner_instruction_extractor()],
+    Verdict::TransactionNotFound,
+)]
+#[case::null_response_is_a_settled_transaction_not_found_verdict(
+    vec![serde_json::Value::Null],
+    SvmFinality::Confirmed,
+    vec![inner_instruction_extractor()],
+    Verdict::TransactionNotFound,
+)]
+#[case::failed_transaction(
+    vec![confirmed_tx_with("/meta/err", json!({ "InstructionError": [0, { "Custom": 6000 }] }))],
+    SvmFinality::Confirmed,
+    vec![inner_instruction_extractor()],
+    Verdict::TransactionFailed,
+)]
+#[case::no_inner_instruction_entry_for_top_level_instruction(
+    vec![confirmed_tx()],
+    SvmFinality::Confirmed,
+    vec![SvmExtractor::InnerInstruction {
+        instruction_index: 0,
+        inner_instruction_index: 0,
+    }],
+    Verdict::LogIndexOutOfBounds,
+)]
+#[case::inner_index_beyond_entry(
+    vec![confirmed_tx()],
+    SvmFinality::Confirmed,
+    vec![SvmExtractor::InnerInstruction {
+        instruction_index: 1,
+        inner_instruction_index: 99,
+    }],
+    Verdict::LogIndexOutOfBounds,
+)]
+#[case::empty_inner_instruction_list_is_the_chains_own_answer(
+    vec![confirmed_tx_with("/meta/innerInstructions", json!([]))],
+    SvmFinality::Confirmed,
+    vec![inner_instruction_extractor()],
+    Verdict::LogIndexOutOfBounds,
+)]
+#[case::account_not_found_for_null_account_value(
+    vec![confirmed_tx(), json!({ "context": { "slot": TX_SLOT }, "value": null })],
+    SvmFinality::Confirmed,
+    vec![account_state_extractor()],
+    Verdict::AccountNotFound,
+)]
 #[tokio::test]
-async fn extract__should_return_transaction_not_found_when_neither_commitment_has_it() {
-    // Given — null at `finalized` and at `confirmed`: the provider does not know it at all.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(serde_json::Value::Null)
-        .with_response(serde_json::Value::Null)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
+async fn extract__should_return_the_expected_verdict(
+    #[case] responses: Vec<serde_json::Value>,
+    #[case] finality: SvmFinality,
+    #[case] extractors: Vec<SvmExtractor>,
+    #[case] expected: Verdict<SvmExtractedValue>,
+) {
     // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Finalized,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
+    let response = extract_from(responses, finality, extractors).await;
 
-    // Then — only two independent misses may settle on the verdict.
-    assert_matches!(response, Ok(Verdict::TransactionNotFound));
+    // Then
+    assert_eq!(response.unwrap(), expected);
+}
+
+#[rstest]
+#[case::null_inner_instructions_means_not_recorded_unlike_the_empty_list(
+    vec![confirmed_tx_with("/meta/innerInstructions", serde_json::Value::Null)],
+    vec![inner_instruction_extractor()],
+)]
+#[case::account_read_answered_before_the_transaction_slot_from_a_lagging_backend(
+    vec![confirmed_tx(), account_info_at_slot(8, b"stale", TX_SLOT - 1)],
+    vec![account_state_extractor()],
+)]
+#[tokio::test]
+async fn extract__should_report_a_transient_provider_failure(
+    #[case] responses: Vec<serde_json::Value>,
+    #[case] extractors: Vec<SvmExtractor>,
+) {
+    // When
+    let error = extract_from(responses, SvmFinality::Confirmed, extractors)
+        .await
+        .unwrap_err();
+
+    // Then
+    assert_matches!(error, ForeignChainInspectionError::RpcRequestFailed(_));
+    assert!(error.is_transient());
 }
 
 #[tokio::test]
@@ -605,67 +547,20 @@ async fn extract__should_not_read_a_failed_finality_recheck_as_transaction_not_f
 }
 
 #[tokio::test]
-async fn extract__should_return_transaction_not_found_for_null_response() {
-    // Given — getTransaction answers null for an unknown signature.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(serde_json::Value::Null)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
-
-    // Then — a settled verdict, not a tolerated error.
-    assert_matches!(response, Ok(Verdict::TransactionNotFound));
-}
-
-#[tokio::test]
-async fn extract__should_return_the_failed_verdict_for_a_failed_transaction() {
-    // Given
-    let mut tx = confirmed_tx();
-    tx["meta"]["err"] = json!({ "InstructionError": [0, { "Custom": 6000 }] });
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
-
-    // Then
-    assert_matches!(response, Ok(Verdict::TransactionFailed));
-}
-
-#[tokio::test]
 async fn extract__should_reject_response_with_mismatched_signature() {
     // Given — the provider returns a different transaction than queried.
-    let mut tx = confirmed_tx();
-    tx["transaction"]["signatures"] = json!([bs58::encode([8; 64]).into_string()]);
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
+    let tx = confirmed_tx_with(
+        "/transaction/signatures",
+        json!([bs58::encode([8; 64]).into_string()]),
+    );
 
     // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
+    let response = extract_from(
+        vec![tx],
+        SvmFinality::Confirmed,
+        vec![inner_instruction_extractor()],
+    )
+    .await;
 
     // Then
     assert_matches!(
@@ -677,21 +572,15 @@ async fn extract__should_reject_response_with_mismatched_signature() {
 #[tokio::test]
 async fn extract__should_report_missing_meta_as_a_provider_failure() {
     // Given — a node that holds the transaction but not its status metadata.
-    let mut tx = confirmed_tx();
-    tx["meta"] = serde_json::Value::Null;
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
+    let tx = confirmed_tx_with("/meta", serde_json::Value::Null);
 
     // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
+    let response = extract_from(
+        vec![tx],
+        SvmFinality::Confirmed,
+        vec![inner_instruction_extractor()],
+    )
+    .await;
 
     // Then — the same class as an unrecorded inner-instruction list, and reported the same
     // way: a gap in what this provider serves, not data the chain settled or a broken payload.
@@ -729,105 +618,21 @@ async fn extract__should_report_absent_transaction_history_as_a_provider_failure
     assert!(error.is_transient());
 }
 
-#[rstest]
-#[case::no_entry_for_top_level_instruction(0, 0)]
-#[case::inner_index_beyond_entry(1, 99)]
-#[tokio::test]
-async fn extract__should_return_the_out_of_bounds_verdict_for_a_missing_inner_instruction(
-    #[case] instruction_index: usize,
-    #[case] inner_instruction_index: usize,
-) {
-    // Given — inner instructions exist only under top-level index 1, with two entries.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::InnerInstruction {
-                instruction_index,
-                inner_instruction_index,
-            }],
-        )
-        .await;
-
-    // Then
-    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
-}
-
-#[tokio::test]
-async fn extract__should_report_unrecorded_inner_instructions_as_a_provider_failure() {
-    // Given — null means inner instructions are not recorded, as opposed to the empty list a
-    // recording node answers for a transaction without any.
-    let mut tx = confirmed_tx();
-    tx["meta"]["innerInstructions"] = serde_json::Value::Null;
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
-
-    // Then — transient, so the fan-out drops this provider rather than signing an absence.
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::RpcRequestFailed(_))
-    );
-    assert!(response.unwrap_err().is_transient());
-}
-
-#[tokio::test]
-async fn extract__should_report_an_empty_inner_instruction_list_as_out_of_bounds() {
-    // Given — a node that records inner instructions, for a transaction that produced none.
-    let mut tx = confirmed_tx();
-    tx["meta"]["innerInstructions"] = json!([]);
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
-
-    // Then — the chain's own answer, so a settled verdict rather than an error.
-    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
-}
-
 #[tokio::test]
 async fn extract__should_reject_out_of_bounds_account_index_as_malformed() {
     // Given — an instruction referencing an account index past the full key list.
-    let mut tx = confirmed_tx();
-    tx["meta"]["innerInstructions"][0]["instructions"][0]["accounts"] = json!([99]);
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
+    let tx = confirmed_tx_with(
+        "/meta/innerInstructions/0/instructions/0/accounts",
+        json!([99]),
+    );
 
     // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
+    let response = extract_from(
+        vec![tx],
+        SvmFinality::Confirmed,
+        vec![inner_instruction_extractor()],
+    )
+    .await;
 
     // Then
     assert_matches!(
@@ -840,21 +645,18 @@ async fn extract__should_reject_out_of_bounds_account_index_as_malformed() {
 async fn extract__should_reject_oversized_account_list_before_resolving_it() {
     // Given — index 99 is out of bounds, so resolve-then-cap would answer "index out of
     // bounds"; the count in the message proves the cap fired before resolving.
-    let mut tx = confirmed_tx();
-    tx["meta"]["innerInstructions"][0]["instructions"][0]["accounts"] = json!(vec![99u8; 300]);
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(tx)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
+    let tx = confirmed_tx_with(
+        "/meta/innerInstructions/0/instructions/0/accounts",
+        json!(vec![99u8; 300]),
+    );
 
     // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![inner_instruction_extractor()],
-        )
-        .await;
+    let response = extract_from(
+        vec![tx],
+        SvmFinality::Confirmed,
+        vec![inner_instruction_extractor()],
+    )
+    .await;
 
     // Then
     assert_matches!(
@@ -864,48 +666,17 @@ async fn extract__should_reject_oversized_account_list_before_resolving_it() {
 }
 
 #[tokio::test]
-async fn extract__should_return_account_not_found_for_null_account_value() {
-    // Given — no account exists at the queried address.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .with_response(json!({ "context": { "slot": TX_SLOT }, "value": null }))
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
-
-    // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState {
-                pubkey: SvmAddress([6; 32]),
-            }],
-        )
-        .await;
-
-    // Then — the account's absence is the chain's answer, so a settled verdict.
-    assert_matches!(response, Ok(Verdict::AccountNotFound));
-}
-
-#[tokio::test]
 async fn extract__should_reject_an_account_response_omitting_value_as_malformed() {
     // Given — a provider that omits `value` rather than answering `null`.
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .with_response(json!({ "context": { "slot": TX_SLOT } }))
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
+    let responses = vec![confirmed_tx(), json!({ "context": { "slot": TX_SLOT } })];
 
     // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState {
-                pubkey: SvmAddress([6; 32]),
-            }],
-        )
-        .await;
+    let response = extract_from(
+        responses,
+        SvmFinality::Confirmed,
+        vec![account_state_extractor()],
+    )
+    .await;
 
     // Then — the provider is at fault, not the chain: an omitted field must not read as an
     // absent account, which would blame nobody for a broken response.
@@ -923,22 +694,14 @@ async fn extract__should_reject_account_data_in_wrong_encoding_as_malformed() {
     // Given — a provider that ignored the requested base64 encoding.
     let mut account = account_info(8, &[1, 2, 3]);
     account["value"]["data"] = json!(["3Bxs4NN8M2Yn4TLb", "base58"]);
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(confirmed_tx())
-        .with_response(account)
-        .build();
-    let inspector = SolanaInspector::new(mock_client);
 
     // When
-    let response = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![SvmExtractor::AccountState {
-                pubkey: SvmAddress([6; 32]),
-            }],
-        )
-        .await;
+    let response = extract_from(
+        vec![confirmed_tx(), account],
+        SvmFinality::Confirmed,
+        vec![account_state_extractor()],
+    )
+    .await;
 
     // Then
     assert_matches!(
