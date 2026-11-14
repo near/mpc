@@ -960,23 +960,30 @@ mod tests {
         contract
     }
 
-    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE
-    /// kickout would leave fewer participants than the threshold relation requires.
+    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE kickout would leave
+    /// the survivors unable to satisfy the threshold relation or a domain's signer bound.
     /// The contract stays Running and stops accepting requests.
-    #[test]
-    fn verify_tee__should_refuse_kickout_when_remaining_breaks_threshold_relation() {
+    ///
+    /// With 5 participants, GovernanceThreshold 5 and a reconstruction threshold of 5, the 4
+    /// survivors fall below the GovernanceThreshold. With GovernanceThreshold 3 and a RobustEcdsa
+    /// domain at `t = 3`, the 4 survivors satisfy the GovernanceThreshold relation, so only the
+    /// per-domain `2t - 1` bound can refuse the kickout.
+    #[rstest]
+    #[case::remaining_breaks_threshold_relation(5, Protocol::CaitSith, 5)]
+    #[case::remaining_cannot_run_robust_ecdsa_domain(3, Protocol::RobustEcdsa, 3)]
+    fn verify_tee__should_refuse_kickout_when_remaining_cannot_sustain_the_threshold(
+        #[case] governance_threshold: u64,
+        #[case] protocol: Protocol,
+        #[case] reconstruction_threshold: u64,
+    ) {
         // Given
-        // 5 participants, GovernanceThreshold 5, and one domain whose
-        // reconstruction threshold is 5 (every participant is needed to sign). Dropping
-        // to 4 participants would leave the GovernanceThreshold above the participant
-        // count, breaking the threshold relation.
         let mut contract = running_contract_with_expired_last_attestation(
             5,
-            5,
+            governance_threshold,
             DomainConfig {
                 id: DomainId::default(),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(5),
+                protocol,
+                reconstruction_threshold: ReconstructionThreshold::new(reconstruction_threshold),
                 purpose: DomainPurpose::Sign,
             },
         );
@@ -985,9 +992,6 @@ mod tests {
         let result = contract.verify_tee();
 
         // Then
-        // With only 4 surviving participants the GovernanceThreshold of 5 would
-        // exceed the participant count, breaking the threshold relation, so verify_tee
-        // refuses to reshare, stays Running, and stops accepting requests.
         assert_matches!(result, Ok(false));
         assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
         assert!(!contract.accept_requests);
@@ -1052,33 +1056,6 @@ mod tests {
             contract.tee_state.get_allowed_launcher_hashes(),
             vec![adopted]
         );
-    }
-
-    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE kickout would
-    /// leave a RobustEcdsa domain short of its `2t - 1` signers. With 5 participants,
-    /// GovernanceThreshold 3 and `t = 3`, the 4 survivors still satisfy the
-    /// GovernanceThreshold relation, so only the per-domain bound can refuse the kickout.
-    #[test]
-    fn verify_tee__should_refuse_kickout_when_remaining_cannot_run_robust_ecdsa_domain() {
-        // Given
-        let mut contract = running_contract_with_expired_last_attestation(
-            5,
-            3,
-            DomainConfig {
-                id: DomainId::default(),
-                protocol: Protocol::RobustEcdsa,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-        );
-
-        // When
-        let result = contract.verify_tee();
-
-        // Then
-        assert_matches!(result, Ok(false));
-        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
-        assert!(!contract.accept_requests);
     }
 
     const MAX_HASH: [u8; 32] = [0xff; 32];

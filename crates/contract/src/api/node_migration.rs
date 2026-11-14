@@ -472,29 +472,27 @@ mod tests {
         assert_eq!(*result, expected_migration_state);
     }
 
-    fn test_start_migration_node_failure_not_running(mut contract: MpcContract) {
+    #[rstest]
+    #[case::initializing(ProtocolContractState::Initializing(
+        gen_initializing_state(NUM_DOMAINS, 0).1
+    ))]
+    #[case::resharing(ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1))]
+    fn start_node_migration__should_reject_when_protocol_state_is_not_running(
+        #[case] protocol_state: ProtocolContractState,
+    ) {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
         assert!(contract.migration_info().is_empty());
+
+        // When
         let res = contract.start_node_migration(destination_of(&node_for(&gen_account_id())));
+
+        // Then
         assert_matches!(
             res.unwrap_err(),
             Error::InvalidState(InvalidState::ProtocolStateNotRunning)
         );
         assert!(contract.migration_info().is_empty());
-    }
-
-    #[test]
-    fn test_start_node_migration_failure_initializing() {
-        let initializing_state =
-            ProtocolContractState::Initializing(gen_initializing_state(NUM_DOMAINS, 0).1);
-        let contract = MpcContract::new_from_protocol_state(initializing_state);
-        test_start_migration_node_failure_not_running(contract);
-    }
-
-    #[test]
-    fn test_start_node_migration_failure_resharing() {
-        let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1);
-        let contract = MpcContract::new_from_protocol_state(resharing_state);
-        test_start_migration_node_failure_not_running(contract);
     }
 
     #[test]
@@ -535,7 +533,17 @@ mod tests {
         assert!(contract.migration_info().is_empty());
     }
 
-    fn test_register_backup_service_fail_non_participant(mut contract: MpcContract) {
+    #[rstest]
+    #[case::running(ProtocolContractState::Running(gen_running_state(NUM_DOMAINS)))]
+    #[case::initializing(ProtocolContractState::Initializing(
+        gen_initializing_state(NUM_DOMAINS, 0).1
+    ))]
+    #[case::resharing(ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1))]
+    fn register_backup_service__should_reject_non_participant(
+        #[case] protocol_state: ProtocolContractState,
+    ) {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
         // sanity check
         assert!(contract.migration_info().is_empty());
         let backup_service_info = BackupServiceInfo {
@@ -544,33 +552,16 @@ mod tests {
 
         let non_participant = gen_account_id();
         Environment::new(None, Some(non_participant), None);
+
+        // When
         let res = contract.register_backup_service(backup_service_info);
+
+        // Then
         assert_matches!(
             res.unwrap_err(),
             Error::InvalidState(InvalidState::NotParticipant { .. })
         );
         assert!(contract.migration_info().is_empty());
-    }
-
-    #[test]
-    fn test_register_backup_service_fail_non_participant_running() {
-        let (contract, _, _) = running_contract();
-        test_register_backup_service_fail_non_participant(contract);
-    }
-
-    #[test]
-    fn test_register_backup_service_fail_non_participant_initializing() {
-        let initializing_state =
-            ProtocolContractState::Initializing(gen_initializing_state(NUM_DOMAINS, 0).1);
-        let contract = MpcContract::new_from_protocol_state(initializing_state);
-        test_register_backup_service_fail_non_participant(contract);
-    }
-
-    #[test]
-    fn test_register_backup_service_fail_non_participant_resharnig() {
-        let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1);
-        let contract = MpcContract::new_from_protocol_state(resharing_state);
-        test_register_backup_service_fail_non_participant(contract);
     }
 
     fn test_register_backup_service_success(
