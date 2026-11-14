@@ -77,6 +77,7 @@ pub mod test {
     use digest::{Digest, FixedOutput};
     use ecdsa::hazmat::DigestPrimitive;
     use k256::{FieldBytes, Scalar, Secp256k1};
+    use rstest::rstest;
 
     #[test]
     fn test_same_inputs_hash() {
@@ -123,20 +124,14 @@ pub mod test {
         assert_ne!(hash1.0, hash2.0);
     }
 
-    #[test]
-    fn test_ct_eq_equal() {
-        let a = HashOutput([1u8; 32]);
-        let b = HashOutput([1u8; 32]);
+    #[rstest]
+    #[case::equal(1, 1, 1)]
+    #[case::not_equal(1, 2, 0)]
+    fn test_ct_eq(#[case] a_byte: u8, #[case] b_byte: u8, #[case] expected: u8) {
+        let a = HashOutput([a_byte; 32]);
+        let b = HashOutput([b_byte; 32]);
         let result = a.ct_eq(&b);
-        assert_eq!(result.unwrap_u8(), 1);
-    }
-
-    #[test]
-    fn test_ct_eq_not_equal() {
-        let a = HashOutput([1u8; 32]);
-        let b = HashOutput([2u8; 32]);
-        let result = a.ct_eq(&b);
-        assert_eq!(result.unwrap_u8(), 0);
+        assert_eq!(result.unwrap_u8(), expected);
     }
 
     /// Hashes a message string into an arbitrary scalar
