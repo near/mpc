@@ -503,6 +503,7 @@ mod tests {
     use super::*;
 
     use alloc::{string::ToString, vec, vec::Vec};
+    use rstest::rstest;
     use tee_verifier_interface::{EnclaveReport, Report, TcbStatusWithAdvisory, VerifiedReport};
 
     fn verified_report(status: &str, advisory_ids: Vec<String>) -> VerifiedReport {
@@ -567,10 +568,18 @@ mod tests {
         assert_eq!(result, Ok(advisories));
     }
 
-    #[test]
-    fn verify_tcb_status__should_reject_non_uptodate_status() {
+    #[rstest]
+    #[case::out_of_date_status_with_uptodate_components(TcbStatus::UpToDate, vec![])]
+    #[case::mixed_component_statuses(TcbStatus::OutOfDate, vec!["INTEL-SA-00001"])]
+    fn verify_tcb_status__should_reject_non_uptodate_status(
+        #[case] platform_status: TcbStatus,
+        #[case] advisory_ids: Vec<&str>,
+    ) {
         // Given
-        let report = verified_report("OutOfDate", vec![]);
+        let advisory_ids: Vec<String> = advisory_ids.into_iter().map(ToString::to_string).collect();
+        let status = "OutOfDate";
+        let mut report = verified_report(status, advisory_ids.clone());
+        report.platform_status.status = platform_status.clone();
 
         // When
         let result = DstackAttestation::verify_tcb_status(&report);
@@ -579,44 +588,12 @@ mod tests {
         assert_eq!(
             result,
             Err(VerificationError::TcbStatusNotUpToDate {
-                status: "OutOfDate".to_string(),
+                status: status.to_string(),
                 qe_status: TcbStatus::UpToDate,
-                platform_status: TcbStatus::UpToDate,
-                advisory_ids: vec![],
+                platform_status,
+                advisory_ids,
             })
         );
-    }
-
-    #[test]
-    fn verify_tcb_status__should_reject_non_uptodate_status_with_mixed_component_statuses() {
-        // Given
-        let mut report = verified_report("OutOfDate", vec!["INTEL-SA-00001".to_string()]);
-        report.platform_status.status = TcbStatus::OutOfDate;
-
-        // When
-        let result = DstackAttestation::verify_tcb_status(&report);
-
-        // Then
-        assert_eq!(
-            result,
-            Err(VerificationError::TcbStatusNotUpToDate {
-                status: "OutOfDate".to_string(),
-                qe_status: TcbStatus::UpToDate,
-                platform_status: TcbStatus::OutOfDate,
-                advisory_ids: vec!["INTEL-SA-00001".to_string()],
-            })
-        );
-    }
-
-    #[test]
-    fn validate_app_compose_config__succeeds_on_valid_app_compose() {
-        // Given
-        let app_compose = valid_app_compose();
-        // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
-
-        // Then
-        assert!(result)
     }
 
     #[test]
@@ -631,73 +608,6 @@ mod tests {
 
         // Then
         assert!(result)
-    }
-
-    #[test]
-    fn validate_app_compose_config__rejects_present_pre_launch_script() {
-        // Given
-        let app_compose = AppCompose {
-            pre_launch_script: Some("echo pwn".to_string()),
-            ..valid_app_compose()
-        };
-
-        // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
-
-        // Then
-        assert!(!result)
-    }
-
-    #[test]
-    fn validate_app_compose_config__rejects_present_init_script() {
-        // `init_script` is arbitrary root code run before dockerd. It is
-        // measured into the compose hash but not pinned to any allowed value,
-        // so verification must reject it outright.
-
-        // Given
-        let app_compose = AppCompose {
-            init_script: Some("echo pwn".to_string()),
-            ..valid_app_compose()
-        };
-        // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
-
-        // Then
-        assert!(!result)
-    }
-
-    #[test]
-    fn validate_app_compose_config__rejects_present_bash_script() {
-        // `bash_script` is arbitrary root code; dstack only runs it when `runner == "bash"`, but we
-        // reject it explicitly rather than relying solely on the runner pin.
-
-        // Given
-        let app_compose = AppCompose {
-            bash_script: Some("echo pwn".to_string()),
-            ..valid_app_compose()
-        };
-        // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
-
-        // Then
-        assert!(!result)
-    }
-
-    #[test]
-    fn validate_app_compose_config__rejects_tproxy_enabled() {
-        // dstack enables the gateway on `gateway_enabled || tproxy_enabled`, so a `tproxy_enabled`
-        // set via the legacy alias must be rejected even when `gateway_enabled` is false.
-
-        // Given
-        let app_compose = AppCompose {
-            tproxy_enabled: Some(true),
-            ..valid_app_compose()
-        };
-        // When
-        let result = DstackAttestation::validate_app_compose_config(&app_compose);
-
-        // Then
-        assert!(!result)
     }
 
     #[test]
@@ -723,18 +633,58 @@ mod tests {
         );
     }
 
-    #[test]
-    fn validate_app_compose_config__allows_insecure_time() {
-        // Given
-        let app_compose = AppCompose {
+    #[rstest]
+    #[case::succeeds_on_valid_app_compose(valid_app_compose(), true)]
+    #[case::rejects_present_pre_launch_script(
+        AppCompose {
+            pre_launch_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        },
+        false
+    )]
+    // `init_script` is arbitrary root code run before dockerd. It is measured into the compose
+    // hash but not pinned to any allowed value, so verification must reject it outright.
+    #[case::rejects_present_init_script(
+        AppCompose {
+            init_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        },
+        false
+    )]
+    // `bash_script` is arbitrary root code; dstack only runs it when `runner == "bash"`, but we
+    // reject it explicitly rather than relying solely on the runner pin.
+    #[case::rejects_present_bash_script(
+        AppCompose {
+            bash_script: Some("echo pwn".to_string()),
+            ..valid_app_compose()
+        },
+        false
+    )]
+    // dstack enables the gateway on `gateway_enabled || tproxy_enabled`, so a `tproxy_enabled`
+    // set via the legacy alias must be rejected even when `gateway_enabled` is false.
+    #[case::rejects_tproxy_enabled(
+        AppCompose {
+            tproxy_enabled: Some(true),
+            ..valid_app_compose()
+        },
+        false
+    )]
+    #[case::allows_insecure_time(
+        AppCompose {
             secure_time: Some(false),
             ..valid_app_compose()
-        };
+        },
+        true
+    )]
+    fn validate_app_compose_config__should_accept_only_allowed_configs(
+        #[case] app_compose: AppCompose,
+        #[case] expected: bool,
+    ) {
         // When
         let result = DstackAttestation::validate_app_compose_config(&app_compose);
 
         // Then
-        assert!(result)
+        assert_eq!(result, expected);
     }
 
     fn valid_app_compose() -> AppCompose {
