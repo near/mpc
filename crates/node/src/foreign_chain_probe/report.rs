@@ -92,56 +92,44 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn summarize__should_count_only_the_providers_a_probe_covers() {
+    #[rstest]
+    #[case::only_the_providers_a_probe_covers(
+        &[
+            (dtos::ForeignChain::Base, ProviderStatus::Healthy),
+            (dtos::ForeignChain::Bnb, ProviderStatus::Unreachable),
+            (dtos::ForeignChain::Ton, ProviderStatus::ProbeNotImplemented),
+        ],
+        Summary {
+            probed: 2,
+            healthy: 1,
+            unchecked: 1,
+            unchecked_chains: BTreeSet::from(["ton"]),
+        }
+    )]
+    #[case::nothing_probed_when_no_chain_has_a_probe(
+        &[(dtos::ForeignChain::Ton, ProviderStatus::ProbeNotImplemented)],
+        Summary {
+            probed: 0,
+            healthy: 0,
+            unchecked: 1,
+            unchecked_chains: BTreeSet::from(["ton"]),
+        }
+    )]
+    fn summarize__should_count(
+        #[case] statuses: &[(dtos::ForeignChain, ProviderStatus)],
+        #[case] expected: Summary,
+    ) {
         // Given
-        let rows = [
-            row(dtos::ForeignChain::Base, "only", ProviderStatus::Healthy),
-            row(dtos::ForeignChain::Bnb, "only", ProviderStatus::Unreachable),
-            row(
-                dtos::ForeignChain::Ton,
-                "only",
-                ProviderStatus::ProbeNotImplemented,
-            ),
-        ];
+        let rows: Vec<_> = statuses
+            .iter()
+            .map(|(chain, status)| row(*chain, "only", status.clone()))
+            .collect();
 
         // When
         let summary = summarize(&rows);
 
         // Then
-        assert_eq!(
-            summary,
-            Summary {
-                probed: 2,
-                healthy: 1,
-                unchecked: 1,
-                unchecked_chains: BTreeSet::from(["ton"]),
-            }
-        );
-    }
-
-    #[test]
-    fn summarize__should_count_nothing_probed_when_no_chain_has_a_probe() {
-        // Given
-        let rows = [row(
-            dtos::ForeignChain::Ton,
-            "only",
-            ProviderStatus::ProbeNotImplemented,
-        )];
-
-        // When
-        let summary = summarize(&rows);
-
-        // Then
-        assert_eq!(
-            summary,
-            Summary {
-                probed: 0,
-                healthy: 0,
-                unchecked: 1,
-                unchecked_chains: BTreeSet::from(["ton"]),
-            }
-        );
+        assert_eq!(summary, expected);
     }
 
     #[rstest]

@@ -210,6 +210,8 @@ pub struct IndexerAPI<TransactionSender> {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
+    use rstest::rstest;
+
     use super::{BlockHeight, REQUIRED_STABLE_POLLS, SyncProgress};
 
     fn first_caught_up_poll(samples: &[(bool, BlockHeight)]) -> Option<usize> {
@@ -219,58 +221,40 @@ mod tests {
             .position(|&(syncing, head)| progress.observe(syncing, head))
     }
 
-    #[test]
-    fn observe__should_never_report_caught_up_while_syncing() {
+    #[rstest]
+    #[case::never_report_caught_up_while_syncing(true, 42_000_000, 1, 10, None)]
+    #[case::never_report_caught_up_with_static_head_at_genesis(false, 42_376_888, 0, 10, None)]
+    #[case::not_report_caught_up_before_required_polls(
+        false,
+        257_000_000,
+        1,
+        REQUIRED_STABLE_POLLS - 1,
+        None
+    )]
+    #[case::report_caught_up_after_sustained_progress(
+        false,
+        257_000_000,
+        1,
+        REQUIRED_STABLE_POLLS,
+        Some(usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1)
+    )]
+    fn observe__should_report_caught_up_only_after_sustained_progress(
+        #[case] syncing: bool,
+        #[case] first_head: BlockHeight,
+        #[case] head_step: BlockHeight,
+        #[case] polls: u32,
+        #[case] expected: Option<usize>,
+    ) {
         // Given
-        let samples: Vec<_> = (0..10).map(|i| (true, 42_000_000 + i)).collect();
-
-        // When
-        let caught_up_at = first_caught_up_poll(&samples);
-
-        // Then
-        assert_eq!(caught_up_at, None);
-    }
-
-    #[test]
-    fn observe__should_never_report_caught_up_with_static_head_at_genesis() {
-        // Given
-        let genesis = 42_376_888;
-        let samples: Vec<_> = (0..10).map(|_| (false, genesis)).collect();
-
-        // When
-        let caught_up_at = first_caught_up_poll(&samples);
-
-        // Then
-        assert_eq!(caught_up_at, None);
-    }
-
-    #[test]
-    fn observe__should_not_report_caught_up_before_required_polls() {
-        // Given
-        let samples: Vec<_> = (0..REQUIRED_STABLE_POLLS - 1)
-            .map(|i| (false, 257_000_000 + u64::from(i)))
+        let samples: Vec<_> = (0..polls)
+            .map(|i| (syncing, first_head + head_step * BlockHeight::from(i)))
             .collect();
 
         // When
         let caught_up_at = first_caught_up_poll(&samples);
 
         // Then
-        assert_eq!(caught_up_at, None);
-    }
-
-    #[test]
-    fn observe__should_report_caught_up_after_sustained_progress() {
-        // Given
-        let samples: Vec<_> = (0..REQUIRED_STABLE_POLLS)
-            .map(|i| (false, 257_000_000 + u64::from(i)))
-            .collect();
-
-        // When
-        let caught_up_at = first_caught_up_poll(&samples);
-
-        // Then
-        let expected = usize::try_from(REQUIRED_STABLE_POLLS).unwrap() - 1;
-        assert_eq!(caught_up_at, Some(expected));
+        assert_eq!(caught_up_at, expected);
     }
 
     #[test]

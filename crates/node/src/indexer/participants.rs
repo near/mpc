@@ -559,6 +559,7 @@ mod tests {
         GovernanceThreshold, GovernanceThresholdParameters, ParticipantId, ParticipantInfo,
         Participants, ProtocolContractState, ReconstructionThreshold,
     };
+    use rstest::rstest;
     use std::collections::{BTreeMap, HashMap};
 
     use super::test_utils::{base_config, participant, resharing};
@@ -669,8 +670,13 @@ mod tests {
     /// One participant's unparseable address must not fail the whole conversion: the entry
     /// is kept (so participant count / threshold stay consistent with the contract) but
     /// pointed at an unreachable sentinel address.
-    #[test]
-    fn convert_participant_infos__should_keep_unreachable_participant_when_address_unparseable() {
+    #[rstest]
+    #[case::keep_unreachable_participant_when_address_unparseable(None, 0)]
+    #[case::apply_port_override_to_unreachable_participant(Some(8080), 8080)]
+    fn convert_participant_infos__should_point_an_unparseable_address_at_the_unreachable_sentinel(
+        #[case] port_override: Option<u16>,
+        #[case] expected_port: u16,
+    ) {
         // Given
         let mut entries = create_chain_participant_infos().participants;
         let original_count = entries.len();
@@ -678,14 +684,14 @@ mod tests {
         let account = entries[0].0.clone();
         let params = GovernanceThresholdParameters {
             participants: Participants {
-                next_id: ParticipantId(entries.len() as u32),
+                next_id: ParticipantId(u32::try_from(entries.len()).unwrap()),
                 participants: entries,
             },
             threshold: GovernanceThreshold(3),
         };
 
         // When
-        let converted = convert_participant_infos(params, None).unwrap();
+        let converted = convert_participant_infos(params, port_override).unwrap();
 
         // Then
         assert_eq!(converted.participants.len(), original_count);
@@ -695,35 +701,7 @@ mod tests {
             .find(|p| p.near_account_id == account)
             .unwrap();
         assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
-        assert_eq!(entry.port, 0);
-    }
-
-    /// `port_override` still applies to a participant whose address is unparseable.
-    #[test]
-    fn convert_participant_infos__should_apply_port_override_to_unreachable_participant() {
-        // Given
-        let mut entries = create_chain_participant_infos().participants;
-        entries[0].2.url = "http://:3000".try_into().unwrap();
-        let account = entries[0].0.clone();
-        let params = GovernanceThresholdParameters {
-            participants: Participants {
-                next_id: ParticipantId(entries.len() as u32),
-                participants: entries,
-            },
-            threshold: GovernanceThreshold(3),
-        };
-
-        // When
-        let converted = convert_participant_infos(params, Some(8080)).unwrap();
-
-        // Then
-        let entry = converted
-            .participants
-            .iter()
-            .find(|p| p.near_account_id == account)
-            .unwrap();
-        assert_eq!(entry.address, UNREACHABLE_PARTICIPANT_ADDRESS);
-        assert_eq!(entry.port, 8080);
+        assert_eq!(entry.port, expected_port);
     }
 
     #[test]

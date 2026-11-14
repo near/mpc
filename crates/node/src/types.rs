@@ -403,6 +403,7 @@ pub trait LogTransaction: Clone + Send + Sync + 'static {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::str::FromStr;
 
     /// A submitted (Executed) transaction whose hash is fixed
@@ -424,33 +425,27 @@ mod tests {
         }
     }
 
-    #[test]
-    fn submitted_transaction_display__should_render_exact_line_with_padding() {
-        // Given
-        let transaction = test_transaction("respond");
-
-        // When
-        let rendered = transaction.to_string();
-
-        // Then
-        let expected = "  2023-11-14 22:13:20.0 +00:00:00  Executed      method=respond                   signer=responder.near key=ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx  txid=11111111111111111111111111111111  nonce=7  block=42  sig=ed25519:1111111111111111111111111111111111111111111111111111111111111111";
-        assert_eq!(rendered, expected);
-    }
-
-    #[test]
-    fn submitted_transaction_display__should_render_marker_without_metadata() {
-        // Given
-        let transaction = SubmittedTransaction {
+    #[rstest]
+    #[case::exact_line_with_padding(
+        test_transaction("respond"),
+        "  2023-11-14 22:13:20.0 +00:00:00  Executed      method=respond                   signer=responder.near key=ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx  txid=11111111111111111111111111111111  nonce=7  block=42  sig=ed25519:1111111111111111111111111111111111111111111111111111111111111111"
+    )]
+    #[case::marker_without_metadata(
+        SubmittedTransaction {
             metadata: None,
             status: SubmittedTransactionStatus::SubmitFailed,
             ..test_transaction("respond")
-        };
-
+        },
+        "  2023-11-14 22:13:20.0 +00:00:00  SubmitFailed  method=respond                   signer=responder.near key=ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx  (not submitted)"
+    )]
+    fn submitted_transaction_display__should_render_expected_line(
+        #[case] transaction: SubmittedTransaction,
+        #[case] expected: &str,
+    ) {
         // When
         let rendered = transaction.to_string();
 
         // Then
-        let expected = "  2023-11-14 22:13:20.0 +00:00:00  SubmitFailed  method=respond                   signer=responder.near key=ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx  (not submitted)";
         assert_eq!(rendered, expected);
     }
 }

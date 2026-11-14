@@ -124,6 +124,7 @@ mod tests {
     use mpc_node_config::foreign_chains::RpcProviderName;
     use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting, ProviderConfig};
+    use rstest::rstest;
 
     use super::*;
 
@@ -203,44 +204,52 @@ mod tests {
         );
     }
 
-    #[test]
-    fn rpc_quorum__should_fail_when_the_conforming_providers_are_below_the_quorum() {
-        // Given
-        let local = local(&[("my-alchemy", "https://eth.alchemy.com/")]);
-
-        // When
-        let quorum = rpc_quorum(&local, &entry(&WHITELIST, 2));
-
-        // Then
-        assert_eq!(
-            quorum,
-            Err(RpcQuorumError::BelowQuorum {
-                required: NonZeroUsize::new(2).unwrap(),
-                conforming: 1,
-            })
-        );
-    }
-
-    /// Two local providers behind one whitelisted host, quorum two.
-    #[test]
-    fn rpc_quorum__should_count_providers_matching_the_same_whitelist_provider_once() {
-        // Given
-        let local = local(&[
+    #[rstest]
+    #[case::conforming_providers_below_the_quorum(
+        &[("my-alchemy", "https://eth.alchemy.com/")],
+        2,
+        RpcQuorumError::BelowQuorum {
+            required: NonZeroUsize::new(2).unwrap(),
+            conforming: 1,
+        }
+    )]
+    #[case::providers_matching_the_same_whitelist_provider_counted_once(
+        &[
             ("alchemy-a", "https://eth.alchemy.com/"),
             ("alchemy-b", "https://eth.alchemy.com/"),
-        ]);
+        ],
+        2,
+        RpcQuorumError::BelowQuorum {
+            required: NonZeroUsize::new(2).unwrap(),
+            conforming: 1,
+        }
+    )]
+    #[case::provider_on_a_port_the_whitelist_does_not_name(
+        &[("my-alchemy", "https://eth.alchemy.com:8545/")],
+        1,
+        RpcQuorumError::BelowQuorum {
+            required: NonZeroUsize::new(1).unwrap(),
+            conforming: 0,
+        }
+    )]
+    #[case::zero_quorum(
+        &[("my-alchemy", "https://eth.alchemy.com/")],
+        0,
+        RpcQuorumError::InvalidQuorum(0)
+    )]
+    fn rpc_quorum__should_fail(
+        #[case] providers: &[(&str, &str)],
+        #[case] quorum: u64,
+        #[case] expected: RpcQuorumError,
+    ) {
+        // Given
+        let local = local(providers);
 
         // When
-        let quorum = rpc_quorum(&local, &entry(&WHITELIST, 2));
+        let result = rpc_quorum(&local, &entry(&WHITELIST, quorum));
 
         // Then
-        assert_eq!(
-            quorum,
-            Err(RpcQuorumError::BelowQuorum {
-                required: NonZeroUsize::new(2).unwrap(),
-                conforming: 1,
-            })
-        );
+        assert_eq!(result, Err(expected));
     }
 
     #[test]
@@ -260,37 +269,6 @@ mod tests {
             quorum.map(|quorum| quorum.whitelisted),
             Ok(ids(&["alchemy-a"]))
         );
-    }
-
-    /// The whitelisted host on a port the whitelist does not name.
-    #[test]
-    fn rpc_quorum__should_not_count_a_misconfigured_provider() {
-        // Given
-        let local = local(&[("my-alchemy", "https://eth.alchemy.com:8545/")]);
-
-        // When
-        let quorum = rpc_quorum(&local, &entry(&WHITELIST, 1));
-
-        // Then
-        assert_eq!(
-            quorum,
-            Err(RpcQuorumError::BelowQuorum {
-                required: NonZeroUsize::new(1).unwrap(),
-                conforming: 0,
-            })
-        );
-    }
-
-    #[test]
-    fn rpc_quorum__should_fail_for_a_zero_quorum() {
-        // Given
-        let local = local(&[("my-alchemy", "https://eth.alchemy.com/")]);
-
-        // When
-        let quorum = rpc_quorum(&local, &entry(&WHITELIST, 0));
-
-        // Then
-        assert_eq!(quorum, Err(RpcQuorumError::InvalidQuorum(0)));
     }
 
     /// Ethereum reaches its quorum, Base does not, Polygon is not whitelisted.

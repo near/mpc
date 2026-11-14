@@ -891,11 +891,17 @@ mod tests {
         assert_matches!(result, Ok(()));
     }
 
-    #[test]
-    fn validate_key_event_participants__should_reject_a_subset_of_the_contract_participant_set() {
+    #[rstest::rstest]
+    #[case::a_subset_of_the_contract_participant_set(&[1, 2, 3], &[4], &[])]
+    #[case::a_participant_outside_the_contract_participant_set(&[1, 2, 3, 4, 5], &[], &[5])]
+    fn validate_key_event_participants__should_reject_mismatched_participants(
+        #[case] channel_ids: &[u32],
+        #[case] expected_missing: &[u32],
+        #[case] expected_unexpected: &[u32],
+    ) {
         // Given
         let expected_participant_ids = make_participant_id_set(&[1, 2, 3, 4]);
-        let channel_participants = make_participant_ids(&[1, 2, 3]);
+        let channel_participants = make_participant_ids(channel_ids);
 
         // When
         let result =
@@ -903,25 +909,8 @@ mod tests {
 
         // Then
         let err = result.unwrap_err();
-        assert_eq!(err.missing, make_participant_ids(&[4]));
-        assert!(err.unexpected.is_empty());
-    }
-
-    #[test]
-    fn validate_key_event_participants__should_reject_a_participant_outside_the_contract_participant_set()
-     {
-        // Given
-        let expected_participant_ids = make_participant_id_set(&[1, 2, 3, 4]);
-        let channel_participants = make_participant_ids(&[1, 2, 3, 4, 5]);
-
-        // When
-        let result =
-            validate_key_event_participants(&channel_participants, &expected_participant_ids);
-
-        // Then
-        let err = result.unwrap_err();
-        assert!(err.missing.is_empty());
-        assert_eq!(err.unexpected, make_participant_ids(&[5]));
+        assert_eq!(err.missing, make_participant_ids(expected_missing));
+        assert_eq!(err.unexpected, make_participant_ids(expected_unexpected));
     }
 
     /// A leader-chosen subset must be refused without any contract interaction, in particular
