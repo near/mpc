@@ -91,60 +91,41 @@ fn normalized_thread_name(thread_name: &str) -> String {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn leaves_thread_name_unchanged_when_no_trailing_numeric_id_exists() {
-        assert_eq!(normalized_thread_name("main"), "main");
-    }
+    #[rstest]
+    #[case::leaves_thread_name_unchanged_when_no_trailing_numeric_id_exists("main", "main")]
+    #[case::removes_numeric_suffix_from_tokio_worker_thread_name(
+        "tokio-runtime-worker-1",
+        "tokio-runtime-worker"
+    )]
+    #[case::replaces_underscores_with_dashes_and_strips_trailing_numeric_id(
+        "db_connection_pool_01",
+        "db-connection-pool"
+    )]
+    #[case::replaces_spaces_with_dashes_in_multi_word_thread_names(
+        "Search Engine Worker",
+        "Search-Engine-Worker"
+    )]
+    #[case::preserves_character_casing_while_removing_trailing_numeric_id(
+        "IO-Manager-1",
+        "IO-Manager"
+    )]
+    #[case::results_in_empty_string_when_input_is_entirely_numeric("12345", "")]
+    #[case::does_not_strip_trailing_numbers_if_no_separator_is_present("worker123", "worker123")]
+    #[case::handles_multiple_successive_separators_correctly_when_stripping_ids(
+        "db-pool-_01",
+        "db-pool"
+    )]
+    #[case::does_not_strip_numeric_parts_of_version_strings_at_the_start("v2-engine", "v2-engine")]
+    fn normalized_thread_name__should_normalize(#[case] input: &str, #[case] expected: &str) {
+        // When
+        let normalized = normalized_thread_name(input);
 
-    #[test]
-    fn removes_numeric_suffix_from_tokio_worker_thread_name() {
-        assert_eq!(
-            normalized_thread_name("tokio-runtime-worker-1"),
-            "tokio-runtime-worker"
-        );
-    }
-
-    #[test]
-    fn replaces_underscores_with_dashes_and_strips_trailing_numeric_id() {
-        assert_eq!(
-            normalized_thread_name("db_connection_pool_01"),
-            "db-connection-pool"
-        );
-    }
-
-    #[test]
-    fn replaces_spaces_with_dashes_in_multi_word_thread_names() {
-        assert_eq!(
-            normalized_thread_name("Search Engine Worker"),
-            "Search-Engine-Worker"
-        );
-    }
-
-    #[test]
-    fn preserves_character_casing_while_removing_trailing_numeric_id() {
-        assert_eq!(normalized_thread_name("IO-Manager-1"), "IO-Manager");
-    }
-
-    #[test]
-    fn results_in_empty_string_when_input_is_entirely_numeric() {
-        assert_eq!(normalized_thread_name("12345"), "");
-    }
-
-    #[test]
-    fn does_not_strip_trailing_numbers_if_no_separator_is_present() {
-        assert_eq!(normalized_thread_name("worker123"), "worker123");
-    }
-
-    #[test]
-    fn handles_multiple_successive_separators_correctly_when_stripping_ids() {
-        assert_eq!(normalized_thread_name("db-pool-_01"), "db-pool");
-    }
-
-    #[test]
-    fn does_not_strip_numeric_parts_of_version_strings_at_the_start() {
-        assert_eq!(normalized_thread_name("v2-engine"), "v2-engine");
+        // Then
+        assert_eq!(normalized, expected);
     }
 }

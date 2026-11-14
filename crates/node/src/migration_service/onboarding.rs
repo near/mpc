@@ -330,10 +330,13 @@ async fn wait_for_and_import_keyshares(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use std::{sync::Arc, time::Duration};
 
+    use ed25519_dalek::VerifyingKey;
     use rand::SeedableRng as _;
+    use rstest::rstest;
     use tokio::{
         sync::{RwLock, watch},
         time::timeout,
@@ -589,40 +592,24 @@ mod tests {
         )
         .await;
     }
+    #[rstest]
+    #[case::resharing(make_resharing_contract_case)]
+    #[case::initializing(make_initializing_contract_case)]
     #[tokio::test]
-    async fn test_start_onboarding_monitoring_task_resharing() {
+    async fn start_onboarding_monitoring_task__should_conclude_without_running_state(
+        #[case] make_contract_case: fn(VerifyingKey) -> ContractCase,
+    ) {
         let non_participant = gen_participant();
         let onboarding_node_p2p_public_key = non_participant.p2p_public_key;
-        let resharing_state_case = make_resharing_contract_case(onboarding_node_p2p_public_key);
+        let contract_case = make_contract_case(onboarding_node_p2p_public_key);
         let OnboardingMonitoringTaskSetup {
             mut task_receiver,
             contract_state_sender,
             monitoring_cancellation_token,
             ..
-        } = setup_and_assert_invalid_state(resharing_state_case.onboarding_node.clone()).await;
+        } = setup_and_assert_invalid_state(contract_case.onboarding_node.clone()).await;
         conclude_onboarding_and_assert_done(
-            resharing_state_case,
-            &contract_state_sender,
-            &mut task_receiver,
-            monitoring_cancellation_token,
-        )
-        .await;
-    }
-    #[tokio::test]
-    async fn test_start_onboarding_monitoring_task_initializing() {
-        let non_participant = gen_participant();
-        let onboarding_node_p2p_public_key = non_participant.p2p_public_key;
-        let initializing_contract_case =
-            make_initializing_contract_case(onboarding_node_p2p_public_key);
-        let OnboardingMonitoringTaskSetup {
-            mut task_receiver,
-            contract_state_sender,
-            monitoring_cancellation_token,
-            ..
-        } = setup_and_assert_invalid_state(initializing_contract_case.onboarding_node.clone())
-            .await;
-        conclude_onboarding_and_assert_done(
-            initializing_contract_case,
+            contract_case,
             &contract_state_sender,
             &mut task_receiver,
             monitoring_cancellation_token,

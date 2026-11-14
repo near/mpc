@@ -153,6 +153,7 @@ pub mod tests {
     };
     use near_account_id::AccountId;
     use near_mpc_crypto_types::Keyset;
+    use rstest::rstest;
 
     use crate::{
         config,
@@ -255,73 +256,67 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn test_onboarding_job_participants() {
+    #[derive(Clone, Copy, Debug)]
+    enum ContractPhase {
+        Initializing,
+        Resharing,
+        Running,
+    }
+
+    impl ContractPhase {
+        fn contract_case(self, setup: &OnboardingJobConstructorTestSetup) -> &ContractCase {
+            match self {
+                Self::Initializing => &setup.initializing,
+                Self::Resharing => &setup.resharing,
+                Self::Running => &setup.running,
+            }
+        }
+    }
+
+    #[rstest]
+    fn test_onboarding_job_participants(
+        #[values(
+            ContractPhase::Initializing,
+            ContractPhase::Resharing,
+            ContractPhase::Running
+        )]
+        phase: ContractPhase,
+    ) {
         let setup = OnboardingJobConstructorTestSetup::new();
+        let contract_case = phase.contract_case(&setup);
         // Being a participant must always result in "Done"
-        // initializing
         OnboardingJobConstructorTestCase {
-            case: "Initializing Participant".into(),
+            case: format!("{phase:?} Participant"),
             migration_info: setup.active_migration.clone(),
-            contract: setup.initializing.contract.clone(),
-            node_id: setup.initializing.participant_node.clone(),
-            expected_outcome: OnboardingJob::Done,
-        }
-        .run();
-
-        // resharing
-        OnboardingJobConstructorTestCase {
-            case: "Resharing Participant".into(),
-            migration_info: setup.active_migration.clone(),
-            contract: setup.resharing.contract.clone(),
-            node_id: setup.resharing.participant_node.clone(),
-            expected_outcome: OnboardingJob::Done,
-        }
-        .run();
-
-        // running
-        OnboardingJobConstructorTestCase {
-            case: "Running Participant".into(),
-            migration_info: setup.active_migration.clone(),
-            contract: setup.running.contract.clone(),
-            node_id: setup.running.participant_node.clone(),
+            contract: contract_case.contract.clone(),
+            node_id: contract_case.participant_node.clone(),
             expected_outcome: OnboardingJob::Done,
         }
         .run();
     }
 
-    #[test]
-    fn test_onboarding_job_inactive() {
+    #[rstest]
+    fn test_onboarding_job_inactive(
+        #[values(
+            ContractPhase::Initializing,
+            ContractPhase::Resharing,
+            ContractPhase::Running
+        )]
+        phase: ContractPhase,
+    ) {
         let setup = OnboardingJobConstructorTestSetup::new();
+        let contract_case = phase.contract_case(&setup);
         // An inactive migration for an onboarding participant should always result in a "wait"
-        // initializing
         OnboardingJobConstructorTestCase {
-            case: "Initializing inactive".into(),
+            case: format!("{phase:?} inactive"),
             migration_info: setup.inactive_migration.clone(),
-            contract: setup.initializing.contract.clone(),
-            node_id: setup.initializing.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
-        }
-        .run();
-        // resharing
-        OnboardingJobConstructorTestCase {
-            case: "Resharing inactive".into(),
-            migration_info: setup.inactive_migration.clone(),
-            contract: setup.resharing.contract.clone(),
-            node_id: setup.resharing.onboarding_node.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
-        }
-        .run();
-        // running
-        OnboardingJobConstructorTestCase {
-            case: "Running inactive".into(),
-            migration_info: setup.inactive_migration.clone(),
-            contract: setup.running.contract.clone(),
-            node_id: setup.running.onboarding_node.clone(),
+            contract: contract_case.contract.clone(),
+            node_id: contract_case.onboarding_node.clone(),
             expected_outcome: OnboardingJob::WaitForStateChange,
         }
         .run();
     }
+
     #[test]
     fn test_onboarding_job_active() {
         let setup = OnboardingJobConstructorTestSetup::new();
@@ -356,38 +351,28 @@ pub mod tests {
         .run();
     }
 
-    #[test]
-    fn test_onboarding_job_non_participant() {
+    #[rstest]
+    fn test_onboarding_job_non_participant(
+        #[values(
+            ContractPhase::Initializing,
+            ContractPhase::Resharing,
+            ContractPhase::Running
+        )]
+        phase: ContractPhase,
+    ) {
         let setup = OnboardingJobConstructorTestSetup::new();
+        let contract_case = phase.contract_case(&setup);
         // a non-participant must always wait for a state change
-        // initializing
         OnboardingJobConstructorTestCase {
-            case: "Non-participant initializing".into(),
+            case: format!("Non-participant {phase:?}"),
             migration_info: setup.active_migration.clone(),
-            contract: setup.initializing.contract.clone(),
-            node_id: setup.non_participant.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
-        }
-        .run();
-        // resharing
-        OnboardingJobConstructorTestCase {
-            case: "Non-participant resharing".into(),
-            migration_info: setup.active_migration.clone(),
-            contract: setup.resharing.contract.clone(),
-            node_id: setup.non_participant.clone(),
-            expected_outcome: OnboardingJob::WaitForStateChange,
-        }
-        .run();
-        // running
-        OnboardingJobConstructorTestCase {
-            case: "Non-participant running".into(),
-            migration_info: setup.active_migration.clone(),
-            contract: setup.running.contract.clone(),
+            contract: contract_case.contract.clone(),
             node_id: setup.non_participant.clone(),
             expected_outcome: OnboardingJob::WaitForStateChange,
         }
         .run();
     }
+
     #[test]
     fn test_onboarding_job_invalid() {
         let setup = OnboardingJobConstructorTestSetup::new();
