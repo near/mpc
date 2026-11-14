@@ -127,11 +127,13 @@ mod tests {
     use crate::db::EPOCH_ID_KEY;
     use crate::db::{DBCol, SecretDB};
     use crate::network::testing::new_test_client;
-    use crate::primitives::UniqueId;
+    use crate::primitives::{ParticipantId, UniqueId};
     use crate::providers::ecdsa::triple::TripleStorage;
+    use mpc_primitives::ReconstructionThreshold;
     use near_time::FakeClock;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
+    use tempfile::TempDir;
 
     fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {
         let found = get_epoch_data(&ctx.db).unwrap().unwrap();
@@ -252,6 +254,67 @@ mod tests {
         ctx.assert_owned(1);
     }
 
+    struct TripleCleanupContext {
+        start_data: EpochData,
+        my_participant_id: ParticipantId,
+        reconstruction_threshold: ReconstructionThreshold,
+        all_participants: Vec<ParticipantId>,
+        db: Arc<SecretDB>,
+        triple_store: TripleStorage,
+        _dir: TempDir,
+    }
+
+    impl TripleCleanupContext {
+        fn new() -> Self {
+            let (start_data, my_participant_id, reconstruction_threshold) =
+                test_utils::gen_four_participants();
+            let all_participants = get_participant_ids(start_data.clone());
+            let dir = tempfile::tempdir().unwrap();
+            let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+            let client = new_test_client(all_participants.clone(), my_participant_id);
+            let triple_store = TripleStorage::new(
+                FakeClock::default().clock(),
+                db.clone(),
+                client,
+                reconstruction_threshold,
+            )
+            .unwrap();
+            Self {
+                start_data,
+                my_participant_id,
+                reconstruction_threshold,
+                all_participants,
+                db,
+                triple_store,
+                _dir: dir,
+            }
+        }
+
+        fn cleanup(&self) {
+            delete_stale_triples_and_presignatures(
+                &self.db,
+                self.start_data.clone(),
+                self.my_participant_id,
+                BTreeSet::from([self.reconstruction_threshold]),
+            )
+            .unwrap();
+        }
+
+        fn rotate_last_participant_tls_key(&mut self) {
+            self.start_data
+                .participants
+                .participants
+                .last_mut()
+                .unwrap()
+                .p2p_public_key = random_verifying_key();
+        }
+
+        fn has_triple(&self, id: UniqueId) -> bool {
+            let v2_key = triple_v2_key(self.reconstruction_threshold, id);
+            self.db.get(DBCol::TripleV2, &v2_key).unwrap().is_some()
+        }
+    }
+
     /// End-to-end check that a triple written via [`TripleStorage::add_owned`]
     /// (into [`DBCol::TripleV2`] under `[t]`) is removed when the participant set
     /// changes. The other cleanup tests populate [`TripleV2`] via a local helper;
@@ -260,55 +323,24 @@ mod tests {
     #[expect(non_snake_case)]
     fn delete_stale_triples_and_presignatures__should_clean_stale_triple_in_v2_column() {
         // Given a node has written a stale triple via TripleStorage.
-        let (mut start_data, my_participant_id, reconstruction_threshold) =
-            test_utils::gen_four_participants();
-        let all_participants = get_participant_ids(start_data.clone());
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let client = new_test_client(all_participants.clone(), my_participant_id);
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            client,
-            reconstruction_threshold,
-        )
-        .unwrap();
-        let id = triple_store.generate_and_reserve_id();
-        triple_store.add_owned(id, make_triple(&all_participants));
-        let v2_key = triple_v2_key(reconstruction_threshold, id);
-        // Sanity: the row really is in the TripleV2 column.
-        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        let mut ctx = TripleCleanupContext::new();
+        let id = ctx.triple_store.generate_and_reserve_id();
+        ctx.triple_store
+            .add_owned(id, make_triple(&ctx.all_participants));
+        assert!(ctx.has_triple(id));
 
         // Seed the persisted epoch_data so the next call enters the
         // `KeepOnly` branch (same epoch_id, persistent set shrinks).
-        delete_stale_triples_and_presignatures(
-            &db,
-            start_data.clone(),
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        )
-        .unwrap();
-        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        ctx.cleanup();
+        assert!(ctx.has_triple(id));
 
         // When one participant's TLS key changes — the triple's participant
         // set is no longer fully persistent.
-        start_data
-            .participants
-            .participants
-            .last_mut()
-            .unwrap()
-            .p2p_public_key = random_verifying_key();
-
-        delete_stale_triples_and_presignatures(
-            &db,
-            start_data.clone(),
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        )
-        .unwrap();
+        ctx.rotate_last_participant_tls_key();
+        ctx.cleanup();
 
         // Then the row is gone from the TripleV2 column.
-        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_none());
+        assert!(!ctx.has_triple(id));
     }
 
     /// Counterpart to the stale-cleaned test: a triple whose participants are
@@ -316,54 +348,28 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn delete_stale_triples_and_presignatures__should_keep_active_triple() {
-        let (mut start_data, my_participant_id, reconstruction_threshold) =
-            test_utils::gen_four_participants();
-        let all_participants = get_participant_ids(start_data.clone());
+        // Given
+        let mut ctx = TripleCleanupContext::new();
         // Triple uses everyone EXCEPT the last participant (whose TLS we'll change
         // below), so the participant set stays fully within the persistent set.
-        let active_subset: Vec<_> = all_participants
+        let active_subset: Vec<_> = ctx
+            .all_participants
             .iter()
-            .take(all_participants.len() - 1)
+            .take(ctx.all_participants.len() - 1)
             .copied()
             .collect();
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let client = new_test_client(all_participants.clone(), my_participant_id);
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            client,
-            reconstruction_threshold,
-        )
-        .unwrap();
-        let id = triple_store.generate_and_reserve_id();
-        triple_store.add_owned(id, make_triple(&active_subset));
-        let v2_key = triple_v2_key(reconstruction_threshold, id);
-
+        let id = ctx.triple_store.generate_and_reserve_id();
+        ctx.triple_store.add_owned(id, make_triple(&active_subset));
         // Seed epoch_data, then run cleanup with one participant's TLS rotated
         // (the one our triple does not depend on).
-        delete_stale_triples_and_presignatures(
-            &db,
-            start_data.clone(),
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        )
-        .unwrap();
-        start_data
-            .participants
-            .participants
-            .last_mut()
-            .unwrap()
-            .p2p_public_key = random_verifying_key();
-        delete_stale_triples_and_presignatures(
-            &db,
-            start_data.clone(),
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        )
-        .unwrap();
+        ctx.cleanup();
 
-        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        // When
+        ctx.rotate_last_participant_tls_key();
+        ctx.cleanup();
+
+        // Then
+        assert!(ctx.has_triple(id));
     }
 
     /// A triple authored by a peer (received locally via `add_unowned`) must
@@ -372,50 +378,25 @@ mod tests {
     #[test]
     #[expect(non_snake_case)]
     fn delete_stale_triples_and_presignatures__should_keep_peer_owned_triple() {
-        let (mut start_data, my_participant_id, reconstruction_threshold) =
-            test_utils::gen_four_participants();
-        let all_participants = get_participant_ids(start_data.clone());
-        let peer = *all_participants
+        // Given
+        let mut ctx = TripleCleanupContext::new();
+        let peer = *ctx
+            .all_participants
             .iter()
-            .find(|p| **p != my_participant_id)
+            .find(|p| **p != ctx.my_participant_id)
             .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let client = new_test_client(all_participants.clone(), my_participant_id);
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            client,
-            reconstruction_threshold,
-        )
-        .unwrap();
-        // Even an outright-stale peer-owned triple stays put — the peer cleans
-        // its own.
         let peer_id = UniqueId::new(peer, 100, 0);
-        triple_store.add_unowned(peer_id, make_triple(&all_participants));
-        let v2_key = triple_v2_key(reconstruction_threshold, peer_id);
+        // Even an outright-stale peer-owned triple stays put: the peer cleans
+        // its own.
+        ctx.triple_store
+            .add_unowned(peer_id, make_triple(&ctx.all_participants));
+        ctx.cleanup();
 
-        delete_stale_triples_and_presignatures(
-            &db,
-            start_data.clone(),
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        )
-        .unwrap();
-        start_data
-            .participants
-            .participants
-            .last_mut()
-            .unwrap()
-            .p2p_public_key = random_verifying_key();
-        delete_stale_triples_and_presignatures(
-            &db,
-            start_data.clone(),
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        )
-        .unwrap();
+        // When
+        ctx.rotate_last_participant_tls_key();
+        ctx.cleanup();
 
-        assert!(db.get(DBCol::TripleV2, &v2_key).unwrap().is_some());
+        // Then
+        assert!(ctx.has_triple(peer_id));
     }
 }

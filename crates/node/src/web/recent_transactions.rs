@@ -157,6 +157,7 @@ mod tests {
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::Ed25519PublicKey;
     use near_time::Utc;
+    use rstest::rstest;
     use std::str::FromStr;
 
     /// A submitted (Executed) transaction with the given method and hash.
@@ -220,25 +221,6 @@ mod tests {
     }
 
     #[test]
-    fn recent_transactions__should_keep_both_rows_for_a_repeated_tx_hash() {
-        // Given two submissions that (defensively) share a tx hash. The page must
-        // faithfully list every submission, so neither is merged or dropped.
-        let first = test_transaction_with_hash("respond", hash(1));
-        let second = SubmittedTransaction {
-            method: "respond_again",
-            ..test_transaction_with_hash("respond_again", hash(1))
-        };
-        let mut buffer = RecentTransactions::default();
-
-        // When
-        buffer.record(first.clone());
-        buffer.record(second.clone());
-
-        // Then both rows are retained, newest first.
-        assert_eq!(buffer.snapshot(), vec![second, first]);
-    }
-
-    #[test]
     fn recent_transactions__should_keep_submit_failed_row_in_order() {
         // Given a submit-failed row (no metadata) interleaved with a submitted one.
         let failed = SubmittedTransaction {
@@ -272,11 +254,21 @@ mod tests {
         assert_eq!(rendered, expected);
     }
 
-    #[test]
-    fn snapshot__should_return_entries_newest_first() {
+    #[rstest]
+    #[case::distinct_tx_hashes(
+        test_transaction_with_hash("respond", hash(1)),
+        test_transaction_with_hash("respond_ckd", hash(2))
+    )]
+    // The page must faithfully list every submission, so neither is merged or dropped
+    #[case::repeated_tx_hash_keeps_both_rows(
+        test_transaction_with_hash("respond", hash(1)),
+        test_transaction_with_hash("respond_again", hash(1))
+    )]
+    fn snapshot__should_return_entries_newest_first(
+        #[case] oldest: SubmittedTransaction,
+        #[case] newest: SubmittedTransaction,
+    ) {
         // Given
-        let oldest = test_transaction_with_hash("respond", hash(1));
-        let newest = test_transaction_with_hash("respond_ckd", hash(2));
         let mut buffer = RecentTransactions::default();
         buffer.record(oldest.clone());
         buffer.record(newest.clone());

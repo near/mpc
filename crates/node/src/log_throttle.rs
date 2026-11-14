@@ -45,6 +45,7 @@ impl LogThrottle {
 #[expect(non_snake_case)]
 mod tests {
     use super::{Decision, LogThrottle};
+    use rstest::rstest;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -56,55 +57,37 @@ mod tests {
         assert_eq!(throttle.check(now), Decision::Emit { observed: 1 });
     }
 
+    #[rstest]
+    #[case::suppress_within_interval(200, &[
+        (0, Decision::Emit { observed: 1 }),
+        (50, Decision::Suppress),
+        (100, Decision::Suppress),
+        (150, Decision::Suppress),
+    ])]
+    #[case::emit_suppression_count_after_interval(30, &[
+        (0, Decision::Emit { observed: 1 }),
+        (5, Decision::Suppress),
+        (10, Decision::Suppress),
+        (50, Decision::Emit { observed: 4 }),
+        (60, Decision::Suppress),
+        (90, Decision::Emit { observed: 6 }),
+    ])]
     #[test]
-    fn log_throttle__should_suppress_within_interval() {
+    fn log_throttle__should_decide_per_check(
+        #[case] interval_millis: u64,
+        #[case] checks: &[(u64, Decision)],
+    ) {
         // Given
         let now = Instant::now();
-        let mut throttle = LogThrottle::new(Duration::from_millis(200));
-        // When / Then
-        assert_eq!(throttle.check(now), Decision::Emit { observed: 1 });
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(50)),
-            Decision::Suppress
-        );
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(100)),
-            Decision::Suppress
-        );
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(150)),
-            Decision::Suppress
-        );
-    }
+        let mut throttle = LogThrottle::new(Duration::from_millis(interval_millis));
 
-    #[test]
-    fn log_throttle__should_emit_suppression_count_after_interval() {
-        // Given
-        let now = Instant::now();
-        let mut throttle = LogThrottle::new(Duration::from_millis(30));
-        // When
-        assert_eq!(throttle.check(now), Decision::Emit { observed: 1 });
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(5)),
-            Decision::Suppress
-        );
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(10)),
-            Decision::Suppress
-        );
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(50)),
-            Decision::Emit { observed: 4 }
-        );
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(60)),
-            Decision::Suppress
-        );
-        // Then
-        assert_eq!(
-            throttle.check(now + Duration::from_millis(90)),
-            Decision::Emit { observed: 6 }
-        );
+        // When / Then
+        for (offset_millis, expected) in checks {
+            assert_eq!(
+                throttle.check(now + Duration::from_millis(*offset_millis)),
+                *expected
+            );
+        }
     }
 
     #[test]
