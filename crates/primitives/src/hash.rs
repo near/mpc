@@ -258,6 +258,7 @@ mod tests {
     use borsh::BorshDeserialize;
     use core::assert_matches;
     use rand::{RngCore, SeedableRng, rngs::StdRng};
+    use rstest::rstest;
 
     define_hash!(TestHash, 32);
     define_hash!(TestHash48, 48);
@@ -321,24 +322,15 @@ mod tests {
         assert_eq!(hash.as_hex(), expected_hex);
     }
 
-    #[test]
-    fn test_zero_hash() {
-        let zero_bytes = [0u8; 32];
-        let hash = TestHash::from(zero_bytes);
+    #[rstest]
+    #[case::zero(0u8, "0")]
+    #[case::max(255u8, "f")]
+    fn test_uniform_byte_hash(#[case] byte: u8, #[case] hex_digit: &str) {
+        let hash = TestHash::from([byte; 32]);
 
-        assert_eq!(hash.as_hex(), "0".repeat(64));
+        assert_eq!(hash.as_hex(), hex_digit.repeat(64));
         assert_eq!(hash.len(), 32);
-        assert!(hash.iter().all(|&b| b == 0));
-    }
-
-    #[test]
-    fn test_max_hash() {
-        let max_bytes = [255u8; 32];
-        let hash = TestHash::from(max_bytes);
-
-        assert_eq!(hash.as_hex(), "f".repeat(64));
-        assert_eq!(hash.len(), 32);
-        assert!(hash.iter().all(|&b| b == 255));
+        assert!(hash.iter().all(|&b| b == byte));
     }
 
     #[test]
@@ -400,32 +392,24 @@ mod tests {
         assert_eq!(serialized_hex, expected_hex);
     }
 
-    #[test]
-    fn test_parse_from_hex_string() {
+    #[rstest]
+    #[case::lowercase(0x11u8, "11", "11")]
+    #[case::uppercase(0xABu8, "AB", "ab")]
+    fn test_parse_from_hex_string(
+        #[case] byte: u8,
+        #[case] hex_pair: &str,
+        #[case] expected_hex_pair: &str,
+    ) {
         // Given
-        let expected_bytes = [0x11u8; 32];
-        let hex_string = "11".repeat(32);
+        let expected_bytes = [byte; 32];
+        let hex_string = hex_pair.repeat(32);
 
         // When
         let parsed: TestHash = hex_string.parse().unwrap();
 
         // Then
         assert_eq!(*parsed, expected_bytes);
-        assert_eq!(parsed.as_hex(), hex_string);
-    }
-
-    #[test]
-    fn test_parse_accepts_uppercase_hex() {
-        // Given
-        let expected_bytes = [0xABu8; 32];
-        let hex_string = "AB".repeat(32);
-
-        // When
-        let parsed: TestHash = hex_string.parse().unwrap();
-
-        // Then
-        assert_eq!(*parsed, expected_bytes);
-        assert_eq!(parsed.as_hex(), "ab".repeat(32));
+        assert_eq!(parsed.as_hex(), expected_hex_pair.repeat(32));
     }
 
     #[test]

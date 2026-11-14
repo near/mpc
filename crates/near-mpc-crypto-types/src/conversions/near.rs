@@ -154,27 +154,14 @@ mod tests {
         assert_eq!(near_pk, recovered);
     }
 
-    #[test]
-    fn roundtrip_public_key_enum_ed25519() {
+    #[rstest]
+    #[case::ed25519("ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv")]
+    #[case::secp256k1(
+        "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
+    )]
+    fn roundtrip_public_key_enum(#[case] encoded: &str) {
         // given
-        let near_pk: near_sdk::PublicKey = "ed25519:6sqMFXkswuH9b7Pnn6dGAy1vA1X3N2CSrKDDkdHzTcrv"
-            .parse()
-            .unwrap();
-
-        // when
-        let dto = PublicKey::try_from(&near_pk).unwrap();
-        let recovered = near_sdk::PublicKey::try_from(dto).unwrap();
-
-        // then
-        assert_eq!(near_pk, recovered);
-    }
-
-    #[test]
-    fn roundtrip_public_key_enum_secp256k1() {
-        // given
-        let near_pk: near_sdk::PublicKey =
-            "secp256k1:4Ls3DBDeFDaf5zs2hxTBnJpKnfsnjNahpKU9HwQvij8fTXoCP9y5JQqQpe273WgrKhVVj1EH73t5mMJKDFMsxoEd"
-                .parse().unwrap();
+        let near_pk: near_sdk::PublicKey = encoded.parse().unwrap();
 
         // when
         let dto = PublicKey::try_from(&near_pk).unwrap();
