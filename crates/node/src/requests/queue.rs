@@ -1721,37 +1721,19 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::own_indexer_is_behind(BlockCount::new(0), REQUEST_EXPIRATION_BLOCKS, true)]
+    #[case::own_indexer_advanced_past_expiration(
+        REQUEST_EXPIRATION_BLOCKS,
+        BlockCount::new(0),
+        false
+    )]
     #[test_log::test]
-    #[expect(non_snake_case)]
-    fn get_requests_to_attempt__should_not_time_out_request_when_own_indexer_is_behind() {
-        // Given
-        let (mut pending_requests, mut setup) = TestSetup::new();
-        let req = setup.add_request_follower();
-        let block_height = setup.update(&mut pending_requests);
-        let me = setup.participant_ids[TestSetup::MY_INDEX];
-
-        // When
-        setup.network_api.set_height(me, block_height);
-        for (i, p) in setup.participant_ids.iter().enumerate() {
-            if i != TestSetup::MY_INDEX {
-                setup
-                    .network_api
-                    .set_height(*p, block_height + REQUEST_EXPIRATION_BLOCKS);
-            }
-        }
-
-        // Then
-        assert!(pending_requests.get_requests_to_attempt().is_empty());
-        assert!(
-            pending_requests.requests.contains_key(&req.id),
-            "request must not be dropped as timed out while our own indexer is behind"
-        );
-    }
-
-    #[test_log::test]
-    #[expect(non_snake_case)]
-    fn get_requests_to_attempt__should_time_out_request_when_own_indexer_advanced_past_expiration()
-    {
+    fn get_requests_to_attempt__should_only_time_out_request_when_own_indexer_advanced_past_expiration(
+        #[case] own_height_offset: BlockCount,
+        #[case] others_height_offset: BlockCount,
+        #[case] expect_retained: bool,
+    ) {
         // Given
         let (mut pending_requests, mut setup) = TestSetup::new();
         let req = setup.add_request_follower();
@@ -1761,16 +1743,22 @@ mod tests {
         // When
         setup
             .network_api
-            .set_height(me, block_height + REQUEST_EXPIRATION_BLOCKS);
+            .set_height(me, block_height + own_height_offset);
         for (i, p) in setup.participant_ids.iter().enumerate() {
             if i != TestSetup::MY_INDEX {
-                setup.network_api.set_height(*p, block_height);
+                setup
+                    .network_api
+                    .set_height(*p, block_height + others_height_offset);
             }
         }
 
         // Then
         assert!(pending_requests.get_requests_to_attempt().is_empty());
-        assert!(!pending_requests.requests.contains_key(&req.id));
+        assert_eq!(
+            pending_requests.requests.contains_key(&req.id),
+            expect_retained,
+            "request retention must follow our own indexer height, not the other participants'"
+        );
     }
 
     struct TestRefiner {

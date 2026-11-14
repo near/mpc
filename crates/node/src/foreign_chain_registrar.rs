@@ -343,6 +343,16 @@ mod tests {
             }
         }
 
+        async fn after_initial_registration() -> Self {
+            let mut registrar =
+                Self::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
+            assert_eq!(
+                registrar.next_registration().await,
+                (ethereum(), IMMEDIATELY)
+            );
+            registrar
+        }
+
         /// Returns the next registration and how long it took to come.
         async fn next_registration(&mut self) -> (dtos::ForeignChainsConfig, Duration) {
             let started = tokio::time::Instant::now();
@@ -436,12 +446,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
 
             // When
             registrar
@@ -470,12 +475,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
 
             // When
             let resent = registrar.next_registration().await;
@@ -491,12 +491,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
 
             // When
             let almost_due = MIN_RESEND_DELAY - Duration::from_millis(1);
@@ -512,12 +507,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
 
             // When
             registrar
@@ -538,12 +528,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let registrar = Registrar::after_initial_registration().await;
 
             // When
             drop(registrar.transactions);
@@ -561,12 +546,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
             assert_eq!(
                 registrar.next_registration().await,
                 (ethereum(), MIN_RESEND_DELAY)
@@ -585,12 +565,7 @@ mod tests {
     async fn keep_foreign_chains_registration_up_to_date__should_cap_the_resend_wait() {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
             let mut delay = MIN_RESEND_DELAY;
             while delay < MAX_RESEND_DELAY {
                 assert_eq!(registrar.next_registration().await, (ethereum(), delay));
@@ -612,12 +587,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
             assert_eq!(
                 registrar.next_registration().await,
                 (ethereum(), MIN_RESEND_DELAY)
@@ -654,12 +624,7 @@ mod tests {
      {
         let (root, _root_handle) = start_root_task("test-root", async move {
             // Given
-            let mut registrar =
-                Registrar::start(ethereum_whitelist(1), dtos::ForeignChainsConfigs::default());
-            assert_eq!(
-                registrar.next_registration().await,
-                (ethereum(), IMMEDIATELY)
-            );
+            let mut registrar = Registrar::after_initial_registration().await;
             assert_eq!(
                 registrar.next_registration().await,
                 (ethereum(), MIN_RESEND_DELAY)

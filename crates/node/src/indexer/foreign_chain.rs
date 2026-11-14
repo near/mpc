@@ -175,6 +175,7 @@ mod tests {
     use near_mpc_contract_interface::method_names::{
         GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     };
+    use rstest::rstest;
 
     use super::*;
 
@@ -295,36 +296,30 @@ mod tests {
         assert_eq!(*registrations.configs.borrow(), configs);
     }
 
-    #[test]
-    fn supporters_by_available_chain__should_omit_chain_that_is_not_available() {
-        // Given: a node registered for Bitcoin while only Base is available.
-        let configs: dtos::ForeignChainsConfigs =
-            BTreeMap::from([(tls_key(1), bitcoin_config())]).into();
-        let available: dtos::AvailableForeignChains =
-            BTreeSet::from([dtos::ForeignChain::Base]).into();
+    #[rstest]
+    #[case::omit_chain_that_is_not_available(&[1], dtos::ForeignChain::Base, BTreeMap::new())]
+    #[case::map_available_chain_to_supporting_tls_keys(
+        &[1, 2],
+        dtos::ForeignChain::Bitcoin,
+        bitcoin_supporters(&[1, 2])
+    )]
+    fn supporters_by_available_chain__should_keep_only_the_available_chains(
+        #[case] registered_seeds: &[u8],
+        #[case] available_chain: dtos::ForeignChain,
+        #[case] expected: ForeignChainSupporters,
+    ) {
+        // Given
+        let configs: dtos::ForeignChainsConfigs = registered_seeds
+            .iter()
+            .map(|seed| (tls_key(*seed), bitcoin_config()))
+            .collect::<BTreeMap<_, _>>()
+            .into();
+        let available: dtos::AvailableForeignChains = BTreeSet::from([available_chain]).into();
 
         // When
         let supporters = supporters_by_available_chain(&available, &configs);
 
         // Then
-        assert!(supporters.is_empty());
-    }
-
-    #[test]
-    fn supporters_by_available_chain__should_map_available_chain_to_supporting_tls_keys() {
-        // Given: two nodes registered for Bitcoin, which is available.
-        let configs: dtos::ForeignChainsConfigs = BTreeMap::from([
-            (tls_key(1), bitcoin_config()),
-            (tls_key(2), bitcoin_config()),
-        ])
-        .into();
-        let available: dtos::AvailableForeignChains =
-            BTreeSet::from([dtos::ForeignChain::Bitcoin]).into();
-
-        // When
-        let supporters = supporters_by_available_chain(&available, &configs);
-
-        // Then
-        assert_eq!(supporters, bitcoin_supporters(&[1, 2]));
+        assert_eq!(supporters, expected);
     }
 }
