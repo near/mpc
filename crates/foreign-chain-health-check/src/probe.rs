@@ -406,13 +406,6 @@ mod tests {
         }
     }
 
-    fn bitcoin_only(config: ForeignChainConfig) -> ForeignChainsConfig {
-        ForeignChainsConfig {
-            bitcoin: Some(config),
-            ..Default::default()
-        }
-    }
-
     fn put_chain(
         chains: &mut ForeignChainsConfig,
         chain: ForeignChain,
@@ -430,6 +423,9 @@ mod tests {
             ForeignChain::Polygon => &mut chains.polygon,
             ForeignChain::Solana => &mut chains.solana,
             ForeignChain::Fogo => &mut chains.fogo,
+            ForeignChain::Starknet => &mut chains.starknet,
+            ForeignChain::Bitcoin => &mut chains.bitcoin,
+            ForeignChain::Sui => &mut chains.sui,
             other => panic!("no config slot wired for `{other:?}`"),
         };
         *slot = Some(config);
@@ -498,63 +494,131 @@ mod tests {
             .clone()
     }
 
-    #[tokio::test]
-    async fn probe_all_providers__should_report_a_provider_on_the_expected_network_as_healthy() {
+    #[rstest]
+    #[case::on_the_expected_network(vec![answering(MAINNET)], 1, ProviderStatus::Healthy, 1)]
+    #[case::on_another_network(
+        vec![answering(SEPOLIA)],
+        1,
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new(MAINNET),
+            observed: NetworkFingerprint::new(SEPOLIA),
+        },
+        1
+    )]
+    #[case::refusing_the_request_without_retrying(
+        vec![MockReply::refusal(std::time::Duration::ZERO)],
+        3,
+        ProviderStatus::RequestRejected,
+        1
+    )]
+    #[case::not_answering_in_time(vec![MockReply::Hang], 1, ProviderStatus::TimedOut, 1)]
+    #[case::retried_after_a_rate_limit_refusal(
+        vec![
+            MockReply::transient(std::time::Duration::from_millis(10)),
+            MockReply::transient(std::time::Duration::from_millis(10)),
+        ],
+        2,
+        ProviderStatus::Unreachable,
+        2
+    )]
+    #[tokio::test(start_paused = true)]
+    async fn probe_all_providers__should_report_the_status_of_a_single_provider(
+        #[case] replies: Vec<MockReply>,
+        #[case] max_retries: u64,
+        #[case] status: ProviderStatus,
+        #[case] calls: usize,
+    ) {
         // Given
         let url = "http://mock.invalid/only";
-        let config = starknet_only(chain_config(Some(MAINNET), one_provider("publicnode", url)));
-        let inspector = MockInspector::new([answering(MAINNET)]);
+        let inspector = MockInspector::new(replies);
+        let config = starknet_only(with_retries(
+            chain_config(Some(MAINNET), one_provider(PROVIDER_NAME, url)),
+            max_retries,
+        ));
         let inspectors = MockInspectors::new([(url, inspector.clone())]);
 
         // When
         let report = probe_all_providers(&config, &inspectors).await;
 
         // Then
-        assert_eq!(inspector.calls(), 1);
+        assert_eq!(inspector.calls(), calls);
         assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "publicnode"),
-            ProviderStatus::Healthy
+            status_of(&report, ForeignChain::Starknet, PROVIDER_NAME),
+            status
         );
     }
 
+    #[rstest]
+    #[case::normalized_reported_fingerprint(
+        ForeignChain::Starknet,
+        MAINNET,
+        PADDED_UPPERCASE_MAINNET,
+        ProviderStatus::Healthy
+    )]
+    #[case::normalized_configured_fingerprint(
+        ForeignChain::Starknet,
+        PADDED_UPPERCASE_MAINNET,
+        MAINNET,
+        ProviderStatus::Healthy
+    )]
+    #[case::svm_on_another_network(
+        ForeignChain::Solana,
+        SOLANA_MAINNET,
+        SOLANA_DEVNET,
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new(SOLANA_MAINNET),
+            observed: NetworkFingerprint::new(SOLANA_DEVNET),
+        }
+    )]
+    #[case::evm_on_another_network(
+        ForeignChain::Base,
+        "8453",
+        "0x14a34",
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new("8453"),
+            observed: NetworkFingerprint::new("84532"),
+        }
+    )]
+    #[case::bitcoin_on_its_genesis_block(
+        ForeignChain::Bitcoin,
+        BITCOIN_MAINNET,
+        BITCOIN_MAINNET,
+        ProviderStatus::Healthy
+    )]
+    #[case::bitcoin_on_another_network(
+        ForeignChain::Bitcoin,
+        BITCOIN_MAINNET,
+        BITCOIN_TESTNET3,
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new(BITCOIN_MAINNET),
+            observed: NetworkFingerprint::new(BITCOIN_TESTNET3),
+        }
+    )]
     #[tokio::test]
-    async fn probe_all_providers__should_report_a_provider_on_another_network_as_wrong_network() {
-        // Given
-        let url = "http://mock.invalid/only";
-        let config = starknet_only(chain_config(Some(MAINNET), one_provider("publicnode", url)));
-        let inspectors = MockInspectors::new([(url, MockInspector::new([answering(SEPOLIA)]))]);
-
-        // When
-        let report = probe_all_providers(&config, &inspectors).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "publicnode"),
-            ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new(MAINNET),
-                observed: NetworkFingerprint::new(SEPOLIA),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_normalize_the_reported_fingerprint_before_comparing() {
+    async fn probe_all_providers__should_classify_the_fingerprint_a_provider_answers(
+        #[case] chain: ForeignChain,
+        #[case] expected: &str,
+        #[case] answered: &str,
+        #[case] status: ProviderStatus,
+    ) {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_fingerprint(&server, PADDED_UPPERCASE_MAINNET).await;
-        let config = starknet_only(chain_config(
-            Some(MAINNET),
-            one_provider("publicnode", &server.base_url()),
-        ));
+        mock_fingerprint(&server, answered).await;
+        let mut config = ForeignChainsConfig::default();
+        put_chain(
+            &mut config,
+            chain,
+            chain_config(
+                Some(expected),
+                one_provider(PROVIDER_NAME, &server.base_url()),
+            ),
+        );
 
         // When
         let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "publicnode"),
-            ProviderStatus::Healthy
-        );
+        assert_eq!(status_of(&report, chain, PROVIDER_NAME), status);
     }
 
     #[tokio::test]
@@ -579,44 +643,45 @@ mod tests {
         mock.assert_calls_async(0).await;
     }
 
+    #[rstest]
+    #[case::unreachable_provider(
+        ForeignChain::Starknet,
+        MAINNET,
+        CLOSED_PORT_URL,
+        ProviderStatus::Unreachable
+    )]
+    #[case::client_cannot_be_built(
+        ForeignChain::Starknet,
+        MAINNET,
+        "ws://127.0.0.1:9",
+        ProviderStatus::ClientSetupFailed
+    )]
+    #[case::unreachable_sui_provider(
+        ForeignChain::Sui,
+        SUI_MAINNET,
+        CLOSED_PORT_URL,
+        ProviderStatus::Unreachable
+    )]
     #[tokio::test]
-    async fn probe_all_providers__should_report_an_unreachable_provider() {
+    async fn probe_all_providers__should_report_a_provider_that_fails_before_answering(
+        #[case] chain: ForeignChain,
+        #[case] expected: &str,
+        #[case] rpc_url: &str,
+        #[case] status: ProviderStatus,
+    ) {
         // Given
-        let config = starknet_only(chain_config(
-            Some(MAINNET),
-            one_provider("publicnode", CLOSED_PORT_URL),
-        ));
+        let mut config = ForeignChainsConfig::default();
+        put_chain(
+            &mut config,
+            chain,
+            chain_config(Some(expected), one_provider(PROVIDER_NAME, rpc_url)),
+        );
 
         // When
         let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "publicnode"),
-            ProviderStatus::Unreachable
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_a_provider_refusing_the_request_without_retrying() {
-        // Given
-        let url = "http://mock.invalid/only";
-        let inspector = MockInspector::new([MockReply::refusal(std::time::Duration::ZERO)]);
-        let config = starknet_only(with_retries(
-            chain_config(Some(MAINNET), one_provider("keyed", url)),
-            3,
-        ));
-        let inspectors = MockInspectors::new([(url, inspector.clone())]);
-
-        // When
-        let report = probe_all_providers(&config, &inspectors).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "keyed"),
-            ProviderStatus::RequestRejected
-        );
-        assert_eq!(inspector.calls(), 1, "a refusal must not be retried");
+        assert_eq!(status_of(&report, chain, PROVIDER_NAME), status);
     }
 
     #[tokio::test]
@@ -659,43 +724,6 @@ mod tests {
         );
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn probe_all_providers__should_report_a_provider_that_does_not_answer_in_time() {
-        // Given
-        let url = "http://mock.invalid/slow";
-        let config = starknet_only(chain_config(Some(MAINNET), one_provider("slow", url)));
-        let inspectors = MockInspectors::new([(url, MockInspector::new([MockReply::Hang]))]);
-
-        // When
-        let report = probe_all_providers(&config, &inspectors).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "slow"),
-            ProviderStatus::TimedOut
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_normalize_the_configured_fingerprint_before_comparing() {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        mock_fingerprint(&server, MAINNET).await;
-        let config = starknet_only(chain_config(
-            Some(PADDED_UPPERCASE_MAINNET),
-            one_provider("publicnode", &server.base_url()),
-        ));
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "publicnode"),
-            ProviderStatus::Healthy
-        );
-    }
-
     #[tokio::test]
     async fn probe_all_providers__should_report_a_provider_whose_auth_token_does_not_resolve() {
         // Given
@@ -723,24 +751,6 @@ mod tests {
         assert_eq!(
             status_of(&report, ForeignChain::Starknet, "keyed"),
             ProviderStatus::AuthTokenUnresolved
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_a_provider_whose_client_cannot_be_built() {
-        // Given
-        let config = starknet_only(chain_config(
-            Some(MAINNET),
-            one_provider("wrong-scheme", "ws://127.0.0.1:9"),
-        ));
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "wrong-scheme"),
-            ProviderStatus::ClientSetupFailed
         );
     }
 
@@ -824,59 +834,34 @@ mod tests {
         assert_eq!(report.counts_per_chain().len(), 2);
     }
 
+    #[rstest]
+    #[case::evm_chains(
+        EVM_MAINNETS
+            .iter()
+            .map(|mainnet| (mainnet.chain, mainnet.expected(), mainnet.answered()))
+            .collect::<Vec<_>>()
+    )]
+    #[case::svm_chains(vec![
+        (ForeignChain::Solana, SOLANA_MAINNET.to_string(), SOLANA_MAINNET.to_string()),
+        (ForeignChain::Fogo, FOGO_MAINNET.to_string(), FOGO_MAINNET.to_string()),
+    ])]
     #[tokio::test]
-    async fn probe_all_providers__should_report_every_evm_chain_on_its_expected_network_as_healthy()
-    {
-        // Given
-        let mut servers = Vec::new();
-        let mut config = ForeignChainsConfig::default();
-        for mainnet in EVM_MAINNETS {
-            let server = httpmock::MockServer::start_async().await;
-            mock_fingerprint(&server, &mainnet.answered()).await;
-            put_chain(
-                &mut config,
-                mainnet.chain,
-                chain_config(
-                    Some(&mainnet.expected()),
-                    one_provider("publicnode", &server.base_url()),
-                ),
-            );
-            servers.push(server);
-        }
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        for EvmMainnet { chain, .. } in EVM_MAINNETS {
-            assert_eq!(
-                status_of(&report, chain, "publicnode"),
-                ProviderStatus::Healthy,
-                "{chain:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_every_svm_chain_on_its_expected_network_as_healthy()
-    {
-        // Given — each chain answers its own genesis hash, so a cross-wired arm would
+    async fn probe_all_providers__should_report_every_chain_on_its_expected_network_as_healthy(
+        #[case] chains: Vec<(ForeignChain, String, String)>,
+    ) {
+        // Given: each chain answers its own genesis hash, so a cross-wired arm would
         // compare Solana's against Fogo's.
-        let expected = [
-            (ForeignChain::Solana, SOLANA_MAINNET),
-            (ForeignChain::Fogo, FOGO_MAINNET),
-        ];
         let mut servers = Vec::new();
         let mut config = ForeignChainsConfig::default();
-        for (chain, genesis_hash) in expected {
+        for (chain, expected, answered) in &chains {
             let server = httpmock::MockServer::start_async().await;
-            mock_fingerprint(&server, genesis_hash).await;
+            mock_fingerprint(&server, answered).await;
             put_chain(
                 &mut config,
-                chain,
+                *chain,
                 chain_config(
-                    Some(genesis_hash),
-                    one_provider("publicnode", &server.base_url()),
+                    Some(expected),
+                    one_provider(PROVIDER_NAME, &server.base_url()),
                 ),
             );
             servers.push(server);
@@ -886,113 +871,13 @@ mod tests {
         let report = probe_all_providers(&config, &InspectorFactory).await;
 
         // Then
-        for (chain, _) in expected {
+        for (chain, ..) in &chains {
             assert_eq!(
-                status_of(&report, chain, "publicnode"),
+                status_of(&report, *chain, PROVIDER_NAME),
                 ProviderStatus::Healthy,
                 "{chain:?}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_an_svm_provider_on_another_network_as_wrong_network()
-     {
-        // Given — a provider on Solana devnet against a mainnet expectation.
-        let mainnet = SOLANA_MAINNET;
-        let devnet = SOLANA_DEVNET;
-        let server = httpmock::MockServer::start_async().await;
-        mock_fingerprint(&server, devnet).await;
-        let mut config = ForeignChainsConfig::default();
-        put_chain(
-            &mut config,
-            ForeignChain::Solana,
-            chain_config(
-                Some(mainnet),
-                one_provider("publicnode", &server.base_url()),
-            ),
-        );
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Solana, "publicnode"),
-            ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new(mainnet),
-                observed: NetworkFingerprint::new(devnet),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_an_evm_provider_on_another_network_as_wrong_network()
-     {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        mock_fingerprint(&server, "0x14a34").await;
-        let mut config = ForeignChainsConfig::default();
-        put_chain(
-            &mut config,
-            ForeignChain::Base,
-            chain_config(Some("8453"), one_provider("publicnode", &server.base_url())),
-        );
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Base, "publicnode"),
-            ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new("8453"),
-                observed: NetworkFingerprint::new("84532"),
-            }
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_bitcoin_on_its_genesis_block_as_healthy() {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        mock_fingerprint(&server, BITCOIN_MAINNET).await;
-        let config = bitcoin_only(chain_config(
-            Some(BITCOIN_MAINNET),
-            one_provider("publicnode", &server.base_url()),
-        ));
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Bitcoin, "publicnode"),
-            ProviderStatus::Healthy
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_bitcoin_on_another_network_as_wrong_network() {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        mock_fingerprint(&server, BITCOIN_TESTNET3).await;
-        let config = bitcoin_only(chain_config(
-            Some(BITCOIN_MAINNET),
-            one_provider("publicnode", &server.base_url()),
-        ));
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Bitcoin, "publicnode"),
-            ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new(BITCOIN_MAINNET),
-                observed: NetworkFingerprint::new(BITCOIN_TESTNET3),
-            }
-        );
     }
 
     async fn mock_ledger_info<'a>(
@@ -1008,11 +893,23 @@ mod tests {
             .await
     }
 
+    #[rstest]
+    #[case::on_its_expected_chain_id(APTOS_MAINNET, ProviderStatus::Healthy)]
+    #[case::on_another_network(
+        APTOS_TESTNET,
+        ProviderStatus::WrongNetwork {
+            expected: NetworkFingerprint::new(APTOS_MAINNET.to_string()),
+            observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
+        }
+    )]
     #[tokio::test]
-    async fn probe_all_providers__should_report_aptos_on_its_expected_chain_id_as_healthy() {
+    async fn probe_all_providers__should_classify_the_aptos_chain_id(
+        #[case] answered: u64,
+        #[case] status: ProviderStatus,
+    ) {
         // Given
         let server = httpmock::MockServer::start_async().await;
-        mock_ledger_info(&server, APTOS_MAINNET).await;
+        mock_ledger_info(&server, answered).await;
         let config = ForeignChainsConfig {
             aptos: Some(chain_config(
                 Some(&APTOS_MAINNET.to_string()),
@@ -1027,33 +924,7 @@ mod tests {
         // Then
         assert_eq!(
             status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
-            ProviderStatus::Healthy
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_aptos_on_another_network_as_wrong_network() {
-        // Given
-        let server = httpmock::MockServer::start_async().await;
-        mock_ledger_info(&server, APTOS_TESTNET).await;
-        let config = ForeignChainsConfig {
-            aptos: Some(chain_config(
-                Some(&APTOS_MAINNET.to_string()),
-                one_provider(PROVIDER_NAME, &server.base_url()),
-            )),
-            ..Default::default()
-        };
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Aptos, PROVIDER_NAME),
-            ProviderStatus::WrongNetwork {
-                expected: NetworkFingerprint::new(APTOS_MAINNET.to_string()),
-                observed: NetworkFingerprint::new(APTOS_TESTNET.to_string()),
-            }
+            status
         );
     }
 
@@ -1135,53 +1006,6 @@ mod tests {
         assert_eq!(
             status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
             expected
-        );
-    }
-
-    #[tokio::test]
-    async fn probe_all_providers__should_report_an_unreachable_sui_provider() {
-        // Given
-        let config = sui_only(chain_config(
-            Some(SUI_MAINNET),
-            one_provider(PROVIDER_NAME, CLOSED_PORT_URL),
-        ));
-
-        // When
-        let report = probe_all_providers(&config, &InspectorFactory).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Sui, PROVIDER_NAME),
-            ProviderStatus::Unreachable
-        );
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn probe_all_providers__should_retry_a_provider_that_refused_with_a_rate_limit_code() {
-        // Given
-        let url = "http://mock.invalid/keyed";
-        let inspector = MockInspector::new([
-            MockReply::transient(std::time::Duration::from_millis(10)),
-            MockReply::transient(std::time::Duration::from_millis(10)),
-        ]);
-        let config = starknet_only(with_retries(
-            chain_config(Some(MAINNET), one_provider("keyed", url)),
-            2,
-        ));
-        let inspectors = MockInspectors::new([(url, inspector.clone())]);
-
-        // When
-        let report = probe_all_providers(&config, &inspectors).await;
-
-        // Then
-        assert_eq!(
-            status_of(&report, ForeignChain::Starknet, "keyed"),
-            ProviderStatus::Unreachable
-        );
-        assert_eq!(
-            inspector.calls(),
-            2,
-            "the transient failure should be retried"
         );
     }
 

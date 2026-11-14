@@ -187,49 +187,31 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    #[test]
-    fn build_request_url__appends_resource_path_to_versioned_base() {
-        // Given a base that already includes the `/v1` version segment (as the config provides).
-        let base = Url::parse("https://fullnode.mainnet.aptoslabs.com/v1").unwrap();
+    #[rstest]
+    #[case::appends_resource_path_to_versioned_base(
+        "https://fullnode.mainnet.aptoslabs.com/v1",
+        "https://fullnode.mainnet.aptoslabs.com/v1/transactions/by_hash/0xabc"
+    )]
+    #[case::handles_trailing_slash_in_base(
+        "https://aptos-mainnet.nodereal.io/v1/",
+        "https://aptos-mainnet.nodereal.io/v1/transactions/by_hash/0xabc"
+    )]
+    #[case::preserves_query_auth_param(
+        "https://host/v1?api_key=secret",
+        "https://host/v1/transactions/by_hash/0xabc?api_key=secret"
+    )]
+    fn build_request_url__should_insert_the_resource_path_once(
+        #[case] base: &str,
+        #[case] expected: &str,
+    ) {
+        // Given
+        let base = Url::parse(base).unwrap();
 
         // When
         let url = build_request_url(&base, "0xabc");
 
-        // Then — the version segment is not doubled.
-        assert_eq!(
-            url.as_str(),
-            "https://fullnode.mainnet.aptoslabs.com/v1/transactions/by_hash/0xabc"
-        );
-    }
-
-    #[test]
-    fn build_request_url__handles_trailing_slash_in_base() {
-        // Given a base with a trailing slash (as in the node-config fixtures).
-        let base = Url::parse("https://aptos-mainnet.nodereal.io/v1/").unwrap();
-
-        // When
-        let url = build_request_url(&base, "0xabc");
-
-        // Then — no empty path segment, no doubled `/v1`.
-        assert_eq!(
-            url.as_str(),
-            "https://aptos-mainnet.nodereal.io/v1/transactions/by_hash/0xabc"
-        );
-    }
-
-    #[test]
-    fn build_request_url__preserves_query_auth_param() {
-        // Given a base carrying a query-auth param.
-        let base = Url::parse("https://host/v1?api_key=secret").unwrap();
-
-        // When
-        let url = build_request_url(&base, "0xabc");
-
-        // Then — the resource path is inserted into the path, leaving the query intact.
-        assert_eq!(
-            url.as_str(),
-            "https://host/v1/transactions/by_hash/0xabc?api_key=secret"
-        );
+        // Then
+        assert_eq!(url.as_str(), expected);
     }
 
     #[test]
@@ -315,31 +297,24 @@ mod tests {
         assert!(tx.events.is_empty());
     }
 
-    #[test]
-    fn normalize_event_data__should_sort_object_keys() {
-        // Given
-        let value = serde_json::json!({ "z": 1, "a": 2, "m": 3 });
-
+    #[rstest]
+    #[case::object_keys(
+        serde_json::json!({ "z": 1, "a": 2, "m": 3 }),
+        r#"{"a":2,"m":3,"z":1}"#
+    )]
+    #[case::nested_object_keys(
+        serde_json::json!({ "outer_b": { "inner_z": 9, "inner_a": 1 }, "outer_a": 0 }),
+        r#"{"outer_a":0,"outer_b":{"inner_a":1,"inner_z":9}}"#
+    )]
+    fn normalize_event_data__should_sort_keys(
+        #[case] value: serde_json::Value,
+        #[case] expected: &str,
+    ) {
         // When
         let normalized = normalize_event_data(&value);
 
         // Then
-        assert_eq!(normalized, r#"{"a":2,"m":3,"z":1}"#);
-    }
-
-    #[test]
-    fn normalize_event_data__should_sort_nested_object_keys() {
-        // Given
-        let value = serde_json::json!({ "outer_b": { "inner_z": 9, "inner_a": 1 }, "outer_a": 0 });
-
-        // When
-        let normalized = normalize_event_data(&value);
-
-        // Then
-        assert_eq!(
-            normalized,
-            r#"{"outer_a":0,"outer_b":{"inner_a":1,"inner_z":9}}"#
-        );
+        assert_eq!(normalized, expected);
     }
 
     #[rstest]
