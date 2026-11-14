@@ -482,20 +482,32 @@ mod tests {
         assert_eq!(available.len(), 4);
     }
 
-    #[test]
-    fn get_available_foreign_chains__should_include_chain_when_at_least_threshold_participants_cover_it()
-     {
-        // Given: 4 participants, signing threshold 3; Bitcoin whitelisted.
+    #[rstest]
+    #[case::at_least_threshold_participants_cover_it(
+        vec![dtos::ForeignChain::Bitcoin],
+        3,
+        vec![dtos::ForeignChain::Bitcoin]
+    )]
+    #[case::fewer_than_threshold_cover_it(vec![dtos::ForeignChain::Bitcoin], 2, vec![])]
+    #[case::covered_but_not_whitelisted(vec![], 4, vec![])]
+    fn get_available_foreign_chains__should_require_whitelisting_and_threshold_coverage(
+        #[case] whitelisted: Vec<dtos::ForeignChain>,
+        #[case] covering_participants: usize,
+        #[case] expected: Vec<dtos::ForeignChain>,
+    ) {
+        // Given: 4 participants, threshold 3.
         let (_context, mut contract, _) = basic_setup_with_protocol(
             Protocol::CaitSith,
             dtos::DomainPurpose::ForeignTx,
             &mut OsRng,
         );
         let participants = participant_account_ids(&contract);
-        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
+        for chain in whitelisted {
+            whitelist_chain(&mut contract, chain);
+        }
 
-        // When: exactly the threshold (3) of 4 participants cover Bitcoin — one node does not.
-        for account_id in participants.iter().take(3) {
+        // When
+        for account_id in participants.iter().take(covering_participants) {
             register_foreign_chains_config_for(
                 &mut contract,
                 account_id,
@@ -503,61 +515,9 @@ mod tests {
             );
         }
 
-        // Then: Bitcoin is available. A single non-covering node cannot take it down — the
-        // regression the legacy intersection rule had.
+        // Then
         let available = contract.get_available_foreign_chains();
-        assert!(available.contains(&dtos::ForeignChain::Bitcoin));
-        assert_eq!(available.len(), 1);
-    }
-
-    #[test]
-    fn get_available_foreign_chains__should_exclude_chain_when_fewer_than_threshold_cover_it() {
-        // Given: 4 participants, threshold 3; Bitcoin whitelisted.
-        let (_context, mut contract, _) = basic_setup_with_protocol(
-            Protocol::CaitSith,
-            dtos::DomainPurpose::ForeignTx,
-            &mut OsRng,
-        );
-        let participants = participant_account_ids(&contract);
-        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
-
-        // When: only 2 of 4 (< threshold) cover Bitcoin.
-        for account_id in participants.iter().take(2) {
-            register_foreign_chains_config_for(
-                &mut contract,
-                account_id,
-                [dtos::ForeignChain::Bitcoin],
-            );
-        }
-
-        // Then: Bitcoin is not available.
-        let available = contract.get_available_foreign_chains();
-        assert!(!available.contains(&dtos::ForeignChain::Bitcoin));
-        assert!(available.is_empty());
-    }
-
-    #[test]
-    fn get_available_foreign_chains__should_exclude_chain_that_is_covered_but_not_whitelisted() {
-        // Given: 4 participants, threshold 3; Bitcoin is NOT whitelisted.
-        let (_context, mut contract, _) = basic_setup_with_protocol(
-            Protocol::CaitSith,
-            dtos::DomainPurpose::ForeignTx,
-            &mut OsRng,
-        );
-        let participants = participant_account_ids(&contract);
-
-        // When: all 4 participants cover Bitcoin.
-        for account_id in &participants {
-            register_foreign_chains_config_for(
-                &mut contract,
-                account_id,
-                [dtos::ForeignChain::Bitcoin],
-            );
-        }
-
-        // Then: Bitcoin is still not available — `available` is a subset of `whitelisted`.
-        let available = contract.get_available_foreign_chains();
-        assert!(available.is_empty());
+        assert_eq!(*available, BTreeSet::from_iter(expected));
     }
 
     #[test]
