@@ -63,6 +63,7 @@ pub fn parse_foreign_chains(contents: &str, path: &Path) -> anyhow::Result<Forei
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     const DSTACK_TOML: &str = r#"
 [launcher_config]
@@ -110,31 +111,17 @@ foreign_chains:
           kind: none
 "#;
 
-    #[test]
-    fn parse_foreign_chains__should_read_dstack_user_config_toml() {
+    #[rstest]
+    #[case::dstack_user_config_toml(DSTACK_TOML, "user-config.toml")]
+    #[case::launcher_start_config_toml(LAUNCHER_TOML, "config.toml")]
+    #[case::top_level_legacy_yaml(LEGACY_YAML, "config.yaml")]
+    fn parse_foreign_chains__should_read_foreign_chains_section(
+        #[case] contents: &str,
+        #[case] path: &str,
+    ) {
         // Given
         // When
-        let fc = parse_foreign_chains(DSTACK_TOML, Path::new("user-config.toml")).unwrap();
-
-        // Then
-        assert!(fc.base.is_some());
-    }
-
-    #[test]
-    fn parse_foreign_chains__should_read_launcher_start_config_toml() {
-        // Given
-        // When
-        let fc = parse_foreign_chains(LAUNCHER_TOML, Path::new("config.toml")).unwrap();
-
-        // Then
-        assert!(fc.base.is_some());
-    }
-
-    #[test]
-    fn parse_foreign_chains__should_read_top_level_legacy_yaml() {
-        // Given
-        // When
-        let fc = parse_foreign_chains(LEGACY_YAML, Path::new("config.yaml")).unwrap();
+        let fc = parse_foreign_chains(contents, Path::new(path)).unwrap();
 
         // Then
         assert!(fc.base.is_some());

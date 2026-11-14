@@ -24,6 +24,7 @@ built = { workspace = true }
 [dev-dependencies]
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
+rstest = { workspace = true }
 
 [lints]
 workspace = true

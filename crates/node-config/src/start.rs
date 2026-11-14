@@ -210,9 +210,10 @@ pub enum DownloadConfigType {
 mod tests {
     use super::*;
     use launcher_interface::types::PccsTlsTrust;
+    use rstest::rstest;
     use std::assert_matches;
 
-    #[rstest::rstest]
+    #[rstest]
     #[case(Some(RpcPreset::Testnet), Some(ChainId::Testnet))]
     #[case(Some(RpcPreset::Mainnet), None)]
     #[case(None, Some(ChainId::Localnet))]
@@ -240,31 +241,33 @@ mod tests {
         assert_matches!(result, Err(_));
     }
 
-    /// A single bare-URL entry (no `tls` override) parses as a one-element
-    /// [`NonEmptyVec`] with default trust.
-    #[test]
-    fn pccs_endpoints__should_parse_single_bare_url_entry() {
-        // Given
-        #[derive(Debug, Deserialize)]
-        struct Wrapper {
-            #[serde(default = "default_pccs_endpoints")]
-            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
-        }
-        const URL: &str = "https://pccs.example.org/";
-        let toml_input = format!(
-            r#"
-                [[pccs_endpoints]]
-                url = "{URL}"
-            "#
-        );
+    #[derive(Debug, Deserialize)]
+    struct PccsWrapper {
+        #[serde(default = "default_pccs_endpoints")]
+        pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
+    }
 
+    #[rstest]
+    #[case::single_bare_url_entry(
+        r#"
+            [[pccs_endpoints]]
+            url = "https://pccs.example.org/"
+        "#,
+        "https://pccs.example.org/"
+    )]
+    #[case::default_to_phala_when_omitted("", launcher_interface::DEFAULT_PCCS_URL)]
+    fn pccs_endpoints__should_parse_to_single_default_trust_entry(
+        #[case] toml_input: &str,
+        #[case] expected_url: &str,
+    ) {
+        // Given
         // When
-        let parsed: Wrapper = toml::from_str(&toml_input).unwrap();
+        let parsed: PccsWrapper = toml::from_str(toml_input).unwrap();
         let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
         let expected = vec![PccsEndpointConfig {
-            url: URL.parse().unwrap(),
+            url: expected_url.parse().unwrap(),
             tls: None,
         }];
         assert_eq!(entries, expected);
@@ -276,11 +279,6 @@ mod tests {
     #[test]
     fn pccs_endpoints__should_preserve_order_with_mixed_tls_overrides() {
         // Given
-        #[derive(Debug, Deserialize)]
-        struct Wrapper {
-            #[serde(default = "default_pccs_endpoints")]
-            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
-        }
         let toml_input = r#"
             [[pccs_endpoints]]
             url = "https://localhost:8081/"
@@ -294,7 +292,7 @@ mod tests {
         "#;
 
         // When
-        let parsed: Wrapper = toml::from_str(toml_input).unwrap();
+        let parsed: PccsWrapper = toml::from_str(toml_input).unwrap();
         let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
 
         // Then
@@ -312,29 +310,6 @@ mod tests {
                 tls: None,
             },
         ];
-        assert_eq!(entries, expected);
-    }
-
-    /// When the field is omitted altogether, the `#[serde(default)]` hook
-    /// returns the Phala default as a single-element vec.
-    #[test]
-    fn pccs_endpoints__should_default_to_phala_when_omitted() {
-        // Given
-        #[derive(Debug, Deserialize)]
-        struct Wrapper {
-            #[serde(default = "default_pccs_endpoints")]
-            pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
-        }
-
-        // When
-        let parsed: Wrapper = toml::from_str("").unwrap();
-        let entries: Vec<PccsEndpointConfig> = parsed.pccs_endpoints.into_iter().collect();
-
-        // Then
-        let expected = vec![PccsEndpointConfig {
-            url: launcher_interface::DEFAULT_PCCS_URL.parse().unwrap(),
-            tls: None,
-        }];
         assert_eq!(entries, expected);
     }
 
@@ -405,65 +380,47 @@ timeout_sec = 60
         toml::from_str(&toml_input).map_err(|e| e.to_string())
     }
 
-    #[test]
-    fn near_init_config__should_accept_valid_rpc_addr() {
+    #[rstest]
+    #[case::rpc_addr(
+        "rpc_addr",
+        "0.0.0.0:3031",
+        |config: NearInitConfig| config.rpc_addr
+    )]
+    #[case::network_addr(
+        "network_addr",
+        "51.68.219.13:24567",
+        |config: NearInitConfig| config.network_addr
+    )]
+    #[case::tier3_public_addr(
+        "tier3_public_addr",
+        "203.0.113.5:24567",
+        |config: NearInitConfig| config.tier3_public_addr
+    )]
+    fn near_init_config__should_accept_valid_addr(
+        #[case] field: &str,
+        #[case] value: &str,
+        #[case] addr_of: fn(NearInitConfig) -> Option<SocketAddr>,
+    ) {
         // Given a syntactically valid socket address
         // When
-        let parsed = parse_near_init_with_addr_field("rpc_addr", "0.0.0.0:3031");
+        let parsed = parse_near_init_with_addr_field(field, value);
 
         // Then
-        let parsed = parsed.expect("expected valid rpc_addr to parse");
-        assert_eq!(parsed.rpc_addr, Some("0.0.0.0:3031".parse().unwrap()));
+        let parsed = parsed.expect("expected valid addr to parse");
+        assert_eq!(addr_of(parsed), Some(value.parse().unwrap()));
     }
 
-    #[test]
-    fn near_init_config__should_accept_valid_network_addr() {
-        // Given
-        let parsed = parse_near_init_with_addr_field("network_addr", "51.68.219.13:24567");
+    #[rstest]
+    #[case::addr_without_port("tier3_public_addr", "203.0.113.5")]
+    #[case::addr_with_non_numeric_port("rpc_addr", "0.0.0.0:notaport")]
+    fn near_init_config__should_reject_malformed_addr(#[case] field: &str, #[case] value: &str) {
+        // When
+        let result = parse_near_init_with_addr_field(field, value);
 
         // Then
-        let parsed = parsed.expect("expected valid network_addr to parse");
-        assert_eq!(
-            parsed.network_addr,
-            Some("51.68.219.13:24567".parse().unwrap())
-        );
-    }
-
-    #[test]
-    fn near_init_config__should_accept_valid_tier3_public_addr() {
-        // Given
-        let parsed = parse_near_init_with_addr_field("tier3_public_addr", "203.0.113.5:24567");
-
-        // Then
-        let parsed = parsed.expect("expected valid tier3_public_addr to parse");
-        assert_eq!(
-            parsed.tier3_public_addr,
-            Some("203.0.113.5:24567".parse().unwrap())
-        );
-    }
-
-    #[test]
-    fn near_init_config__should_reject_addr_without_port() {
-        // Given — common typo: IP only, no port
-        let result = parse_near_init_with_addr_field("tier3_public_addr", "203.0.113.5");
-
-        // Then — error should name the offending field
-        let err = result.expect_err("expected parse to fail on missing port");
+        let err = result.expect_err("expected parse to fail");
         assert!(
-            err.contains("tier3_public_addr"),
-            "error should name the offending field, got: {err}"
-        );
-    }
-
-    #[test]
-    fn near_init_config__should_reject_addr_with_non_numeric_port() {
-        // Given
-        let result = parse_near_init_with_addr_field("rpc_addr", "0.0.0.0:notaport");
-
-        // Then
-        let err = result.expect_err("expected parse to fail on non-numeric port");
-        assert!(
-            err.contains("rpc_addr"),
+            err.contains(field),
             "error should name the offending field, got: {err}"
         );
     }
