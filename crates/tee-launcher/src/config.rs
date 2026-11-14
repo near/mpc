@@ -69,8 +69,10 @@ pub fn validate_image_reference(image_ref: &str) -> Result<(), LauncherError> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use launcher_interface::types::{DockerSha256Digest, TeeAuthorityConfig, TeeConfig};
+    use rstest::rstest;
     use std::assert_matches;
 
     use super::*;
@@ -98,47 +100,34 @@ mod tests {
         }
     }
 
-    #[test]
-    fn intercept_config_injects_tee_config() {
-        // given
-        let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
+    #[rstest]
+    #[case::injects_tee_config_into_populated_table(r#"home_dir = "/data""#)]
+    #[case::empty_table_gets_tee_key("")]
+    fn intercept_node_config__should_add_only_tee_key(#[case] config_toml: &str) {
+        // Given
+        let config: toml::Table = toml::from_str(config_toml).unwrap();
+        let expected = config.clone();
 
-        // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
+        // When
+        let mut result = intercept_node_config(config, &sample_tee_config()).unwrap();
 
-        // then
-        assert!(result.contains_key("tee"));
-        assert_eq!(result["home_dir"].as_str(), Some("/data"));
+        // Then
+        assert!(result.remove("tee").is_some());
+        assert_eq!(result, expected);
     }
 
-    #[test]
-    fn intercept_config_rejects_user_provided_tee_key() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"[tee]
-type = "Local"
-"#,
-        )
-        .unwrap();
+    #[rstest]
+    #[case::user_provided_tee_table("[tee]\ntype = \"Local\"\n")]
+    #[case::tee_as_non_table_value(r#"tee = "sneaky""#)]
+    fn intercept_node_config__should_reject_existing_tee_key(#[case] config_toml: &str) {
+        // Given
+        let config: toml::Table = toml::from_str(config_toml).unwrap();
 
-        // when
+        // When
         let result = intercept_node_config(config, &sample_tee_config());
 
-        // then
+        // Then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
-    }
-
-    #[test]
-    fn intercept_config_empty_table_gets_tee_key() {
-        // given
-        let config = toml::Table::new();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config()).unwrap();
-
-        // then
-        assert!(result.contains_key("tee"));
-        assert_eq!(result.len(), 1);
     }
 
     #[test]
@@ -244,222 +233,51 @@ key = "value"
         assert_eq!(reparsed["home_dir"].as_str(), Some("/data"));
     }
 
-    #[test]
-    fn intercept_config_tee_as_non_table_value_is_rejected() {
-        // given — tee exists but as a string, not a table
-        let config: toml::Table = toml::from_str(r#"tee = "sneaky""#).unwrap();
+    #[rstest]
+    #[case::docker_hub_simple("nearone/mpc-node")]
+    #[case::docker_hub_with_tag("nearone/mpc-node:3.8.1")]
+    #[case::docker_hub_with_text_tag("nearone/mpc-node:testnet-release")]
+    #[case::ghcr("ghcr.io/nearone/mpc-node")]
+    #[case::ecr_public("public.ecr.aws/myalias/mpc-node")]
+    #[case::google_artifact_registry("us-docker.pkg.dev/my-project/my-repo/mpc-node")]
+    #[case::azure_acr("myregistry.azurecr.io/mpc-node")]
+    #[case::self_hosted_with_port("registry.example.com:5000/myproject/mpc-node")]
+    #[case::self_hosted_with_port_and_tag("registry.example.com:5000/myproject/mpc-node:v1.0")]
+    #[case::simple_name("ubuntu")]
+    #[case::library_image("library/alpine")]
+    #[case::deep_path("ghcr.io/org/team/subproject/image")]
+    #[case::underscore_in_name("my_org/my_image")]
+    fn validate_image_reference__should_accept_valid_reference(#[case] image_ref: &str) {
+        // When
+        let result = validate_image_reference(image_ref);
 
-        // when
-        let result = intercept_node_config(config, &sample_tee_config());
-
-        // then — any occupied entry is rejected regardless of value type
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
+        // Then
+        result.unwrap();
     }
 
-    // --- validate_image_reference: positive (valid references) ---
+    #[rstest]
+    #[case::empty("")]
+    #[case::trailing_colon("nearone/mpc-node:")]
+    #[case::trailing_slash("nearone/")]
+    #[case::trailing_dot("nearone/mpc-node.")]
+    #[case::double_slash("nearone//mpc-node")]
+    #[case::double_colon("nearone/mpc-node::tag")]
+    #[case::colon_dot("nearone/mpc-node:.tag")]
+    #[case::starting_with_dot(".hidden/image")]
+    #[case::starting_with_slash("/nearone/mpc-node")]
+    #[case::starting_with_colon(":latest")]
+    #[case::spaces("nearone/mpc node")]
+    #[case::newline_injection("nearone/mpc-node\nevil: true")]
+    #[case::yaml_injection_quotes("nearone/mpc-node\"; evil")]
+    #[case::shell_metacharacters("nearone/mpc-node; rm -rf /")]
+    #[case::backtick_injection("nearone/`whoami`")]
+    #[case::dollar_expansion("nearone/${USER}")]
+    #[case::backslash("nearone\\mpc-node")]
+    fn validate_image_reference__should_reject_invalid_reference(#[case] image_ref: &str) {
+        // When
+        let result = validate_image_reference(image_ref);
 
-    #[test]
-    fn valid_docker_hub_simple() {
-        validate_image_reference("nearone/mpc-node").unwrap();
-    }
-
-    #[test]
-    fn valid_docker_hub_with_tag() {
-        validate_image_reference("nearone/mpc-node:3.8.1").unwrap();
-    }
-
-    #[test]
-    fn valid_docker_hub_with_text_tag() {
-        validate_image_reference("nearone/mpc-node:testnet-release").unwrap();
-    }
-
-    #[test]
-    fn valid_ghcr() {
-        validate_image_reference("ghcr.io/nearone/mpc-node").unwrap();
-    }
-
-    #[test]
-    fn valid_ecr_public() {
-        validate_image_reference("public.ecr.aws/myalias/mpc-node").unwrap();
-    }
-
-    #[test]
-    fn valid_google_artifact_registry() {
-        validate_image_reference("us-docker.pkg.dev/my-project/my-repo/mpc-node").unwrap();
-    }
-
-    #[test]
-    fn valid_azure_acr() {
-        validate_image_reference("myregistry.azurecr.io/mpc-node").unwrap();
-    }
-
-    #[test]
-    fn valid_self_hosted_with_port() {
-        validate_image_reference("registry.example.com:5000/myproject/mpc-node").unwrap();
-    }
-
-    #[test]
-    fn valid_self_hosted_with_port_and_tag() {
-        validate_image_reference("registry.example.com:5000/myproject/mpc-node:v1.0").unwrap();
-    }
-
-    #[test]
-    fn valid_simple_name() {
-        validate_image_reference("ubuntu").unwrap();
-    }
-
-    #[test]
-    fn valid_library_image() {
-        validate_image_reference("library/alpine").unwrap();
-    }
-
-    #[test]
-    fn valid_deep_path() {
-        validate_image_reference("ghcr.io/org/team/subproject/image").unwrap();
-    }
-
-    #[test]
-    fn valid_underscore_in_name() {
-        validate_image_reference("my_org/my_image").unwrap();
-    }
-
-    // --- validate_image_reference: negative (structurally invalid) ---
-
-    #[test]
-    fn rejects_empty() {
-        assert_matches!(
-            validate_image_reference(""),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_trailing_colon() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node:"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_trailing_slash() {
-        assert_matches!(
-            validate_image_reference("nearone/"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_trailing_dot() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node."),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_double_slash() {
-        assert_matches!(
-            validate_image_reference("nearone//mpc-node"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_double_colon() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node::tag"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_colon_dot() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node:.tag"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_starting_with_dot() {
-        assert_matches!(
-            validate_image_reference(".hidden/image"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_starting_with_slash() {
-        assert_matches!(
-            validate_image_reference("/nearone/mpc-node"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_starting_with_colon() {
-        assert_matches!(
-            validate_image_reference(":latest"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    // --- validate_image_reference: negative (malicious input) ---
-
-    #[test]
-    fn rejects_spaces() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc node"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_newline_injection() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node\nevil: true"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_yaml_injection_quotes() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node\"; evil"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_shell_metacharacters() {
-        assert_matches!(
-            validate_image_reference("nearone/mpc-node; rm -rf /"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_backtick_injection() {
-        assert_matches!(
-            validate_image_reference("nearone/`whoami`"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_dollar_expansion() {
-        assert_matches!(
-            validate_image_reference("nearone/${USER}"),
-            Err(LauncherError::InvalidImageName(_))
-        );
-    }
-
-    #[test]
-    fn rejects_backslash() {
-        assert_matches!(
-            validate_image_reference("nearone\\mpc-node"),
-            Err(LauncherError::InvalidImageName(_))
-        );
+        // Then
+        assert_matches!(result, Err(LauncherError::InvalidImageName(_)));
     }
 }
