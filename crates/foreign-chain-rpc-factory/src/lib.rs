@@ -114,114 +114,81 @@ mod tests {
     use std::collections::BTreeMap;
     use std::num::NonZeroU64;
 
-    #[test]
-    fn auth_config_to_rpc_auth__path_auth_substitutes_token_into_url() {
-        // Given
-        let auth = AuthConfig::Path {
+    fn val_token(val: &str) -> TokenConfig {
+        TokenConfig::Val {
+            val: val.to_string(),
+        }
+    }
+
+    #[rstest]
+    #[case::none_auth_leaves_url_unchanged(
+        AuthConfig::None,
+        "https://rpc.example.com",
+        "https://rpc.example.com"
+    )]
+    #[case::path_auth_substitutes_token_into_url(
+        AuthConfig::Path {
             placeholder: "{api_key}".to_string(),
-            token: TokenConfig::Val {
-                val: "my-secret-key".to_string(),
-            },
-        };
-        let mut url = "https://rpc.ankr.com/near/{api_key}".to_string();
+            token: val_token("my-secret-key")
+        },
+        "https://rpc.ankr.com/near/{api_key}",
+        "https://rpc.ankr.com/near/my-secret-key"
+    )]
+    #[case::query_auth_appends_param_to_url_without_query(
+        AuthConfig::Query { name: "api-key".to_string(), token: val_token("my-secret-key") },
+        "https://mainnet.helius-rpc.com/",
+        "https://mainnet.helius-rpc.com/?api-key=my-secret-key"
+    )]
+    #[case::query_auth_appends_param_to_url_with_existing_query(
+        AuthConfig::Query { name: "dkey".to_string(), token: val_token("my-drpc-key") },
+        "https://lb.drpc.org/ogrpc?network=ethereum",
+        "https://lb.drpc.org/ogrpc?network=ethereum&dkey=my-drpc-key"
+    )]
+    #[case::query_auth_url_encodes_special_characters(
+        AuthConfig::Query { name: "api-key".to_string(), token: val_token("a b+c") },
+        "https://rpc.example.com/",
+        "https://rpc.example.com/?api-key=a+b%2Bc"
+    )]
+    fn auth_config_to_rpc_auth__should_return_key_in_url_and_produce_expected_url(
+        #[case] auth: AuthConfig,
+        #[case] original_url: &str,
+        #[case] expected_url: &str,
+    ) {
+        // Given
+        let mut url = original_url.to_string();
 
         // When
         let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
 
         // Then
         assert_matches!(result, RpcAuthentication::KeyInUrl);
-        assert_eq!(url, "https://rpc.ankr.com/near/my-secret-key");
+        assert_eq!(url, expected_url);
     }
 
-    #[test]
-    fn auth_config_to_rpc_auth__none_auth_leaves_url_unchanged() {
-        // Given
-        let auth = AuthConfig::None;
-        let mut url = "https://rpc.example.com".to_string();
-
-        // When
-        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
-
-        // Then
-        assert_matches!(result, RpcAuthentication::KeyInUrl);
-        assert_eq!(url, "https://rpc.example.com");
-    }
-
-    #[test]
-    fn auth_config_to_rpc_auth__header_auth_leaves_url_unchanged() {
-        // Given
-        let auth = AuthConfig::Header {
+    #[rstest]
+    #[case::with_scheme_prepends_scheme(
+        AuthConfig::Header {
             name: HeaderName::from_static("authorization"),
             scheme: Some("Bearer".to_string()),
-            token: TokenConfig::Val {
-                val: "secret".to_string(),
-            },
-        };
-        let mut url = "https://rpc.example.com/v2/".to_string();
-
-        // When
-        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
-
-        // Then
-        assert_matches!(result, RpcAuthentication::CustomHeader { .. });
-        assert_eq!(url, "https://rpc.example.com/v2/");
-    }
-
-    #[test]
-    fn auth_config_to_rpc_auth__header_auth_with_scheme_prepends_scheme() {
-        // Given
-        let auth = AuthConfig::Header {
-            name: HeaderName::from_static("authorization"),
-            scheme: Some("Bearer".to_string()),
-            token: TokenConfig::Val {
-                val: "secret".to_string(),
-            },
-        };
-        let mut url = "https://rpc.example.com".to_string();
-
-        // When
-        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
-
-        // Then
-        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
-            panic!("expected CustomHeader, got {result:?}");
-        };
-        assert_eq!(header_value.to_str().unwrap(), "Bearer secret");
-    }
-
-    #[test]
-    fn auth_config_to_rpc_auth__header_auth_without_scheme_uses_raw_token() {
-        // Given
-        let auth = AuthConfig::Header {
+            token: val_token("secret")
+        },
+        "Bearer secret"
+    )]
+    #[case::without_scheme_uses_raw_token(
+        AuthConfig::Header {
             name: HeaderName::from_static("x-api-key"),
             scheme: None,
-            token: TokenConfig::Val {
-                val: "raw-token-value".to_string(),
-            },
-        };
-        let mut url = "https://gateway.example.com".to_string();
-
-        // When
-        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
-
-        // Then
-        let RpcAuthentication::CustomHeader { header_value, .. } = result else {
-            panic!("expected CustomHeader, got {result:?}");
-        };
-        assert_eq!(header_value.to_str().unwrap(), "raw-token-value");
-    }
-
-    #[test]
-    fn auth_config_to_rpc_auth__should_mark_header_value_sensitive() {
+            token: val_token("raw-token-value")
+        },
+        "raw-token-value"
+    )]
+    fn auth_config_to_rpc_auth__should_build_sensitive_header_and_leave_url_unchanged(
+        #[case] auth: AuthConfig,
+        #[case] expected_header_value: &str,
+    ) {
         // Given
-        let auth = AuthConfig::Header {
-            name: HeaderName::from_static("authorization"),
-            scheme: Some("Bearer".to_string()),
-            token: TokenConfig::Val {
-                val: "secret".to_string(),
-            },
-        };
-        let mut url = "https://rpc.example.com".to_string();
+        let original_url = "https://rpc.example.com/v2/";
+        let mut url = original_url.to_string();
 
         // When
         let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
@@ -230,68 +197,10 @@ mod tests {
         let RpcAuthentication::CustomHeader { header_value, .. } = result else {
             panic!("expected CustomHeader, got {result:?}");
         };
+        assert_eq!(header_value.to_str().unwrap(), expected_header_value);
         assert!(header_value.is_sensitive());
         assert_eq!(format!("{header_value:?}"), "Sensitive");
-    }
-
-    #[test]
-    fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_without_query() {
-        // Given
-        let auth = AuthConfig::Query {
-            name: "api-key".to_string(),
-            token: TokenConfig::Val {
-                val: "my-secret-key".to_string(),
-            },
-        };
-        let mut url = "https://mainnet.helius-rpc.com/".to_string();
-
-        // When
-        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
-
-        // Then
-        assert_matches!(result, RpcAuthentication::KeyInUrl);
-        assert_eq!(url, "https://mainnet.helius-rpc.com/?api-key=my-secret-key");
-    }
-
-    #[test]
-    fn auth_config_to_rpc_auth__query_auth_appends_param_to_url_with_existing_query() {
-        // Given
-        let auth = AuthConfig::Query {
-            name: "dkey".to_string(),
-            token: TokenConfig::Val {
-                val: "my-drpc-key".to_string(),
-            },
-        };
-        let mut url = "https://lb.drpc.org/ogrpc?network=ethereum".to_string();
-
-        // When
-        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
-
-        // Then
-        assert_matches!(result, RpcAuthentication::KeyInUrl);
-        assert_eq!(
-            url,
-            "https://lb.drpc.org/ogrpc?network=ethereum&dkey=my-drpc-key"
-        );
-    }
-
-    #[test]
-    fn auth_config_to_rpc_auth__query_auth_url_encodes_special_characters() {
-        // Given
-        let auth = AuthConfig::Query {
-            name: "api-key".to_string(),
-            token: TokenConfig::Val {
-                val: "a b+c".to_string(),
-            },
-        };
-        let mut url = "https://rpc.example.com/".to_string();
-
-        // When
-        let result = auth_config_to_rpc_auth(auth, &mut url).unwrap();
-
-        // Then
-        assert_matches!(result, RpcAuthentication::KeyInUrl);
-        assert_eq!(url, "https://rpc.example.com/?api-key=a+b%2Bc");
+        assert_eq!(url, original_url);
     }
 
     #[test]

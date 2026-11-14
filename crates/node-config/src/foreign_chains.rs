@@ -257,6 +257,8 @@ fn validate_slug(slug: &str) -> anyhow::Result<()> {
 mod tests {
     use std::assert_matches;
 
+    use rstest::rstest;
+
     use super::*;
     use crate::ConfigFile;
 
@@ -434,11 +436,9 @@ ckd:
         );
     }
 
-    #[test]
-    fn config_parsing__should_succeed_when_foreign_chain_key_is_unknown() {
-        // Given
-        let yaml = config_with_chains(
-            r#"
+    #[rstest]
+    #[case::foreign_chain_key_is_unknown(
+        r#"
   solana:
     timeout_sec: 30
     max_retries: 3
@@ -459,48 +459,10 @@ ckd:
         rpc_url: "https://rpc.public.example.com"
         auth:
           kind: none
-"#,
-        );
-
-        // When
-        let result: Result<ConfigFile, _> = serde_yaml::from_str(&yaml);
-
-        // Then
-        result.expect("unknown foreign chain keys should be silently ignored");
-    }
-
-    #[test]
-    fn config_parsing__should_succeed_with_starknet_section() {
-        // Given
-        let yaml = config_with_chains(
-            r#"
-  starknet:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      blast:
-        rpc_url: "https://starknet-mainnet.blastapi.io/"
-        auth:
-          kind: none
-"#,
-        );
-
-        // When
-        let config: ConfigFile =
-            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
-
-        // Then
-        config
-            .validate()
-            .expect("config with starknet section should be valid");
-        assert!(config.foreign_chains.starknet.is_some());
-    }
-
-    #[test]
-    fn config_parsing__should_succeed_with_legacy_field__api_variant() {
-        // Given
-        let yaml = config_with_chains(
-            r#"
+"#
+    )]
+    #[case::legacy_field__api_variant(
+        r#"
   starknet:
     timeout_sec: 30
     max_retries: 3
@@ -510,19 +472,36 @@ ckd:
         rpc_url: "https://starknet-mainnet.blastapi.io/"
         auth:
           kind: none
-"#,
-        );
+"#
+    )]
+    fn config_parsing__should_succeed_with_ignored_input(#[case] chains: &str) {
+        // Given
+        let yaml = config_with_chains(chains);
 
-        // When/then
-        let _config: ConfigFile = serde_yaml::from_str(&yaml)
-            .expect("yaml serialization passes with `api_variant_field`");
+        // When
+        let result: Result<ConfigFile, _> = serde_yaml::from_str(&yaml);
+
+        // Then
+        result.expect("unknown foreign chain keys and legacy fields should be ignored");
     }
 
-    #[test]
-    fn config_parsing__should_succeed_with_aptos_section() {
-        // Given
-        let yaml = config_with_chains(
-            r#"
+    #[rstest]
+    #[case::starknet_section(
+        r#"
+  starknet:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      blast:
+        rpc_url: "https://starknet-mainnet.blastapi.io/"
+        auth:
+          kind: none
+"#,
+        dtos::ForeignChain::Starknet,
+        1
+    )]
+    #[case::aptos_section(
+        r#"
   aptos:
     timeout_sec: 30
     max_retries: 3
@@ -532,25 +511,39 @@ ckd:
         auth:
           kind: none
 "#,
-        );
-
-        // When
-        let config: ConfigFile =
-            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
-
-        // Then
-        config
-            .validate()
-            .expect("config with aptos section should be valid");
-        assert!(config.foreign_chains.aptos.is_some());
-    }
-
-    #[test]
-    fn config_parsing__should_succeed_with_aptos_auth_providers() {
-        // Given — one provider with the API key in the URL path (Alchemy-style) and one
-        // with a header token (NOWNodes-style).
-        let yaml = config_with_chains(
-            r#"
+        dtos::ForeignChain::Aptos,
+        1
+    )]
+    #[case::sui_section(
+        r#"
+  sui:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        rpc_url: "https://fullnode.mainnet.sui.io"
+        auth:
+          kind: none
+"#,
+        dtos::ForeignChain::Sui,
+        1
+    )]
+    #[case::fogo_section(
+        r#"
+  fogo:
+    timeout_sec: 30
+    max_retries: 3
+    providers:
+      public:
+        rpc_url: "https://testnet.fogo.io"
+        auth:
+          kind: none
+"#,
+        dtos::ForeignChain::Fogo,
+        1
+    )]
+    #[case::aptos_auth_providers(
+        r#"
   aptos:
     timeout_sec: 30
     max_retries: 3
@@ -570,83 +563,11 @@ ckd:
           token:
             val: "nownodes-secret"
 "#,
-        );
-
-        // When
-        let config: ConfigFile =
-            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
-
-        // Then
-        config
-            .validate()
-            .expect("config with authenticated aptos providers should be valid");
-        let aptos = config
-            .foreign_chains
-            .aptos
-            .as_ref()
-            .expect("aptos config should be present");
-        assert_eq!(aptos.providers.len(), 2);
-    }
-
-    #[test]
-    fn config_parsing__should_succeed_with_sui_section() {
-        // Given
-        let yaml = config_with_chains(
-            r#"
-  sui:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        rpc_url: "https://fullnode.mainnet.sui.io"
-        auth:
-          kind: none
-"#,
-        );
-
-        // When
-        let config: ConfigFile =
-            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
-
-        // Then
-        config
-            .validate()
-            .expect("config with sui section should be valid");
-        assert!(config.foreign_chains.sui.is_some());
-    }
-
-    #[test]
-    fn config_parsing__should_succeed_with_fogo_section() {
-        // Given
-        let yaml = config_with_chains(
-            r#"
-  fogo:
-    timeout_sec: 30
-    max_retries: 3
-    providers:
-      public:
-        rpc_url: "https://testnet.fogo.io"
-        auth:
-          kind: none
-"#,
-        );
-
-        // When
-        let config: ConfigFile =
-            serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
-
-        // Then
-        config
-            .validate()
-            .expect("config with fogo section should be valid");
-        assert!(config.foreign_chains.fogo.is_some());
-    }
-
-    #[test]
-    fn config_parsing__should_succeed_with_sui_auth_providers() {
-        // Given — gRPC providers authenticate via headers; one bearer token and one API key.
-        let yaml = config_with_chains(
-            r#"
+        dtos::ForeignChain::Aptos,
+        2
+    )]
+    #[case::sui_auth_providers(
+        r#"
   sui:
     timeout_sec: 30
     max_retries: 3
@@ -667,22 +588,29 @@ ckd:
           token:
             val: "nownodes-secret"
 "#,
-        );
+        dtos::ForeignChain::Sui,
+        2
+    )]
+    fn config_parsing__should_succeed_with_chain_section(
+        #[case] chains: &str,
+        #[case] chain: dtos::ForeignChain,
+        #[case] provider_count: usize,
+    ) {
+        // Given
+        let yaml = config_with_chains(chains);
 
         // When
         let config: ConfigFile =
             serde_yaml::from_str(&yaml).expect("yaml fixture should be correct");
+        config.validate().expect("config should be valid");
 
         // Then
-        config
-            .validate()
-            .expect("config with authenticated sui providers should be valid");
-        let sui = config
+        let configured: Vec<_> = config
             .foreign_chains
-            .sui
-            .as_ref()
-            .expect("sui config should be present");
-        assert_eq!(sui.providers.len(), 2);
+            .iter_chains()
+            .map(|(id, chain_config)| (id, chain_config.providers.len()))
+            .collect();
+        assert_eq!(configured, vec![(chain, provider_count)]);
     }
 
     #[test]
