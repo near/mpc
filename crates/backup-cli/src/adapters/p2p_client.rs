@@ -116,7 +116,7 @@ impl MpcP2PClient {
 #[expect(non_snake_case)]
 mod tests {
     use mpc_node::keyshare::test_utils::KeysetBuilder;
-    use mpc_node::migration_service::web::test_utils;
+    use mpc_node::migration_service::web::test_utils::{self, TestSetup};
     use mpc_node::p2p::testing::port_seed;
 
     use ed25519_dalek::SigningKey;
@@ -130,19 +130,23 @@ mod tests {
     /// Long enough that no passing test can hit it; the timeout test passes its own.
     const TEST_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+    fn client_for(test_setup: &TestSetup, addr: NodeAddress) -> MpcP2PClient {
+        MpcP2PClient::new(
+            addr,
+            test_setup.server_key.verifying_key(),
+            test_setup.client_key.clone(),
+            test_setup.backup_encryption_key,
+            TEST_REQUEST_TIMEOUT,
+        )
+    }
+
     #[tokio::test]
     async fn test_get_keyshares() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let test_setup = test_utils::setup(port_seed::BACKUP_CLI_WEBSERVER_GET_KEYSHARES).await;
         let addr: NodeAddress = test_setup.target_address.to_string().parse().unwrap();
-        let client = MpcP2PClient::new(
-            addr,
-            test_setup.server_key.verifying_key(),
-            test_setup.client_key,
-            test_setup.backup_encryption_key,
-            TEST_REQUEST_TIMEOUT,
-        );
+        let client = client_for(&test_setup, addr);
         let keyset_builder = KeysetBuilder::new_populated(0, 8, &mut rng);
         let keyset = keyset_builder.keyset();
 
@@ -174,13 +178,7 @@ mod tests {
         // Given
         let mut test_setup = test_utils::setup(port_seed::BACKUP_CLI_WEBSERVER_PUT_KEYSHARES).await;
         let addr: NodeAddress = test_setup.target_address.to_string().parse().unwrap();
-        let client = MpcP2PClient::new(
-            addr,
-            test_setup.server_key.verifying_key(),
-            test_setup.client_key,
-            test_setup.backup_encryption_key,
-            TEST_REQUEST_TIMEOUT,
-        );
+        let client = client_for(&test_setup, addr);
         let keyset_builder = KeysetBuilder::new_populated(0, 8, &mut rng);
         let keyshares = keyset_builder.keyshares().to_vec();
 
@@ -237,13 +235,7 @@ mod tests {
         let addr: NodeAddress = format!("localhost:{}", test_setup.target_address.port())
             .parse()
             .unwrap();
-        let client = MpcP2PClient::new(
-            addr,
-            test_setup.server_key.verifying_key(),
-            test_setup.client_key,
-            test_setup.backup_encryption_key,
-            TEST_REQUEST_TIMEOUT,
-        );
+        let client = client_for(&test_setup, addr);
         let keyset_builder = KeysetBuilder::new_populated(0, 8, &mut rng);
         let keyshares = keyset_builder.keyshares().to_vec();
 
