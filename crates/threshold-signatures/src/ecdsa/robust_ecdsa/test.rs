@@ -72,71 +72,54 @@ fn test_refresh() -> Result<(), Box<dyn Error>> {
     run_sign_and_verify(&key_packages, max_malicious, b"hello world", &mut rng)
 }
 
-#[test]
-/// Tests the resharing protocol when more participants are added to the pool
-fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
+fn run_reshare_sign_and_verify(
+    participants: &[Participant],
+    new_participants: &[Participant],
+    new_max_malicious: usize,
+) -> Result<(), Box<dyn Error>> {
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let participants = generate_participants(12);
-
     let max_malicious = 3;
     let threshold = max_malicious + 1;
-    let result0 = run_keygen(&participants, threshold, &mut rng);
+    let result0 = run_keygen(participants, threshold, &mut rng);
     assert_public_key_invariant(&result0);
 
     let pub_key = result0[2].1.public_key;
 
-    // Run heavy reshare
-    let max_malicious = 7;
-    let new_threshold = max_malicious + 1;
-
-    let mut new_participant = participants.clone();
-    new_participant.push(Participant::from(31u32));
-    new_participant.push(Participant::from(32u32));
-    new_participant.push(Participant::from(33u32));
+    let new_threshold = new_max_malicious + 1;
     let key_packages = run_reshare(
-        &participants,
+        participants,
         &pub_key,
         &result0,
         threshold,
         new_threshold,
-        &new_participant,
+        new_participants,
         &mut rng,
     );
     assert_public_key_invariant(&key_packages);
 
-    run_sign_and_verify(&key_packages, max_malicious, b"hello world", &mut rng)
+    run_sign_and_verify(&key_packages, new_max_malicious, b"hello world", &mut rng)
+}
+
+#[test]
+/// Tests the resharing protocol when more participants are added to the pool
+fn test_reshare_sign_more_participants() -> Result<(), Box<dyn Error>> {
+    let participants = generate_participants(12);
+    let mut new_participants = participants.clone();
+    new_participants.extend([31u32, 32, 33].map(Participant::from));
+    let new_max_malicious = 7;
+
+    run_reshare_sign_and_verify(&participants, &new_participants, new_max_malicious)
 }
 
 #[test]
 /// Tests the resharing protocol when participants are kicked out of the pool
 fn test_reshare_sign_less_participants() -> Result<(), Box<dyn Error>> {
-    let mut rng = MockCryptoRng::seed_from_u64(42);
     let participants = generate_participants(6);
+    let mut new_participants = participants.clone();
+    new_participants.pop();
+    let new_max_malicious = 2;
 
-    let max_malicious = 3;
-    let threshold = max_malicious + 1;
-    let result0 = run_keygen(&participants, threshold, &mut rng);
-    assert_public_key_invariant(&result0);
-
-    let pub_key = result0[2].1.public_key;
-
-    // Run heavy reshare
-    let max_malicious = 2;
-    let new_threshold = max_malicious + 1;
-    let mut new_participant = participants.clone();
-    new_participant.pop();
-    let key_packages = run_reshare(
-        &participants,
-        &pub_key,
-        &result0,
-        threshold,
-        new_threshold,
-        &new_participant,
-        &mut rng,
-    );
-    assert_public_key_invariant(&key_packages);
-
-    run_sign_and_verify(&key_packages, max_malicious, b"hello world", &mut rng)
+    run_reshare_sign_and_verify(&participants, &new_participants, new_max_malicious)
 }
 
 #[test]

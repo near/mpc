@@ -256,6 +256,7 @@ mod test {
     use frost_secp256k1::{Secp256K1Group, Secp256K1ScalarField, Secp256K1Sha256};
     use k256::Scalar;
     use rand_core::{RngCore, SeedableRng};
+    use rstest::rstest;
     type C = Secp256K1Sha256;
 
     #[test]
@@ -869,8 +870,10 @@ mod test {
         assert_eq!(coeffs_no_early_exit[2].0, Scalar::from(3u32)); // lambda_2(4) = 3
     }
 
-    #[test]
-    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_none() {
+    #[rstest]
+    #[case::at_none(false)]
+    #[case::at_some(true)]
+    fn test_eval_exponent_interpolation_against_interpolation_times_g(#[case] with_point: bool) {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         for participants in 2..20 {
             for degree in 1..participants {
@@ -899,55 +902,7 @@ mod test {
                     .map(|p| compoly.eval_at_participant(*p).unwrap())
                     .collect::<Vec<_>>();
 
-                // use only degree + 1 shares to evaluate exponent
-                let exponent_eval = PolynomialCommitment::eval_exponent_interpolation(
-                    &ids[..=degree],
-                    &com_shares[..=degree],
-                    None,
-                )
-                .unwrap();
-
-                // use all to evaluate the share
-                let eval = Polynomial::eval_interpolation(&ids, &shares, None).unwrap();
-
-                assert_eq!(
-                    exponent_eval.value(),
-                    <C as frost_core::Ciphersuite>::Group::generator() * eval.0
-                );
-            }
-        }
-    }
-    #[test]
-    fn test_eval_exponent_interpolation_against_interpolation_times_g_at_some() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        for participants in 2..20 {
-            for degree in 1..participants {
-                let participants = generate_participants(participants);
-
-                let ids = participants
-                    .iter()
-                    .map(Participant::scalar::<C>)
-                    .collect::<Vec<_>>();
-
-                // generate polynomial
-                let poly = Polynomial::<C>::generate_polynomial(None, degree, &mut rng)
-                    .expect("Generation must not fail with overwhealming probability");
-
-                // build all the shares
-                let shares = participants
-                    .iter()
-                    .map(|p| poly.eval_at_participant(*p).unwrap())
-                    .collect::<Vec<_>>();
-
-                let compoly = poly.commit_polynomial().unwrap();
-
-                // build all committed shares
-                let com_shares = participants
-                    .iter()
-                    .map(|p| compoly.eval_at_participant(*p).unwrap())
-                    .collect::<Vec<_>>();
-
-                let point = Some(Secp256K1ScalarField::random(&mut rng));
+                let point = with_point.then(|| Secp256K1ScalarField::random(&mut rng));
 
                 // use only degree + 1 shares to evaluate exponent
                 let exponent_eval = PolynomialCommitment::eval_exponent_interpolation(
