@@ -285,8 +285,24 @@ keys and one for its decapsulation. Every step is linear in the batch size, and 
 message carries about 105 bytes per transfer. The string is derived once per batch by
 each party, so its cost does not depend on the batch size.
 
-Both protocols take two rounds of communication, one message in each direction: CO15
-opens with the sender, PVW08 with the receiver. As in [Latency](#latency), the numbers
+The third table counts what the two end-to-end runs hand to the transport for a batch of
+128 transfers. Unlike the message sizes above, these totals include the 40-byte header
+that the crate prepends to every message.
+
+| Base OT | Transfers | Sender | Receiver | Total |
+|:-------:|:---------:|-------:|---------:|------:|
+| **CO15**  | 128 | 91 Bytes in 1 message     | 11814 Bytes in 128 messages | 11905 Bytes in 129 messages |
+| **PVW08** | 128 | 13518 Bytes in 1 message  | 13588 Bytes in 1 message    | 27106 Bytes in 2 messages   |
+
+Reading: PVW08 moves about 2.3 times the bytes of CO15, not four times as its four points
+per transfer against one would suggest. CO15 sends each of the receiver's 128 points as a
+message of its own, so headers make up 43% of its traffic. A serialized point takes about
+52 bytes in both protocols, against 33 for its compressed encoding, and that size depends
+on the value of each byte, so the totals move by about a percent from one run to the next.
+
+Both protocols take two rounds of communication: CO15 opens with the sender, PVW08 with
+the receiver. PVW08 sends one message in each direction, while CO15 sends one message
+from the sender and then 128 from the receiver. As in [Latency](#latency), the numbers
 with network latency are estimated using the formula
 **network_latency * protocol_number_rounds + raw_performance**; the `pvw08` bench does
 not simulate latency.
