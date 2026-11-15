@@ -22,7 +22,10 @@ pub type PolynomialCommitment = crate::crypto::polynomials::PolynomialCommitment
 
 pub use ot::base::pvw08;
 #[cfg(feature = "test-utils")]
-pub use ot::test::{run_batch_random_ot, run_pvw08_batch_random_ot};
+pub use ot::test::{
+    run_batch_random_ot, run_batch_random_ot_with_traffic, run_pvw08_batch_random_ot,
+    run_pvw08_batch_random_ot_with_traffic,
+};
 pub(crate) use signature::x_coordinate;
 pub use signature::{Signature, SignatureOption};
 

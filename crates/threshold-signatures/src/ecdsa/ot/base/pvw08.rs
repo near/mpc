@@ -68,7 +68,10 @@ mod test {
     use subtle::ConditionallySelectable;
 
     use crate::{
-        ecdsa::ot::{bits::BitVector, test::run_pvw08_batch_random_ot},
+        ecdsa::ot::{
+            bits::BitVector,
+            test::{run_pvw08_batch_random_ot, run_pvw08_batch_random_ot_with_traffic},
+        },
         errors::ProtocolError,
     };
 
@@ -94,6 +97,25 @@ mod test {
         for ((k0, k1), (&choice, key)) in sender_keys.zip(receiver_keys) {
             assert_eq!(*key, BitVector::conditional_select(k0, k1, choice));
         }
+    }
+
+    #[test]
+    fn batch_random_ot__should_send_one_message_each_way() {
+        // Given
+        let sid = b"session";
+        let batch_size = 128;
+        let compressed_point_len = 33;
+        let points_per_message = 2 * batch_size;
+
+        // When
+        let (_, [sender, receiver]) =
+            run_pvw08_batch_random_ot_with_traffic(batch_size, batch_size, sid, sid).unwrap();
+
+        // Then
+        assert_eq!(sender.messages, 1);
+        assert_eq!(receiver.messages, 1);
+        assert!(sender.bytes >= points_per_message * compressed_point_len);
+        assert!(receiver.bytes >= points_per_message * compressed_point_len);
     }
 
     #[test]

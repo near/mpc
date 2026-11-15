@@ -121,10 +121,23 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
     prot0: &mut dyn Protocol<Output = T0>,
     prot1: &mut dyn Protocol<Output = T1>,
 ) -> Result<(T0, T1), ProtocolError> {
+    run_two_party_protocol_with_traffic(p0, p1, prot0, prot1).map(|(outputs, _)| outputs)
+}
+
+/// Like [`run_two_party_protocol()`], but also returns what each party sent
+/// to the other: `p0`'s [`Traffic`] first, then `p1`'s.
+pub fn run_two_party_protocol_with_traffic<T0: std::fmt::Debug, T1: std::fmt::Debug>(
+    p0: Participant,
+    p1: Participant,
+    prot0: &mut dyn Protocol<Output = T0>,
+    prot1: &mut dyn Protocol<Output = T1>,
+) -> Result<((T0, T1), [Traffic; 2]), ProtocolError> {
     let mut active0 = true;
 
     let mut out0 = None;
     let mut out1 = None;
+    let mut traffic0 = Traffic::default();
+    let mut traffic1 = Traffic::default();
 
     while out0.is_none() || out1.is_none() {
         if active0 {
@@ -132,9 +145,11 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
             match action {
                 Action::Wait => active0 = false,
                 Action::SendMany(m) => {
+                    traffic0.record(&m);
                     prot1.message(p0, m)?;
                 }
                 Action::SendPrivate(to, m) if to == p1 => {
+                    traffic0.record(&m);
                     prot1.message(p0, m)?;
                 }
                 Action::Return(out) => out0 = Some(out),
@@ -147,9 +162,11 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
             match action {
                 Action::Wait => active0 = true,
                 Action::SendMany(m) => {
+                    traffic1.record(&m);
                     prot0.message(p1, m)?;
                 }
                 Action::SendPrivate(to, m) if to == p0 => {
+                    traffic1.record(&m);
                     prot0.message(p1, m)?;
                 }
                 Action::Return(out) => out1 = Some(out),
@@ -161,9 +178,27 @@ pub fn run_two_party_protocol<T0: std::fmt::Debug, T1: std::fmt::Debug>(
     }
 
     Ok((
-        out0.ok_or_else(|| ProtocolError::Other("out0 is None".to_string()))?,
-        out1.ok_or_else(|| ProtocolError::Other("out1 is None".to_string()))?,
+        (
+            out0.ok_or_else(|| ProtocolError::Other("out0 is None".to_string()))?,
+            out1.ok_or_else(|| ProtocolError::Other("out1 is None".to_string()))?,
+        ),
+        [traffic0, traffic1],
     ))
+}
+
+/// The messages one party handed to the transport during a protocol run.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Traffic {
+    pub messages: usize,
+    /// Counts each message whole, with the header this crate prepends to it.
+    pub bytes: usize,
+}
+
+impl Traffic {
+    fn record(&mut self, message: &[u8]) {
+        self.messages += 1;
+        self.bytes += message.len();
+    }
 }
 
 #[allow(clippy::type_complexity)]

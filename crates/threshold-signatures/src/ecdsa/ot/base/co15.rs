@@ -405,7 +405,7 @@ mod test {
     use rand::SeedableRng;
 
     use super::*;
-    use crate::ecdsa::ot::test::run_batch_random_ot;
+    use crate::ecdsa::ot::test::{run_batch_random_ot, run_batch_random_ot_with_traffic};
     use crate::participants::Participant;
     use crate::protocol::internal::{Comms, make_protocol};
     use crate::test_utils::{MockCryptoRng, run_two_party_protocol};
@@ -427,6 +427,22 @@ mod test {
                 *row_delta
             );
         }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn batch_random_ot__should_send_one_receiver_message_per_transfer() {
+        // Given
+        let compressed_point_len = 33;
+
+        // When
+        let (_, [sender, receiver]) = run_batch_random_ot_with_traffic().unwrap();
+
+        // Then
+        assert_eq!(sender.messages, 1);
+        assert_eq!(receiver.messages, SECURITY_PARAMETER);
+        assert!(sender.bytes >= compressed_point_len);
+        assert!(receiver.bytes >= SECURITY_PARAMETER * compressed_point_len);
     }
 
     /// Run the batch random OT many protocol between two parties.

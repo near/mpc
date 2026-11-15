@@ -5,10 +5,11 @@ use threshold_signatures::{
     ecdsa::{
         Secp256K1Sha256,
         pvw08::{Crs, ReceiverSecrets, SenderRandomness},
-        run_batch_random_ot, run_pvw08_batch_random_ot,
+        run_batch_random_ot, run_batch_random_ot_with_traffic, run_pvw08_batch_random_ot,
+        run_pvw08_batch_random_ot_with_traffic,
     },
     participants::Participant,
-    test_utils::MockCryptoRng,
+    test_utils::{MockCryptoRng, Traffic},
 };
 
 type C = Secp256K1Sha256;
@@ -76,6 +77,13 @@ fn bench_steps(c: &mut Criterion) {
 
 /// Both protocols run end to end, including the sampling of their randomness.
 fn bench_against_co15(c: &mut Criterion) {
+    let (_, traffic) = run_batch_random_ot_with_traffic().expect("protocol should succeed");
+    print_traffic("CO15", traffic);
+    let (_, traffic) =
+        run_pvw08_batch_random_ot_with_traffic(CO15_BATCH_SIZE, CO15_BATCH_SIZE, SID, SID)
+            .expect("protocol should succeed");
+    print_traffic("PVW08", traffic);
+
     let mut group = c.benchmark_group("Base_OT_128");
 
     group.bench_function("pvw08", |b| {
@@ -90,6 +98,14 @@ fn bench_against_co15(c: &mut Criterion) {
         b.iter(|| black_box(run_batch_random_ot().expect("protocol should succeed")));
     });
     group.finish();
+}
+
+fn print_traffic(protocol: &str, [sender, receiver]: [Traffic; 2]) {
+    println!(
+        "{protocol} batch of {CO15_BATCH_SIZE}, message headers included: \
+         sender sent {} bytes in {} message(s), receiver sent {} bytes in {} message(s)",
+        sender.bytes, sender.messages, receiver.bytes, receiver.messages,
+    );
 }
 
 criterion_group!(benches, bench_crs, bench_steps, bench_against_co15);

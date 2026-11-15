@@ -40,12 +40,12 @@ pub use participant_simulation::Simulator;
 pub use participants::{generate_participants, generate_participants_with_random_ids};
 pub use presign::frost_run_presignature;
 pub use protocol::{
-    assert_buffer_capacity, build_buffer_test, expected_buffer_by_role,
-    run_and_assert_buffer_entries,
+    Traffic, run_protocol, run_protocol_and_take_snapshots, run_protocol_counting_yields,
+    run_simulated_protocol, run_two_party_protocol, run_two_party_protocol_with_traffic,
 };
 pub use protocol::{
-    run_protocol, run_protocol_and_take_snapshots, run_protocol_counting_yields,
-    run_simulated_protocol, run_two_party_protocol,
+    assert_buffer_capacity, build_buffer_test, expected_buffer_by_role,
+    run_and_assert_buffer_entries,
 };
 pub use sign::{check_one_coordinator_output, run_sign};
 pub use simulator_bench::{
