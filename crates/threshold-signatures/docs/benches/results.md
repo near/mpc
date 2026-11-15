@@ -259,8 +259,8 @@ sampling of their randomness.
 
 | Base OT | Transfers | Sender + receiver |
 |:-------:|:---------:|------------------:|
-| **CO15**  | 128 | 17.36 ms |
-| **PVW08** | 128 | 53.27 ms |
+| **CO15**  | 128 | 16.68 ms |
+| **PVW08** | 128 | 50.61 ms |
 
 | **Network Latency: 0 ms** |
 |---------------------------|
@@ -272,8 +272,8 @@ the size of the two messages once serialized.
 
 | Transfers | CRS derivation | Receiver public keys | Sender encapsulation | Receiver decapsulation | Receiver message | Sender message |
 |:---------:|---------------:|---------------------:|---------------------:|-----------------------:|-----------------:|---------------:|
-| 128  | 0.14 ms | 7.72 ms  | 33.73 ms  | 5.86 ms  | 13367 Bytes  | 13445 Bytes  |
-| 1024 | 0.14 ms | 61.54 ms | 269.82 ms | 46.88 ms | 107394 Bytes | 107288 Bytes |
+| 128  | 0.14 ms | 7.29 ms  | 33.66 ms  | 5.69 ms  | 13367 Bytes  | 13445 Bytes  |
+| 1024 | 0.14 ms | 61.34 ms | 259.82 ms | 43.49 ms | 107394 Bytes | 107288 Bytes |
 
 | **Network Latency: 0 ms** |
 |---------------------------|
@@ -309,14 +309,14 @@ not simulate latency.
 
 | Base OT | Transfers | Rounds | Sender + receiver |
 |:-------:|:---------:|:------:|------------------:|
-| **CO15**  | 128 | 2 | 217.36 ms |
-| **PVW08** | 128 | 2 | 253.27 ms |
+| **CO15**  | 128 | 2 | 216.68 ms |
+| **PVW08** | 128 | 2 | 250.61 ms |
 
 | **Network Latency: 100 ms** |
 |-----------------------------|
 
-The extra computation of PVW08 is a constant 36 ms that does not grow with the latency,
-so the ratio between the two drops from about 3 to about 1.17.
+The extra computation of PVW08 is a constant 34 ms that does not grow with the latency,
+so the ratio between the two drops from about 3 to about 1.16.
 
 Reproduce with:
 
