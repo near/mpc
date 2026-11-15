@@ -203,7 +203,6 @@ mod tests {
     };
 
     fn signature_request() -> SignatureRequest {
-        // TODO: move this to common test function module since there are more duplicates elsewhere
         SignatureRequest {
             id: CryptoHash(rand::random()),
             // All other fields are irrelevant for the test.
