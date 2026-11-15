@@ -67,6 +67,11 @@ name = "inversion"
 harness = false
 
 [[bench]]
+name = "pvw08"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
 name = "naive_robust_ecdsa"
 harness = false
 required-features = ["test-utils"]

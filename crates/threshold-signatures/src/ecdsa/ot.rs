@@ -4,5 +4,5 @@ pub mod base;
 pub mod bits;
 pub mod extension;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod test;

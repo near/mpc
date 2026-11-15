@@ -21,6 +21,8 @@ pub type Polynomial = crate::crypto::polynomials::Polynomial<Secp256K1Sha256>;
 pub type PolynomialCommitment = crate::crypto::polynomials::PolynomialCommitment<Secp256K1Sha256>;
 
 pub use ot::base::pvw08;
+#[cfg(feature = "test-utils")]
+pub use ot::test::{run_batch_random_ot, run_pvw08_batch_random_ot};
 pub(crate) use signature::x_coordinate;
 pub use signature::{Signature, SignatureOption};
 
