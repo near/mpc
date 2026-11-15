@@ -589,7 +589,7 @@ where
         let mut last_id = self
             .last_id
             .lock()
-            .map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?;
+            .map_err(|_| anyhow::anyhow!("last_id lock poisoned"))?;
         let start = match *last_id {
             Some(last_id) => last_id.pick_new_after(),
             None => UniqueId::generate(self.my_participant_id),
@@ -668,7 +668,7 @@ where
             let mut in_flight = self
                 .unowned_in_flight
                 .lock()
-                .map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?;
+                .map_err(|_| anyhow::anyhow!("in_flight lock poisoned"))?;
             if !in_flight.insert(id) {
                 anyhow::bail!(
                     "Unowned {} is already being taken by another task: {:?}",
