@@ -7,6 +7,7 @@ use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
+use anyhow::anyhow;
 use borsh::BorshDeserialize;
 use near_time::Clock;
 use serde::Serialize;
@@ -309,7 +310,7 @@ where
                             continue;
                         }
                         received = self.hot_receiver.recv_async() => {
-                            let (id, value) = received.expect("should never fail because self keeps a sender");
+                            let (id, value) = received?;
                             match self.cold_queue.lock().map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?.add_if_condition_not_satisfied(id, value) {
                                 ColdQueueAddIfNotSatisfiedResult::ConditionSatisfied(value) => {
                                     return Ok((id, value));
@@ -501,7 +502,7 @@ where
     T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
 {
     let (start, end): (Vec<u8>, Vec<u8>) =
-        DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix);
+        DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix)?;
     for item in db.iter_range(db_col, &start, &end) {
         let (key, value) = item?;
         let value: T = serde_json::from_slice(&value)?;
@@ -531,7 +532,7 @@ where
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
         // supports asynchronous blocking when an asset isn't available.
         let mut last_id = None;
-        let (start, end) = Self::make_prefix_range(my_participant_id, &prefix);
+        let (start, end) = Self::make_prefix_range(my_participant_id, &prefix)?;
         for item in db.iter_range(col, &start, &end) {
             let (key, value) = item?;
             let id = Self::decode_key(&key, prefix.len())?;
@@ -551,14 +552,22 @@ where
         })
     }
 
-    fn make_prefix_range(participant_id: ParticipantId, prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    fn make_prefix_range(
+        participant_id: ParticipantId,
+        prefix: &[u8],
+    ) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
         let mut start = prefix.to_vec();
         let mut end = prefix.to_vec();
         start.extend_from_slice(&UniqueId::prefix_for_participant_id(participant_id));
         end.extend_from_slice(&UniqueId::prefix_for_participant_id(
-            ParticipantId::from_raw(participant_id.raw().checked_add(1).unwrap()),
+            ParticipantId::from_raw(
+                participant_id
+                    .raw()
+                    .checked_add(1)
+                    .ok_or(anyhow!("checked_add overflow"))?,
+            ),
         ));
-        (start, end)
+        Ok((start, end))
     }
 
     fn make_key(&self, id: UniqueId) -> anyhow::Result<Vec<u8>> {
