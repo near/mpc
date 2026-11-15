@@ -101,17 +101,20 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         if self.cold_available == 0 {
             return ColdQueueTakeResult::NotTakenAndNoneAvailable;
         }
-        let (id, value) = self.cold_queue.pop_front().unwrap(); // can't fail
-        self.cold_available -= 1;
-        if self.cold_ready > 0 {
-            self.cold_ready -= 1;
-            return ColdQueueTakeResult::Taken((id, value));
+        if let Some((id, value)) = self.cold_queue.pop_front() {
+            self.cold_available -= 1;
+            if self.cold_ready > 0 {
+                self.cold_ready -= 1;
+                return ColdQueueTakeResult::Taken((id, value));
+            }
+            if (self.condition)(&self.last_condition_value, &value) {
+                return ColdQueueTakeResult::Taken((id, value));
+            }
+            self.cold_queue.push_back((id, value));
+            ColdQueueTakeResult::NotTakenButSomeMayBeAvailable
+        } else {
+            ColdQueueTakeResult::NotTakenButSomeMayBeAvailable
         }
-        if (self.condition)(&self.last_condition_value, &value) {
-            return ColdQueueTakeResult::Taken((id, value));
-        }
-        self.cold_queue.push_back((id, value));
-        ColdQueueTakeResult::NotTakenButSomeMayBeAvailable
     }
 
     /// Try to remove and return an element that *doesn't* satisfy the current condition.
