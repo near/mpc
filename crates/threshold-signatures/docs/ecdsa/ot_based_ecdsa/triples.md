@@ -160,7 +160,7 @@ This protocol is also parameterized by a unique session id $\text{sid}$
 2. $\mathcal{R}$ and $\mathcal{S}$ run `Correlated-OT-Extension`, with batch size $\kappa'$, and session id $\text{sid}$ with $\mathcal{R}$
 using $X_{ij}$ as its input.
 The parties receive $T_ {ij}$ and $Q_ {ij}$ respectively.
-3. $\mathcal{S}$ samples $s \xleftarrow{R} \mathbb{F}_2^\lambda$.
+3. $\mathcal{S}$ samples a 32-byte seed $s \xleftarrow{R} \mathbb{F}_2^{2\lambda}$.
 4. $\star$ $\mathcal{S}$ sends $s$ to $\mathcal{R}$.
 5. $\bullet$ $\mathcal{R}$ waits to receive $s$.
 6. Let $\mu \gets \lceil \kappa' / \lambda \rceil$,
@@ -216,7 +216,7 @@ $$
 2. $\star$ $\mathcal{S}$ sends $(a + \delta_i + v_i^0, -a + \delta_i + v_i^1)$ to $\mathcal{R}$.
 3. $\bullet$ $\mathcal{R}$ waits to receive $(c^0_i, c^1_i)$ from $\mathcal{S}$, and
 sets $m_i \gets c^{t_i}_i - v_i^{t_i}$
-4. $\mathcal{R}$ samples $s \xleftarrow{R} \mathbb{F}_2^\lambda$, and
+4. $\mathcal{R}$ samples a 32-byte seed $s \xleftarrow{R} \mathbb{F}_2^{2\lambda}$, and
 extends this into $\chi_2, \ldots, \chi_\kappa \gets \text{PRG}(s)$.
 $\mathcal{R}$ then sets $\chi_ 1 \gets (-1)^{t_ 1}(b - \sum_{i \in [2\ldots \kappa]} \chi_ i \cdot (-1)^{t_ i})$.
 (This makes it so that $b = \langle \chi_ i,  (-1)^{t_ i} \rangle$)
