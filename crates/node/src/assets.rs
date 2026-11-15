@@ -324,11 +324,14 @@ where
         }
     }
 
-    pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
+    pub async fn take_owned_matching(&self, cond_val: CondVal) -> anyhow::Result<(UniqueId, T)> {
         loop {
             let cold_queue_new_elements = self.cold_queue_new_elements.notified();
             let (taken, ingested) = {
-                let mut cold = self.cold_queue.lock().unwrap();
+                let mut cold = self
+                    .cold_queue
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?;
                 // Refresh before selecting: an element that satisfies a stale condition value
                 // would be handed out and then fail downstream.
                 cold.update_condition_value();
@@ -352,7 +355,7 @@ where
                 self.cold_queue_new_elements.notify_waiters();
             }
             if let Some(taken) = taken {
-                return taken;
+                return Ok(taken);
             }
 
             // If the cold queue is exhausted, wait for a new element.
@@ -364,8 +367,8 @@ where
                     continue;
                 }
                 received = self.hot_receiver.recv_async() => {
-                    let (id, value) = received.expect("should never fail because self keeps a sender");
-                    self.cold_queue.lock().unwrap().ingest(id, value);
+                    let (id, value) = received?;
+                    self.cold_queue.lock().map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?.ingest(id, value);
                     self.cold_queue_new_elements.notify_waiters();
                 }
             }
@@ -555,10 +558,10 @@ where
         (start, end)
     }
 
-    fn make_key(&self, id: UniqueId) -> Vec<u8> {
+    fn make_key(&self, id: UniqueId) -> anyhow::Result<Vec<u8>> {
         let mut key = self.prefix.clone();
-        key.extend_from_slice(&borsh::to_vec(&id).unwrap());
-        key
+        key.extend_from_slice(&borsh::to_vec(&id)?);
+        Ok(key)
     }
 
     fn decode_key(key: &[u8], prefix_len: usize) -> anyhow::Result<UniqueId> {
@@ -608,14 +611,14 @@ where
     pub async fn take_owned(&self) -> anyhow::Result<(UniqueId, T)> {
         let (id, asset) = self.owned_queue.take_owned().await?;
         let mut update = self.db.update();
-        update.delete(self.col, &self.make_key(id));
+        update.delete(self.col, &self.make_key(id)?);
         update.commit()?;
         Ok((id, asset))
     }
 
     /// Adds an owned asset to the storage.
     pub fn add_owned(&self, id: UniqueId, value: T) -> anyhow::Result<()> {
-        let key = self.make_key(id);
+        let key = self.make_key(id)?;
         let value_ser = serde_json::to_vec(&value)?;
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
@@ -635,7 +638,7 @@ where
         if !removed_cold_ids.is_empty() {
             let mut update = self.db.update();
             for id in removed_cold_ids {
-                update.delete(self.col, &self.make_key(id));
+                update.delete(self.col, &self.make_key(id)?);
             }
             update.commit()?;
         }
@@ -644,7 +647,7 @@ where
 
     /// Adds an unowned asset to the storage.
     pub fn add_unowned(&self, id: UniqueId, value: T) -> anyhow::Result<()> {
-        let key = self.make_key(id);
+        let key = self.make_key(id)?;
         let value_ser = serde_json::to_vec(&value)?;
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
@@ -684,20 +687,19 @@ where
     /// the supplied `eligible` set. Blocks indefinitely if none becomes
     /// available.
     /// Callers are expected to enforce their own timeout.
-    pub async fn take_owned_matching(&self, eligible: Vec<ParticipantId>) -> (UniqueId, T) {
-        let (id, val) = self.owned_queue.take_owned_matching(eligible).await;
+    pub async fn take_owned_matching(
+        &self,
+        eligible: Vec<ParticipantId>,
+    ) -> anyhow::Result<(UniqueId, T)> {
+        let (id, val) = self.owned_queue.take_owned_matching(eligible).await?;
         let mut update = self.db.update();
-        update.delete(self.col, &self.make_key(id));
-        update
-            .commit()
-            // TODO(#4090): propagate err instead in here and rest of the functions
-            // in this file.
-            .expect("Unrecoverable error writing to database");
-        (id, val)
+        update.delete(self.col, &self.make_key(id)?);
+        update.commit()?;
+        Ok((id, val))
     }
 
     fn take_unowned_inner(&self, id: UniqueId) -> anyhow::Result<T> {
-        let key = self.make_key(id);
+        let key = self.make_key(id)?;
         let value_ser = self.db.get(self.col, &key)?.ok_or_else(|| {
             anyhow::anyhow!("Unowned {} not found in the database: {:?}", self.col, id)
         })?;
@@ -1580,7 +1582,7 @@ mod tests {
         let taken = queue.take_owned_matching(vec![3, 4]).now_or_never();
 
         // Then
-        assert_eq!(taken, Some((id2, 3)));
+        assert_eq!(taken.unwrap().unwrap(), (id2, 3));
         assert_eq!(queue.available().unwrap(), 2);
         assert_eq!(queue.counts().unwrap().offline, 0);
     }
@@ -1626,7 +1628,7 @@ mod tests {
             .now_or_never();
 
         // Then: the one the stale value would have allowed is skipped
-        assert_eq!(taken, Some((id_fresh, online_participant)));
+        assert_eq!(taken.unwrap().unwrap(), (id_fresh, online_participant));
         // and it is parked rather than dropped, so it becomes usable again on reconnect
         assert_eq!(queue.counts().unwrap().offline, 1);
         assert_eq!(queue.available().unwrap(), 0);
@@ -1656,7 +1658,7 @@ mod tests {
 
         // Then
         queue.add_owned(id2, 3).unwrap();
-        assert_eq!(fut.now_or_never().unwrap(), (id2, 3));
+        assert_eq!(fut.now_or_never().unwrap().unwrap(), (id2, 3));
         assert_eq!(queue.available().unwrap(), 1);
     }
 
@@ -1758,7 +1760,8 @@ mod tests {
         // When
         let taken = store
             .take_owned_matching(vec![ParticipantId::from_raw(456)])
-            .await;
+            .await
+            .unwrap();
         drop(store);
         let reopened = new_store(db);
 
@@ -1768,7 +1771,8 @@ mod tests {
         assert_eq!(
             reopened
                 .take_owned_matching(vec![ParticipantId::from_raw(123)])
-                .await,
+                .await
+                .unwrap(),
             (id1, 123)
         );
     }
