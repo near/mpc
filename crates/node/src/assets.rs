@@ -677,7 +677,7 @@ where
             let mut in_flight = self
                 .unowned_in_flight
                 .lock()
-                .map_err(|_| anyhow::anyhow!("in_flight lock poisoned"))?;
+                .map_err(|_| anyhow::anyhow!("unowned_in_flight lock poisoned"))?;
             if !in_flight.insert(id) {
                 anyhow::bail!(
                     "Unowned {} is already being taken by another task: {:?}",
@@ -690,7 +690,7 @@ where
         // Always remove from in-flight, whether the take succeeded or not.
         self.unowned_in_flight
             .lock()
-            .map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?
+            .map_err(|_| anyhow::anyhow!("unowned_in_flight lock poisoned"))?
             .remove(&id);
         result
     }
