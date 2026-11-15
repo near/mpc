@@ -264,7 +264,7 @@ mod tests {
     use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
     use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
-    use near_sdk::testing_env;
+    use near_sdk::{AccountId, testing_env};
     use rstest::rstest;
     use std::collections::BTreeSet;
 
@@ -288,13 +288,7 @@ mod tests {
             .collect();
 
         for participant_account_id in participant_account_ids {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(participant_account_id.clone())
-                    .predecessor_account_id(participant_account_id.clone())
-                    .block_timestamp(CURRENT_BLOCK_TIME_STAMP)
-                    .build()
-            );
+            set_caller_at(&participant_account_id, CURRENT_BLOCK_TIME_STAMP);
 
             contract
                 .vote_mpc_node_manifest_digest(code_hash.into())
@@ -314,6 +308,25 @@ mod tests {
         )
     }
 
+    fn set_caller(account_id: &AccountId) {
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .build()
+        );
+    }
+
+    fn set_caller_at(account_id: &AccountId, block_timestamp: u64) {
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id.clone())
+                .block_timestamp(block_timestamp)
+                .build()
+        );
+    }
+
     fn make_launcher_hash(byte: u8) -> dtos::LauncherImageHash {
         dtos::LauncherImageHash::from([byte; 32])
     }
@@ -326,12 +339,7 @@ mod tests {
 
         // First 2 votes (below threshold of 3) — launcher should NOT be added yet
         for (account_id, _, _) in &participant_list[0..2] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("vote should succeed");
@@ -343,12 +351,7 @@ mod tests {
 
         // 3rd vote reaches threshold — launcher should be added
         let (account_id, _, _) = &participant_list[2];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -365,12 +368,7 @@ mod tests {
         let launcher_hash = make_launcher_hash(0xBB);
 
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
 
         // Same participant votes twice — should count as 1 vote
         contract
@@ -396,12 +394,7 @@ mod tests {
         // Add two launcher hashes so removal of one doesn't hit the "last entry" guard
         for hash in [launcher_hash, launcher_hash_2] {
             for (account_id, _, _) in participant_list {
-                testing_env!(
-                    VMContextBuilder::new()
-                        .signer_account_id(account_id.clone())
-                        .predecessor_account_id(account_id.clone())
-                        .build()
-                );
+                set_caller(account_id);
                 contract
                     .vote_add_launcher_hash(hash)
                     .expect("add vote should succeed");
@@ -411,12 +404,7 @@ mod tests {
 
         // Now vote to remove — first 3 votes (not all 4) should NOT remove
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_remove_launcher_hash(launcher_hash)
                 .expect("remove vote should succeed");
@@ -429,12 +417,7 @@ mod tests {
 
         // 4th vote — unanimous, should remove
         let (account_id, _, _) = &participant_list[3];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
         contract
             .vote_remove_launcher_hash(launcher_hash)
             .expect("remove vote should succeed");
@@ -454,12 +437,7 @@ mod tests {
 
         // Add a single launcher hash
         for (account_id, _, _) in participant_list {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("add vote should succeed");
@@ -468,12 +446,7 @@ mod tests {
 
         // All 4 vote to remove — should still not remove because it's the last one
         for (account_id, _, _) in participant_list {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_remove_launcher_hash(launcher_hash)
                 .expect("remove vote should succeed");
@@ -497,13 +470,7 @@ mod tests {
         let block_ts = 1_000_000_000u64;
 
         for (account_id, _, _) in participant_list {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .block_timestamp(block_ts)
-                    .build()
-            );
+            set_caller_at(account_id, block_ts);
             contract
                 .vote_mpc_node_manifest_digest(mpc_hash)
                 .expect("mpc vote should succeed");
@@ -511,13 +478,7 @@ mod tests {
 
         // Now add a launcher hash — should auto-derive compose hashes
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .block_timestamp(block_ts)
-                    .build()
-            );
+            set_caller_at(account_id, block_ts);
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("launcher vote should succeed");
@@ -545,12 +506,7 @@ mod tests {
 
         // Vote with 3 participants to reach threshold
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("vote should succeed");
@@ -560,12 +516,7 @@ mod tests {
         // Votes should be cleared — voting for a second hash should start from 0
         let launcher_hash_2 = make_launcher_hash(0xFF);
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
         contract
             .vote_add_launcher_hash(launcher_hash_2)
             .expect("vote should succeed");
@@ -594,12 +545,7 @@ mod tests {
         // First vote
         let (account_0, _, _) = &participant_list[0];
         let voter_0 = dtos::AuthenticatedAccountId(account_0.clone());
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_0.clone())
-                .predecessor_account_id(account_0.clone())
-                .build()
-        );
+        set_caller(account_0);
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -611,12 +557,7 @@ mod tests {
         // Second vote
         let (account_1, _, _) = &participant_list[1];
         let voter_1 = dtos::AuthenticatedAccountId(account_1.clone());
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_1.clone())
-                .predecessor_account_id(account_1.clone())
-                .build()
-        );
+        set_caller(account_1);
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -630,12 +571,7 @@ mod tests {
 
         // Third vote reaches threshold — votes should be cleared
         let (account_2, _, _) = &participant_list[2];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_2.clone())
-                .predecessor_account_id(account_2.clone())
-                .build()
-        );
+        set_caller(account_2);
         contract
             .vote_add_launcher_hash(launcher_hash)
             .expect("vote should succeed");
@@ -662,12 +598,7 @@ mod tests {
 
         let mut expected_voters = BTreeSet::new();
         for (i, (account, _, _)) in participant_list[..threshold as usize].iter().enumerate() {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account.clone())
-                    .predecessor_account_id(account.clone())
-                    .build()
-            );
+            set_caller(account);
             expected_voters.insert(dtos::AuthenticatedAccountId(account.clone()));
 
             // When
@@ -699,13 +630,7 @@ mod tests {
         // First approve an MPC image
         let mpc_hash_1 = mpc_primitives::hash::NodeImageHash::from([0x11; 32]);
         for (account_id, _, _) in participant_list {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .block_timestamp(block_ts)
-                    .build()
-            );
+            set_caller_at(account_id, block_ts);
             contract
                 .vote_mpc_node_manifest_digest(mpc_hash_1)
                 .expect("mpc vote should succeed");
@@ -713,13 +638,7 @@ mod tests {
 
         // Add a launcher hash
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .block_timestamp(block_ts)
-                    .build()
-            );
+            set_caller_at(account_id, block_ts);
             contract
                 .vote_add_launcher_hash(launcher_hash)
                 .expect("launcher vote should succeed");
@@ -729,13 +648,7 @@ mod tests {
         // Now vote in a second MPC image — should auto-derive a new compose hash
         let mpc_hash_2 = mpc_primitives::hash::NodeImageHash::from([0x22; 32]);
         for (account_id, _, _) in participant_list {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .block_timestamp(block_ts)
-                    .build()
-            );
+            set_caller_at(account_id, block_ts);
             contract
                 .vote_mpc_node_manifest_digest(mpc_hash_2)
                 .expect("mpc vote 2 should succeed");
@@ -770,13 +683,7 @@ mod tests {
 
         let vote_mpc = |contract: &mut MpcContract, hash: dtos::NodeImageHash, ts: u64| {
             for (account_id, _, _) in participant_list {
-                testing_env!(
-                    VMContextBuilder::new()
-                        .signer_account_id(account_id.clone())
-                        .predecessor_account_id(account_id.clone())
-                        .block_timestamp(ts)
-                        .build()
-                );
+                set_caller_at(account_id, ts);
                 contract
                     .vote_mpc_node_manifest_digest(hash)
                     .expect("mpc vote should succeed");
@@ -785,13 +692,7 @@ mod tests {
 
         let vote_launcher = |contract: &mut MpcContract, hash: dtos::LauncherImageHash, ts: u64| {
             for (account_id, _, _) in &participant_list[0..3] {
-                testing_env!(
-                    VMContextBuilder::new()
-                        .signer_account_id(account_id.clone())
-                        .predecessor_account_id(account_id.clone())
-                        .block_timestamp(ts)
-                        .build()
-                );
+                set_caller_at(account_id, ts);
                 contract
                     .vote_add_launcher_hash(hash)
                     .expect("launcher vote should succeed");
@@ -813,13 +714,7 @@ mod tests {
         assert_eq!(contract.allowed_launcher_compose_hashes().len(), 2);
 
         let t2 = t1 + upgrade_deadline + sec;
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(participant_list[0].0.clone())
-                .predecessor_account_id(participant_list[0].0.clone())
-                .block_timestamp(t2)
-                .build()
-        );
+        set_caller_at(&participant_list[0].0, t2);
         assert_eq!(
             contract.allowed_launcher_compose_hashes().len(),
             2,
@@ -869,12 +764,7 @@ mod tests {
 
         // First 2 votes — below threshold (3)
         for (account_id, _, _) in &participant_list[0..2] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("add vote should succeed");
@@ -886,12 +776,7 @@ mod tests {
 
         // 3rd vote — threshold reached
         let (account_id, _, _) = &participant_list[2];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
         contract
             .vote_add_os_measurement(measurement.clone())
             .expect("add vote should succeed");
@@ -900,12 +785,7 @@ mod tests {
 
         // Voting for the same measurement again should not duplicate
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("add vote should succeed");
@@ -929,12 +809,7 @@ mod tests {
         // Add two measurements
         for m in [&measurement_1, &measurement_2] {
             for (account_id, _, _) in participant_list {
-                testing_env!(
-                    VMContextBuilder::new()
-                        .signer_account_id(account_id.clone())
-                        .predecessor_account_id(account_id.clone())
-                        .build()
-                );
+                set_caller(account_id);
                 contract
                     .vote_add_os_measurement(m.clone())
                     .expect("add vote should succeed");
@@ -944,12 +819,7 @@ mod tests {
 
         // 3 votes to remove — not enough (need all 4)
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_remove_os_measurement(measurement_1.clone())
                 .expect("remove vote should succeed");
@@ -962,12 +832,7 @@ mod tests {
 
         // 4th vote — unanimous, should remove
         let (account_id, _, _) = &participant_list[3];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
         contract
             .vote_remove_os_measurement(measurement_1.clone())
             .expect("remove vote should succeed");
@@ -984,12 +849,7 @@ mod tests {
 
         // Add a single measurement
         for (account_id, _, _) in participant_list {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("add vote should succeed");
@@ -998,12 +858,7 @@ mod tests {
 
         // All 4 vote to remove — should not remove because it's the last one
         for (account_id, _, _) in participant_list {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_remove_os_measurement(measurement.clone())
                 .expect("remove vote should succeed");
@@ -1027,12 +882,7 @@ mod tests {
 
         // Cast one vote
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
         contract
             .vote_add_os_measurement(measurement.clone())
             .expect("add vote should succeed");
@@ -1060,12 +910,7 @@ mod tests {
 
         // Add first measurement (3 votes = threshold)
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_os_measurement(measurement_1.clone())
                 .expect("add vote should succeed");
@@ -1077,12 +922,7 @@ mod tests {
 
         // Add second measurement
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_os_measurement(measurement_2.clone())
                 .expect("add vote should succeed");
@@ -1104,12 +944,7 @@ mod tests {
 
         // Vote with 3 participants to reach threshold
         for (account_id, _, _) in &participant_list[0..3] {
-            testing_env!(
-                VMContextBuilder::new()
-                    .signer_account_id(account_id.clone())
-                    .predecessor_account_id(account_id.clone())
-                    .build()
-            );
+            set_caller(account_id);
             contract
                 .vote_add_os_measurement(measurement.clone())
                 .expect("vote should succeed");
@@ -1119,12 +954,7 @@ mod tests {
         // Votes should be cleared — voting for a second measurement should start from 0
         let measurement_2 = make_measurement(0xBB);
         let (account_id, _, _) = &participant_list[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .build()
-        );
+        set_caller(account_id);
         contract
             .vote_add_os_measurement(measurement_2.clone())
             .expect("vote should succeed");

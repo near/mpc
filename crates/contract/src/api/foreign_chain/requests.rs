@@ -211,8 +211,8 @@ mod tests {
     use rand::SeedableRng;
 
     use rstest::rstest;
+    use std::assert_matches;
     use std::str::FromStr;
-    use std::{assert_matches, panic};
 
     /// Whitelists the chains and registers them for all participants, making them available.
     fn make_chains_available(
@@ -321,9 +321,13 @@ mod tests {
         );
     }
 
-    #[test]
-    fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
-        // Given
+    fn setup_pending_verify_foreign_tx(
+        expected_payload_hash: Option<dtos::Hash256>,
+    ) -> (
+        MpcContract,
+        dtos::VerifyForeignTransactionRequest,
+        dtos::VerifyForeignTransactionResponse,
+    ) {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, secret_key) =
             basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
@@ -335,20 +339,15 @@ mod tests {
         let request_args = dtos::VerifyForeignTransactionRequestArgs {
             domain_id: DomainId::default().0.into(),
             payload_version: ForeignTxPayloadVersion::V1,
-            expected_payload_hash: None,
+            expected_payload_hash,
             request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
                 tx_id: [7u8; 32].into(),
                 confirmations: 2.into(),
                 extractors: [BitcoinExtractor::BlockHash].into(),
             }),
         };
-
-        // When
         let request = args_into_verify_foreign_tx_request(request_args.clone());
         contract.verify_foreign_transaction(request_args);
-        contract
-            .get_pending_verify_foreign_tx_request(&request)
-            .unwrap();
         let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
             request: request.request.clone(),
             values: vec![ExtractedValue::BitcoinExtractedValue(
@@ -356,60 +355,38 @@ mod tests {
             )],
         });
         let response = sign_foreign_tx_payload(&secret_key, &payload);
-
         with_active_participant_and_attested_context(&contract);
+        (contract, request, response)
+    }
+
+    #[test]
+    fn respond_verify_foreign_tx__should_succeed_when_response_is_valid_and_request_exists() {
+        // Given
+        let (mut contract, request, response) = setup_pending_verify_foreign_tx(None);
+        contract
+            .get_pending_verify_foreign_tx_request(&request)
+            .unwrap();
+
+        // When
+        let result = contract.respond_verify_foreign_tx(request.clone(), response.clone());
 
         // Then
-        match contract.respond_verify_foreign_tx(request.clone(), response.clone()) {
-            Ok(_) => {
-                contract
-                    .return_verify_foreign_tx_and_clean_state_on_success(
-                        request.clone(),
-                        Ok(response),
-                    )
-                    .detach();
-
-                assert!(
-                    contract
-                        .get_pending_verify_foreign_tx_request(&request)
-                        .is_none(),
-                );
-            }
-            Err(_) => panic!("respond_verify_foreign_tx should not fail"),
-        }
+        assert_matches!(result, Ok(_));
+        contract
+            .return_verify_foreign_tx_and_clean_state_on_success(request.clone(), Ok(response))
+            .detach();
+        assert!(
+            contract
+                .get_pending_verify_foreign_tx_request(&request)
+                .is_none(),
+        );
     }
 
     #[test]
     fn respond_verify_foreign_tx__should_reject_response_with_unexpected_payload_hash() {
         // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
-        make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
-        testing_env!(context.clone());
-        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
-            unreachable!();
-        };
-        let request_args = dtos::VerifyForeignTransactionRequestArgs {
-            domain_id: DomainId::default().0.into(),
-            payload_version: ForeignTxPayloadVersion::V1,
-            expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
-            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
-                tx_id: [7u8; 32].into(),
-                confirmations: 2.into(),
-                extractors: [BitcoinExtractor::BlockHash].into(),
-            }),
-        };
-        let request = args_into_verify_foreign_tx_request(request_args.clone());
-        contract.verify_foreign_transaction(request_args);
-        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: request.request.clone(),
-            values: vec![ExtractedValue::BitcoinExtractedValue(
-                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
-            )],
-        });
-        let response = sign_foreign_tx_payload(&secret_key, &payload);
-        with_active_participant_and_attested_context(&contract);
+        let (mut contract, request, response) =
+            setup_pending_verify_foreign_tx(Some(dtos::Hash256([1u8; 32])));
 
         // When
         let result = contract.respond_verify_foreign_tx(request.clone(), response);
@@ -473,34 +450,8 @@ mod tests {
     #[test]
     fn respond_verify_foreign_tx__should_reject_request_with_erased_expected_payload_hash() {
         // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, secret_key) =
-            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
-        make_chains_available(&mut contract, [dtos::ForeignChain::Bitcoin]);
-        testing_env!(context.clone());
-        let SharedSecretKey::Secp256k1(secret_key) = secret_key else {
-            unreachable!();
-        };
-        let request_args = dtos::VerifyForeignTransactionRequestArgs {
-            domain_id: DomainId::default().0.into(),
-            payload_version: ForeignTxPayloadVersion::V1,
-            expected_payload_hash: Some(dtos::Hash256([1u8; 32])),
-            request: dtos::ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
-                tx_id: [7u8; 32].into(),
-                confirmations: 2.into(),
-                extractors: [BitcoinExtractor::BlockHash].into(),
-            }),
-        };
-        let request = args_into_verify_foreign_tx_request(request_args.clone());
-        contract.verify_foreign_transaction(request_args);
-        let payload = ForeignTxSignPayload::V1(ForeignTxSignPayloadV1 {
-            request: request.request.clone(),
-            values: vec![ExtractedValue::BitcoinExtractedValue(
-                BitcoinExtractedValue::BlockHash([42u8; 32].into()),
-            )],
-        });
-        let response = sign_foreign_tx_payload(&secret_key, &payload);
-        with_active_participant_and_attested_context(&contract);
+        let (mut contract, request, response) =
+            setup_pending_verify_foreign_tx(Some(dtos::Hash256([1u8; 32])));
 
         // When
         let tampered_request = dtos::VerifyForeignTransactionRequest {
@@ -606,56 +557,51 @@ mod tests {
         });
     }
 
-    #[test]
-    #[should_panic(expected = "Requested foreign chain, Bitcoin, is not available.")]
-    fn verify_foreign_tx__should_reject_chain_not_in_policy() {
-        // Given
+    fn setup_foreign_tx_coverage(
+        whitelisted: Vec<dtos::ForeignChain>,
+        covered: Vec<dtos::ForeignChain>,
+        covering_participants: usize,
+    ) -> MpcContract {
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (context, mut contract, _sk) =
             basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
-        make_chains_available(&mut contract, [dtos::ForeignChain::Solana]);
-        testing_env!(context.clone());
-
-        // When - requesting Bitcoin which is not in the policy
-        contract.verify_foreign_transaction(bitcoin_request_args());
-    }
-
-    #[test]
-    #[should_panic(expected = "Requested foreign chain, Bitcoin, is not available.")]
-    fn verify_foreign_tx__should_reject_chain_covered_by_all_participants_but_not_whitelisted() {
-        // Given
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
-        for account_id in participant_account_ids(&contract) {
-            register_foreign_chains_config_for(
-                &mut contract,
-                &account_id,
-                [dtos::ForeignChain::Bitcoin],
-            );
+        for chain in whitelisted {
+            whitelist_chain(&mut contract, chain);
+        }
+        for account_id in participant_account_ids(&contract)
+            .iter()
+            .take(covering_participants)
+        {
+            register_foreign_chains_config_for(&mut contract, account_id, covered.iter().copied());
         }
         testing_env!(context.clone());
-
-        // When
-        contract.verify_foreign_transaction(bitcoin_request_args());
+        contract
     }
 
-    #[test]
+    #[rstest]
+    #[case::chain_not_in_policy(
+        vec![dtos::ForeignChain::Solana],
+        vec![dtos::ForeignChain::Solana],
+        4
+    )]
+    #[case::chain_covered_by_all_participants_but_not_whitelisted(
+        vec![],
+        vec![dtos::ForeignChain::Bitcoin],
+        4
+    )]
+    #[case::whitelisted_chain_covered_by_fewer_than_threshold(
+        vec![dtos::ForeignChain::Bitcoin],
+        vec![dtos::ForeignChain::Bitcoin],
+        2
+    )]
     #[should_panic(expected = "Requested foreign chain, Bitcoin, is not available.")]
-    fn verify_foreign_tx__should_reject_whitelisted_chain_covered_by_fewer_than_threshold() {
-        // Given: 4 participants, ForeignTx reconstruction threshold 3; only 2 cover Bitcoin.
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
-        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
-        for account_id in participant_account_ids(&contract).iter().take(2) {
-            register_foreign_chains_config_for(
-                &mut contract,
-                account_id,
-                [dtos::ForeignChain::Bitcoin],
-            );
-        }
-        testing_env!(context.clone());
+    fn verify_foreign_tx__should_reject_unavailable_chain(
+        #[case] whitelisted: Vec<dtos::ForeignChain>,
+        #[case] covered: Vec<dtos::ForeignChain>,
+        #[case] covering_participants: usize,
+    ) {
+        // Given: 4 participants, ForeignTx reconstruction threshold 3.
+        let mut contract = setup_foreign_tx_coverage(whitelisted, covered, covering_participants);
 
         // When
         contract.verify_foreign_transaction(bitcoin_request_args());
@@ -664,18 +610,11 @@ mod tests {
     #[test]
     fn verify_foreign_tx__should_accept_chain_covered_by_threshold_of_participants() {
         // Given: 4 participants, ForeignTx reconstruction threshold 3; only 3 cover Bitcoin.
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (context, mut contract, _sk) =
-            basic_setup_with_protocol(Protocol::CaitSith, dtos::DomainPurpose::ForeignTx, &mut rng);
-        whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
-        for account_id in participant_account_ids(&contract).iter().take(3) {
-            register_foreign_chains_config_for(
-                &mut contract,
-                account_id,
-                [dtos::ForeignChain::Bitcoin],
-            );
-        }
-        testing_env!(context.clone());
+        let mut contract = setup_foreign_tx_coverage(
+            vec![dtos::ForeignChain::Bitcoin],
+            vec![dtos::ForeignChain::Bitcoin],
+            3,
+        );
         let request_args = bitcoin_request_args();
         let request = args_into_verify_foreign_tx_request(request_args.clone());
 

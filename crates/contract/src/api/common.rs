@@ -163,6 +163,7 @@ mod tests {
     use near_sdk::testing_env;
     use rand::SeedableRng;
     use rand::rngs::OsRng;
+    use rstest::rstest;
 
     fn override_context_for_preconditions(deposit: NearToken, prepaid_gas: Gas) {
         let predecessor: AccountId = "contract_account.near".parse().unwrap();
@@ -191,30 +192,28 @@ mod tests {
         assert_eq!(predecessor.as_str(), "contract_account.near");
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "was not found")]
-    fn check_request_preconditions__panics_when_domain_does_not_exist() {
-        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
-        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
-        contract.check_request_preconditions(
-            dtos::DomainId(999),
-            dtos::DomainPurpose::Sign,
-            Gas::from_tgas(1),
-            NearToken::from_yoctonear(1),
-        );
-    }
-
-    #[test]
+    #[case::domain_does_not_exist(dtos::DomainId(999), dtos::DomainPurpose::Sign)]
     #[should_panic(expected = "purpose")]
-    fn check_request_preconditions__panics_when_domain_purpose_does_not_match() {
+    #[case::domain_purpose_does_not_match(dtos::DomainId::default(), dtos::DomainPurpose::CKD)]
+    fn check_request_preconditions__panics_when_domain_is_invalid(
+        #[case] domain_id: dtos::DomainId,
+        #[case] purpose: dtos::DomainPurpose,
+    ) {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
         let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut rng);
+
+        // When
         contract.check_request_preconditions(
-            dtos::DomainId::default(),
-            dtos::DomainPurpose::CKD,
+            domain_id,
+            purpose,
             Gas::from_tgas(1),
             NearToken::from_yoctonear(1),
         );
+
+        // Then
     }
 
     #[test]

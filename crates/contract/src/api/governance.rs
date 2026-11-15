@@ -311,149 +311,82 @@ mod tests {
         contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
     }
 
-    #[test]
-    fn vote_new_parameters__should_reject_when_per_domain_threshold_exceeds_participants() {
-        // Given: a Running contract with 3 participants and one domain.
+    struct CurrentThresholds {
+        participants: usize,
+        governance: u64,
+        reconstruction: u64,
+    }
+
+    struct ProposedThresholds {
+        participants: usize,
+        governance: u64,
+        reconstruction: Option<u64>,
+    }
+
+    #[rstest]
+    #[case::per_domain_threshold_exceeds_participants(
+        CurrentThresholds { participants: 3, governance: 2, reconstruction: 2 },
+        ProposedThresholds { participants: 3, governance: 2, reconstruction: Some(4) },
+        Err(Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
+            reconstruction_threshold: 4,
+            participants: ParticipantCount::new(3),
+        }))
+    )]
+    #[case::shrinking_below_governance_threshold(
+        CurrentThresholds { participants: 4, governance: 3, reconstruction: 3 },
+        ProposedThresholds { participants: 2, governance: 2, reconstruction: None },
+        Err(Error::InvalidCandidateSet(InvalidCandidateSet::InsufficientOldParticipants))
+    )]
+    #[case::signing_threshold_exceeds_participants(
+        CurrentThresholds { participants: 3, governance: 2, reconstruction: 2 },
+        ProposedThresholds { participants: 3, governance: 4, reconstruction: None },
+        Err(Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
+            max: ParticipantCount::new(3),
+            found: 4,
+        }))
+    )]
+    #[case::per_domain_threshold_within_participant_count(
+        CurrentThresholds { participants: 5, governance: 4, reconstruction: 2 },
+        ProposedThresholds { participants: 5, governance: 4, reconstruction: Some(4) },
+        Ok(())
+    )]
+    #[case::governance_below_max_reconstruction(
+        CurrentThresholds { participants: 5, governance: 4, reconstruction: 4 },
+        ProposedThresholds { participants: 5, governance: 3, reconstruction: None },
+        Err(Error::InvalidThreshold(InvalidThreshold::BelowReconstructionThreshold {
+            reconstruction_threshold: 4,
+            governance_threshold: 3,
+        }))
+    )]
+    fn vote_new_parameters__should_validate_proposed_thresholds(
+        #[case] current: CurrentThresholds,
+        #[case] proposed: ProposedThresholds,
+        #[case] expected: Result<(), Error>,
+    ) {
+        // Given
         let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
-            3,
-            GovernanceThreshold::new(2),
-            ReconstructionThreshold::new(2),
+            current.participants,
+            GovernanceThreshold::new(current.governance),
+            ReconstructionThreshold::new(current.reconstruction),
         );
-        // ...and a proposal raising that domain's reconstruction threshold to 4.
-        let mut per_domain = BTreeMap::new();
-        per_domain.insert(domain_id, ReconstructionThreshold::new(4));
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
-            per_domain,
-        );
-
-        // When
-        let result = vote_params(&mut contract, &signer, &proposal);
-
-        // Then: 4 > 3 participants, so the guard rejects it.
-        assert_eq!(
-            result.unwrap_err(),
-            Error::DomainError(DomainError::ReconstructionThresholdExceedsParticipants {
-                reconstruction_threshold: 4,
-                participants: ParticipantCount::new(3),
-            })
-        );
-    }
-
-    #[test]
-    fn vote_new_parameters__should_reject_when_shrinking_below_governance_threshold() {
-        // Given: a Running contract with 4 participants and a GovernanceThreshold of 3.
-        let (mut contract, participants, signer, _domain_id) = setup_running_contract_with_domain(
-            4,
-            GovernanceThreshold::new(3),
-            ReconstructionThreshold::new(3),
-        );
-        // ...and a proposal that shrinks the participant set to 2 without touching
-        // the per-domain thresholds.
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(
-                participants.subset(0..2),
-                GovernanceThreshold::new(2),
-            )
-            .unwrap(),
-            BTreeMap::new(),
-        );
-
-        // When
-        let result = vote_params(&mut contract, &signer, &proposal);
-
-        // Then: the candidate-set guard rejects the proposal first, because only 2
-        // old participants remain — fewer than the GovernanceThreshold of 3. (Under
-        // the GovernanceThreshold >= max(ReconstructionThreshold) invariant this guard
-        // always fires before any per-domain ReconstructionThreshold check could.)
-        assert_matches!(
-            result.unwrap_err(),
-            Error::InvalidCandidateSet(InvalidCandidateSet::InsufficientOldParticipants)
-        );
-    }
-
-    #[test]
-    fn vote_new_parameters__should_reject_when_signing_threshold_exceeds_participants() {
-        // Given: a Running contract with 3 participants and one domain.
-        let (mut contract, participants, signer, _domain_id) = setup_running_contract_with_domain(
-            3,
-            GovernanceThreshold::new(2),
-            ReconstructionThreshold::new(2),
-        );
-        // ...and a proposal whose signing threshold (4) exceeds the participant set.
+        let per_domain = proposed
+            .reconstruction
+            .map(|threshold| (domain_id, ReconstructionThreshold::new(threshold)))
+            .into_iter()
+            .collect();
         let proposal = ProposedGovernanceThresholdParameters::new(
             GovernanceThresholdParameters::new_unvalidated(
-                participants,
-                GovernanceThreshold::new(4),
+                participants.subset(0..proposed.participants),
+                GovernanceThreshold::new(proposed.governance),
             ),
-            BTreeMap::new(),
+            per_domain,
         );
 
         // When
         let result = vote_params(&mut contract, &signer, &proposal);
 
         // Then
-        assert_eq!(
-            result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::MaxRequirementFailed {
-                max: ParticipantCount::new(3),
-                found: 4
-            })
-        );
-    }
-
-    #[test]
-    fn vote_new_parameters__should_accept_per_domain_threshold_within_participant_count() {
-        // Given: a Running contract with 5 participants (GovernanceThreshold 4) and one domain.
-        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
-            5,
-            GovernanceThreshold::new(4),
-            ReconstructionThreshold::new(2),
-        );
-        // ...and a proposal raising the domain's reconstruction threshold to 4,
-        // which fits the 5 participants and does not exceed the GovernanceThreshold.
-        let mut per_domain = BTreeMap::new();
-        per_domain.insert(domain_id, ReconstructionThreshold::new(4));
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(4)).unwrap(),
-            per_domain,
-        );
-
-        // When: a single participant votes (no transition yet).
-        let result = vote_params(&mut contract, &signer, &proposal);
-
-        // Then: the guard passes and the vote is recorded.
-        assert_matches!(result, Ok(()));
-    }
-
-    #[test]
-    fn vote_new_parameters__should_reject_governance_below_max_reconstruction() {
-        // Given: a Running contract with 5 participants, GovernanceThreshold 4, and a
-        // domain whose reconstruction threshold is 4.
-        let (mut contract, participants, signer, _domain_id) = setup_running_contract_with_domain(
-            5,
-            GovernanceThreshold::new(4),
-            ReconstructionThreshold::new(4),
-        );
-        // ...and a proposal lowering the GovernanceThreshold to 3 (valid on its own)
-        // while the domain keeps its reconstruction threshold of 4.
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(3)).unwrap(),
-            BTreeMap::new(),
-        );
-
-        // When
-        let result = vote_params(&mut contract, &signer, &proposal);
-
-        // Then: the GovernanceThreshold (3) would fall below the domain's
-        // reconstruction threshold (4), so the proposal is rejected.
-        assert_matches!(
-            result.unwrap_err(),
-            Error::InvalidThreshold(InvalidThreshold::BelowReconstructionThreshold {
-                reconstruction_threshold: 4,
-                governance_threshold: 3,
-            })
-        );
+        assert_eq!(result, expected);
     }
 
     #[test]

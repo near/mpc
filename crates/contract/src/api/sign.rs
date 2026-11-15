@@ -332,19 +332,13 @@ mod tests {
         }
     }
 
-    #[test]
-    fn respond__should_succeed_when_response_is_valid_and_request_exists() {
+    #[rstest]
+    #[case::current(false)]
+    #[case::legacy(true)]
+    fn respond__should_succeed_when_response_is_valid_and_request_exists(#[case] legacy: bool) {
         for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::RobustEcdsa] {
-            test_signature_common(true, false, protocol);
-            test_signature_common(false, false, protocol);
-        }
-    }
-
-    #[test]
-    fn respond__should_succeed_when_response_is_valid_and_request_exists_legacy() {
-        for protocol in [dtos::Protocol::CaitSith, dtos::Protocol::RobustEcdsa] {
-            test_signature_common(true, true, protocol);
-            test_signature_common(false, true, protocol);
+            test_signature_common(true, legacy, protocol);
+            test_signature_common(false, legacy, protocol);
         }
     }
 
