@@ -243,3 +243,50 @@ Reproduce with:
 NUM_PARTICIPANTS=7 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
 NUM_PARTICIPANTS=15 THRESHOLD=8 LATENCY_MS=100 cargo bench -p threshold-signatures --features test-utils --bench simulate_ecdsa
 ```
+
+## PVW08 base OT
+
+The `pvw08` bench measures the PVW08 messy-mode batch random OT (see
+[pvw08.md](../ecdsa/pvw08.md)) on secp256k1 and compares it with the CO15 base OT that
+triple generation uses today. These numbers were measured in November 2026 on an
+**Intel Core i9-14900F** with **64 GB RAM**, so they are comparable with each other but
+not with the tables above. Each time is the Criterion mean over 100 samples.
+
+The first table runs both protocols end to end for a batch of 128 transfers, the batch
+size of CO15. This is a naive measurement in the sense of [Naive Technique](#naive-technique):
+both parties run in one process, without network latency, and the time includes the
+sampling of their randomness.
+
+| Base OT | Transfers | Sender + receiver |
+|:-------:|:---------:|------------------:|
+| **CO15**  | 128 | 17.36 ms |
+| **PVW08** | 128 | 53.27 ms |
+
+| **Network Latency: 0 ms** |
+|---------------------------|
+
+<br>
+
+The second table splits PVW08 into its steps, each measured in isolation, together with
+the size of the two messages once serialized.
+
+| Transfers | CRS derivation | Receiver public keys | Sender encapsulation | Receiver decapsulation | Receiver message | Sender message |
+|:---------:|---------------:|---------------------:|---------------------:|-----------------------:|-----------------:|---------------:|
+| 128  | 0.14 ms | 7.72 ms  | 33.73 ms  | 5.86 ms  | 13367 Bytes  | 13445 Bytes  |
+| 1024 | 0.14 ms | 61.54 ms | 269.82 ms | 46.88 ms | 107394 Bytes | 107288 Bytes |
+
+| **Network Latency: 0 ms** |
+|---------------------------|
+
+Reading: PVW08 costs about three times the computation of CO15 for the same batch. The
+sender accounts for roughly 70% of it, as it computes eight scalar multiplications per
+transfer ($U_ i^b$ and $V_ i^b$ for both branches) against two for the receiver's public
+keys and one for its decapsulation. Every step is linear in the batch size, and each
+message carries about 105 bytes per transfer. The string is derived once per batch by
+each party, so its cost does not depend on the batch size.
+
+Reproduce with:
+
+```sh
+cargo bench -p threshold-signatures --features test-utils --bench pvw08
+```
