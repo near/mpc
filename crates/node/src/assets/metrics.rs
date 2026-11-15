@@ -155,7 +155,12 @@ mod tests {
         let ctx = TestContext::new(participants[0], Arc::new(Mutex::new(participants.clone())));
         let store = ctx.new_store::<PairedTriple>(DBCol::TripleV2, Vec::new());
         for _ in 0..2 {
-            store.add_owned(store.generate_and_reserve_id().unwrap(), make_triple(&participants)).unwrap();
+            store
+                .add_owned(
+                    store.generate_and_reserve_id().unwrap(),
+                    make_triple(&participants),
+                )
+                .unwrap();
         }
         report_store(&TRIPLE_GAUGES, "test-take-owned", &store).unwrap();
         assert_eq!(read(&TRIPLE_GAUGES, "test-take-owned").available, 2);
