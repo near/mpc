@@ -285,6 +285,23 @@ keys and one for its decapsulation. Every step is linear in the batch size, and 
 message carries about 105 bytes per transfer. The string is derived once per batch by
 each party, so its cost does not depend on the batch size.
 
+Both protocols take two rounds of communication, one message in each direction: CO15
+opens with the sender, PVW08 with the receiver. As in [Latency](#latency), the numbers
+with network latency are estimated using the formula
+**network_latency * protocol_number_rounds + raw_performance**; the `pvw08` bench does
+not simulate latency.
+
+| Base OT | Transfers | Rounds | Sender + receiver |
+|:-------:|:---------:|:------:|------------------:|
+| **CO15**  | 128 | 2 | 217.36 ms |
+| **PVW08** | 128 | 2 | 253.27 ms |
+
+| **Network Latency: 100 ms** |
+|-----------------------------|
+
+The extra computation of PVW08 is a constant 36 ms that does not grow with the latency,
+so the ratio between the two drops from about 3 to about 1.17.
+
 Reproduce with:
 
 ```sh
