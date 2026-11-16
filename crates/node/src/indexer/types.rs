@@ -1,4 +1,4 @@
-use crate::providers::verify_foreign_tx::SignedVerdict;
+use crate::providers::verify_foreign_tx::SignedOutcome;
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
@@ -215,9 +215,9 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
 }
 
 pub trait VerifyForeignTransactionRespondV2ArgsExt {
-    fn from_signed_verdict(
+    fn from_signed_outcome(
         yield_id: dtos::YieldId,
-        signed_verdict: SignedVerdict,
+        signed_outcome: SignedOutcome,
     ) -> anyhow::Result<Self>
     where
         Self: Sized;
@@ -226,22 +226,22 @@ pub trait VerifyForeignTransactionRespondV2ArgsExt {
 impl VerifyForeignTransactionRespondV2ArgsExt
     for contract_args::VerifyForeignTransactionRespondV2Args
 {
-    fn from_signed_verdict(
+    fn from_signed_outcome(
         yield_id: dtos::YieldId,
-        signed_verdict: SignedVerdict,
+        signed_outcome: SignedOutcome,
     ) -> anyhow::Result<Self> {
-        let SignedVerdict {
-            verdict,
+        let SignedOutcome {
+            outcome,
             payload_hash,
             signature,
             public_key,
-        } = signed_verdict;
+        } = signed_outcome;
         let recovery_id = signature
             .recovery_id(&public_key.to_element().to_affine(), payload_hash.as_ref())
             .context(RECOVERY_ID_FAILED)?;
         Ok(contract_args::VerifyForeignTransactionRespondV2Args::new(
             yield_id,
-            verdict.into(),
+            outcome.into(),
             k256_signature_response(signature.big_r, signature.s, recovery_id),
         ))
     }

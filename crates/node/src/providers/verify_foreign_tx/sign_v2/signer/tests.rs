@@ -53,10 +53,11 @@ fn check(evidence: Vec<SignedNodeOutcome>, own: &[SignedNodeOutcome]) -> Result<
         .iter()
         .map(|outcome| outcome.clone().verify(&outcome_keys).unwrap())
         .collect();
-    VerdictCheck {
+    EvidenceCheck {
         me: ME,
         yield_id: YIELD,
-        verdict: NOT_FOUND,
+        outcome: RoundOutcome::Verdict(NOT_FOUND),
+        participants: &round_participants(),
         outcome_keys: &outcome_keys,
         supporters: &supporters(),
         threshold: THRESHOLD,
@@ -64,8 +65,12 @@ fn check(evidence: Vec<SignedNodeOutcome>, own: &[SignedNodeOutcome]) -> Result<
     .check(evidence, &own)
 }
 
+fn round_participants() -> Vec<ParticipantId> {
+    (0..3).map(participant).collect()
+}
+
 #[test]
-fn verdict_check__should_accept_t_backers_including_this_node() {
+fn evidence_check__should_accept_t_backers_including_this_node() {
     // Given
     let evidence = not_found_by(&[0, 1, 2]);
 
@@ -77,7 +82,7 @@ fn verdict_check__should_accept_t_backers_including_this_node() {
 }
 
 #[test]
-fn verdict_check__should_refuse_evidence_without_its_own_statement() {
+fn evidence_check__should_refuse_evidence_without_its_own_statement() {
     // Given
     let evidence = not_found_by(&[1, 2, 3]);
 
@@ -89,7 +94,7 @@ fn verdict_check__should_refuse_evidence_without_its_own_statement() {
 }
 
 #[test]
-fn verdict_check__should_refuse_a_forged_statement() {
+fn evidence_check__should_refuse_a_forged_statement() {
     // Given
     let mut evidence = not_found_by(&[0, 1]);
     evidence.push(
@@ -111,7 +116,7 @@ fn verdict_check__should_refuse_a_forged_statement() {
 }
 
 #[test]
-fn verdict_check__should_refuse_a_statement_for_another_yield() {
+fn evidence_check__should_refuse_a_statement_for_another_yield() {
     // Given
     let mut evidence = not_found_by(&[0, 1]);
     evidence.push(signed_by_its_signer(NodeOutcomeStatement {
@@ -127,7 +132,7 @@ fn verdict_check__should_refuse_a_statement_for_another_yield() {
 }
 
 #[test]
-fn verdict_check__should_refuse_a_verdict_this_node_did_not_sign() {
+fn evidence_check__should_refuse_a_verdict_this_node_did_not_sign() {
     // Given
     let mut evidence = not_found_by(&[1, 2, 3]);
     evidence.push(signed_by_its_signer(statement(
@@ -143,7 +148,7 @@ fn verdict_check__should_refuse_a_verdict_this_node_did_not_sign() {
 }
 
 #[test]
-fn verdict_check__should_refuse_when_its_own_statement_conflicts_with_the_evidence() {
+fn evidence_check__should_refuse_when_its_own_statement_conflicts_with_the_evidence() {
     // Given
     let evidence = not_found_by(&[0, 1, 2]);
     let own_after_restart =
@@ -157,7 +162,7 @@ fn verdict_check__should_refuse_when_its_own_statement_conflicts_with_the_eviden
 }
 
 #[test]
-fn verdict_check__should_refuse_fewer_than_t_backers() {
+fn evidence_check__should_refuse_fewer_than_t_backers() {
     // Given
     let evidence = not_found_by(&[0, 1]);
 
@@ -176,17 +181,18 @@ fn verdict_check__should_refuse_fewer_than_t_backers() {
 }
 
 #[test]
-fn verdict_check__should_not_count_a_signer_that_does_not_support_the_chain() {
+fn evidence_check__should_not_count_a_signer_that_does_not_support_the_chain() {
     // Given
     let mut evidence = not_found_by(&[0, 1]);
     let keys = outcome_public_keys(&(0..8).map(participant).collect::<Vec<_>>());
     evidence.extend(not_found_by(&[6]));
 
     // When
-    let checked = VerdictCheck {
+    let checked = EvidenceCheck {
         me: ME,
         yield_id: YIELD,
-        verdict: NOT_FOUND,
+        outcome: RoundOutcome::Verdict(NOT_FOUND),
+        participants: &round_participants(),
         outcome_keys: &keys,
         supporters: &supporters(),
         threshold: THRESHOLD,
@@ -201,7 +207,7 @@ fn verdict_check__should_not_count_a_signer_that_does_not_support_the_chain() {
 }
 
 #[test]
-fn verdict_check__should_refuse_more_statements_than_supporters_before_verifying_them() {
+fn evidence_check__should_refuse_more_statements_than_supporters_before_verifying_them() {
     // Given
     let mut evidence = not_found_by(&[0, 1, 2, 3]);
     evidence.push(
@@ -218,7 +224,7 @@ fn verdict_check__should_refuse_more_statements_than_supporters_before_verifying
         checked,
         Err(RoundRefusal::TooManyStatements {
             statements: 5,
-            supporters: 4,
+            max: 4,
         })
     );
 }
@@ -298,22 +304,43 @@ impl JoiningSigner {
     fn join(&self, leader: ParticipantId, evidence_by: &[u32]) -> Result<(), RoundRefusal> {
         let evidence = evidence_by
             .iter()
-            .map(|signer| {
-                signed_by_its_signer(NodeOutcomeStatement {
-                    yield_id: bitcoin_request().yield_id,
-                    signer: participant(*signer),
-                    outcome: NodeOutcome::Verdict(NOT_FOUND),
-                })
-            })
+            .map(|signer| signed_for_request(*signer, NodeOutcome::Verdict(NOT_FOUND)))
+            .collect();
+        self.join_with(leader, RoundOutcome::Verdict(NOT_FOUND), evidence)
+    }
+
+    /// Joins a round of `leader` for `outcome`, whose participants are the signers of
+    /// `evidence`.
+    fn join_with(
+        &self,
+        leader: ParticipantId,
+        outcome: RoundOutcome,
+        evidence: Vec<SignedNodeOutcome>,
+    ) -> Result<(), RoundRefusal> {
+        let participants: Vec<ParticipantId> = evidence
+            .iter()
+            .map(|signed| signed.unverified_statement().signer)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
             .collect();
         self.node.provider.join_round_with_evidence(
             &bitcoin_request(),
             ActingLeader::assumed(bitcoin_request().id, leader),
-            NOT_FOUND,
+            &participants,
+            outcome,
             evidence,
             Self::THRESHOLD,
         )
     }
+}
+
+/// `outcome` of `signer` for [`bitcoin_request`], signed with its outcome key.
+fn signed_for_request(signer: u32, outcome: NodeOutcome) -> SignedNodeOutcome {
+    signed_by_its_signer(NodeOutcomeStatement {
+        yield_id: bitcoin_request().yield_id,
+        signer: participant(signer),
+        outcome,
+    })
 }
 
 #[tokio::test]
@@ -352,3 +379,5 @@ async fn join_round_with_evidence__should_not_count_a_refused_round() {
     assert_matches!(refused, Err(RoundRefusal::WithoutOwnStatement));
     assert!(joined.iter().all(Result::is_ok), "{joined:?}");
 }
+
+mod inconclusive;

@@ -5,7 +5,10 @@ use crate::common;
 
 use anyhow::Context;
 use e2e_tests::cluster::chain_entry_matching;
-use e2e_tests::foreign_chain_mock::{MOCK_BLOCK_HASH, MockAuthExpectation, setup_bitcoin_mock};
+use e2e_tests::foreign_chain_mock::{
+    MOCK_BLOCK_HASH, MockAuthExpectation, setup_bitcoin_mock, setup_bitcoin_mock_at,
+};
+use e2e_tests::metrics;
 use httpmock::prelude::*;
 use mpc_node_config::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig,
@@ -14,9 +17,9 @@ use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::events::VerifyForeignTxV2YieldCreated;
 use near_mpc_contract_interface::types::{
     BitcoinExtractedValue, BitcoinExtractor, BitcoinRpcRequest, BitcoinTxId, BlockConfirmations,
-    BlockHeight, DomainConfig, DomainId, DomainPurpose, ExtractedValue, ForeignChainRpcRequest,
-    ForeignTxVerificationNegativeVerdict, ForeignTxVerificationOutcome, Hash256, Protocol,
-    PublicKey, ReconstructionThreshold, VerifyForeignTransactionRequestV2,
+    BlockHeight, ChainEntry, DomainConfig, DomainId, DomainPurpose, ExtractedValue, ForeignChain,
+    ForeignChainRpcRequest, ForeignTxVerificationNegativeVerdict, ForeignTxVerificationOutcome,
+    Hash256, Protocol, PublicKey, ReconstructionThreshold, VerifyForeignTransactionRequestV2,
     VerifyForeignTransactionResponseV2, YieldId,
 };
 use near_mpc_sdk::foreign_chain::{
@@ -24,6 +27,8 @@ use near_mpc_sdk::foreign_chain::{
 };
 
 const FOREIGN_TX_DOMAIN_ID: DomainId = DomainId(0);
+/// A block hash other than [`MOCK_BLOCK_HASH`].
+const OTHER_BLOCK_HASH: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 
 struct ReadRpcEnv {
     cluster: e2e_tests::MpcCluster,
@@ -34,28 +39,76 @@ struct ReadRpcEnv {
 async fn must_setup_read_rpc_cluster() -> ReadRpcEnv {
     let bitcoin_mock = MockServer::start();
     setup_bitcoin_mock(&bitcoin_mock, MockAuthExpectation::None);
-    let foreign_chains = ForeignChainsConfig {
+    let foreign_chains = bitcoin_config("mock", bitcoin_mock.url("/"));
+    must_setup_read_rpc_cluster_with(
+        common::READ_RPC_PORT_SEED,
+        bitcoin_mock,
+        [foreign_chains.clone(), foreign_chains],
+    )
+    .await
+}
+
+/// A cluster whose second node's provider finds the transaction in another block than the first
+/// node's provider.
+async fn must_setup_disagreeing_read_rpc_cluster() -> ReadRpcEnv {
+    let bitcoin_mock = MockServer::start();
+    setup_bitcoin_mock_at(&bitcoin_mock, "/first", MOCK_BLOCK_HASH);
+    setup_bitcoin_mock_at(&bitcoin_mock, "/second", OTHER_BLOCK_HASH);
+    let node_configs = [
+        bitcoin_config("first", bitcoin_mock.url("/first")),
+        bitcoin_config("second", bitcoin_mock.url("/second")),
+    ];
+    must_setup_read_rpc_cluster_with(
+        common::READ_RPC_INCONCLUSIVE_PORT_SEED,
+        bitcoin_mock,
+        node_configs,
+    )
+    .await
+}
+
+fn bitcoin_config(provider: &str, rpc_url: String) -> ForeignChainsConfig {
+    ForeignChainsConfig {
         bitcoin: Some(ForeignChainConfig {
             timeout_sec: NonZeroU64::new(30).unwrap(),
             max_retries: NonZeroU64::new(3).unwrap(),
             expected_network_fingerprint: None,
             providers: NonEmptyBTreeMap::new(
-                "mock".to_string().into(),
+                provider.to_string().into(),
                 ForeignChainProviderConfig {
-                    rpc_url: bitcoin_mock.url("/"),
+                    rpc_url,
                     auth: AuthConfig::None,
                 },
             ),
         }),
         ..Default::default()
-    };
-    let whitelist: BTreeMap<_, _> = foreign_chains
-        .iter_chains()
-        .map(|(chain, config)| (chain, chain_entry_matching(config, 1)))
-        .collect();
+    }
+}
+
+/// A cluster of two nodes, with the foreign chain configs `node_configs`. The whitelist holds
+/// every provider they configure.
+async fn must_setup_read_rpc_cluster_with(
+    port_seed: u16,
+    bitcoin_mock: MockServer,
+    node_configs: [ForeignChainsConfig; 2],
+) -> ReadRpcEnv {
+    let mut whitelist: BTreeMap<ForeignChain, ChainEntry> = BTreeMap::new();
+    for (chain, config) in node_configs
+        .iter()
+        .flat_map(ForeignChainsConfig::iter_chains)
+    {
+        let entry = chain_entry_matching(config, 1);
+        let Some(whitelisted) = whitelist.get_mut(&chain) else {
+            whitelist.insert(chain, entry);
+            continue;
+        };
+        let providers: BTreeMap<_, _> = entry.providers.into();
+        for (id, provider) in providers {
+            whitelisted.providers.insert(id, provider);
+        }
+    }
     let available_chains: BTreeSet<_> = whitelist.keys().copied().collect();
 
-    let (cluster, _running) = common::must_setup_cluster(common::READ_RPC_PORT_SEED, |c| {
+    let (cluster, _running) = common::must_setup_cluster(port_seed, |c| {
         c.contract_wasm = common::must_load_contract_wasm_with_foreign_tx_v2();
         c.num_nodes = 2;
         c.threshold = 2;
@@ -65,7 +118,7 @@ async fn must_setup_read_rpc_cluster() -> ReadRpcEnv {
             reconstruction_threshold: ReconstructionThreshold::new(2),
             purpose: DomainPurpose::ForeignTx,
         }];
-        c.foreign_chains.node_configs = vec![foreign_chains.clone(), foreign_chains];
+        c.foreign_chains.node_configs = node_configs.to_vec();
         c.foreign_chains.whitelist = whitelist;
     })
     .await;
@@ -220,4 +273,47 @@ async fn read_rpc__should_answer_with_a_signed_success_and_a_signed_negative_ver
         assert_eq!(answered.response.yield_id(), answered.announced_yield_id);
     }
     assert_ne!(success.response.yield_id(), negative.response.yield_id());
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn read_rpc__should_answer_a_disagreement_with_a_signed_inconclusive() {
+    // Given
+    let env = must_setup_disagreeing_read_rpc_cluster().await;
+
+    // When
+    let answered = read_rpc(
+        &env,
+        bitcoin_request(mock_block_hash()),
+        ForeignChainSignatureVerifierV2::verify_signed_outcome,
+    )
+    .await
+    .expect("the request the nodes disagree on was not answered");
+
+    // Then
+    assert_eq!(
+        answered.response.outcome(),
+        &ForeignTxVerificationOutcome::Inconclusive {}
+    );
+    assert_eq!(
+        answered.response.request_block_height(),
+        answered.request_block_height
+    );
+    assert_eq!(answered.response.yield_id(), answered.announced_yield_id);
+    let series = format!(
+        r#"{}{{cause="verdicts_differ",chain="bitcoin"}}"#,
+        metrics::VERIFY_FOREIGN_TX_INCONCLUSIVES
+    );
+    let inconclusives: i64 = env
+        .cluster
+        .get_metric_all_nodes(&series)
+        .await
+        .expect("failed to read the node metrics")
+        .into_iter()
+        .flatten()
+        .sum();
+    assert!(
+        inconclusives >= 1,
+        "no node counted the inconclusive as verdicts_differ on bitcoin"
+    );
 }

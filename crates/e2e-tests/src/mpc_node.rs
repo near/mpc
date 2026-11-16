@@ -118,6 +118,8 @@ impl MpcNode {
     /// Scrapes the node's `/metrics` HTTP endpoint and returns the value of
     /// the named metric, parsed as `i64`. A labelled metric has one line per
     /// series; their values are summed, so callers get the per-node total.
+    /// `name` may also name one series as the exposition writes it, labels in
+    /// alphabetical order: `metric{a="x",b="y"}`.
     /// Returns `None` if the metric is not found or the node is unreachable.
     pub async fn get_metric(&self, name: &str) -> anyhow::Result<Option<i64>> {
         let url = format!("http://{}/metrics", self.web_address());
@@ -133,7 +135,8 @@ impl MpcNode {
             }
             // Match lines like "metric_name <value>" or "metric_name{labels} <value>"
             let metric_key = line.split([' ', '{']).next().unwrap_or("");
-            if metric_key == name {
+            let series_key = line.rsplit_once(' ').map(|(series, _)| series);
+            if metric_key == name || series_key == Some(name) {
                 let value_str = line.rsplit_once(' ').map(|(_, v)| v).unwrap_or("0");
                 if let Ok(v) = value_str.parse::<f64>() {
                     total = Some(total.unwrap_or(0) + v as i64);

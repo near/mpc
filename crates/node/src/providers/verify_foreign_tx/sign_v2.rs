@@ -14,7 +14,7 @@ use tokio::time::Duration;
 use crate::network::MeshNetworkClient;
 use crate::primitives::ParticipantId;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
-use crate::providers::verify_foreign_tx::node_outcome::NodeVerdict;
+use crate::providers::verify_foreign_tx::node_outcome::RoundOutcome;
 use crate::providers::verify_foreign_tx::node_outcome_statement::{
     NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome,
 };
@@ -35,9 +35,9 @@ pub(crate) struct VerifyForeignTxV2Context {
     pub(crate) network: Arc<MeshNetworkClient>,
 }
 
-/// The signature of a V2 signing round for [`Self::verdict`].
-pub(crate) struct SignedVerdict {
-    pub(crate) verdict: NodeVerdict,
+/// The signature of a V2 signing round for [`Self::outcome`].
+pub(crate) struct SignedOutcome {
+    pub(crate) outcome: RoundOutcome,
     pub(crate) payload_hash: dtos::Hash256,
     pub(crate) signature: Signature,
     pub(crate) public_key: VerifyingKey,

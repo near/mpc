@@ -3,7 +3,7 @@ use crate::network::testing::{
     TestMeshTransportSender, current_protocol_versions, new_test_client_with_versions,
 };
 use crate::network::wire_format::Packet;
-use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
+use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
 use crate::providers::verify_foreign_tx::node_outcome_statement::testing::{
     outcome_public_keys, signed_by_its_signer,
 };

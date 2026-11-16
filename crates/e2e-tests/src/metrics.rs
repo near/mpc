@@ -24,6 +24,8 @@ pub const INDEXER_LATEST_BLOCK_HEIGHT: &str = "mpc_indexer_latest_block_height";
 
 pub const TIMEOUTS_INDEXED: &str = "mpc_num_fail_on_timeout_indexed";
 
+pub const VERIFY_FOREIGN_TX_INCONCLUSIVES: &str = "mpc_num_verify_foreign_tx_inconclusives";
+
 pub const LAST_BACKUP_SERVED_EPOCH: &str = "mpc_last_backup_served_epoch";
 
 pub const FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: &str =

@@ -28,6 +28,8 @@ use std::assert_matches;
 use std::sync::Mutex;
 use std::time::Duration;
 
+mod inconclusive;
+
 const THRESHOLD: usize = 3;
 const NOT_FOUND: NodeVerdict =
     NodeVerdict::Negative(ForeignTxVerificationNegativeVerdict::TransactionNotFound);
@@ -57,7 +59,7 @@ fn verified(outcomes: &[SignedNodeOutcome]) -> Vec<VerifiedNodeOutcome> {
 }
 
 #[test]
-fn verdict_to_sign__should_return_the_backers_statements_once_t_signed_the_verdict() {
+fn evidence_to_sign__should_return_the_backers_statements_once_t_signed_the_verdict() {
     // Given
     let backer_statements = [
         signed(0, NodeOutcome::Verdict(NOT_FOUND)),
@@ -68,7 +70,7 @@ fn verdict_to_sign__should_return_the_backers_statements_once_t_signed_the_verdi
     outcomes.insert(1, signed(1, NodeOutcome::Verdict(NodeVerdict::Verified)));
 
     // When
-    let to_sign = verdict_to_sign(
+    let to_sign = evidence_to_sign(
         &verified(&outcomes),
         participant(0),
         &participants(&[0, 1, 2, 3]),
@@ -78,16 +80,16 @@ fn verdict_to_sign__should_return_the_backers_statements_once_t_signed_the_verdi
     // Then
     assert_eq!(
         to_sign,
-        Ok(Some(VerdictEvidence {
-            verdict: NOT_FOUND,
-            backers: participants(&[0, 2, 3]),
+        Ok(Some(RoundEvidence {
+            proven: ProvenOutcome::Verdict(NOT_FOUND),
+            eligible: participants(&[0, 2, 3]),
             statements: backer_statements.to_vec(),
         }))
     );
 }
 
 #[test]
-fn verdict_to_sign__should_wait_while_a_verdict_can_still_reach_t() {
+fn evidence_to_sign__should_wait_while_a_verdict_can_still_reach_t() {
     // Given
     let outcomes = [
         signed(0, NodeOutcome::Verdict(NOT_FOUND)),
@@ -95,7 +97,7 @@ fn verdict_to_sign__should_wait_while_a_verdict_can_still_reach_t() {
     ];
 
     // When
-    let to_sign = verdict_to_sign(
+    let to_sign = evidence_to_sign(
         &verified(&outcomes),
         participant(0),
         &participants(&[0, 1, 2, 3]),
@@ -107,7 +109,7 @@ fn verdict_to_sign__should_wait_while_a_verdict_can_still_reach_t() {
 }
 
 #[test]
-fn verdict_to_sign__should_stop_a_leader_that_did_not_sign_the_verdict() {
+fn evidence_to_sign__should_stop_a_leader_that_did_not_sign_the_verdict() {
     // Given
     let outcomes = [
         signed(0, NodeOutcome::NoVerdict(NoVerdictReason::Transient)),
@@ -117,7 +119,7 @@ fn verdict_to_sign__should_stop_a_leader_that_did_not_sign_the_verdict() {
     ];
 
     // When
-    let to_sign = verdict_to_sign(
+    let to_sign = evidence_to_sign(
         &verified(&outcomes),
         participant(0),
         &participants(&[0, 1, 2, 3]),
@@ -126,24 +128,6 @@ fn verdict_to_sign__should_stop_a_leader_that_did_not_sign_the_verdict() {
 
     // Then
     assert_eq!(to_sign, Err(StopLeading::NotABacker(NOT_FOUND)));
-}
-
-#[test]
-fn verdict_to_sign__should_stop_when_no_verdict_can_reach_t() {
-    // Given
-    let transient = NodeOutcome::NoVerdict(NoVerdictReason::Transient);
-    let outcomes = [signed(0, transient), signed(1, transient)];
-
-    // When
-    let to_sign = verdict_to_sign(
-        &verified(&outcomes),
-        participant(0),
-        &participants(&[0, 1, 2, 3]),
-        THRESHOLD,
-    );
-
-    // Then
-    assert_matches!(to_sign, Err(StopLeading::NoVerdictCanReachThreshold));
 }
 
 #[test]
@@ -163,7 +147,7 @@ fn round_candidates__should_keep_only_backers_that_speak_the_v2_messages() {
 }
 
 #[test]
-fn verdict_to_sign__should_pick_the_verdict_the_leader_backs_when_two_reach_t() {
+fn evidence_to_sign__should_pick_the_verdict_the_leader_backs_when_two_reach_t() {
     // Given
     let outcomes = [
         signed(0, NodeOutcome::Verdict(NOT_FOUND)),
@@ -175,7 +159,7 @@ fn verdict_to_sign__should_pick_the_verdict_the_leader_backs_when_two_reach_t() 
     ];
 
     // When
-    let to_sign = verdict_to_sign(
+    let to_sign = evidence_to_sign(
         &verified(&outcomes),
         participant(1),
         &participants(&[0, 1, 2, 3, 4, 5]),
@@ -184,8 +168,11 @@ fn verdict_to_sign__should_pick_the_verdict_the_leader_backs_when_two_reach_t() 
 
     // Then
     let evidence = to_sign.unwrap().unwrap();
-    assert_eq!(evidence.verdict, NodeVerdict::Verified);
-    assert_eq!(evidence.backers, participants(&[1, 3, 5]));
+    assert_eq!(
+        evidence.proven,
+        ProvenOutcome::Verdict(NodeVerdict::Verified)
+    );
+    assert_eq!(evidence.eligible, participants(&[1, 3, 5]));
 }
 
 /// One owned asset shared with `participants`. A take completes only once every one of them is
@@ -255,11 +242,12 @@ impl LeaderView {
     }
 
     fn receive(&self, signer: u32) {
+        self.receive_outcome(signer, NodeOutcome::Verdict(NOT_FOUND));
+    }
+
+    fn receive_outcome(&self, signer: u32, outcome: NodeOutcome) {
         self.node_outcomes
-            .receive(
-                participant(signer),
-                signed(signer, NodeOutcome::Verdict(NOT_FOUND)),
-            )
+            .receive(participant(signer), signed(signer, outcome))
             .unwrap();
     }
 
@@ -272,10 +260,10 @@ impl LeaderView {
         self.open_requests.notify_new_block(&update);
     }
 
-    async fn verdict_and_asset(
+    async fn evidence_and_asset(
         &self,
         assets: &OneAsset,
-    ) -> Result<(VerdictEvidence, UniqueId, ()), StopLeading> {
+    ) -> Result<EvidenceAndAsset<()>, StopLeading> {
         RoundWait {
             node_outcomes: &self.node_outcomes,
             open_requests: &self.open_requests,
@@ -284,7 +272,7 @@ impl LeaderView {
             me: participant(0),
             threshold: THRESHOLD,
         }
-        .verdict_and_asset(
+        .evidence_and_asset(
             || participants(&[0, 1, 2, 3]),
             || (0..4).map(participant).collect(),
         )
@@ -322,15 +310,18 @@ async fn round_wait__should_take_an_asset_among_a_later_backer_set_when_the_firs
 
     // When
     let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
-        tokio::join!(view.verdict_and_asset(&asset), late_backer)
+        tokio::join!(view.evidence_and_asset(&asset), late_backer)
     })
     .await
     .unwrap();
 
     // Then
-    let (evidence, id, ()) = result.unwrap();
-    assert_eq!(id, asset_id());
-    assert_eq!(evidence.backers, participants(&[0, 1, 2, 3]));
+    let EvidenceAndAsset {
+        evidence,
+        asset: taken,
+    } = result.unwrap();
+    assert_eq!(taken.id, asset_id());
+    assert_eq!(evidence.eligible, participants(&[0, 1, 2, 3]));
     let eligible_sets = asset.eligible_sets.lock().unwrap();
     assert_eq!(
         eligible_sets.first(),
@@ -350,7 +341,7 @@ async fn round_wait__should_stop_without_an_asset_once_the_request_closes() {
 
     // When
     let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
-        tokio::join!(view.verdict_and_asset(&asset), closing)
+        tokio::join!(view.evidence_and_asset(&asset), closing)
     })
     .await
     .unwrap();
@@ -370,7 +361,7 @@ async fn round_wait__should_take_no_asset_for_a_closed_request() {
     let asset = OneAsset::among(&[0, 1, 2]);
 
     // When
-    let result = view.verdict_and_asset(&asset).await;
+    let result = view.evidence_and_asset(&asset).await;
 
     // Then
     assert_matches!(result, Err(StopLeading::RequestClosed));
@@ -613,9 +604,14 @@ fn keygen_output() -> KeygenOutput {
     }
 }
 
+#[rstest::rstest]
+#[case::verdict(ProvenOutcome::Verdict(NOT_FOUND))]
+#[case::inconclusive(ProvenOutcome::Inconclusive(InconclusiveCause::VerdictsDiffer))]
 #[tokio::test(start_paused = true)]
-async fn verdict_rounds__should_send_the_same_evidence_in_every_round() {
-    let (test, _) = start_root_task("evidence reuse", async {
+async fn outcome_rounds__should_send_the_same_evidence_in_every_round(
+    #[case] proven: ProvenOutcome,
+) {
+    let (test, _) = start_root_task("evidence reuse", async move {
         // Given
         let signers = vec![participant(0), participant(1), participant(2)];
         let (network, transport) = new_test_client_with_versions(
@@ -644,12 +640,12 @@ async fn verdict_rounds__should_send_the_same_evidence_in_every_round() {
             .into_iter()
             .map(|signer| signed(signer, NodeOutcome::Verdict(NOT_FOUND)))
             .collect();
-        let rounds = VerdictRounds {
+        let rounds = OutcomeRounds {
             provider: &provider.provider,
             request: request(),
-            evidence: VerdictEvidence {
-                verdict: NOT_FOUND,
-                backers: participants(&[0, 1, 2]),
+            evidence: RoundEvidence {
+                proven,
+                eligible: participants(&[0, 1, 2]),
                 statements: statements.clone(),
             },
             payload_hash: dtos::Hash256([5; 32]),

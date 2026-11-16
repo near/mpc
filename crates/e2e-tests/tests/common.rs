@@ -48,6 +48,7 @@ pub const LEADER_FAILOVER_PORT_SEED: u16 = 30;
 pub const FOREIGN_TX_DOMAIN_AFTER_REGISTRATION_PORT_SEED: u16 = 31;
 pub const MAINNET_PROTOCOL_PORT_SEED: u16 = 32;
 pub const READ_RPC_PORT_SEED: u16 = 33;
+pub const READ_RPC_INCONCLUSIVE_PORT_SEED: u16 = 34;
 
 /// Start a cluster, wait for Running state and, if a domain uses [`Protocol::CaitSith`], for
 /// triples to buffer.

@@ -1,7 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::primitives::ParticipantId;
-use crate::providers::verify_foreign_tx::node_outcome::{NodeOutcome, NodeVerdict};
+use crate::providers::verify_foreign_tx::node_outcome::{
+    NoVerdictReason, NodeOutcome, NodeVerdict,
+};
 use crate::providers::verify_foreign_tx::node_outcome_statement::NodeOutcomeStatement;
 
 /// The step an acting leader takes with the node outcomes it holds for one request.
@@ -16,8 +18,20 @@ pub(crate) enum Decision {
     /// the supporters that signed exactly one outcome.
     Inconclusive {
         heard: BTreeSet<ParticipantId>,
+        cause: InconclusiveCause,
     },
     Wait,
+}
+
+/// The cause of an inconclusive, as the outcomes of the supporters that signed exactly one show
+/// it. A split between nodes comes first, then a split between the inspectors of one node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InconclusiveCause {
+    VerdictsDiffer,
+    InspectorsDisagree,
+    /// Transient errors, or nodes that signed two different outcomes, kept too many nodes from
+    /// a verdict.
+    Transient,
 }
 
 /// The node outcomes of one request, one entry per signer. A signer of two different statements
@@ -31,6 +45,24 @@ enum Heard {
     Conflicting,
 }
 
+impl InconclusiveCause {
+    pub(crate) const ALL: [Self; 3] = [
+        Self::VerdictsDiffer,
+        Self::InspectorsDisagree,
+        Self::Transient,
+    ];
+
+    /// The value of the `cause` label of
+    /// [`MPC_NUM_VERIFY_FOREIGN_TX_INCONCLUSIVES`](crate::metrics::MPC_NUM_VERIFY_FOREIGN_TX_INCONCLUSIVES).
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::VerdictsDiffer => "verdicts_differ",
+            Self::InspectorsDisagree => "inspectors_disagree",
+            Self::Transient => "transient",
+        }
+    }
+}
+
 impl Tally {
     /// Applies the counting rule. Only `supporters` count, and when two verdicts reach
     /// `threshold`, the one whose first backer has the lowest participant id wins.
@@ -42,12 +74,15 @@ impl Tally {
         let mut verdicts: Vec<(NodeVerdict, BTreeSet<ParticipantId>)> = Vec::new();
         let mut heard_count: usize = 0;
         let mut heard = BTreeSet::new();
+        let mut inspectors_disagree = false;
         for (signer, outcome) in self.of(supporters) {
             heard_count = heard_count.saturating_add(1);
             let Heard::One(outcome) = outcome else {
                 continue;
             };
             heard.insert(signer);
+            inspectors_disagree |=
+                outcome == NodeOutcome::NoVerdict(NoVerdictReason::InspectorsDisagree);
             let NodeOutcome::Verdict(verdict) = outcome else {
                 continue;
             };
@@ -74,7 +109,14 @@ impl Tally {
             .max()
             .unwrap_or(0);
         if most_backers.saturating_add(unheard) < threshold {
-            return Decision::Inconclusive { heard };
+            let cause = if verdicts.len() > 1 {
+                InconclusiveCause::VerdictsDiffer
+            } else if inspectors_disagree {
+                InconclusiveCause::InspectorsDisagree
+            } else {
+                InconclusiveCause::Transient
+            };
+            return Decision::Inconclusive { heard, cause };
         }
         Decision::Wait
     }
@@ -133,7 +175,6 @@ impl<'a> FromIterator<&'a NodeOutcomeStatement> for Tally {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::providers::verify_foreign_tx::node_outcome::NoVerdictReason;
     use near_mpc_contract_interface::types::{ForeignTxVerificationNegativeVerdict, YieldId};
     use rstest::rstest;
 
@@ -143,6 +184,8 @@ mod tests {
         ForeignTxVerificationNegativeVerdict::TransactionNotFound,
     ));
     const TRANSIENT: NodeOutcome = NodeOutcome::NoVerdict(NoVerdictReason::Transient);
+    const INSPECTORS_DISAGREE: NodeOutcome =
+        NodeOutcome::NoVerdict(NoVerdictReason::InspectorsDisagree);
 
     fn participants(ids: &[u32]) -> BTreeSet<ParticipantId> {
         ids.iter().copied().map(ParticipantId::from_raw).collect()
@@ -163,6 +206,13 @@ mod tests {
         Decision::Verdict {
             verdict,
             backers: participants(backers),
+        }
+    }
+
+    fn inconclusive(heard: &[u32], cause: InconclusiveCause) -> Decision {
+        Decision::Inconclusive {
+            heard: participants(heard),
+            cause,
         }
     }
 
@@ -203,7 +253,11 @@ mod tests {
     )]
     #[case::transient_errors_from_s_minus_t_plus_one(
         vec![statement(0, TRANSIENT), statement(1, TRANSIENT), statement(2, VERIFIED)],
-        Decision::Inconclusive { heard: participants(&[0, 1, 2]) }
+        inconclusive(&[0, 1, 2], InconclusiveCause::Transient)
+    )]
+    #[case::transient_errors_from_s_minus_t(
+        vec![statement(0, TRANSIENT), statement(1, VERIFIED), statement(2, VERIFIED)],
+        Decision::Wait
     )]
     #[case::split_no_verdict_can_reach_t(
         vec![
@@ -212,7 +266,32 @@ mod tests {
             statement(2, NOT_FOUND),
             statement(3, NOT_FOUND),
         ],
-        Decision::Inconclusive { heard: participants(&[0, 1, 2, 3]) }
+        inconclusive(&[0, 1, 2, 3], InconclusiveCause::VerdictsDiffer)
+    )]
+    #[case::split_where_no_verdict_and_the_unheard_make_t(
+        vec![statement(0, VERIFIED), statement(1, NOT_FOUND), statement(2, TRANSIENT)],
+        inconclusive(&[0, 1, 2], InconclusiveCause::VerdictsDiffer)
+    )]
+    #[case::one_divergent_node_with_one_unheard_waits(
+        vec![statement(0, VERIFIED), statement(1, VERIFIED), statement(2, NOT_FOUND)],
+        Decision::Wait
+    )]
+    #[case::inspectors_disagree(
+        vec![
+            statement(0, INSPECTORS_DISAGREE),
+            statement(1, INSPECTORS_DISAGREE),
+            statement(2, VERIFIED),
+        ],
+        inconclusive(&[0, 1, 2], InconclusiveCause::InspectorsDisagree)
+    )]
+    #[case::conflicting_node_counts_as_heard_for_no_verdict(
+        vec![
+            statement(0, VERIFIED),
+            statement(1, VERIFIED),
+            statement(1, NOT_FOUND),
+            statement(2, TRANSIENT),
+        ],
+        inconclusive(&[0, 2], InconclusiveCause::Transient)
     )]
     fn tally_decide__should_apply_the_counting_rule(
         #[case] statements: Vec<NodeOutcomeStatement>,
