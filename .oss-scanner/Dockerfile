@@ -27,11 +27,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Tool versions come from the files that pin them for development and CI, so
-# they cannot drift. Copying only these files keeps the download layers cached.
+# they cannot drift. Each file is copied just above the step that reads it, so
+# editing one only reruns the steps from there on.
 COPY rust-toolchain.toml /versions/
-COPY nix/cargo-near.nix /versions/
-COPY crates/test-utils/src/lib.rs /versions/test-utils-lib.rs
-
 RUN cd /versions \
     && curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
       | sh -s -- -y --no-modify-path --default-toolchain none \
@@ -39,6 +37,7 @@ RUN cd /versions \
     && rustup default "$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)" \
     && rustc --version
 
+COPY nix/cargo-near.nix /versions/
 RUN set -eu; \
     v=$(sed -n 's/^ *version = "\(.*\)";$/\1/p' /versions/cargo-near.nix); \
     test -n "$v"; \
@@ -49,6 +48,14 @@ RUN set -eu; \
     rm /tmp/cargo-near-installer.sh; \
     cargo near --version
 
+# Any recent nextest reads .config/nextest.toml; the version is not coupled to the repo.
+RUN curl --proto '=https' --tlsv1.2 -fsSL \
+      "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.136/cargo-nextest-0.9.136-$(uname -m)-unknown-linux-gnu.tar.gz" \
+      | tar -xz -C /usr/local/cargo/bin cargo-nextest \
+    && cargo nextest --version
+
+# Last, as test-utils/src/lib.rs is a regular source file that changes often.
+COPY crates/test-utils/src/lib.rs /versions/test-utils-lib.rs
 RUN set -eu; \
     v=$(sed -n 's/^pub const DEFAULT_SANDBOX_VERSION: &str = "\(.*\)";$/\1/p' /versions/test-utils-lib.rs); \
     test -n "$v"; \
@@ -57,12 +64,6 @@ RUN set -eu; \
       "https://s3-us-west-1.amazonaws.com/build.nearprotocol.com/nearcore/Linux-$(uname -m)/$v/near-sandbox.tar.gz" \
       | tar -xz --strip-components=1 -C /opt/near-sandbox; \
     "$NEAR_SANDBOX_BIN_PATH" --version
-
-# Any recent nextest reads .config/nextest.toml; the version is not coupled to the repo.
-RUN curl --proto '=https' --tlsv1.2 -fsSL \
-      "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-0.9.136/cargo-nextest-0.9.136-$(uname -m)-unknown-linux-gnu.tar.gz" \
-      | tar -xz -C /usr/local/cargo/bin cargo-nextest \
-    && cargo nextest --version
 
 COPY . /src
 WORKDIR /src

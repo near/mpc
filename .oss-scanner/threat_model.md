@@ -65,7 +65,10 @@ State which position an attack needs:
   running unapproved code with a valid attestation is in scope.
 
 Trusted: the NEAR blockchain's consensus, Intel TDX hardware and its attestation
-roots, and the operator's own local configuration and secrets files.
+roots, and, on non-TEE nodes, the operator's own local configuration and secrets
+files. On TEE nodes, everything the host passes through the launcher, including
+the `[mpc_node_config]` table it writes verbatim into the node's config, is
+attacker input.
 
 ## What to look for
 
@@ -104,13 +107,17 @@ roots, and the operator's own local configuration and secrets files.
   needing a malicious participant; griefing that costs the attacker gas
   proportional to the damage; leaks of non-secret but private operational data.
 - **Low**: hardening issues without a demonstrated impact; issues needing
-  operator misconfiguration.
+  operator misconfiguration on a non-TEE node.
 
-Account for gas costs, deposits and existing limits in resource attacks. A
-panic is a crash only if it occurs in the release build. The test profile
-enables overflow checks and `debug_assert!`, neither of which is in production
-builds, so a failing overflow check or debug assertion alone is not a crash. A contract panic reverts that receipt only
-and is not a crash unless it blocks progress.
+Account for gas costs, deposits and existing limits in resource attacks.
+
+Production `mpc-node` and `tee-launcher` binaries use the `reproducible`
+profile (`Cargo.toml`): overflow checks are on and `panic = "abort"`, so an
+arithmetic overflow or any other panic, including one inside a spawned task,
+kills the node. The contract uses `release-contract`: overflow checks are off,
+so overflow wraps silently. `debug_assert!` is off in every production build,
+so a failing debug assertion alone is not a crash. A contract panic reverts
+that receipt only and is not a crash unless it blocks progress.
 
 ## Known and intentional: do not report
 
@@ -148,7 +155,9 @@ example `mpc-tests -p threshold-signatures` or `mpc-tests -E 'test(sign)'`.
 Contract sandbox tests in `crates/contract/tests/sandbox` start a local NEAR
 node and are the best place to reproduce contract issues end to end. In-process
 multi-node tests in `crates/node/src/tests` exercise the node's protocols.
-The E2E suite (`crates/e2e-tests`) is not prebuilt.
+The E2E suite (`crates/e2e-tests`) is excluded: it needs the `mpc-node` binary
+and artifacts that `cargo make e2e-tests` builds, which the image does not
+provide.
 
 Follow AGENTS.md and docs/development/engineering-standards.md for test
 structure.
