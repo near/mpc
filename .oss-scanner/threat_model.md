@@ -67,8 +67,9 @@ State which position an attack needs:
 Trusted: the NEAR blockchain's consensus, Intel TDX hardware and its attestation
 roots, and, on non-TEE nodes, the operator's own local configuration and secrets
 files. On TEE nodes, everything the host passes through the launcher, including
-the `[mpc_node_config]` table it writes verbatim into the node's config, is
-attacker input.
+the `[mpc_node_config]` table it passes to the node, is attacker input. The
+launcher injects `tee` and `node.indexer.mpc_contract_id` itself and rejects
+host configs that set them; a bypass of that check is in scope.
 
 ## What to look for
 
