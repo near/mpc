@@ -728,6 +728,7 @@ impl FakeIndexerCore {
                 completed_ckds: Vec::new(),
                 verify_foreign_tx_requests,
                 completed_verify_foreign_txs: Vec::new(),
+                verify_foreign_tx_v2_requests: Vec::new(),
             };
             contract.lock().await.env.set_block_height(block.height());
             for (txn, uid) in transactions_to_process {

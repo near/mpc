@@ -1,3 +1,10 @@
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests;
+mod verify_foreign_tx_v2;
+
+pub use verify_foreign_tx_v2::VerifyForeignTxRequestV2FromChain;
+
 use crate::indexer::stats::IndexerStats;
 use crate::metrics;
 use crate::types::CKDId;
@@ -16,7 +23,7 @@ use near_indexer_primitives::views::{
     ActionView, ExecutionOutcomeWithIdView, ExecutionStatusView, ReceiptEnumView, ReceiptView,
 };
 use near_mpc_contract_interface::method_names::{
-    FAIL_ON_TIMEOUT, REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
+    FAIL_ON_TIMEOUT, READ_RPC, REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
 };
@@ -60,6 +67,14 @@ pub struct CKDArgs {
     pub domain_id: DomainId,
 }
 
+/// A request that one executed receipt makes to the MPC contract.
+enum IndexedRequest {
+    Signature(SignatureRequestFromChain),
+    Ckd(CKDRequestFromChain),
+    VerifyForeignTx(VerifyForeignTxRequestFromChain),
+    VerifyForeignTxV2(VerifyForeignTxRequestV2FromChain),
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SignatureRequestFromChain {
     pub signature_id: SignatureId,
@@ -91,6 +106,9 @@ pub struct ChainBlockUpdate {
     pub completed_ckds: Vec<CKDId>,
     pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
+    // TODO(#5123): queue and answer these requests.
+    #[expect(dead_code)]
+    pub verify_foreign_tx_v2_requests: Vec<VerifyForeignTxRequestV2FromChain>,
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -165,6 +183,7 @@ async fn handle_message(
     let mut completed_ckds = vec![];
     let mut verify_foreign_tx_requests = vec![];
     let mut completed_verify_foreign_txs = vec![];
+    let mut verify_foreign_tx_v2_requests = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -172,57 +191,23 @@ async fn handle_message(
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
 
-            if let Some(next_receipt_id) =
-                try_extract_next_receipt_id(&execution_outcome, mpc_contract_id)
-                && let Some((args, method_name)) = try_extract_function_call_args(&receipt)
-            {
-                match method_name.as_str() {
-                    SIGN => {
-                        if let Some((signature_id, sign_args)) =
-                            try_get_sign_args(&receipt, next_receipt_id, args, method_name)
-                            && let Some(predecessor_id) =
-                                try_convert_predecessor_id(&receipt, method_name)
-                        {
-                            signature_requests.push(SignatureRequestFromChain {
-                                signature_id,
-                                receipt_id: receipt.receipt_id,
-                                request: sign_args,
-                                predecessor_id,
-                            });
-                            metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
-                        }
-                    }
-                    REQUEST_APP_PRIVATE_KEY => {
-                        if let Some((ckd_id, ckd_args)) =
-                            try_get_ckd_args(&receipt, next_receipt_id, args, method_name)
-                        {
-                            ckd_requests.push(CKDRequestFromChain {
-                                ckd_id,
-                                receipt_id: receipt.receipt_id,
-                                request: ckd_args,
-                            });
-                            metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
-                        }
-                    }
-                    VERIFY_FOREIGN_TRANSACTION => {
-                        if let Some((verify_foreign_tx_id, verify_foreign_tx_args)) =
-                            try_get_verify_foreign_tx_args(
-                                &receipt,
-                                next_receipt_id,
-                                args,
-                                method_name,
-                            )
-                        {
-                            verify_foreign_tx_requests.push(VerifyForeignTxRequestFromChain {
-                                verify_foreign_tx_id,
-                                receipt_id: receipt.receipt_id,
-                                request: verify_foreign_tx_args,
-                            });
-                            metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
-                        }
-                    }
-                    _ => {}
+            match try_index_request(&receipt, &execution_outcome, mpc_contract_id, block_height) {
+                Some(IndexedRequest::Signature(request)) => {
+                    signature_requests.push(request);
+                    metrics::MPC_NUM_SIGN_REQUESTS_INDEXED.inc();
                 }
+                Some(IndexedRequest::Ckd(request)) => {
+                    ckd_requests.push(request);
+                    metrics::MPC_NUM_CKD_REQUESTS_INDEXED.inc();
+                }
+                Some(IndexedRequest::VerifyForeignTx(request)) => {
+                    verify_foreign_tx_requests.push(request);
+                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_REQUESTS_INDEXED.inc();
+                }
+                Some(IndexedRequest::VerifyForeignTxV2(request)) => {
+                    verify_foreign_tx_v2_requests.push(request);
+                }
+                None => {}
             }
 
             if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id)
@@ -272,6 +257,7 @@ async fn handle_message(
             completed_ckds,
             verify_foreign_tx_requests,
             completed_verify_foreign_txs,
+            verify_foreign_tx_v2_requests,
         })
         .inspect_err(|err| {
             tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
@@ -284,6 +270,59 @@ async fn handle_message(
     stats_lock.last_processed_block_height = block_height;
     drop(stats_lock);
     Ok(())
+}
+
+/// Finds the request that a successful call to the MPC contract makes. A
+/// failed receipt makes none, even though its logs persist.
+fn try_index_request(
+    receipt: &ReceiptView,
+    execution_outcome: &ExecutionOutcomeWithIdView,
+    mpc_contract_id: &AccountId,
+    block_height: BlockHeight,
+) -> Option<IndexedRequest> {
+    let next_receipt_id = try_extract_next_receipt_id(execution_outcome, mpc_contract_id)?;
+    let (args, method_name) = try_extract_function_call_args(receipt)?;
+    match method_name.as_str() {
+        SIGN => {
+            let (signature_id, sign_args) =
+                try_get_sign_args(receipt, next_receipt_id, args, method_name)?;
+            let predecessor_id = try_convert_predecessor_id(receipt, method_name)?;
+            Some(IndexedRequest::Signature(SignatureRequestFromChain {
+                signature_id,
+                receipt_id: receipt.receipt_id,
+                request: sign_args,
+                predecessor_id,
+            }))
+        }
+        REQUEST_APP_PRIVATE_KEY => {
+            let (ckd_id, ckd_args) = try_get_ckd_args(receipt, next_receipt_id, args, method_name)?;
+            Some(IndexedRequest::Ckd(CKDRequestFromChain {
+                ckd_id,
+                receipt_id: receipt.receipt_id,
+                request: ckd_args,
+            }))
+        }
+        VERIFY_FOREIGN_TRANSACTION => {
+            let (verify_foreign_tx_id, verify_foreign_tx_args) =
+                try_get_verify_foreign_tx_args(receipt, next_receipt_id, args, method_name)?;
+            Some(IndexedRequest::VerifyForeignTx(
+                VerifyForeignTxRequestFromChain {
+                    verify_foreign_tx_id,
+                    receipt_id: receipt.receipt_id,
+                    request: verify_foreign_tx_args,
+                },
+            ))
+        }
+        READ_RPC => verify_foreign_tx_v2::try_get_verify_foreign_tx_v2_request(
+            receipt,
+            &execution_outcome.outcome.logs,
+            next_receipt_id,
+            block_height,
+            args,
+        )
+        .map(IndexedRequest::VerifyForeignTxV2),
+        _ => None,
+    }
 }
 
 fn try_extract_function_call_args(receipt: &ReceiptView) -> Option<(&FunctionArgs, &String)> {
