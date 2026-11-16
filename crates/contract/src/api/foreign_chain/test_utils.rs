@@ -53,3 +53,17 @@ pub(super) fn register_foreign_chains_config_for(
         .register_foreign_chains_config(foreign_chains_config)
         .expect("register should succeed");
 }
+
+/// Whitelists the chains and registers them for all participants, making them available.
+pub(super) fn make_chains_available(
+    contract: &mut MpcContract,
+    chains: impl IntoIterator<Item = dtos::ForeignChain>,
+) {
+    let chains: Vec<_> = chains.into_iter().collect();
+    for chain in &chains {
+        whitelist_chain(contract, *chain);
+    }
+    for account_id in participant_account_ids(contract) {
+        register_foreign_chains_config_for(contract, &account_id, chains.iter().copied());
+    }
+}

@@ -3,6 +3,7 @@
 pub mod call_args;
 
 pub mod deposits;
+pub mod events;
 
 #[cfg(feature = "client")]
 pub mod client;

@@ -619,6 +619,10 @@ BorshSchemaContainer {
                         "parameters_votes",
                         "GovernanceThresholdParametersVotes",
                     ),
+                    (
+                        "pending_verify_foreign_tx_v2_requests",
+                        "PendingVerifyForeignTxRequestsV2",
+                    ),
                 ],
             ),
         },
@@ -719,6 +723,20 @@ BorshSchemaContainer {
                     (
                         "participants",
                         "Vec<(AccountId, ParticipantId, ParticipantInfo)>",
+                    ),
+                ],
+            ),
+        },
+        "PendingVerifyForeignTxRequestsV2": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "next_yield_counter",
+                        "u64",
+                    ),
+                    (
+                        "by_yield_id",
+                        "LookupMap",
                     ),
                 ],
             ),

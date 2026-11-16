@@ -1,0 +1,795 @@
+---
+source: crates/contract/src/pending_verify_foreign_tx_v2.rs
+expression: schema
+---
+BorshSchemaContainer {
+    declaration: "PendingVerifyForeignTxRequestV2",
+    definitions: {
+        "AptosExtractor": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    1,
+                    "Event",
+                    "AptosExtractor__Event",
+                ),
+            ],
+        },
+        "AptosExtractor__Event": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "event_index",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "AptosFinality": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Committed",
+                    "AptosFinality__Committed",
+                ),
+            ],
+        },
+        "AptosFinality__Committed": Struct {
+            fields: Empty,
+        },
+        "AptosRpcRequest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "tx_id",
+                        "AptosTxId",
+                    ),
+                    (
+                        "finality",
+                        "AptosFinality",
+                    ),
+                    (
+                        "extractors",
+                        "BoundedVec<AptosExtractor, 0, 32>",
+                    ),
+                ],
+            ),
+        },
+        "AptosTxId": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "BitcoinExtractor": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "BlockHash",
+                    "BitcoinExtractor__BlockHash",
+                ),
+            ],
+        },
+        "BitcoinExtractor__BlockHash": Struct {
+            fields: Empty,
+        },
+        "BitcoinRpcRequest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "tx_id",
+                        "BitcoinTxId",
+                    ),
+                    (
+                        "confirmations",
+                        "BlockConfirmations",
+                    ),
+                    (
+                        "extractors",
+                        "BoundedVec<BitcoinExtractor, 0, 32>",
+                    ),
+                ],
+            ),
+        },
+        "BitcoinTxId": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "BlockConfirmations": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "BlockHeight": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "BoundedVec<AptosExtractor, 0, 32>": Sequence {
+            length_width: 4,
+            length_range: 0..=32,
+            elements: "AptosExtractor",
+        },
+        "BoundedVec<BitcoinExtractor, 0, 32>": Sequence {
+            length_width: 4,
+            length_range: 0..=32,
+            elements: "BitcoinExtractor",
+        },
+        "BoundedVec<EvmExtractor, 0, 32>": Sequence {
+            length_width: 4,
+            length_range: 0..=32,
+            elements: "EvmExtractor",
+        },
+        "BoundedVec<StarknetExtractor, 0, 32>": Sequence {
+            length_width: 4,
+            length_range: 0..=32,
+            elements: "StarknetExtractor",
+        },
+        "BoundedVec<SuiExtractor, 0, 32>": Sequence {
+            length_width: 4,
+            length_range: 0..=32,
+            elements: "SuiExtractor",
+        },
+        "BoundedVec<SvmExtractor, 0, 32>": Sequence {
+            length_width: 4,
+            length_range: 0..=32,
+            elements: "SvmExtractor",
+        },
+        "BoundedVec<TonExtractor, 0, 32>": Sequence {
+            length_width: 4,
+            length_range: 0..=32,
+            elements: "TonExtractor",
+        },
+        "DomainId": Struct {
+            fields: UnnamedFields(
+                [
+                    "u64",
+                ],
+            ),
+        },
+        "EvmExtractor": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "BlockHash",
+                    "EvmExtractor__BlockHash",
+                ),
+                (
+                    1,
+                    "Log",
+                    "EvmExtractor__Log",
+                ),
+            ],
+        },
+        "EvmExtractor__BlockHash": Struct {
+            fields: Empty,
+        },
+        "EvmExtractor__Log": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "log_index",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "EvmFinality": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Latest",
+                    "EvmFinality__Latest",
+                ),
+                (
+                    1,
+                    "Safe",
+                    "EvmFinality__Safe",
+                ),
+                (
+                    2,
+                    "Finalized",
+                    "EvmFinality__Finalized",
+                ),
+            ],
+        },
+        "EvmFinality__Finalized": Struct {
+            fields: Empty,
+        },
+        "EvmFinality__Latest": Struct {
+            fields: Empty,
+        },
+        "EvmFinality__Safe": Struct {
+            fields: Empty,
+        },
+        "EvmRpcRequest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "tx_id",
+                        "EvmTxId",
+                    ),
+                    (
+                        "extractors",
+                        "BoundedVec<EvmExtractor, 0, 32>",
+                    ),
+                    (
+                        "finality",
+                        "EvmFinality",
+                    ),
+                ],
+            ),
+        },
+        "EvmTxId": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Abstract",
+                    "ForeignChainRpcRequest__Abstract",
+                ),
+                (
+                    1,
+                    "Ethereum",
+                    "ForeignChainRpcRequest__Ethereum",
+                ),
+                (
+                    2,
+                    "Solana",
+                    "ForeignChainRpcRequest__Solana",
+                ),
+                (
+                    3,
+                    "Bitcoin",
+                    "ForeignChainRpcRequest__Bitcoin",
+                ),
+                (
+                    4,
+                    "Starknet",
+                    "ForeignChainRpcRequest__Starknet",
+                ),
+                (
+                    5,
+                    "Bnb",
+                    "ForeignChainRpcRequest__Bnb",
+                ),
+                (
+                    6,
+                    "Base",
+                    "ForeignChainRpcRequest__Base",
+                ),
+                (
+                    7,
+                    "Arbitrum",
+                    "ForeignChainRpcRequest__Arbitrum",
+                ),
+                (
+                    8,
+                    "Polygon",
+                    "ForeignChainRpcRequest__Polygon",
+                ),
+                (
+                    9,
+                    "HyperEvm",
+                    "ForeignChainRpcRequest__HyperEvm",
+                ),
+                (
+                    10,
+                    "Ton",
+                    "ForeignChainRpcRequest__Ton",
+                ),
+                (
+                    11,
+                    "Aptos",
+                    "ForeignChainRpcRequest__Aptos",
+                ),
+                (
+                    12,
+                    "Sui",
+                    "ForeignChainRpcRequest__Sui",
+                ),
+                (
+                    13,
+                    "Avalanche",
+                    "ForeignChainRpcRequest__Avalanche",
+                ),
+                (
+                    14,
+                    "Adi",
+                    "ForeignChainRpcRequest__Adi",
+                ),
+                (
+                    15,
+                    "Fogo",
+                    "ForeignChainRpcRequest__Fogo",
+                ),
+            ],
+        },
+        "ForeignChainRpcRequest__Abstract": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Adi": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Aptos": Struct {
+            fields: UnnamedFields(
+                [
+                    "AptosRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Arbitrum": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Avalanche": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Base": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Bitcoin": Struct {
+            fields: UnnamedFields(
+                [
+                    "BitcoinRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Bnb": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Ethereum": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Fogo": Struct {
+            fields: UnnamedFields(
+                [
+                    "SvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__HyperEvm": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Polygon": Struct {
+            fields: UnnamedFields(
+                [
+                    "EvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Solana": Struct {
+            fields: UnnamedFields(
+                [
+                    "SvmRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Starknet": Struct {
+            fields: UnnamedFields(
+                [
+                    "StarknetRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Sui": Struct {
+            fields: UnnamedFields(
+                [
+                    "SuiRpcRequest",
+                ],
+            ),
+        },
+        "ForeignChainRpcRequest__Ton": Struct {
+            fields: UnnamedFields(
+                [
+                    "TonRpcRequest",
+                ],
+            ),
+        },
+        "Hash256": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "PendingVerifyForeignTxRequestV2": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "request",
+                        "ForeignChainRpcRequest",
+                    ),
+                    (
+                        "domain_id",
+                        "DomainId",
+                    ),
+                    (
+                        "expected_values_hash",
+                        "Hash256",
+                    ),
+                    (
+                        "request_block_height",
+                        "BlockHeight",
+                    ),
+                ],
+            ),
+        },
+        "StarknetExtractor": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "BlockHash",
+                    "StarknetExtractor__BlockHash",
+                ),
+                (
+                    1,
+                    "Log",
+                    "StarknetExtractor__Log",
+                ),
+            ],
+        },
+        "StarknetExtractor__BlockHash": Struct {
+            fields: Empty,
+        },
+        "StarknetExtractor__Log": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "log_index",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "StarknetFelt": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "StarknetFinality": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "AcceptedOnL2",
+                    "StarknetFinality__AcceptedOnL2",
+                ),
+                (
+                    1,
+                    "AcceptedOnL1",
+                    "StarknetFinality__AcceptedOnL1",
+                ),
+            ],
+        },
+        "StarknetFinality__AcceptedOnL1": Struct {
+            fields: Empty,
+        },
+        "StarknetFinality__AcceptedOnL2": Struct {
+            fields: Empty,
+        },
+        "StarknetRpcRequest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "tx_id",
+                        "StarknetTxId",
+                    ),
+                    (
+                        "finality",
+                        "StarknetFinality",
+                    ),
+                    (
+                        "extractors",
+                        "BoundedVec<StarknetExtractor, 0, 32>",
+                    ),
+                ],
+            ),
+        },
+        "StarknetTxId": Struct {
+            fields: UnnamedFields(
+                [
+                    "StarknetFelt",
+                ],
+            ),
+        },
+        "SuiExtractor": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    1,
+                    "Event",
+                    "SuiExtractor__Event",
+                ),
+            ],
+        },
+        "SuiExtractor__Event": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "event_index",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "SuiFinality": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Checkpointed",
+                    "SuiFinality__Checkpointed",
+                ),
+            ],
+        },
+        "SuiFinality__Checkpointed": Struct {
+            fields: Empty,
+        },
+        "SuiRpcRequest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "tx_id",
+                        "SuiTxId",
+                    ),
+                    (
+                        "finality",
+                        "SuiFinality",
+                    ),
+                    (
+                        "extractors",
+                        "BoundedVec<SuiExtractor, 0, 32>",
+                    ),
+                ],
+            ),
+        },
+        "SuiTxId": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "SvmAddress": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "SvmExtractor": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    1,
+                    "InnerInstruction",
+                    "SvmExtractor__InnerInstruction",
+                ),
+                (
+                    2,
+                    "AccountState",
+                    "SvmExtractor__AccountState",
+                ),
+            ],
+        },
+        "SvmExtractor__AccountState": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "pubkey",
+                        "SvmAddress",
+                    ),
+                ],
+            ),
+        },
+        "SvmExtractor__InnerInstruction": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "instruction_index",
+                        "u64",
+                    ),
+                    (
+                        "inner_instruction_index",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "SvmFinality": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "Confirmed",
+                    "SvmFinality__Confirmed",
+                ),
+                (
+                    1,
+                    "Finalized",
+                    "SvmFinality__Finalized",
+                ),
+            ],
+        },
+        "SvmFinality__Confirmed": Struct {
+            fields: Empty,
+        },
+        "SvmFinality__Finalized": Struct {
+            fields: Empty,
+        },
+        "SvmRpcRequest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "tx_id",
+                        "SvmTxId",
+                    ),
+                    (
+                        "finality",
+                        "SvmFinality",
+                    ),
+                    (
+                        "extractors",
+                        "BoundedVec<SvmExtractor, 0, 32>",
+                    ),
+                ],
+            ),
+        },
+        "SvmTxId": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 64]",
+                ],
+            ),
+        },
+        "TonAddress": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "workchain",
+                        "i32",
+                    ),
+                    (
+                        "hash",
+                        "Hash256",
+                    ),
+                ],
+            ),
+        },
+        "TonExtractor": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    1,
+                    "Log",
+                    "TonExtractor__Log",
+                ),
+            ],
+        },
+        "TonExtractor__Log": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "message_index",
+                        "u64",
+                    ),
+                ],
+            ),
+        },
+        "TonFinality": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "MasterchainIncluded",
+                    "TonFinality__MasterchainIncluded",
+                ),
+            ],
+        },
+        "TonFinality__MasterchainIncluded": Struct {
+            fields: Empty,
+        },
+        "TonRpcRequest": Struct {
+            fields: NamedFields(
+                [
+                    (
+                        "tx_id",
+                        "TonTxId",
+                    ),
+                    (
+                        "account",
+                        "TonAddress",
+                    ),
+                    (
+                        "finality",
+                        "TonFinality",
+                    ),
+                    (
+                        "extractors",
+                        "BoundedVec<TonExtractor, 0, 32>",
+                    ),
+                ],
+            ),
+        },
+        "TonTxId": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
+        "[u8; 32]": Sequence {
+            length_width: 0,
+            length_range: 32..=32,
+            elements: "u8",
+        },
+        "[u8; 64]": Sequence {
+            length_width: 0,
+            length_range: 64..=64,
+            elements: "u8",
+        },
+        "i32": Primitive(
+            4,
+        ),
+        "u64": Primitive(
+            8,
+        ),
+        "u8": Primitive(
+            1,
+        ),
+    },
+}

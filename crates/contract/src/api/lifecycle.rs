@@ -6,6 +6,7 @@ use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
+use crate::pending_verify_foreign_tx_v2::PendingVerifyForeignTxRequestsV2;
 use crate::primitives::domain::{
     AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
 };
@@ -18,7 +19,7 @@ use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ContractUpdateVotes;
-use crate::{MpcContract, MpcContractExt, v3_18_0_state};
+use crate::{MpcContract, MpcContractExt, v3_18_0_state, v3_19_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
@@ -77,6 +78,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            pending_verify_foreign_tx_v2_requests: PendingVerifyForeignTxRequestsV2::default(),
         })
     }
 
@@ -157,6 +159,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            pending_verify_foreign_tx_v2_requests: PendingVerifyForeignTxRequestsV2::default(),
         })
     }
 
@@ -177,6 +180,14 @@ impl MpcContract {
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
                 log!("failed to deserialize state into 3.18.0 state: {:?}", err);
+            }
+        };
+
+        match try_state_read::<v3_19_0_state::MpcContract>() {
+            Ok(Some(state)) => return Ok(state.into()),
+            Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
+            Err(err) => {
+                log!("failed to deserialize state into 3.19.0 state: {:?}", err);
             }
         };
 
@@ -205,4 +216,38 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
     env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
+}
+
+#[cfg(all(test, feature = "foreign-tx-v2"))]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::state::test_utils::gen_running_state;
+
+    #[test]
+    fn migrate__should_keep_the_foreign_tx_v2_yield_counter() {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(ProtocolContractState::Running(
+            gen_running_state(1),
+        ));
+        for _ in 0..3 {
+            contract
+                .pending_verify_foreign_tx_v2_requests
+                .take_next_yield_id();
+        }
+        env::state_write(&contract);
+
+        // When
+        let mut migrated = MpcContract::migrate().unwrap();
+
+        // Then
+        assert_eq!(
+            migrated
+                .pending_verify_foreign_tx_v2_requests
+                .take_next_yield_id(),
+            contract
+                .pending_verify_foreign_tx_v2_requests
+                .take_next_yield_id()
+        );
+    }
 }

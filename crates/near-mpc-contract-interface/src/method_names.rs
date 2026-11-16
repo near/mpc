@@ -7,6 +7,7 @@
 pub const SIGN: &str = "sign";
 pub const REQUEST_APP_PRIVATE_KEY: &str = "request_app_private_key";
 pub const VERIFY_FOREIGN_TRANSACTION: &str = "verify_foreign_transaction";
+pub const READ_RPC: &str = "read_rpc";
 
 // Node response methods
 pub const RESPOND: &str = "respond";
@@ -62,6 +63,8 @@ pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =
 pub const RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS: &str = "return_ck_and_clean_state_on_success";
 pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
     "return_verify_foreign_tx_and_clean_state_on_success";
+pub const RETURN_VERIFY_FOREIGN_TX_V2_AND_CLEAN_STATE_ON_TIMEOUT: &str =
+    "return_verify_foreign_tx_v2_and_clean_state_on_timeout";
 
 // View methods
 pub const STATE: &str = "state";

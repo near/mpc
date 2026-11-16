@@ -7,7 +7,7 @@ use crate::types::{
     NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
     SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
     VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse,
+    VerifyForeignTransactionRequestV2, VerifyForeignTransactionResponse,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,11 @@ pub struct RequestAppPrivateKeyArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VerifyForeignTransactionArgs {
     pub request: VerifyForeignTransactionRequestArgs,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct ReadRpcArgs {
+    pub request: VerifyForeignTransactionRequestV2,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
