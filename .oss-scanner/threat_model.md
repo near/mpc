@@ -1,0 +1,148 @@
+# near/mpc
+
+near/mpc implements NEAR Chain Signatures: users call the signer contract
+(`v1.signer` on mainnet), and a network of MPC nodes jointly produces threshold
+ECDSA (secp256k1) and EdDSA (Ed25519) signatures, confidential key derivations
+(CKD, BLS12-381), and attested foreign-chain transaction verifications. No node
+holds a full private key. Architecture: AGENTS.md. Security policy:
+.github/SECURITY.md. Design and threat-model docs: docs/design/, in particular
+docs/design/threat-model-diagram.md and
+docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md. Past audits: audits/.
+
+## Components, in priority order
+
+1. `crates/threshold-signatures`: DKG, resharing, OT-based ECDSA (Beaver
+   triples, presigning, signing), FROST EdDSA, CKD, and the reliable broadcast
+   and OT primitives under them.
+2. `crates/contract`: the signer contract. Request intake (`sign`,
+   `request_app_private_key`, `verify_foreign_transaction`), responses
+   (`respond*`), key derivation from predecessor account and path, participant
+   and threshold governance votes, key events (keygen, resharing), TEE
+   attestation and allowed measurements, node migration, contract updates.
+3. `crates/node`: the MPC node. P2P mesh over mutually authenticated TLS
+   (`p2p.rs`, `network/`, `crates/tls`), the coordinator and protocol runner,
+   signature providers (`providers/`), the NEAR indexer that reads requests from
+   chain, keyshare storage (`keyshare/`, `db.rs`), the migration/backup service
+   (`migration_service/`), foreign-chain RPC verification, and the HTTP server
+   (`web.rs`).
+   `crates/backup-cli` is its counterpart for node migration: the operator's
+   tool that fetches keyshares from a node's migration service, keeps them
+   encrypted with the backup key, and restores them onto the new node.
+4. TEE attestation: `crates/attestation`, `crates/mpc-attestation`,
+   `crates/tee-*`, `crates/tee-launcher`.
+5. Client-facing verification: `crates/near-mpc-sdk`,
+   `crates/near-mpc-signature-verifier`, `crates/near-mpc-contract-interface`.
+
+Out of scope: `crates/e2e-tests`, `crates/devnet`, `crates/test-*`,
+`crates/*-test-contract`, developer CLIs (`attestation-cli`, `ckd-example-cli`,
+`proposal-generator`, `foreign-chain-config-tester`), `deployment/`,
+`localnet/`, `scripts/`, Nix files and docs. Report defects in third-party
+dependencies, including nearcore, upstream.
+
+## Trust boundaries and attacker positions
+
+State which position an attack needs:
+
+- **Any NEAR account.** Can call any public contract method with arbitrary
+  arguments and deposit, and craft requests the indexer and nodes will process.
+  This is the most important position.
+- **Network attacker.** Can reach a node's P2P and HTTP ports and
+  send, drop, delay and reorder traffic, but holds no participant TLS key.
+- **Malicious participant(s).** Up to `threshold - 1` participants for ECDSA,
+  EdDSA and CKD signing. DKG and resharing use an asynchronous reliable
+  broadcast and tolerate fewer than n/3 malicious participants; attacks above
+  these bounds are not implementation bugs. A malicious participant may run
+  modified code, send arbitrary protocol messages, and vote arbitrarily.
+- **Malicious foreign-chain RPC provider.** A node accepts a foreign-chain
+  result only when a voted quorum of whitelisted providers agrees. Attacks
+  that need fewer providers than the quorum are in scope.
+- **Malicious host of a TEE node.** Controls the OS, disk, network and launcher
+  inputs outside the Intel TDX CVM, but not CVM memory. Keyshare exposure or
+  running unapproved code with a valid attestation is in scope.
+
+Trusted: the NEAR blockchain's consensus, Intel TDX hardware and its attestation
+roots, and the operator's own local configuration and secrets files.
+
+## What to look for
+
+- Leakage of key shares, triples, presignatures or secret nonces (including
+  nonce reuse, biased nonces, or presignature reuse) through protocol messages,
+  logs, metrics, the HTTP server, the migration service, or `backup-cli`
+  (including keyshares going to or from a host other than the one registered
+  in the contract, and weak handling of the backup encryption key).
+- Signature forgery, or a valid signature for a payload, key or derivation
+  path the requester is not entitled to; wrong predecessor/path binding; a
+  response accepted for the wrong pending request.
+- Protocol messages from a malicious participant that cause honest nodes to
+  output wrong keys, wrong signatures, or accept an invalid reshare.
+- Contract state corruption: governance or threshold bypass, votes counted
+  from non-participants, stuck or skippable key events, unauthorized contract
+  updates or migrations, attestation checks that can be bypassed.
+- Remote crashes, panics, unbounded memory/queue growth, or stalls caused by
+  untrusted P2P messages, contract state or chain data. Note that the protocol
+  functions in `threshold-signatures` wait indefinitely by design; the node is
+  responsible for timeouts.
+- Foreign-chain verification accepting a transaction that the quorum of
+  providers did not confirm, or for the wrong chain, block or finality.
+
+## Rating severity
+
+- **Critical**: recovery of a private key or of enough key shares to sign;
+  signature forgery or signing on behalf of another account/path; theft of
+  contract funds; bypass of participant/threshold governance; a TEE node
+  exposing plaintext keyshares to its host. Reachable by any NEAR account or a
+  network attacker, or by a single malicious participant.
+- **High**: the same impacts requiring several (still below-threshold) colluding
+  participants; halting the whole network's signing or key events from any
+  single position; a remote crash of honest nodes by a non-participant; a false
+  foreign-chain verification.
+- **Medium**: denial of service against one node or one request type, or
+  needing a malicious participant; griefing that costs the attacker gas
+  proportional to the damage; leaks of non-secret but private operational data.
+- **Low**: hardening issues without a demonstrated impact; issues needing
+  operator misconfiguration.
+
+Account for gas costs, deposits and existing limits in resource attacks. A
+panic or assertion is a crash only if it occurs in the release build; the test
+profile has overflow checks enabled. A contract panic reverts that receipt only
+and is not a crash unless it blocks progress.
+
+## Known and intentional: do not report
+
+- `crates/threshold-signatures/src/ecdsa/robust_ecdsa` is a deliberate stub
+  that leaks the signing key (see its README). Do not report the leak itself.
+- Protocol functions in `threshold-signatures` block forever on missing
+  messages; see above.
+- Methods behind the `sandbox-test-methods`, `bench-contract-methods`,
+  `test-utils` or `network-hardship-simulation` features are not deployed.
+- `/debug/*`, `/metrics`, `/public_data` and `/health` on the node's web port
+  are intentionally unauthenticated. Report them only if they expose secrets or
+  allow state changes.
+
+## Environment and reproduction
+
+The checkout is at /src. The image has the Rust toolchain pinned in
+`rust-toolchain.toml` with the wasm32 target, cargo-near, cargo-nextest, and a
+`near-sandbox` binary (`NEAR_SANDBOX_BIN_PATH`). Tests are precompiled in the
+`test-release` profile (release with overflow checks), and `mpc-node` is built
+in the same profile. The contract tests compile their contract wasm variants
+on first run, which takes a few minutes and works offline.
+
+Run the baseline offline with:
+
+```sh
+mpc-tests
+```
+
+It runs `cargo nextest run --cargo-profile=test-release --all-features`
+over the workspace, excluding the E2E suite and tests that need Internet
+access. Extra arguments are passed to nextest, for example
+`mpc-tests -p threshold-signatures` or `mpc-tests -E 'test(sign)'`.
+
+Contract sandbox tests in `crates/contract/tests/sandbox` start a local NEAR
+node and are the best place to reproduce contract issues end to end. In-process
+multi-node tests in `crates/node/src/tests` exercise the node's protocols.
+The E2E suite (`crates/e2e-tests`) is not prebuilt.
+
+Follow AGENTS.md and docs/development/engineering-standards.md for test
+structure.
