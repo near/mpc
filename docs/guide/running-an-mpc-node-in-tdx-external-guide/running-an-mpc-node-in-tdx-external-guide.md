@@ -3033,7 +3033,7 @@ If you see no error logs at all but `get_attestation` still returns `null`, the 
 ## Transition phase {#transition-phase}
 
 During the transition phase, both MPC nodes with TEE and without TEE will be allowed.
-After the transition phase is completed, only MPC nodes with valid remote attestation of a valid TEE configuration will be allowed to join the MPC cluster, and any node without a valid TEE configuration will be kicked out of the cluster.
+After the transition phase is completed, only MPC nodes with valid remote attestation of a valid TEE configuration will be allowed to join the MPC cluster. While any participant lacks a valid TEE configuration, the network stops serving signature requests until that participant attests again or a vote removes it from the cluster.
 
 ## Appendix: Self-hosting a local PCCS
 
