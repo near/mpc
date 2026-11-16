@@ -64,8 +64,8 @@ bench-contract-methods = []
 # length of a fan-out queue). Distinct from `bench-contract-methods` because these are
 # behavioral hooks, not gas-measurement hooks.
 sandbox-test-methods = []
-# The `read_rpc` request method for V2 foreign transaction requests. Off in the
-# release build until V2 ships.
+# The methods of V2 foreign transaction requests: `read_rpc` and
+# `respond_verify_foreign_tx_v2`. Off in the release build until V2 ships.
 foreign-tx-v2 = []
 dev-utils = ["rand", "threshold-signatures", "near-mpc-contract-interface/blstrs"]
 abi = [

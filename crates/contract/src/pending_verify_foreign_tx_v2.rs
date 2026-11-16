@@ -4,6 +4,10 @@
 use near_mpc_contract_interface::types::{
     BlockHeight, DomainId, ForeignChainRpcRequest, Hash256, YieldId,
 };
+#[cfg(feature = "foreign-tx-v2")]
+use near_mpc_contract_interface::types::{
+    ForeignTxSignPayload, ForeignTxSignPayloadV2, ForeignTxVerificationOutcome,
+};
 use near_sdk::{near, store::LookupMap};
 
 use crate::storage_keys::StorageKey;
@@ -61,7 +65,6 @@ impl PendingVerifyForeignTxRequestsV2 {
         self.by_yield_id.remove(yield_id)
     }
 
-    #[cfg(test)]
     pub(crate) fn get(&self, yield_id: &YieldId) -> Option<&PendingVerifyForeignTxRequestV2> {
         self.by_yield_id.get(yield_id)
     }
@@ -69,6 +72,25 @@ impl PendingVerifyForeignTxRequestsV2 {
     #[cfg(test)]
     pub(crate) fn set_next_yield_counter(&mut self, counter: u64) {
         self.next_yield_counter = counter;
+    }
+}
+
+#[cfg(feature = "foreign-tx-v2")]
+impl PendingVerifyForeignTxRequestV2 {
+    /// The payload the MPC network signs to answer the request stored under
+    /// `yield_id` with `outcome`.
+    pub(crate) fn sign_payload(
+        &self,
+        yield_id: YieldId,
+        outcome: ForeignTxVerificationOutcome,
+    ) -> ForeignTxSignPayload {
+        ForeignTxSignPayload::V2(ForeignTxSignPayloadV2 {
+            request: self.request.clone(),
+            expected_values_hash: self.expected_values_hash.clone(),
+            request_block_height: self.request_block_height,
+            yield_id,
+            outcome,
+        })
     }
 }
 

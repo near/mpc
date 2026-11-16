@@ -3,11 +3,12 @@
 use crate::types::{
     AccountId, Attestation, BackupServiceInfo, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
     DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey, EpochId, ExpectedMeasurements,
-    ForeignChain, GovernanceThresholdParameters, InitConfig, KeyEventId, Keyset, LauncherImageHash,
-    NodeImageHash, ParticipantUrl, ProposedGovernanceThresholdParameters, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, TeeVerifierCodeHash, UpdateHash,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionRequestV2, VerifyForeignTransactionResponse,
+    ForeignChain, ForeignTxVerificationOutcome, GovernanceThresholdParameters, InitConfig,
+    KeyEventId, Keyset, LauncherImageHash, NodeImageHash, ParticipantUrl,
+    ProposedGovernanceThresholdParameters, PublicKey, SignRequestArgs, SignatureRequest,
+    SignatureResponse, TeeVerifierCodeHash, UpdateHash, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionRequestV2,
+    VerifyForeignTransactionResponse, YieldId,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -117,6 +118,13 @@ pub struct CKDRespondArgs {
 pub struct VerifyForeignTransactionRespondArgs {
     pub request: VerifyForeignTransactionRequest,
     pub response: VerifyForeignTransactionResponse,
+}
+
+#[derive(Serialize, Debug, Deserialize, Clone, derive_more::Constructor)]
+pub struct VerifyForeignTransactionRespondV2Args {
+    pub yield_id: YieldId,
+    pub outcome: ForeignTxVerificationOutcome,
+    pub signature: SignatureResponse,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

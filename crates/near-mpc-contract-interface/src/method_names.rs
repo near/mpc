@@ -13,6 +13,7 @@ pub const READ_RPC: &str = "read_rpc";
 pub const RESPOND: &str = "respond";
 pub const RESPOND_CKD: &str = "respond_ckd";
 pub const RESPOND_VERIFY_FOREIGN_TX: &str = "respond_verify_foreign_tx";
+pub const RESPOND_VERIFY_FOREIGN_TX_V2: &str = "respond_verify_foreign_tx_v2";
 
 // Vote methods
 pub const VOTE_PK: &str = "vote_pk";
