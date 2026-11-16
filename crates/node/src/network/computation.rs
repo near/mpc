@@ -30,6 +30,11 @@ impl Drop for RecordDurationOnDrop {
     }
 }
 
+/// A leader centric computation ran past its deadline.
+#[derive(Debug, thiserror::Error)]
+#[error("Timeout")]
+pub(crate) struct ComputationTimeout;
+
 /// Interface for a computation that is leader-centric:
 ///  - If any follower's computation returns error, it automatically sends an Abort message to
 ///    the leader, causing the leader to fail as well.
@@ -92,7 +97,7 @@ pub trait MpcLeaderCentricComputation<T>: Sized + 'static {
             let result = match result {
                 Ok(result) => result,
                 Err(_) => {
-                    let err = anyhow::anyhow!("Timeout");
+                    let err = anyhow::Error::new(ComputationTimeout);
                     sender.communicate_failure(&err);
                     if let Some(recorder) = &mut recorder {
                         recorder.outcome = metrics::DEADLINE_EXCEEDED_OUTCOME_LABEL;

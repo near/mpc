@@ -1,6 +1,8 @@
 mod leader;
 mod signer;
 
+pub(crate) use leader::{RoundsEnd, StopLeading};
+
 use std::collections::BTreeSet;
 use std::sync::Arc;
 

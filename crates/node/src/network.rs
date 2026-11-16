@@ -23,7 +23,7 @@ use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -435,6 +435,7 @@ impl MeshNetworkClient {
                             })
                             .collect(),
                         transport_sender: self.transport_sender.clone(),
+                        heard_from: Mutex::default(),
                     }),
                     successful_participants: HashSet::new(),
                     computations_before_evidence: VecDeque::new(),
@@ -523,6 +524,22 @@ pub enum InvalidChannelId {
     },
     #[error("no open channel {0:?} under our participant id")]
     NoOpenChannel(ChannelId),
+}
+
+/// A follower aborted a computation this node leads.
+#[derive(Debug, thiserror::Error)]
+#[error("Aborted by participant {participant}: {reason}")]
+pub(crate) struct AbortedByParticipant {
+    pub(crate) participant: ParticipantId,
+    pub(crate) reason: String,
+}
+
+/// A participant sent this node a message its computation does not expect.
+#[derive(Debug, thiserror::Error)]
+#[error("unexpected {message} from participant {participant}")]
+pub(crate) struct UnexpectedMessage {
+    pub(crate) participant: ParticipantId,
+    pub(crate) message: String,
 }
 
 /// Reason why the participant set of an [`MpcStartMessage`] was rejected.
@@ -751,6 +768,8 @@ pub struct NetworkTaskChannelSender {
     connection_versions: HashMap<ParticipantId, ConnectionVersion>,
     /// The underlying transport layer.
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
+    /// The participants that sent this node a message on the channel.
+    heard_from: Mutex<HashSet<ParticipantId>>,
 }
 
 /// A computation data message received from a participant.
@@ -821,6 +840,18 @@ impl NetworkTaskChannelSender {
 
     pub fn get_leader(&self) -> ParticipantId {
         self.leader
+    }
+
+    /// The other participants that sent this node nothing on the channel yet.
+    pub(crate) fn silent_participants(&self) -> BTreeSet<ParticipantId> {
+        let heard_from = self.heard_from.lock().unwrap();
+        self.participants
+            .iter()
+            .filter(|participant| {
+                **participant != self.my_participant_id && !heard_from.contains(participant)
+            })
+            .copied()
+            .collect()
     }
 
     /// Waits for each participant involved in this task to be bidirectionally connected to us
@@ -997,6 +1028,7 @@ impl NetworkTaskChannel {
             );
             return Ok(None);
         }
+        self.sender.heard_from.lock().unwrap().insert(message.from);
         match message.message.kind {
             MpcMessageKind::Computation(data) => {
                 return Ok(Some(ReceivedMessage::Computation(
@@ -1016,7 +1048,11 @@ impl NetworkTaskChannel {
                     err
                 );
                 if self.sender.is_leader() {
-                    anyhow::bail!("Aborted by participant {}: {}", message.from, err);
+                    return Err(AbortedByParticipant {
+                        participant: message.from,
+                        reason: err,
+                    }
+                    .into());
                 } else {
                     anyhow::bail!("Aborted by leader: {}", err);
                 }
@@ -1062,10 +1098,13 @@ impl NetworkTaskChannel {
         loop {
             match self.receive_one().await? {
                 Some(ReceivedMessage::Computation(data)) => return Ok(data),
-                Some(ReceivedMessage::Evidence { from, outcomes }) => anyhow::bail!(
-                    "Unexpected evidence from participant {from} with {} outcomes",
-                    outcomes.len()
-                ),
+                Some(ReceivedMessage::Evidence { from, outcomes }) => {
+                    return Err(UnexpectedMessage {
+                        participant: from,
+                        message: format!("evidence with {} outcomes", outcomes.len()),
+                    }
+                    .into());
+                }
                 None => {}
             }
         }
@@ -1420,6 +1459,7 @@ pub mod testing {
                 participants,
                 connection_versions,
                 transport_sender,
+                heard_from: std::sync::Mutex::default(),
             }),
             successful_participants: HashSet::new(),
             computations_before_evidence: std::collections::VecDeque::new(),
@@ -1470,19 +1510,22 @@ mod tests {
     use super::{
         InvalidChannelId, InvalidStartMessage, MeshNetworkClient, MeshNetworkTransportReceiver,
         MeshNetworkTransportSender, NetworkTaskChannel, NetworkTaskChannelManager,
-        broadcast_connected_peers_info, emit_metrics_periodically, run_receive_message,
+        UnexpectedMessage, broadcast_connected_peers_info, emit_metrics_periodically,
+        run_receive_message,
     };
     use crate::metrics::{self, networking_metrics};
     use crate::network::indexer_heights::IndexerHeightTracker;
     use crate::network::testing::{
-        TestMeshTransport, TestMeshTransportSender, current_protocol_versions, new_test_client,
-        new_test_client_over, new_test_client_with_versions, new_test_transports, run_test_clients,
+        TestMeshTransport, TestMeshTransportSender, current_protocol_versions,
+        new_task_channel_for_test, new_test_client, new_test_client_over,
+        new_test_client_with_versions, new_test_transports, run_test_clients,
     };
     use crate::network::wire_format::{
         EcdsaTaskId, MpcMessageKind, MpcTaskId, Packet, VerifyForeignTxTaskId,
     };
     use crate::primitives::{
-        ChannelId, ConnectedPeersInfo, MpcMessage, MpcStartMessage, ParticipantId, UniqueId,
+        ChannelId, ConnectedPeersInfo, MpcMessage, MpcPeerMessage, MpcStartMessage, ParticipantId,
+        UniqueId,
     };
     use crate::protocol_version::NetworkProtocolVersion;
     use crate::providers::verify_foreign_tx::node_outcome::{
@@ -1500,7 +1543,7 @@ mod tests {
     use near_mpc_contract_interface::types::YieldId;
     use rstest::rstest;
     use serial_test::serial;
-    use std::collections::{BTreeMap, HashMap, HashSet};
+    use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
     use std::sync::atomic::AtomicU64;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -1753,6 +1796,64 @@ mod tests {
         };
         assert_eq!(sent_to(first), vec![start.clone(), evidence.clone()]);
         assert_eq!(sent_to(second), vec![start, evidence]);
+    }
+
+    #[tokio::test]
+    async fn receive__should_name_the_participant_that_sent_unexpected_evidence() {
+        // Given
+        let [me, sender, other] = [1, 2, 3].map(ParticipantId::from_raw);
+        let task_id = EcdsaTaskId::ManyTriples {
+            start: UniqueId::new(me, 0, 0),
+            count: 2,
+        };
+        let (mut channel, raw_sender) =
+            new_task_channel_for_test(task_id.into(), me, me, vec![me, sender, other]);
+        raw_sender
+            .send(MpcPeerMessage {
+                from: sender,
+                message: MpcMessage {
+                    channel_id: ChannelId(UniqueId::new(me, 0, 0)),
+                    kind: MpcMessageKind::Evidence(vec![node_outcome()]),
+                },
+            })
+            .unwrap();
+
+        // When
+        let error = channel.receive().await.err().unwrap();
+
+        // Then
+        let unexpected = error.downcast::<UnexpectedMessage>().unwrap();
+        assert_eq!(unexpected.participant, sender);
+    }
+
+    #[tokio::test]
+    async fn silent_participants__should_name_the_participants_that_sent_nothing_yet() {
+        // Given
+        let [me, heard, silent] = [1, 2, 3].map(ParticipantId::from_raw);
+        let task_id = EcdsaTaskId::ManyTriples {
+            start: UniqueId::new(me, 0, 0),
+            count: 2,
+        };
+        let (mut channel, raw_sender) =
+            new_task_channel_for_test(task_id.into(), me, me, vec![me, heard, silent]);
+        raw_sender
+            .send(MpcPeerMessage {
+                from: heard,
+                message: MpcMessage {
+                    channel_id: ChannelId(UniqueId::new(me, 0, 0)),
+                    kind: MpcMessageKind::Computation(vec![vec![1]]),
+                },
+            })
+            .unwrap();
+
+        // When
+        channel.receive().await.unwrap();
+
+        // Then
+        assert_eq!(
+            channel.sender().silent_participants(),
+            BTreeSet::from([silent])
+        );
     }
 
     #[test]

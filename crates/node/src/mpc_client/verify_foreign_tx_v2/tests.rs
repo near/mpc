@@ -156,3 +156,56 @@ fn notify_v2_block__should_count_the_outcomes_of_a_request_from_its_block_until_
         0
     );
 }
+
+#[rstest::rstest]
+#[case::not_a_backer(anyhow::Error::new(StopLeading::NotABacker(NodeVerdict::Verified)))]
+#[case::rounds_exhausted_or_local(anyhow::Error::new(RoundsEnd::Local(anyhow::anyhow!(
+    "no signature"
+))))]
+#[case::request_closed_before_a_retry(anyhow::Error::new(RoundsEnd::Stopped(
+    StopLeading::RequestClosed
+)))]
+#[tokio::test]
+async fn stop_leading_on_failure__should_stop_leading_when_this_node_ends_its_rounds(
+    #[case] stop: anyhow::Error,
+) {
+    // Given
+    let progress = Mutex::new(ComputationProgress::default());
+
+    // When
+    let led = stop_leading_on_failure(&progress, async { anyhow::Result::<()>::Err(stop) }).await;
+
+    // Then
+    led.unwrap_err();
+    assert!(progress.lock().unwrap().stopped_leading);
+}
+
+#[tokio::test]
+async fn stop_leading_on_failure__should_leave_the_request_to_a_later_attempt_after_another_error()
+{
+    // Given
+    let progress = Mutex::new(ComputationProgress::default());
+
+    // When
+    let led = stop_leading_on_failure(&progress, async {
+        anyhow::Result::<()>::Err(anyhow::anyhow!("no keyshare for the domain"))
+    })
+    .await;
+
+    // Then
+    led.unwrap_err();
+    assert!(!progress.lock().unwrap().stopped_leading);
+}
+
+#[tokio::test]
+async fn stop_leading_on_failure__should_keep_leading_when_the_lead_succeeds() {
+    // Given
+    let progress = Mutex::new(ComputationProgress::default());
+
+    // When
+    let led = stop_leading_on_failure(&progress, async { anyhow::Ok(()) }).await;
+
+    // Then
+    led.unwrap();
+    assert!(!progress.lock().unwrap().stopped_leading);
+}
