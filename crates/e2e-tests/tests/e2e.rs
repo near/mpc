@@ -14,6 +14,7 @@ mod mainnet_protocol;
 mod migration_endpoint;
 mod migration_service;
 mod parallel_sign_calls;
+mod read_rpc;
 mod request_during_resharing;
 mod request_lifecycle;
 mod sigterm_handler;

@@ -1,3 +1,4 @@
+use crate::providers::verify_foreign_tx::SignedVerdict;
 use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
@@ -6,8 +7,9 @@ use near_indexer_primitives::types::Gas;
 use near_mpc_contract_interface::call_args as contract_args;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, REGISTER_OUTCOME_KEY, RESPOND,
-    RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
-    SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE, VOTE_PK, VOTE_RESHARED,
+    RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX, RESPOND_VERIFY_FOREIGN_TX_V2, START_KEYGEN_INSTANCE,
+    START_RESHARE_INSTANCE, SUBMIT_PARTICIPANT_INFO, VERIFY_TEE, VOTE_ABORT_KEY_EVENT_INSTANCE,
+    VOTE_PK, VOTE_RESHARED,
 };
 use near_mpc_contract_interface::types::{self as dtos};
 use serde::Serialize;
@@ -35,6 +37,7 @@ pub trait ChainRespondArgs {}
 impl ChainRespondArgs for contract_args::SignatureRespondArgs {}
 impl ChainRespondArgs for contract_args::CKDRespondArgs {}
 impl ChainRespondArgs for contract_args::VerifyForeignTransactionRespondArgs {}
+impl ChainRespondArgs for contract_args::VerifyForeignTransactionRespondV2Args {}
 
 /// Request to send a transaction to the contract on chain.
 #[derive(Serialize, Debug)]
@@ -60,6 +63,7 @@ pub enum ChainSendTransactionRequest {
 
     ConcludeNodeMigration(contract_args::ConcludeNodeMigrationArgs),
     VerifyForeignTransactionRespond(contract_args::VerifyForeignTransactionRespondArgs),
+    VerifyForeignTransactionRespondV2(contract_args::VerifyForeignTransactionRespondV2Args),
 }
 
 impl ChainSendTransactionRequest {
@@ -84,6 +88,9 @@ impl ChainSendTransactionRequest {
             ChainSendTransactionRequest::VerifyForeignTransactionRespond(_) => {
                 RESPOND_VERIFY_FOREIGN_TX
             }
+            ChainSendTransactionRequest::VerifyForeignTransactionRespondV2(_) => {
+                RESPOND_VERIFY_FOREIGN_TX_V2
+            }
         }
     }
 
@@ -102,7 +109,8 @@ impl ChainSendTransactionRequest {
             | Self::VerifyTee()
             | Self::SubmitParticipantInfo(_)
             | Self::ConcludeNodeMigration(_)
-            | Self::VerifyForeignTransactionRespond(_) => MAX_GAS,
+            | Self::VerifyForeignTransactionRespond(_)
+            | Self::VerifyForeignTransactionRespondV2(_) => MAX_GAS,
         }
     }
 }
@@ -202,6 +210,39 @@ impl VerifyForeignTransactionRespondArgsExt for contract_args::VerifyForeignTran
                 payload_hash,
                 signature: dtos::SignatureResponse::Secp256k1(dto_signature),
             },
+        ))
+    }
+}
+
+pub trait VerifyForeignTransactionRespondV2ArgsExt {
+    fn from_signed_verdict(
+        yield_id: dtos::YieldId,
+        signed_verdict: SignedVerdict,
+    ) -> anyhow::Result<Self>
+    where
+        Self: Sized;
+}
+
+impl VerifyForeignTransactionRespondV2ArgsExt
+    for contract_args::VerifyForeignTransactionRespondV2Args
+{
+    fn from_signed_verdict(
+        yield_id: dtos::YieldId,
+        signed_verdict: SignedVerdict,
+    ) -> anyhow::Result<Self> {
+        let SignedVerdict {
+            verdict,
+            payload_hash,
+            signature,
+            public_key,
+        } = signed_verdict;
+        let recovery_id = signature
+            .recovery_id(&public_key.to_element().to_affine(), payload_hash.as_ref())
+            .context(RECOVERY_ID_FAILED)?;
+        Ok(contract_args::VerifyForeignTransactionRespondV2Args::new(
+            yield_id,
+            verdict.into(),
+            k256_signature_response(signature.big_r, signature.s, recovery_id),
         ))
     }
 }

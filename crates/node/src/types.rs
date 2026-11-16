@@ -20,6 +20,10 @@ use crate::indexer::handler::{
     CKDRequestFromChain, SignatureRequestFromChain, VerifyForeignTxRequestFromChain,
 };
 
+mod verify_foreign_tx_v2;
+
+pub use verify_foreign_tx_v2::VerifyForeignTxRequestV2;
+
 pub(crate) struct RequestsUpdate<T> {
     pub(crate) requests: Vec<T>,
     pub(crate) completed_requests: Vec<RequestId>,
@@ -55,6 +59,7 @@ pub enum RequestType {
     Signature,
     CKD,
     VerifyForeignTx,
+    VerifyForeignTxV2,
 }
 
 pub type RequestId = CryptoHash;
@@ -149,6 +154,7 @@ impl fmt::Display for RequestType {
             RequestType::Signature => write!(f, "signature"),
             RequestType::CKD => write!(f, "ckd"),
             RequestType::VerifyForeignTx => write!(f, "verify_foreign_tx"),
+            RequestType::VerifyForeignTxV2 => write!(f, "verify_foreign_tx_v2"),
         }
     }
 }

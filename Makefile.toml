@@ -201,6 +201,27 @@ args = [
   "--locked",
 ]
 
+# The contract with the `foreign-tx-v2` feature. The release build leaves it out, and only the
+# E2E tests of V2 foreign transaction requests deploy it.
+[tasks.build-mpc-contract-foreign-tx-v2-optimized]
+description = "Build the mpc-contract WASM with the V2 foreign tx methods for the E2E tests"
+condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+command = "cargo"
+args = [
+  "near",
+  "build",
+  "non-reproducible-wasm",
+  "--no-abi",
+  "--profile=release-contract",
+  "--features",
+  "foreign-tx-v2",
+  "--out-dir",
+  "target/near/mpc_contract_foreign_tx_v2",
+  "--manifest-path",
+  "crates/contract/Cargo.toml",
+  "--locked",
+]
+
 [tasks.build-tee-verifier-optimized]
 description = "Build the tee-verifier WASM for localnet and the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
@@ -253,6 +274,7 @@ private = true
 dependencies = [
   "build-mpc-node-network-hardship-simulation",
   "build-mpc-contract-optimized",
+  "build-mpc-contract-foreign-tx-v2-optimized",
   "build-tee-verifier-optimized",
   "build-test-parallel-contract-optimized",
   "build-backup-cli",
@@ -273,6 +295,7 @@ args = [
 
 [tasks._run-e2e-logic.env]
 MPC_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/mpc_contract/mpc_contract.wasm"
+MPC_CONTRACT_FOREIGN_TX_V2_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/mpc_contract_foreign_tx_v2/mpc_contract.wasm"
 MPC_PARALLEL_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/test_parallel_contract/test_parallel_contract.wasm"
 MPC_TEE_VERIFIER_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/tee_verifier/tee_verifier.wasm"
 

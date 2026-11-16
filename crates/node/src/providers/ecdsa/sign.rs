@@ -107,15 +107,19 @@ impl EcdsaSignatureProvider {
             channel,
             paired_triple_id,
             sign_request,
+            Duration::from_secs(self.config.signature.timeout_sec),
         )
         .await
     }
 
+    /// Joins the signing protocol for `sign_request`, which ends at most `deadline` after it
+    /// starts.
     pub(crate) async fn make_online_presign_signature_follower_given_request(
         &self,
         channel: NetworkTaskChannel,
         paired_triple_id: UniqueId,
         sign_request: SignatureRequest,
+        deadline: Duration,
     ) -> anyhow::Result<()> {
         let keyshare = self.keyshare(sign_request.domain)?;
         let reconstruction_threshold: usize =
@@ -142,10 +146,7 @@ impl EcdsaSignatureProvider {
                 .ok_or_else(|| anyhow::anyhow!("Payload is not an ECDSA payload"))?,
             tweak: sign_request.tweak,
         }
-        .perform_leader_centric_computation(
-            channel,
-            Duration::from_secs(self.config.signature.timeout_sec),
-        )
+        .perform_leader_centric_computation(channel, deadline)
         .await
         .inspect_err(|_| {
             participants.iter().for_each(|id| {

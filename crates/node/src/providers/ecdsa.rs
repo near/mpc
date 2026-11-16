@@ -4,6 +4,8 @@ pub mod triple;
 
 mod sign;
 
+pub(crate) use sign::OnlinePresignSignComputation;
+
 use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
 use std::collections::HashMap;
 

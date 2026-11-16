@@ -25,7 +25,8 @@ use near_indexer_primitives::views::{
 use near_mpc_contract_interface::method_names::{
     FAIL_ON_TIMEOUT, READ_RPC, REQUEST_APP_PRIVATE_KEY, RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS,
     RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS,
-    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS, SIGN, VERIFY_FOREIGN_TRANSACTION,
+    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS,
+    RETURN_VERIFY_FOREIGN_TX_V2_AND_CLEAN_STATE_ON_TIMEOUT, SIGN, VERIFY_FOREIGN_TRANSACTION,
 };
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDRequestArgs;
@@ -75,6 +76,19 @@ enum IndexedRequest {
     VerifyForeignTxV2(VerifyForeignTxRequestV2FromChain),
 }
 
+/// A yield callback that one executed receipt runs on the MPC contract.
+#[derive(Debug, PartialEq, Eq)]
+enum IndexedCompletion {
+    Signature(SignatureId),
+    Ckd(CKDId),
+    VerifyForeignTx(VerifyForeignTxId),
+    /// A response resumed the yield of a V2 request.
+    VerifyForeignTxV2Answered(VerifyForeignTxId),
+    /// The yield of a V2 request timed out.
+    VerifyForeignTxV2TimedOut(VerifyForeignTxId),
+    Timeout,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct SignatureRequestFromChain {
     pub signature_id: SignatureId,
@@ -106,9 +120,11 @@ pub struct ChainBlockUpdate {
     pub completed_ckds: Vec<CKDId>,
     pub verify_foreign_tx_requests: Vec<VerifyForeignTxRequestFromChain>,
     pub completed_verify_foreign_txs: Vec<VerifyForeignTxId>,
-    // TODO(#5123): queue and answer these requests.
-    #[expect(dead_code)]
     pub verify_foreign_tx_v2_requests: Vec<VerifyForeignTxRequestV2FromChain>,
+    /// V2 requests whose yield callback ran with a response.
+    pub answered_verify_foreign_tx_v2s: Vec<VerifyForeignTxId>,
+    /// V2 requests whose yield callback ran after the yield timed out.
+    pub timed_out_verify_foreign_tx_v2s: Vec<VerifyForeignTxId>,
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -184,6 +200,8 @@ async fn handle_message(
     let mut verify_foreign_tx_requests = vec![];
     let mut completed_verify_foreign_txs = vec![];
     let mut verify_foreign_tx_v2_requests = vec![];
+    let mut answered_verify_foreign_tx_v2s = vec![];
+    let mut timed_out_verify_foreign_tx_v2s = vec![];
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
@@ -206,31 +224,36 @@ async fn handle_message(
                 }
                 Some(IndexedRequest::VerifyForeignTxV2(request)) => {
                     verify_foreign_tx_v2_requests.push(request);
+                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_V2_REQUESTS_INDEXED.inc();
                 }
                 None => {}
             }
 
-            if let Some(request_id) = try_get_request_completion(&receipt, mpc_contract_id)
-                && let Some((_, method_name)) = try_extract_function_call_args(&receipt)
-            {
-                match method_name.as_str() {
-                    RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
-                        completed_signatures.push(request_id);
-                        metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
-                    }
-                    RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => {
-                        completed_ckds.push(request_id);
-                        metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
-                    }
-                    RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
-                        completed_verify_foreign_txs.push(request_id);
-                        metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
-                    }
-                    FAIL_ON_TIMEOUT => {
-                        metrics::MPC_NUM_TIMEOUTS_INDEXED.inc();
-                    }
-                    _ => {}
+            match try_index_completion(&receipt, &execution_outcome, mpc_contract_id) {
+                Some(IndexedCompletion::Signature(request_id)) => {
+                    completed_signatures.push(request_id);
+                    metrics::MPC_NUM_SIGN_RESPONSES_INDEXED.inc();
                 }
+                Some(IndexedCompletion::Ckd(request_id)) => {
+                    completed_ckds.push(request_id);
+                    metrics::MPC_NUM_CKD_RESPONSES_INDEXED.inc();
+                }
+                Some(IndexedCompletion::VerifyForeignTx(request_id)) => {
+                    completed_verify_foreign_txs.push(request_id);
+                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_RESPONSES_INDEXED.inc();
+                }
+                Some(IndexedCompletion::VerifyForeignTxV2Answered(request_id)) => {
+                    answered_verify_foreign_tx_v2s.push(request_id);
+                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_V2_COMPLETIONS_INDEXED.inc();
+                }
+                Some(IndexedCompletion::VerifyForeignTxV2TimedOut(request_id)) => {
+                    timed_out_verify_foreign_tx_v2s.push(request_id);
+                    metrics::MPC_NUM_VERIFY_FOREIGN_TX_V2_COMPLETIONS_INDEXED.inc();
+                }
+                Some(IndexedCompletion::Timeout) => {
+                    metrics::MPC_NUM_TIMEOUTS_INDEXED.inc();
+                }
+                None => {}
             }
         }
     }
@@ -258,6 +281,8 @@ async fn handle_message(
             verify_foreign_tx_requests,
             completed_verify_foreign_txs,
             verify_foreign_tx_v2_requests,
+            answered_verify_foreign_tx_v2s,
+            timed_out_verify_foreign_tx_v2s,
         })
         .inspect_err(|err| {
             tracing::error!(target: "mpc", %err, "error sending block update to mpc node");
@@ -270,6 +295,38 @@ async fn handle_message(
     stats_lock.last_processed_block_height = block_height;
     drop(stats_lock);
     Ok(())
+}
+
+/// Finds the request that the yield callback in `receipt` completes. Its receipt id is the
+/// request id.
+fn try_index_completion(
+    receipt: &ReceiptView,
+    execution_outcome: &ExecutionOutcomeWithIdView,
+    mpc_contract_id: &AccountId,
+) -> Option<IndexedCompletion> {
+    let request_id = try_get_request_completion(receipt, mpc_contract_id)?;
+    let (_, method_name) = try_extract_function_call_args(receipt)?;
+    match method_name.as_str() {
+        RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS => {
+            Some(IndexedCompletion::Signature(request_id))
+        }
+        RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS => Some(IndexedCompletion::Ckd(request_id)),
+        RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS => {
+            Some(IndexedCompletion::VerifyForeignTx(request_id))
+        }
+        // The callback returns the response as a value, and fails the caller with a promise
+        // once the yield timed out.
+        RETURN_VERIFY_FOREIGN_TX_V2_AND_CLEAN_STATE_ON_TIMEOUT => {
+            match execution_outcome.outcome.status {
+                ExecutionStatusView::SuccessValue(_) => {
+                    Some(IndexedCompletion::VerifyForeignTxV2Answered(request_id))
+                }
+                _ => Some(IndexedCompletion::VerifyForeignTxV2TimedOut(request_id)),
+            }
+        }
+        FAIL_ON_TIMEOUT => Some(IndexedCompletion::Timeout),
+        _ => None,
+    }
 }
 
 /// Finds the request that a successful call to the MPC contract makes. A

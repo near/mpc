@@ -129,6 +129,16 @@ impl NearBlockchain {
         Ok(status.protocol_version)
     }
 
+    pub async fn block_height(&self, block_hash: near_kit::CryptoHash) -> anyhow::Result<u64> {
+        let block = self
+            .root_client
+            .rpc()
+            .block(near_kit::rpc::BlockReference::Hash(block_hash))
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to query block {block_hash}: {e}"))?;
+        Ok(block.header.height)
+    }
+
     fn make_client(&self, account_id: &str, key: &SigningKey) -> anyhow::Result<near_kit::Near> {
         let sk = key.to_near_secret_key();
         let signer = near_kit::signer::InMemorySigner::from_secret_key(account_id, sk)

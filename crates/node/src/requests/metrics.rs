@@ -261,3 +261,83 @@ pub static MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL: LazyLock<prometheus::I
         )
         .unwrap()
     });
+
+pub static MPC_PENDING_VERIFY_FOREIGN_TX_V2_QUEUE_SIZE_TOTAL: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_pending_verify_foreign_tx_v2s_queue_size_total",
+            "Number of pending V2 verify foreign tx requests in the queue"
+        )
+        .unwrap()
+    });
+pub static MPC_PENDING_VERIFY_FOREIGN_TX_V2_QUEUE_ATTEMPTS_GENERATED_TOTAL: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_pending_verify_foreign_tx_v2s_queue_attempts_generated_total",
+        "Number of attempts the pending V2 verify foreign tx queue generated to answer a request \
+         as the leader"
+    )
+    .unwrap()
+});
+pub static MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_REQUESTS_INDEXED_TOTAL: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_pending_verify_foreign_tx_v2s_queue_requests_indexed_total",
+        "Number of V2 verify foreign tx requests indexed by the pending V2 verify foreign tx queue"
+    )
+    .unwrap()
+});
+pub static MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_RESPONSES_INDEXED_TOTAL: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_pending_verify_foreign_tx_v2s_queue_responses_indexed_total",
+        "Number of V2 verify foreign tx completions, a response or a timeout, indexed by the \
+         pending V2 verify foreign tx queue. Not all of them may get finalized."
+    )
+    .unwrap()
+});
+pub static MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_MATCHING_RESPONSES_INDEXED_TOTAL: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_pending_verify_foreign_tx_v2s_queue_matching_responses_indexed_total",
+        "Number of V2 verify foreign tx completions that match a queued V2 request. Not all of \
+         them may get finalized."
+    )
+    .unwrap()
+});
+pub static MPC_PENDING_VERIFY_FOREIGN_TX_V2S_QUEUE_FINALIZED_RESPONSES_INDEXED_TOTAL: LazyLock<
+    prometheus::IntCounter,
+> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_pending_verify_foreign_tx_v2s_queue_finalized_responses_indexed_total",
+        "Number of V2 verify foreign tx completions that have been finalized, indexed by the \
+         pending V2 verify foreign tx queue"
+    )
+    .unwrap()
+});
+pub static VERIFY_FOREIGN_TX_V2S_REQUEST_RESPONSE_LATENCY_BLOCKS: LazyLock<prometheus::Histogram> =
+    LazyLock::new(|| {
+        let mut buckets = linear_buckets(1.0, 1.0, 9).unwrap();
+        buckets.extend(exponential_buckets(10.0, 1.5, 91).unwrap());
+        prometheus::register_histogram!(
+            "mpc_verify_foreign_tx_v2s_request_response_latency_blocks",
+            "The number of blocks between when a V2 verify foreign tx request is seen and when \
+             its completion is seen",
+            buckets
+        )
+        .unwrap()
+    });
+pub static VERIFY_FOREIGN_TX_V2S_REQUEST_RESPONSE_LATENCY_SECONDS: LazyLock<prometheus::Histogram> =
+    LazyLock::new(|| {
+        prometheus::register_histogram!(
+            "mpc_verify_foreign_tx_v2s_request_response_latency_seconds",
+            "The duration, in seconds, between when a V2 verify foreign tx request is seen and \
+             when its completion is seen",
+            exponential_buckets(2.0, 1.5, 10).unwrap()
+        )
+        .unwrap()
+    });
