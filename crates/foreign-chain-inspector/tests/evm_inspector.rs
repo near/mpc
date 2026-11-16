@@ -577,7 +577,6 @@ macro_rules! evm_inspector_tests {
             #[tokio::test]
             async fn extract__should_reject_log_not_bound_to_receipt(#[case] unbound_log: Log) {
                 // Given
-                let tx_id_bytes: [u8; 32] = [3; 32];
                 let expected_log = unbound_log.clone();
                 let bound_log = test_log();
 
@@ -599,8 +598,7 @@ macro_rules! evm_inspector_tests {
                         && log_transaction_hash == expected_log.transaction_hash.into()
                         && log_block_hash == expected_log.block_hash.into()
                         && log_block_number == expected_log.block_number.as_u64()
-                        && receipt_transaction_hash
-                            == foreign_chain_inspector::HexBytes(tx_id_bytes.to_vec())
+                        && receipt_transaction_hash == bound_log.transaction_hash.into()
                         && receipt_block_hash == bound_log.block_hash.into()
                         && receipt_block_number == bound_log.block_number.as_u64()
                 );
@@ -611,10 +609,16 @@ macro_rules! evm_inspector_tests {
             async fn extract_log_from_receipt_with(
                 log: Log,
             ) -> Result<Verdict<ExtractedValue>, ForeignChainInspectionError> {
+                let bound_log = test_log();
                 let target_log_index = log.log_index.as_u64();
                 let tx_response = GetTransactionReceiptResponse {
+                    transaction_hash: bound_log.transaction_hash,
                     logs: vec![log],
-                    ..receipt_at(90, [4; 32], U64::one())
+                    ..receipt_at(
+                        bound_log.block_number.as_u64(),
+                        bound_log.block_hash.0,
+                        U64::one(),
+                    )
                 };
 
                 extract_from(

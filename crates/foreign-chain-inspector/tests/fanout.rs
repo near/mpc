@@ -367,11 +367,7 @@ mod split_extracted_and_failing {
     #[rstest]
     #[case::transaction_failed(Verdict::TransactionFailed)]
     #[case::transaction_not_found(Verdict::TransactionNotFound)]
-    #[case::non_canonical_block(Verdict::NonCanonicalBlock {
-        block_number: 1,
-        receipt_hash: HexBytes(vec![1]),
-        canonical_hash: HexBytes(vec![2]),
-    })]
+    #[case::non_canonical_block(non_canonical_verdict(2))]
     #[case::log_index_out_of_bounds(Verdict::LogIndexOutOfBounds)]
     #[tokio::test]
     async fn fan_out__should_return_mismatch_when_some_extract_and_others_rule_the_tx_out(
