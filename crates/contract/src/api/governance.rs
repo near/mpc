@@ -44,12 +44,10 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let validation_result = self.tee_state.reverify_and_cleanup_participants(
-            proposal.participants(),
-            tee_upgrade_deadline_duration,
-        );
+        let validation_result = self
+            .tee_state
+            .reverify_participants(proposal.participants(), tee_upgrade_deadline_duration);
 
-        let proposed_participants = proposal.participants();
         match validation_result {
             TeeValidationResult::Full => {
                 if let Some(new_state) = self.protocol_state.vote_new_parameters(
@@ -62,24 +60,14 @@ impl MpcContract {
                 Ok(())
             }
             TeeValidationResult::Partial {
-                participants_with_valid_attestation,
-            } => {
-                let invalid_participants: Vec<_> = proposed_participants
-                    .participants()
-                    .iter()
-                    .filter(|(account_id, _, _)| {
-                        !participants_with_valid_attestation.is_participant(account_id)
-                    })
-                    .collect();
-
-                Err(InvalidParameters::InvalidTeeRemoteAttestation {
-                    reason: format!(
-                        "The following participants have invalid TEE status: {:?}",
-                        invalid_participants
-                    ),
-                }
-                .into())
+                participants_with_invalid_attestation,
+            } => Err(InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: format!(
+                    "The following participants have invalid TEE status: {:?}",
+                    participants_with_invalid_attestation
+                ),
             }
+            .into()),
         }
     }
 
@@ -469,7 +457,7 @@ mod tests {
             BTreeMap::new(),
         );
         assert_matches!(
-            contract.tee_state.reverify_and_cleanup_participants(
+            contract.tee_state.reverify_participants(
                 proposal.participants(),
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
             ),

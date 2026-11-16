@@ -217,7 +217,7 @@ impl MpcContract {
         };
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        let validation = self.tee_state.reverify_and_cleanup_participants(
+        let validation = self.tee_state.reverify_participants(
             running_state.parameters.participants(),
             tee_upgrade_deadline_duration,
         );
@@ -301,7 +301,7 @@ impl MpcContract {
 
         match self
             .tee_state
-            .reverify_and_cleanup_participants(participants, tee_upgrade_deadline_duration)
+            .reverify_participants(participants, tee_upgrade_deadline_duration)
         {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
