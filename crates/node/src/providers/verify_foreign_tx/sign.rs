@@ -1,33 +1,20 @@
 use crate::network::wire_format::VerifyForeignTxTaskId;
 use std::collections::HashSet;
 
-use anyhow::{Context, bail};
-use foreign_chain_inspector::Verdict;
-use foreign_chain_inspector::abstract_chain::inspector::AbstractExtractor;
-use foreign_chain_inspector::adi::inspector::AdiExtractor;
-use foreign_chain_inspector::aptos::inspector::{AptosExtractor, AptosFinality};
-use foreign_chain_inspector::arbitrum::inspector::ArbitrumExtractor;
-use foreign_chain_inspector::avalanche::inspector::AvalancheExtractor;
-use foreign_chain_inspector::base::inspector::BaseExtractor;
-use foreign_chain_inspector::bitcoin::inspector::BitcoinExtractor;
-use foreign_chain_inspector::bnb::inspector::BnbExtractor;
-use foreign_chain_inspector::ethereum::inspector::EthereumExtractor;
-use foreign_chain_inspector::http_client::HttpClient;
-use foreign_chain_inspector::hyperevm::inspector::HyperEvmExtractor;
-use foreign_chain_inspector::polygon::inspector::PolygonExtractor;
-use foreign_chain_inspector::starknet::inspector::{StarknetExtractor, StarknetFinality};
-use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
-use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
-use foreign_chain_inspector::{EthereumFinality, RpcQuorum};
+use anyhow::bail;
+use foreign_chain_inspector::{ForeignChainInspectionError, RpcQuorum, Verdict};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
-use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::foreign_chain_rpc_policy::{self, RpcQuorumError};
 use crate::metrics;
 use crate::primitives::ParticipantId;
 use crate::providers::ecdsa::triple::participants_from_triples;
-use crate::providers::verify_foreign_tx::MeasuredFanOut;
+use crate::providers::verify_foreign_tx::inspect_request::inspect_request;
+use crate::providers::verify_foreign_tx::inspection::{
+    FOREIGN_CHAIN_INSPECTION_TIMEOUT, Inspection, TransientErrors,
+};
+use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use crate::{
     network::NetworkTaskChannel, primitives::UniqueId,
@@ -38,7 +25,6 @@ use near_mpc_contract_interface::types::{self as dtos, ECDSA_PAYLOAD_SIZE_BYTES}
 use near_mpc_contract_interface::types::{Payload, Tweak};
 use tokio::time::{Duration, timeout};
 
-pub(crate) const FOREIGN_CHAIN_INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
 const TRIPLE_TAKE_GRACE_PERIOD: Duration = Duration::from_secs(1);
 
 fn build_signature_request(
@@ -221,360 +207,17 @@ impl VerifyForeignTxProvider {
         request: &dtos::ForeignChainRpcRequest,
         payload_version: dtos::ForeignTxPayloadVersion,
     ) -> anyhow::Result<dtos::ForeignTxSignPayload> {
-        // Check that the requested chain is still available when this
-        // point is reached.
-        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request.chain())
-            .inspect_err(|_| {
-                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
+        let verdict = self
+            .inspect_foreign_chain_request(request, TransientErrors::Fail)
+            .await?
+            .map_err(|error| match error {
+                ForeignChainInspectionError::Timeout => anyhow::Error::new(error).context(format!(
+                    "foreign chain inspection exceeded the {} second cap",
+                    FOREIGN_CHAIN_INSPECTION_TIMEOUT.as_secs()
+                )),
+                error => error.into(),
             })?;
-        let quorum = self
-            .rpc_quorum(request.chain())
-            .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc())?;
-
-        let values: Vec<dtos::ExtractedValue> = match request {
-            dtos::ForeignChainRpcRequest::Ethereum(request) => {
-                let inspector = self
-                    .inspectors
-                    .ethereum
-                    .as_ref()
-                    .context("no inspector configured for Ethereum")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<EthereumExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Solana(request) => {
-                let inspector = self
-                    .inspectors
-                    .solana
-                    .as_ref()
-                    .context("no inspector configured for Solana")?;
-                execute_svm_request(inspector, &quorum, request).await?
-            }
-            dtos::ForeignChainRpcRequest::Fogo(request) => {
-                let inspector = self
-                    .inspectors
-                    .fogo
-                    .as_ref()
-                    .context("no inspector configured for Fogo")?;
-                execute_svm_request(inspector, &quorum, request).await?
-            }
-            dtos::ForeignChainRpcRequest::Bitcoin(request) => {
-                let inspector = self
-                    .inspectors
-                    .bitcoin
-                    .as_ref()
-                    .context("no inspector configured for bitcoin")?;
-                let transaction_id = request.tx_id.0.into();
-                let block_confirmations = request.confirmations.0.into();
-                let extractors: Vec<BitcoinExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let extracted_values = require_extracted(
-                    inspector
-                        .extract_with_quorum(
-                            &quorum,
-                            transaction_id,
-                            block_confirmations,
-                            extractors,
-                        )
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                extracted_values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Abstract(request) => {
-                let inspector = self
-                    .inspectors
-                    .abstract_chain
-                    .as_ref()
-                    .context("no inspector configured for abstract")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<AbstractExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Bnb(request) => {
-                let inspector = self
-                    .inspectors
-                    .bnb
-                    .as_ref()
-                    .context("no inspector configured for BNB")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<BnbExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Base(request) => {
-                let inspector = self
-                    .inspectors
-                    .base
-                    .as_ref()
-                    .context("no inspector configured for Base")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<BaseExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Arbitrum(request) => {
-                let inspector = self
-                    .inspectors
-                    .arbitrum
-                    .as_ref()
-                    .context("no inspector configured for Arbitrum")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<ArbitrumExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::HyperEvm(request) => {
-                let inspector = self
-                    .inspectors
-                    .hyper_evm
-                    .as_ref()
-                    .context("no inspector configured for HyperEVM")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<HyperEvmExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Polygon(request) => {
-                let inspector = self
-                    .inspectors
-                    .polygon
-                    .as_ref()
-                    .context("no inspector configured for Polygon")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<PolygonExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Avalanche(request) => {
-                let inspector = self
-                    .inspectors
-                    .avalanche
-                    .as_ref()
-                    .context("no inspector configured for Avalanche")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<AvalancheExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Adi(request) => {
-                let inspector = self
-                    .inspectors
-                    .adi
-                    .as_ref()
-                    .context("no inspector configured for ADI")?;
-
-                let transaction_id = request.tx_id.0.into();
-                let finality: EthereumFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<AdiExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-                let values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-                values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Starknet(request) => {
-                let inspector = self
-                    .inspectors
-                    .starknet
-                    .as_ref()
-                    .context("no inspector configured for Starknet")?;
-
-                let transaction_id = request.tx_id.0.0.into();
-                let finality: StarknetFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<StarknetExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-
-                let extracted_values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-
-                extracted_values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Ton(_request) => {
-                bail!("ForeignChainRpcRequest::Ton is unsupported")
-            }
-            dtos::ForeignChainRpcRequest::Aptos(request) => {
-                let inspector = self
-                    .inspectors
-                    .aptos
-                    .as_ref()
-                    .context("no inspector configured for Aptos")?;
-
-                let tx_id = request.tx_id.0.into();
-                let finality: AptosFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<AptosExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-
-                let extracted_values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-
-                extracted_values.into_iter().map(Into::into).collect()
-            }
-            dtos::ForeignChainRpcRequest::Sui(request) => {
-                let inspector = self
-                    .inspectors
-                    .sui
-                    .as_ref()
-                    .context("no inspector configured for Sui")?;
-
-                let tx_id = request.tx_id.0.into();
-                let finality: SuiFinality = request.finality.clone().try_into()?;
-                let extractors: Vec<SuiExtractor> = request
-                    .extractors
-                    .iter()
-                    .cloned()
-                    .map(TryInto::try_into)
-                    .collect::<Result<_, _>>()?;
-
-                let extracted_values = require_extracted(
-                    inspector
-                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
-                )?;
-
-                extracted_values.into_iter().map(Into::into).collect()
-            }
-            _ => bail!("unsupported foreign chain request"),
-        };
+        let values = require_extracted(verdict)?;
         let payload = match payload_version {
             dtos::ForeignTxPayloadVersion::V1 => {
                 dtos::ForeignTxSignPayload::V1(dtos::ForeignTxSignPayloadV1 {
@@ -586,34 +229,40 @@ impl VerifyForeignTxProvider {
         };
         Ok(payload)
     }
-}
 
-async fn execute_svm_request<Chain>(
-    inspector: &MeasuredFanOut<SvmInspector<HttpClient, Chain>>,
-    quorum: &RpcQuorum,
-    request: &dtos::SvmRpcRequest,
-) -> anyhow::Result<Vec<dtos::ExtractedValue>>
-where
-    Chain: SvmChain + Clone + Send + Sync + 'static,
-{
-    let tx_id = request.tx_id.0.into();
-    let finality: SvmFinality = request.finality.clone().try_into()?;
-    let extractors: Vec<SvmExtractor> = request
-        .extractors
-        .iter()
-        .cloned()
-        .map(TryInto::try_into)
-        .collect::<Result<_, _>>()?;
+    /// Inspects the foreign transaction and checks the extracted values against
+    /// [`dtos::VerifyForeignTransactionRequestV2::expected_values_hash`]. An error means this
+    /// node could not inspect. That is a refusal, not a [`NodeOutcome`].
+    // TODO(#5123): call from the V2 signing flow.
+    #[expect(dead_code)]
+    pub(crate) async fn reach_node_outcome(
+        &self,
+        request: &dtos::ForeignChainRpcRequest,
+        expected_values_hash: &dtos::Hash256,
+    ) -> anyhow::Result<NodeOutcome> {
+        let inspection = self
+            .inspect_foreign_chain_request(request, TransientErrors::Retry)
+            .await?;
+        Ok(NodeOutcome::new(inspection, expected_values_hash))
+    }
 
-    let values = require_extracted(
-        inspector
-            .extract_with_quorum(quorum, tx_id, finality, extractors)
-            .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-            .await
-            .context("timed out during execution of foreign chain request")??,
-    )?;
+    async fn inspect_foreign_chain_request(
+        &self,
+        request: &dtos::ForeignChainRpcRequest,
+        transient_errors: TransientErrors,
+    ) -> anyhow::Result<Inspection> {
+        // Check that the requested chain is still available when this
+        // point is reached.
+        ensure_chain_is_available(&self.supporters_by_foreign_chain.borrow(), request.chain())
+            .inspect_err(|_| {
+                metrics::MPC_NUM_VERIFY_FOREIGN_TX_UNAVAILABLE_CHAIN_REJECTIONS.inc()
+            })?;
+        let quorum = self
+            .rpc_quorum(request.chain())
+            .inspect_err(|_| metrics::MPC_NUM_VERIFY_FOREIGN_TX_NO_RPC_QUORUM_REJECTIONS.inc())?;
 
-    Ok(values.into_iter().map(Into::into).collect())
+        inspect_request(&self.inspectors, &quorum, request, transient_errors).await
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
