@@ -90,6 +90,8 @@ impl<N: Hash + Eq + Clone, E, K: AddressEdge<N>> AdjacencyMatrix<N, E, K> {
 }
 
 impl<N, E, K: EdgeType> AdjacencyMatrix<N, E, K> {
+    /// Each edge once. A directed edge `a --> b` comes out as `(a, b, weight)`.
+    /// For an undirected edge either node may come first.
     /// Scans the whole matrix: O(V²) for `V` nodes, even when there are few edges.
     pub fn edges(&self) -> impl Iterator<Item = (&N, &N, &E)> {
         self.matrix
@@ -101,37 +103,43 @@ impl<N, E, K: EdgeType> AdjacencyMatrix<N, E, K> {
 impl<N: Ord + Hash + Clone, E> AdjacencyMatrix<N, E, UndirectedEdge<N>> {
     /// Every pair of nodes, with the weight of the edge between them (`None` for no edge).
     pub fn pairs(&self) -> impl Iterator<Item = (UndirectedEdge<N>, Option<&E>)> + '_ {
-        self.matrix
+        let nodes = self
+            .matrix
             .node_identifiers()
-            .map(move |i| (self.matrix.node_weight(i), i))
-            .array_combinations::<2>()
-            .filter_map(move |pair| self.pair_with_weight(pair))
+            .map(|i| (self.matrix.node_weight(i), i));
+        self.pairs_among(nodes)
     }
 
     /// Every pair among `nodes`, with the weight of the edge between them (`None` for no edge).
     /// Errors if any node is not in the graph.
     pub fn pairs_within<'a>(
         &'a self,
-        nodes: &'a BTreeSet<N>,
-    ) -> Result<impl Iterator<Item = (UndirectedEdge<N>, Option<&'a E>)> + 'a, UnknownNodeError<N>>
-    {
-        let indexed = nodes
+        nodes: &BTreeSet<N>,
+    ) -> Result<
+        impl Iterator<Item = (UndirectedEdge<N>, Option<&'a E>)> + use<'a, N, E>,
+        UnknownNodeError<N>,
+    > {
+        let nodes = nodes
             .iter()
-            .map(|node| Ok((node, self.index(node)?)))
+            .map(|node| {
+                let i = self.index(node)?;
+                Ok((self.matrix.node_weight(i), i))
+            })
             .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(indexed
-            .into_iter()
-            .array_combinations::<2>()
-            .filter_map(move |pair| self.pair_with_weight(pair)))
+        Ok(self.pairs_among(nodes))
     }
 
-    fn pair_with_weight<'a>(
+    fn pairs_among<'a>(
         &'a self,
-        [(a, i), (b, j)]: [(&N, NodeIndex); 2],
-    ) -> Option<(UndirectedEdge<N>, Option<&'a E>)> {
-        let edge = UndirectedEdge::new(a.clone(), b.clone()).ok()?;
-        Some((edge, self.matrix.get_edge_weight(i, j)))
+        nodes: impl IntoIterator<Item = (&'a N, NodeIndex)> + 'a,
+    ) -> impl Iterator<Item = (UndirectedEdge<N>, Option<&'a E>)> + 'a {
+        nodes
+            .into_iter()
+            .array_combinations::<2>()
+            .filter_map(move |[(a, i), (b, j)]| {
+                let edge = UndirectedEdge::new(a.clone(), b.clone()).ok()?;
+                Some((edge, self.matrix.get_edge_weight(i, j)))
+            })
     }
 }
 
