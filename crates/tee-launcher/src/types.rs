@@ -98,8 +98,11 @@ impl PortMapping {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use std::{assert_matches, num::NonZeroU16};
+
+    use rstest::rstest;
 
     use super::*;
 
@@ -117,28 +120,18 @@ mod tests {
         assert_matches!(result, Ok(_));
     }
 
-    #[test]
-    fn port_mapping_rejects_zero_port() {
-        // given
-        let json = serde_json::json!({"host": 0, "container": 11780});
-
-        // when
+    #[rstest]
+    #[case::zero_port(serde_json::json!({"host": 0, "container": 11780}), "nonzero")]
+    #[case::out_of_range_port(serde_json::json!({"host": 65536, "container": 11780}), "u16")]
+    fn port_mapping_deserialization__should_reject_invalid_port(
+        #[case] json: serde_json::Value,
+        #[case] expected_error_fragment: &str,
+    ) {
+        // When
         let result = serde_json::from_value::<PortMapping>(json);
 
-        // then
-        assert_matches!(result, Err(e) if e.to_string().contains("nonzero"));
-    }
-
-    #[test]
-    fn port_mapping_rejects_out_of_range_port() {
-        // given
-        let json = serde_json::json!({"host": 65536, "container": 11780});
-
-        // when
-        let result = serde_json::from_value::<PortMapping>(json);
-
-        // then
-        assert_matches!(result, Err(e) if e.to_string().contains("u16"));
+        // Then
+        assert_matches!(result, Err(e) if e.to_string().contains(expected_error_fragment));
     }
 
     // --- docker_compose_value output format ---

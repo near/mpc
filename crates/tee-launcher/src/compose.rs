@@ -86,10 +86,12 @@ pub fn launch_mpc_container(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use std::num::NonZeroU16;
 
     use launcher_interface::types::DockerSha256Digest;
+    use rstest::rstest;
 
     use super::*;
 
@@ -143,20 +145,6 @@ mod tests {
     }
 
     #[test]
-    fn nontee_mode_excludes_dstack() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(!rendered.contains("DSTACK_ENDPOINT"));
-        assert!(!rendered.contains(DSTACK_UNIX_SOCKET));
-    }
-
-    #[test]
     fn includes_security_opts_and_required_volumes() {
         // given
         let port_mappings = empty_port_mappings();
@@ -174,59 +162,6 @@ mod tests {
     }
 
     #[test]
-    fn tee_mode_includes_restart_on_failure() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::Tee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("restart: on-failure"));
-    }
-
-    #[test]
-    fn nontee_mode_includes_restart_on_failure() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("restart: on-failure"));
-    }
-
-    #[test]
-    fn mounts_config_file_read_only() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then — config is on the shared volume, referenced in the command
-        assert!(rendered.contains(MPC_CONFIG_SHARED_PATH));
-    }
-
-    #[test]
-    fn includes_start_with_config_file_command() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("/app/mpc-node"));
-        assert!(rendered.contains(MPC_CONFIG_SHARED_PATH));
-    }
-
-    #[test]
     fn image_is_set() {
         // given
         let port_mappings = empty_port_mappings();
@@ -239,44 +174,60 @@ mod tests {
         assert!(rendered.contains(&format!("image: \"{SAMPLE_IMAGE_NAME}@{digest}\"")));
     }
 
-    #[test]
-    fn includes_ports() {
-        // given
-        let port_mappings = port_mappings_with_port();
+    #[rstest]
+    #[case::tee_mode_includes_restart_on_failure(
+        Platform::Tee,
+        empty_port_mappings(),
+        &["restart: on-failure"]
+    )]
+    #[case::nontee_mode_includes_restart_on_failure(
+        Platform::NonTee,
+        empty_port_mappings(),
+        &["restart: on-failure"]
+    )]
+    #[case::includes_start_with_config_file_command(
+        Platform::NonTee,
+        empty_port_mappings(),
+        &["/app/mpc-node", MPC_CONFIG_SHARED_PATH]
+    )]
+    #[case::includes_ports(Platform::NonTee, port_mappings_with_port(), &["11780:11780"])]
+    // a stable top-level project name keeps Compose reusing the container across
+    // restarts instead of recreating it (which would wipe its logs)
+    #[case::includes_stable_project_name(
+        Platform::Tee,
+        empty_port_mappings(),
+        &["name: mpc-node"]
+    )]
+    fn render_compose_file__should_contain(
+        #[case] platform: Platform,
+        #[case] port_mappings: Vec<PortMapping>,
+        #[case] expected_fragments: &[&str],
+    ) {
+        // Given
         let digest = sample_digest();
 
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
+        // When
+        let rendered = render(platform, &port_mappings, &digest);
 
-        // then
-        assert!(rendered.contains("11780:11780"));
+        // Then
+        for fragment in expected_fragments {
+            assert!(rendered.contains(fragment), "missing {fragment:?}");
+        }
     }
 
-    #[test]
-    fn no_env_section_in_nontee_mode() {
-        // given
-        let port_mappings = empty_port_mappings();
+    #[rstest]
+    #[case::nontee_mode_excludes_dstack(&["DSTACK_ENDPOINT", DSTACK_UNIX_SOCKET])]
+    #[case::no_env_section_in_nontee_mode(&["environment:"])]
+    fn render_compose_file__should_not_contain_for_nontee_mode(#[case] absent_fragments: &[&str]) {
+        // Given
         let digest = sample_digest();
 
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
+        // When
+        let rendered = render(Platform::NonTee, &empty_port_mappings(), &digest);
 
-        // then
-        assert!(!rendered.contains("environment:"));
-    }
-
-    #[test]
-    fn includes_stable_project_name() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::Tee, &port_mappings, &digest);
-
-        // then — a stable top-level project name keeps Compose reusing the
-        // container across restarts instead of recreating it (which would wipe
-        // its logs)
-        assert!(rendered.contains("name: mpc-node"));
+        // Then
+        for fragment in absent_fragments {
+            assert!(!rendered.contains(fragment), "unexpected {fragment:?}");
+        }
     }
 }

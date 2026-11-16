@@ -36,9 +36,11 @@ pub fn select_image_hash(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
     use near_mpc_bounded_collections::NonEmptyVec;
+    use rstest::rstest;
     use std::assert_matches;
 
     use super::*;
@@ -62,17 +64,23 @@ mod tests {
         digest('a')
     }
 
-    #[test]
-    fn select_hash_override_present_and_in_approved_list() {
-        // given
-        let override_digest = digest('b');
-        let approved = approved_file(vec![digest('c'), override_digest.clone(), digest('d')]);
+    #[rstest]
+    #[case::override_present_and_in_approved_list(vec!['c', 'b', 'd'], Some('b'), 'b')]
+    #[case::no_override_picks_newest(vec!['a', 'b', 'c'], None, 'a')]
+    fn select_image_hash__should_return_expected_hash_from_approved_list(
+        #[case] approved_chars: Vec<char>,
+        #[case] override_char: Option<char>,
+        #[case] expected_char: char,
+    ) {
+        // Given
+        let approved = approved_file(approved_chars.into_iter().map(digest).collect());
+        let override_digest = override_char.map(digest);
 
-        // when
-        let result = select_image_hash(Some(&approved), &digest('f'), Some(&override_digest));
+        // When
+        let result = select_image_hash(Some(&approved), &digest('f'), override_digest.as_ref());
 
-        // then
-        assert_eq!(result.unwrap(), override_digest);
+        // Then
+        assert_eq!(result.unwrap(), digest(expected_char));
     }
 
     #[test]
@@ -88,41 +96,20 @@ mod tests {
         assert_matches!(result, Err(LauncherError::InvalidHashOverride(_)));
     }
 
-    #[test]
-    fn select_hash_no_override_picks_newest() {
-        // given - first entry is "newest"
-        let newest = digest('a');
-        let approved = approved_file(vec![newest.clone(), digest('b'), digest('c')]);
-
-        // when
-        let result = select_image_hash(Some(&approved), &digest('f'), None);
-
-        // then
-        assert_eq!(result.unwrap(), newest);
-    }
-
-    #[test]
-    fn select_hash_missing_file_falls_back_to_default() {
-        // given
+    #[rstest]
+    #[case::falls_back_to_default(None)]
+    #[case::ignores_override(Some('b'))]
+    fn select_image_hash__should_return_default_when_file_missing(
+        #[case] override_char: Option<char>,
+    ) {
+        // Given
         let default = digest('d');
+        let override_digest = override_char.map(digest);
 
-        // when
-        let result = select_image_hash(None, &default, None);
+        // When
+        let result = select_image_hash(None, &default, override_digest.as_ref());
 
-        // then
-        assert_eq!(result.unwrap(), default);
-    }
-
-    #[test]
-    fn select_hash_missing_file_ignores_override() {
-        // given - override is set but file is missing, so default wins
-        let default = digest('d');
-        let override_digest = digest('b');
-
-        // when
-        let result = select_image_hash(None, &default, Some(&override_digest));
-
-        // then
+        // Then
         assert_eq!(result.unwrap(), default);
     }
 

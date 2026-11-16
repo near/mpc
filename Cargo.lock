@@ -4974,6 +4974,7 @@ dependencies = [
  "hex",
  "proc-macro2",
  "quote",
+ "rstest",
  "serde_json",
  "syn 3.0.9",
 ]
@@ -11224,6 +11225,7 @@ dependencies = [
  "launcher-interface",
  "mpc-primitives",
  "near-mpc-bounded-collections",
+ "rstest",
  "rustls",
  "serde",
  "serde_json",

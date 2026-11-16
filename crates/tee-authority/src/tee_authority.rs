@@ -871,17 +871,23 @@ mod tests {
         assert_eq!(*call_count.borrow(), 1);
     }
 
+    #[rstest]
+    #[case::success_after_retries(3, Some(5), &[6])]
+    #[case::unlimited_retries_eventually_succeeds(5, None, &[2, 4, 8, 16])]
     #[tokio::test(start_paused = true)]
-    async fn test_get_with_backoff_success_after_retries() {
-        const FAILURE_COUNT: i32 = 3;
-        const MAX_RETRIES: usize = 5;
+    async fn get_with_backoff__should_succeed_after_failures(
+        #[case] failure_count: i32,
+        #[case] max_retries: Option<usize>,
+        #[case] retry_delays: &[u64],
+    ) {
+        // Given
         let call_count = Arc::new(AtomicI32::new(0));
         let call_count_clone = call_count.clone();
 
         let operation = move || {
             let current_count = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
             async move {
-                if current_count < FAILURE_COUNT {
+                if current_count < failure_count {
                     Err("temporary failure")
                 } else {
                     Ok::<i32, &str>(42)
@@ -891,32 +897,30 @@ mod tests {
 
         let start_time = tokio::time::Instant::now();
 
+        // When
         // Run get_with_backoff in a spawned task so we can control time advancement
         let backoff_task = tokio::spawn(async move {
-            get_with_backoff(operation, "test operation", Some(MAX_RETRIES)).await
+            get_with_backoff(operation, "test operation", max_retries).await
         });
 
         // Let the first call execute and fail
         tokio::time::advance(Duration::from_millis(1)).await;
 
-        // The backon ExponentialBuilder::default() uses:
-        // - Base delay: 1 second
-        // - Multiplier: 2
-        // - Max attempts: 3
-        // - Jitter: up to 100% of calculated delay
-        // So expected delays are: ~1s, ~2s (each with potential jitter up to 2x)
-
-        // Advance time for both retries: 2s + 4s = 6s total (with jitter buffer)
-        tokio::time::advance(Duration::from_secs(6)).await;
+        // The backon ExponentialBuilder::default() delays are 1s, 2s, 4s, 8s, each
+        // with potential jitter up to 2x, so the advances below include a jitter buffer
+        for delay_secs in retry_delays {
+            tokio::time::advance(Duration::from_secs(*delay_secs)).await;
+        }
 
         let result = backoff_task.await.unwrap();
         let elapsed = start_time.elapsed();
 
+        // Then
         assert_eq!(result.unwrap(), 42);
-        assert_eq!(call_count.load(Ordering::SeqCst), FAILURE_COUNT);
+        assert_eq!(call_count.load(Ordering::SeqCst), failure_count);
 
-        // Verify time was properly simulated (1ms initial + 2s + 4s = ~6s minimum)
-        assert!(elapsed >= Duration::from_secs(6));
+        let total_expected_secs: u64 = retry_delays.iter().sum();
+        assert!(elapsed >= Duration::from_secs(total_expected_secs));
     }
 
     #[tokio::test(start_paused = true)]
@@ -949,51 +953,6 @@ mod tests {
 
         assert_eq!(result.unwrap_err(), "persistent failure");
         assert_eq!(call_count.load(Ordering::SeqCst), (MAX_RETRIES + 1) as i32); // Initial attempt + retries
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn test_get_with_backoff_unlimited_retries_eventually_succeeds() {
-        const FAILURE_COUNT: i32 = 5;
-        let call_count = Arc::new(AtomicI32::new(0));
-        let call_count_clone = call_count.clone();
-
-        let operation = move || {
-            let current_count = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
-            async move {
-                if current_count < FAILURE_COUNT {
-                    Err("still failing")
-                } else {
-                    Ok::<i32, &str>(42)
-                }
-            }
-        };
-
-        let start_time = tokio::time::Instant::now();
-
-        // Run get_with_backoff in a spawned task so we can control time advancement
-        let backoff_task =
-            tokio::spawn(async move { get_with_backoff(operation, "test operation", None).await });
-
-        // Let the first call execute and fail
-        tokio::time::advance(Duration::from_millis(1)).await;
-
-        // For unlimited retries, we need to advance through 4 retry delays
-        // ExponentialBuilder::default(): 1s, 2s, 4s, 8s (each with potential jitter up to 2x)
-        let retry_delays = [2, 4, 8, 16]; // With jitter buffer: 2s, 4s, 8s, 16s
-
-        for delay_secs in retry_delays {
-            tokio::time::advance(Duration::from_secs(delay_secs)).await;
-        }
-
-        let result = backoff_task.await.unwrap();
-        let elapsed = start_time.elapsed();
-
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(call_count.load(Ordering::SeqCst), FAILURE_COUNT);
-
-        // Verify time was properly simulated (1ms initial + sum of delays = ~30s minimum)
-        let total_expected_secs: u64 = retry_delays.iter().sum::<u64>();
-        assert!(elapsed >= Duration::from_secs(total_expected_secs));
     }
 
     /// Build a minimal [`Collateral`] for tests. None of the fields are
@@ -1242,71 +1201,53 @@ mod tests {
     /// the CRL stays freshly within [`MAX_COLLATERAL_AGE`].
     const TEST_NOW_OFFSET_FROM_FIXTURE_CRL: time::Duration = time::Duration::minutes(43);
 
-    /// Collateral whose `issueDate` is 6 days old (well within
-    /// [`MAX_COLLATERAL_AGE`]) is accepted.
-    #[test]
-    fn check_collateral_freshness__should_accept_within_window() {
-        let issued = rfc3339(test_now() - time::Duration::days(6));
+    #[rstest]
+    #[case::within_window(-time::Duration::days(6))]
+    // The comparison is `elapsed > MAX_AGE`, not `>=`: the boundary is inclusive
+    #[case::at_exact_boundary(-MAX_COLLATERAL_AGE)]
+    // Routine clock skew between Intel's PCS and our node must not cause false
+    // rejections
+    #[case::slight_future_within_grace(FUTURE_TIMESTAMP_GRACE)]
+    fn check_collateral_freshness__should_accept_issue_date_within_bounds(
+        #[case] issued_offset: time::Duration,
+    ) {
+        // Given
+        let issued = rfc3339(test_now() + issued_offset);
         let collateral = collateral_with_issue_dates(&issued, &issued);
 
+        // When
         let result = check_collateral_freshness(&collateral, test_now());
 
+        // Then
         assert!(result.is_ok(), "expected ok, got {result:?}");
     }
 
-    /// A stale `tcb_info` is rejected even when `qe_identity` is fresh.
-    /// Typed [`TooStale`] variant identifies which field tripped the check.
-    #[test]
-    fn check_collateral_freshness__should_reject_when_tcb_info_too_old() {
-        let stale_tcb = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::days(1));
-        let fresh_qe = rfc3339(test_now() - time::Duration::days(1));
-        let collateral = collateral_with_issue_dates(&stale_tcb, &fresh_qe);
+    #[rstest]
+    #[case::tcb_info_too_old(
+        MAX_COLLATERAL_AGE + time::Duration::days(1),
+        time::Duration::days(1),
+        "tcb_info"
+    )]
+    #[case::qe_identity_too_old(
+        time::Duration::days(1),
+        MAX_COLLATERAL_AGE + time::Duration::days(1),
+        "qe_identity"
+    )]
+    fn check_collateral_freshness__should_reject_when_field_too_old(
+        #[case] tcb_age: time::Duration,
+        #[case] qe_age: time::Duration,
+        #[case] stale_field: &str,
+    ) {
+        // Given
+        let tcb = rfc3339(test_now() - tcb_age);
+        let qe = rfc3339(test_now() - qe_age);
+        let collateral = collateral_with_issue_dates(&tcb, &qe);
 
+        // When
         let err = check_collateral_freshness(&collateral, test_now()).unwrap_err();
 
-        assert_matches!(
-            err,
-            FreshnessError::TooStale {
-                field: "tcb_info",
-                ..
-            }
-        );
-    }
-
-    /// A stale `qe_identity` is rejected even when `tcb_info` is fresh.
-    /// Symmetric to the previous test — both fields are independently
-    /// validated.
-    #[test]
-    fn check_collateral_freshness__should_reject_when_qe_identity_too_old() {
-        let fresh_tcb = rfc3339(test_now() - time::Duration::days(1));
-        let stale_qe = rfc3339(test_now() - MAX_COLLATERAL_AGE - time::Duration::days(1));
-        let collateral = collateral_with_issue_dates(&fresh_tcb, &stale_qe);
-
-        let err = check_collateral_freshness(&collateral, test_now()).unwrap_err();
-
-        assert_matches!(
-            err,
-            FreshnessError::TooStale {
-                field: "qe_identity",
-                ..
-            }
-        );
-    }
-
-    /// At exactly `MAX_COLLATERAL_AGE` the collateral is accepted — the
-    /// comparison is `elapsed > MAX_AGE`, not `>=`. Documents the
-    /// inclusive-of-boundary behavior so it can't drift silently.
-    #[test]
-    fn check_collateral_freshness__should_accept_at_exact_boundary() {
-        let issued = rfc3339(test_now() - MAX_COLLATERAL_AGE);
-        let collateral = collateral_with_issue_dates(&issued, &issued);
-
-        let result = check_collateral_freshness(&collateral, test_now());
-
-        assert!(
-            result.is_ok(),
-            "expected ok at exact MAX_AGE, got {result:?}"
-        );
+        // Then
+        assert_matches!(err, FreshnessError::TooStale { field, .. } if field == stale_field);
     }
 
     /// One second past the boundary trips the check.
@@ -1318,19 +1259,6 @@ mod tests {
         let err = check_collateral_freshness(&collateral, test_now()).unwrap_err();
 
         assert_matches!(err, FreshnessError::TooStale { .. });
-    }
-
-    /// Slight future-dating (within the grace window) is accepted — covers
-    /// routine clock skew between Intel's PCS and our node without false
-    /// rejections.
-    #[test]
-    fn check_collateral_freshness__should_accept_slight_future_within_grace() {
-        let issued = rfc3339(test_now() + FUTURE_TIMESTAMP_GRACE);
-        let collateral = collateral_with_issue_dates(&issued, &issued);
-
-        let result = check_collateral_freshness(&collateral, test_now());
-
-        assert!(result.is_ok(), "expected ok within grace, got {result:?}");
     }
 
     /// Future-dating beyond the grace window is rejected. Closes the bypass
