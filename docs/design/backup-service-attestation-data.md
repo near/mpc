@@ -16,7 +16,7 @@ pub struct BackupServiceInfo {
 }
 ```
 
-MPC nodes, by contrast, already submit full TEE attestation data via [`submit_participant_info()`][submit-participant-info]. The contract verifies the TDX quote, checks the Docker image hash against a whitelist, and stores the result in [`TeeState`][tee-state]. The attestation binds the node's identity to its TEE via [`ReportDataV1`][report-data-v1]:
+MPC nodes, by contrast, already submit full TEE attestation data via [`submit_participant_info()`][submit-participant-info]. The separate `tee-verifier` contract verifies the TDX quote, and a callback in the MPC contract then checks the Docker image hash against a whitelist and stores the result in [`TeeState`][tee-state]. The attestation binds the node's identity to its TEE via [`ReportDataV1`][report-data-v1]:
 
 ```
 [version: 2 bytes, big endian] || [SHA3-384(tls_public_key || account_public_key): 48 bytes] || [zero padding: 14 bytes]
@@ -41,7 +41,7 @@ pub struct BackupServiceInfo {
 }
 ```
 
-The method signature stays `register_backup_service(backup_service_info: BackupServiceInfo)`. The backup service signs this transaction using the account key it generated inside the TEE. The operator retrieves this public key from the backup service's HTTP endpoint (same pattern as MPC nodes with [`GET /public_data`][public-data]) and adds it as an access key to their NEAR account. The transaction is then signed under the operator's `AccountId`. The contract rejects `Mock` attestations — only `Dstack` is accepted.
+The method signature stays `register_backup_service(backup_service_info: BackupServiceInfo)`. The backup service signs this transaction using the account key it generated inside the TEE. The operator retrieves this public key from the backup service's HTTP endpoint (same pattern as MPC nodes with [`GET /public_data`][public-data]) and adds it as a function-call access key to their NEAR account. The transaction is then signed under the operator's `AccountId`. Unlike the soft-launch version, the method takes no deposit, since a function-call access key cannot attach one. The attestation takes over the deposit's role of keeping other function-call keys, such as the MPC node's, from registering a backup service. The contract rejects `Mock` attestations — only `Dstack` is accepted.
 
 A separate method from [`submit_participant_info()`][submit-participant-info] is needed because `submit_participant_info()` writes to `self.tee_state` (the MPC node [`TeeState`][tee-state]), while the backup service writes to `self.node_migrations.backup_service_tee_state` (a separate `TeeState` instance with its own image hash whitelist).
 
@@ -56,12 +56,12 @@ The backup service uses the same [`ReportDataV1`][report-data-v1] format as MPC 
 
 ### Verification
 
-The contract verifies the attestation using existing [`TeeState`][tee-state] verification logic:
+The contract verifies the attestation the same way as for MPC nodes:
 
-1. Quote validity via DCAP attestation provider
+1. Quote validity via DCAP in the `tee-verifier` contract
 2. Docker image hash against the backup service allowed list
 3. Launcher compose hash against the backup service allowed list
-4. Timestamp within deadline
+4. Collateral valid at block time (a stored attestation expires with its collateral)
 5. `ReportData` matches `SHA3-384(tls_public_key || account_public_key)`
 6. Transaction signer's public key matches `account_public_key` via `env::signer_account_pk()`
 
@@ -91,7 +91,7 @@ The backup service persists its TLS and account keys to dstack's encrypted disk,
 
 ### Periodic Resubmission
 
-The backup service resubmits its attestation every 7 days with a fresh TDX quote using the same keys. [`add_participant()`][add-participant] overwrites the existing entry for the same TLS key.
+The backup service resubmits its attestation every hour, like MPC nodes, with a fresh TDX quote using the same keys. [`verify_and_store_dstack()`][verify-and-store-dstack] overwrites the existing entry for the same TLS key.
 
 ## End-to-End Flows
 
@@ -103,11 +103,11 @@ The following walkthroughs show how the attestation data defined above is used i
 
 **On boot (one-time):**
 
-1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the launcher compose hash. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses `DEFAULT_IMAGE_DIGEST` compiled into it (same pattern as MPC node launcher). On subsequent boots, `TeeContext` will have written updated hashes to disk.
+1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the launcher compose hash. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses the `DEFAULT_IMAGE_DIGEST` set in its compose file (same pattern as MPC node launcher). On subsequent boots, the backup service will have written the updated hashes it receives from `TeeContext` to disk.
 2. Backup service generates an Ed25519 TLS keypair and a NEAR account keypair inside the TEE.
-3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Bootstrapping](securing-mpc-with-tee/securing-mpc-with-tee.md#bootstrapping)).
+3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Secret key Handling](securing-mpc-with-tee/securing-mpc-with-tee.md#secret-key-handling)).
 
-**Attestation registration (periodic — every 7 days, starting on first boot):**
+**Attestation registration (periodic — every hour, starting on first boot):**
 
 4. Backup service constructs [`ReportDataV1::new(tls_pk_bytes, account_pk_bytes)`][report-data-v1] and generates a fresh TDX quote.
 5. Backup service calls `register_backup_service(BackupServiceInfo { public_key, attestation })`. The contract verifies the attestation and stores/overwrites the entry in `backup_service_tee_state`.
@@ -137,19 +137,19 @@ The following walkthroughs show how the attestation data defined above is used i
 
 The [migration service `impl` block][migration-service-impl] needs:
 
-- **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo`. Write to `backup_service_tee_state` via [`add_participant()`][add-participant]. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`).
+- **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo` and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to `tee_state`: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback once the `tee-verifier` contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for a new entry. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`, which needs its own storage keys because `TeeState::default()` uses fixed ones).
 - **[`migration_info()`][migration-info]**: Replace with a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
 - **New methods** (per [migration-service.md §Backup Service TEE methods](../archive/design/migration-service.md#backup-service-tee-methods)):
   - `vote_backup_service_code_hash(code_hash)`
   - `allowed_backup_service_code_hashes()`
   - `allowed_backup_service_launcher_compose_hashes()`
   - `reverify_backup_services()`
-- **Resharing cleanup**: [`clean_non_participants()`][clean-non-participants] should also clean `backup_service_tee_state` when operators leave the participant set.
+- **Resharing cleanup**: when operators leave the participant set, [`cleanup_orphaned_node_migrations()`][cleanup-orphaned-node-migrations] should also remove their entries from `backup_service_tee_state`, and [`clean_tee_status()`][clean-tee-status] should also drop their votes from it.
 - **`start_node_migration()`** and **`conclude_node_migration()`**: No changes for backup-service attestation.
 
 ### Attestation Verification
 
-[`Attestation::verify()`][attestation-verify] cannot be reused as-is:
+[`DstackVerify::verify()`][dstack-verify] cannot be reused as-is:
 
 - It extracts the Docker image hash using a [hardcoded `"mpc-image-digest"` event name][mpc-image-hash-event-usage], which the backup service launcher would not use.
 - [`verify_measurements()`][verify-measurements] rejects an empty allowed measurements list — for MPC nodes these were [seeded during a contract migration][seed-measurements], and the backup service `TeeState` should be seeded the same way.
@@ -165,21 +165,22 @@ The [migration service `impl` block][migration-service-impl] needs:
 | Poll compose hashes | `allowed_launcher_compose_hashes` | `allowed_backup_service_launcher_compose_hashes` |
 
 
-<!-- Code permalinks (main @ 249bd1e) -->
-[register-backup-service]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/lib.rs#L2027
-[submit-participant-info]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/lib.rs#L830
-[migration-service-impl]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/lib.rs#L2009-L2011
-[migration-info]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/lib.rs#L2012
-[tee-state]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/tee/tee_state.rs#L103
-[add-participant]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/tee/tee_state.rs#L154
-[clean-non-participants]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/tee/tee_state.rs#L407
-[node-migrations]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/node_migrations.rs#L11
-[backup-service-info]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/node_migrations.rs#L91
-[backup-services-info-field]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/node_migrations.rs#L12
-[report-data-v1]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/mpc-attestation/src/report_data.rs#L34
-[attestation-verify]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/mpc-attestation/src/attestation.rs#L133
-[verify-measurements]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/mpc-attestation/src/attestation.rs#L260
-[mpc-image-hash-event-usage]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/mpc-attestation/src/attestation.rs#L147
+<!-- Code permalinks (main @ b970a0c, except seed-measurements @ 249bd1e) -->
+[register-backup-service]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/node_migration.rs#L34
+[submit-participant-info]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/attestation.rs#L104
+[migration-service-impl]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/node_migration.rs#L17-L18
+[migration-info]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/node_migration.rs#L19
+[tee-state]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L56
+[verify-and-store-dstack]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L147
+[cleanup-orphaned-node-migrations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/node_migration.rs#L285
+[clean-tee-status]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L238
+[node-migrations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/node_migrations.rs#L11
+[backup-service-info]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/near-mpc-contract-interface/src/types/node_migrations.rs#L12
+[backup-services-info-field]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/node_migrations.rs#L12
+[report-data-v1]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/report_data.rs#L34
+[dstack-verify]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/attestation.rs#L350-L351
+[verify-measurements]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/attestation.rs#L512
+[mpc-image-hash-event-usage]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/attestation.rs#L435
 [seed-measurements]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/v3_7_0_state.rs#L76-L83
-[persistent-secrets]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/node/src/config.rs#L407
-[public-data]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/node/src/web.rs#L443
+[persistent-secrets]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/node/src/config.rs#L229
+[public-data]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/node/src/web.rs#L311
