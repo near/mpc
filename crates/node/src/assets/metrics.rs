@@ -3,8 +3,9 @@
 //! There is one triple store per reconstruction threshold, and each store gets its own series
 //! (labelled by threshold).
 
-use crate::assets::DistributedAssetStorage;
+use crate::assets::{CheckAsset, DistributedAssetStorage};
 use crate::metrics;
+use crate::providers::HasParticipants;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -74,12 +75,13 @@ pub fn set_owned_asset_gauges(gauges: &OwnedAssetGauges, label: &str, counts: Ow
 }
 
 /// Sets the series `label` of `gauges` from a fresh read of `store`.
-pub fn report_store<T>(
+pub fn report_store<T, C>(
     gauges: &OwnedAssetGauges,
     label: impl ToString,
-    store: &DistributedAssetStorage<T>,
+    store: &DistributedAssetStorage<T, C>,
 ) where
-    T: Serialize + DeserializeOwned + Send + 'static,
+    T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
+    C: CheckAsset<T>,
 {
     set_owned_asset_gauges(gauges, &label.to_string(), store.owned_asset_counts());
 }
@@ -92,7 +94,6 @@ mod tests {
     use crate::primitives::ParticipantId;
     use crate::providers::ecdsa::triple::PairedTriple;
     use serial_test::serial;
-    use std::sync::{Arc, Mutex};
 
     fn counts(available: usize, online: usize, offline: usize) -> OwnedAssetCounts {
         OwnedAssetCounts {
@@ -150,7 +151,7 @@ mod tests {
     async fn report_store__should_follow_the_store_after_take_owned() {
         // Given
         let participants: Vec<ParticipantId> = (0..3).map(ParticipantId::from_raw).collect();
-        let ctx = TestContext::new(participants[0], Arc::new(Mutex::new(participants.clone())));
+        let ctx = TestContext::new(participants[0], participants.clone());
         let store = ctx.new_store::<PairedTriple>(DBCol::TripleV2, Vec::new());
         for _ in 0..2 {
             store.add_owned(store.generate_and_reserve_id(), make_triple(&participants));

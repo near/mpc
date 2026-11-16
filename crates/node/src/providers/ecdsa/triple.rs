@@ -1,4 +1,4 @@
-use crate::assets::DistributedAssetStorage;
+use crate::assets::{DistributedAssetStorage, PolledCondition};
 use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
 use crate::db::{DBCol, SecretDB};
@@ -52,7 +52,9 @@ pub fn caitsith_triple_thresholds(domains: &[DomainConfig]) -> BTreeSet<Reconstr
 /// identifiers).
 ///
 /// Backed by [`DBCol::TripleV2`] under prefix `t.value().to_be_bytes()` (8 BE).
-pub struct TripleStorage(DistributedAssetStorage<PairedTriple>);
+pub struct TripleStorage(
+    DistributedAssetStorage<PairedTriple, PolledCondition<Vec<ParticipantId>, PairedTriple>>,
+);
 
 impl TripleStorage {
     pub fn new(
@@ -61,20 +63,26 @@ impl TripleStorage {
         client: Arc<MeshNetworkClient>,
         reconstruction_threshold: ReconstructionThreshold,
     ) -> anyhow::Result<Self> {
-        Ok(Self(DistributedAssetStorage::<PairedTriple>::new(
+        Ok(Self(DistributedAssetStorage::new(
             clock,
             db,
             DBCol::TripleV2,
             reconstruction_threshold.value().to_be_bytes().to_vec(),
             client.my_participant_id(),
-            |participants, pair| pair.is_subset_of_active_participants(participants),
-            Arc::new(move || client.all_alive_participant_ids()),
+            PolledCondition::<Vec<ParticipantId>, PairedTriple>::new(
+                // todo: replace this `PolledCondition` with a `WatchCondition` over
+                // |readiness, pair| readiness.supports(&participants_from_triples(&pair.0, &pair.1)),
+                // and the `NetworkReadiness` receiver for `ComputationDuration::Seconds`.
+                |participants, pair| pair.is_subset_of_active_participants(participants),
+                move || client.all_alive_participant_ids(),
+            ),
         )?))
     }
 }
 
 impl Deref for TripleStorage {
-    type Target = DistributedAssetStorage<PairedTriple>;
+    type Target =
+        DistributedAssetStorage<PairedTriple, PolledCondition<Vec<ParticipantId>, PairedTriple>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -118,6 +126,13 @@ impl EcdsaSignatureProvider {
                 && in_flight_generations.num_in_flight()
                     < config.concurrency * 2 * *config.batch_size
             {
+                // todo: replace the selection below with
+                // random_participant_clique.select_participants(
+                //     reconstruction_threshold.value(),
+                //     &running_participants,
+                //     mpc_config.my_participant_id,
+                //     ComputationDuration::HalfMinute,
+                // )
                 let participants = match client.select_random_active_participants_including_me(
                     reconstruction_threshold.value(),
                     &running_participants,
@@ -259,6 +274,7 @@ fn batch_size_for(
 pub type PairedTriple = (TripleGenerationOutput, TripleGenerationOutput);
 
 impl HasParticipants for PairedTriple {
+    // todo: this can probably also go?
     fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
         let triple_participants = participants_from_triples(&self.0, &self.1);
         triple_participants

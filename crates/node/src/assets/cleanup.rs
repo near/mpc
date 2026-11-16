@@ -131,7 +131,6 @@ mod tests {
     use crate::providers::ecdsa::triple::TripleStorage;
     use near_time::FakeClock;
     use std::collections::BTreeSet;
-    use std::sync::{Arc, Mutex};
 
     fn assert_epoch_data_in_db_matches(ctx: &TestContext, expected: &EpochData) {
         let found = get_epoch_data(&ctx.db).unwrap().unwrap();
@@ -159,8 +158,7 @@ mod tests {
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let subset: Vec<_> = all_participants.iter().take(3).cloned().collect();
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
-        let ctx = TestContext::new(my_participant_id, alive_participants);
+        let ctx = TestContext::new(my_participant_id, all_participants.clone());
 
         // we start with no data
         ctx.assert_owned(0);
@@ -221,10 +219,7 @@ mod tests {
         let (start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
-        let ctx = TestContext::new(
-            my_participant_id,
-            Arc::new(Mutex::new(all_participants.clone())),
-        );
+        let ctx = TestContext::new(my_participant_id, all_participants.clone());
         ctx.populate(&all_participants);
 
         // Any keys will do

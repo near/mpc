@@ -9,6 +9,7 @@
 pub mod ckd;
 pub mod ecdsa;
 pub mod eddsa;
+pub mod participant_selection;
 pub mod robust_ecdsa;
 pub mod verify_foreign_tx;
 

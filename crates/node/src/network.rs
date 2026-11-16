@@ -9,6 +9,7 @@ pub mod wire_format;
 use crate::metrics::networking_metrics;
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
+use crate::network::connectivity::first_hand_indexer_heights::ReportedIndexerHeight;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
@@ -22,7 +23,7 @@ use conn::{ConnectionError, ConnectionVersion, NodeConnectivityInterface};
 use lru::LruCache;
 use rand::prelude::IteratorRandom;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -107,6 +108,7 @@ pub struct MeshNetworkClient {
     last_id: Arc<Mutex<UniqueId>>,
 }
 
+// todo: deprecate this struct...
 impl NetworkAPIForRequests for MeshNetworkClient {
     fn alive_participants(&self) -> HashSet<ParticipantId> {
         self.all_alive_participant_ids().into_iter().collect()
@@ -234,6 +236,8 @@ impl MeshNetworkClient {
             .collect()
     }
 
+    // todo: remove this; only the bidirectionally connected info is of interest.
+
     /// Returns the participant IDs of all nodes in the network that are currently alive.
     /// This is a subset of all_participant_ids, and includes our own participant ID.
     pub fn all_alive_participant_ids(&self) -> Vec<ParticipantId> {
@@ -245,6 +249,7 @@ impl MeshNetworkClient {
                 continue;
             }
             let peer_height = *indexer_heights.get(&participant).unwrap_or(&0);
+            // todo: push connection updates from the transport instead of polling here.
             if my_height <= peer_height.saturating_add(mpc_node_config::MAX_INDEXER_HEIGHT_DIFF)
                 && self
                     .transport_sender
@@ -259,6 +264,7 @@ impl MeshNetworkClient {
         result
     }
 
+    // todo: this method here will change....
     pub fn select_random_active_participants_including_me(
         &self,
         total: usize,
@@ -531,6 +537,15 @@ async fn run_receive_message(
     Ok(())
 }
 
+pub trait ReadFirstHandIndexerHeights {
+    fn first_hand_indexer_heights_of(
+        &self,
+        peers: impl IntoIterator<Item = ParticipantId>,
+    ) -> BTreeMap<ParticipantId, ReportedIndexerHeight>;
+}
+
+// todo: broadcast as soon as a connection with a peer was reset, and feed our own
+// ConnectedPeersInfo into the ConnectivityMonitor like any peer's.
 fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
     let me = client.my_participant_id();
     let indexer_heights = client.get_indexer_heights();

@@ -38,6 +38,13 @@ impl RobustEcdsaSignatureProvider {
             .map(|p| p.id)
             .collect();
 
+        // todo: replace the selection below with
+        // self.random_participant_clique.select_participants(
+        //     num_signers,
+        //     &running_participants,
+        //     self.mpc_config.my_participant_id,
+        //     ComputationDuration::Seconds,
+        // )
         let participants = self
             .client
             .select_random_active_participants_including_me(num_signers, &running_participants)

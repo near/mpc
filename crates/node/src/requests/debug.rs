@@ -191,6 +191,10 @@ where
             reference_height,
             ..
         } = self.eligible_leaders_and_heights();
+        // todo: read through the new traits, with
+        // `Network: ReadAliveParticipants + ReadIndexerHeights` on this impl:
+        // let online_participants = self.network.alive_participants();
+        // let indexer_heights = self.network.indexer_heights();
         let online_participants = self.network_api.alive_participants();
         let indexer_heights = self.network_api.indexer_heights();
 

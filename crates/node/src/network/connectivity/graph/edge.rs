@@ -6,7 +6,7 @@ use crate::network::connectivity::graph::{adjacency_matrix::AddressEdge, errors:
 
 /// An edge between two distinct nodes of an undirected graph. The order the nodes are given in
 /// does not matter.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct UndirectedEdge<N> {
     low: N,
     high: N,

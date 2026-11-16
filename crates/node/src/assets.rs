@@ -5,14 +5,96 @@ pub mod test_utils;
 
 use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
+use crate::network::connectivity::UndirectedEdge;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use near_time::Clock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
+
+pub trait CheckAsset<T>: Send {
+    fn update_condition(&mut self) -> bool;
+    fn accept(&self, asset: &T) -> bool;
+}
+
+// this is where we're goind, a push-based conditoin fetcher
+pub struct WatchCondition<C, T> {
+    value: C,
+    receiver: watch::Receiver<C>,
+    predicate: fn(&C, &T) -> bool,
+}
+
+impl<C: Clone, T> WatchCondition<C, T> {
+    pub fn new(predicate: fn(&C, &T) -> bool, mut receiver: watch::Receiver<C>) -> Self {
+        let value = receiver.borrow_and_update().clone();
+        Self {
+            value,
+            receiver,
+            predicate,
+        }
+    }
+}
+
+impl<C, T> CheckAsset<T> for WatchCondition<C, T>
+where
+    C: Clone + Send + Sync,
+{
+    fn update_condition(&mut self) -> bool {
+        match self.receiver.has_changed() {
+            Ok(true) => {
+                self.value = self.receiver.borrow_and_update().clone();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn accept(&self, asset: &T) -> bool {
+        (self.predicate)(&self.value, asset)
+    }
+}
+
+// an example of a polled condition. This can have the time-based loop with the clock, as a drop-in
+// replcaement for the current logic (though, it would need to be implemented elsewhere, as
+// technically, the queue is just a consumer of CheckAsset)
+pub struct PolledCondition<C, T> {
+    value: C,
+    fetch: Box<dyn Fn() -> C + Send + Sync>,
+    predicate: fn(&C, &T) -> bool,
+}
+
+impl<C, T> PolledCondition<C, T> {
+    pub fn new(
+        predicate: fn(&C, &T) -> bool,
+        fetch: impl Fn() -> C + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            value: fetch(),
+            fetch: Box::new(fetch),
+            predicate,
+        }
+    }
+}
+
+impl<C, T> CheckAsset<T> for PolledCondition<C, T>
+where
+    C: Eq + Send,
+{
+    fn update_condition(&mut self) -> bool {
+        let new_value = (self.fetch)();
+        let changed = new_value != self.value;
+        self.value = new_value;
+        changed
+    }
+
+    fn accept(&self, asset: &T) -> bool {
+        (self.predicate)(&self.value, asset)
+    }
+}
 
 /// The cold queue contains a collection of assets and a condition function.
 /// The queue is divided into three sections by two barriers:
@@ -39,65 +121,38 @@ use std::sync::{Arc, Mutex};
 /// NB: Assets may be reordered by these operations. No guarantees are made on the order in which
 /// assets are taken or discarded from the queue.
 ///
-struct ColdQueue<T, CondVal> {
+struct ColdQueue<T, C> {
     cold_ready: usize,
     cold_available: usize,
     cold_queue: VecDeque<(UniqueId, T)>,
-
-    /// The last condition value that was used to check against the cold queue elements.
-    /// Whenever the current condition value changes, we need to update the cold_available barrier.
-    last_condition_value: CondVal,
-    /// The actual condition function; this doesn't change.
-    condition: fn(&CondVal, &T) -> bool,
-    /// Function to fetch the condition value.
-    condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
-    /// The time when we should next fetch the condition value.
-    next_fetch_due: near_time::Instant,
-    clock: Clock,
+    condition: C,
+    //
+    //    /// The last condition value that was used to check against the cold queue elements.
+    //    /// Whenever the current condition value changes, we need to update the cold_available barrier.
+    //    last_condition_value: CondVal,
+    //    /// The actual condition function; this doesn't change.
+    //    condition: fn(&CondVal, &T) -> bool,
+    //    /// Function to fetch the condition value.
+    //    condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
+    //    /// The time when we should next fetch the condition value.
+    //    next_fetch_due: near_time::Instant,
+    //    clock: Clock,
 }
 
-impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
-    pub(self) fn new(
-        clock: Clock,
-        condition: fn(&CondVal, &T) -> bool,
-        condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
-    ) -> Self {
+impl<T, C: CheckAsset<T>> ColdQueue<T, C> {
+    pub(self) fn new(condition: C) -> Self {
         Self {
             cold_ready: 0,
             cold_available: 0,
             cold_queue: VecDeque::new(),
-            last_condition_value: Default::default(),
             condition,
-            condition_value_fetcher,
-            next_fetch_due: clock.now(),
-            clock,
         }
-    }
-
-    /// Unconditionally update the condition value;
-    /// If the condition value changed, reset the barriers.
-    pub(self) fn update_condition_value(&mut self) {
-        const CONDITION_REFRESH_INTERVAL: near_time::Duration = near_time::Duration::seconds(1);
-        self.next_fetch_due = self.clock.now() + CONDITION_REFRESH_INTERVAL;
-        let new_condition_value = (self.condition_value_fetcher)();
-        if new_condition_value != self.last_condition_value {
-            self.last_condition_value = new_condition_value;
-            self.cold_ready = 0;
-            self.cold_available = self.cold_queue.len();
-        }
-    }
-
-    fn update_condition_value_if_due(&mut self) {
-        if self.clock.now() < self.next_fetch_due {
-            return;
-        }
-        self.update_condition_value();
     }
 
     /// Try to remove and return an element that satisfies the current condition.
     /// If the element doesn't match, it will be moved to the end of the queue.
     pub(self) fn take(&mut self) -> ColdQueueTakeResult<T> {
-        self.update_condition_value_if_due();
+        self.reset_barriers_if_condition_changed();
         if self.cold_available == 0 {
             return ColdQueueTakeResult::NotTakenAndNoneAvailable;
         }
@@ -107,7 +162,7 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
             self.cold_ready -= 1;
             return ColdQueueTakeResult::Taken((id, value));
         }
-        if (self.condition)(&self.last_condition_value, &value) {
+        if self.condition.accept(&value) {
             return ColdQueueTakeResult::Taken((id, value));
         }
         self.cold_queue.push_back((id, value));
@@ -117,14 +172,14 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
     /// Try to remove and return an element that *doesn't* satisfy the current condition.
     /// If the element does satisfy it, it will be moved to the front of the queue.
     pub(self) fn discard(&mut self) -> ColdQueueDiscardResult<T> {
-        self.update_condition_value_if_due();
+        self.reset_barriers_if_condition_changed();
         if self.cold_ready == self.cold_queue.len() {
             return ColdQueueDiscardResult::NotDiscardedAndNoneAvailable;
         }
         let (id, value) = self.cold_queue.pop_back().unwrap(); // can't fail
         let condition_satisfied = if self.cold_available > self.cold_queue.len() {
             self.cold_available -= 1;
-            (self.condition)(&self.last_condition_value, &value)
+            self.condition.accept(&value)
         } else {
             false
         };
@@ -144,8 +199,8 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         id: UniqueId,
         value: T,
     ) -> ColdQueueAddIfSatisfiedResult<T> {
-        self.update_condition_value_if_due();
-        if (self.condition)(&self.last_condition_value, &value) {
+        self.reset_barriers_if_condition_changed();
+        if self.condition.accept(&value) {
             self.cold_queue.push_front((id, value));
             self.cold_ready += 1;
             self.cold_available += 1;
@@ -162,8 +217,8 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         id: UniqueId,
         value: T,
     ) -> ColdQueueAddIfNotSatisfiedResult<T> {
-        self.update_condition_value_if_due();
-        if (self.condition)(&self.last_condition_value, &value) {
+        self.reset_barriers_if_condition_changed();
+        if self.condition.accept(&value) {
             return ColdQueueAddIfNotSatisfiedResult::ConditionSatisfied(value);
         }
         self.cold_queue.push_back((id, value));
@@ -172,8 +227,12 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
 
     /// Adds an element to the cold queue unconditionally.
     pub(self) fn ingest(&mut self, id: UniqueId, value: T) {
-        self.update_condition_value_if_due();
-        if (self.condition)(&self.last_condition_value, &value) {
+        self.reset_barriers_if_condition_changed();
+        self.insert(id, value)
+    }
+    /// `ingest` without the sync; the caller must have synced.
+    fn insert(&mut self, id: UniqueId, value: T) {
+        if self.condition.accept(&value) {
             self.cold_queue.push_front((id, value));
             self.cold_ready += 1;
             self.cold_available += 1;
@@ -182,17 +241,40 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         }
     }
 
+    /// Syncs once, then pulls from `incoming` until an asset passes both the
+    /// standing condition and `extra`. Everything pulled before that is ingested.
+    /// Returns the match, if any, and whether anything was ingested.
+    fn take_or_ingest_from(
+        &mut self,
+        incoming: impl Iterator<Item = (UniqueId, T)>,
+        extra: impl Fn(&T) -> bool,
+    ) -> (Option<(UniqueId, T)>, bool) {
+        self.reset_barriers_if_condition_changed();
+        let mut ingested = false;
+        for (id, value) in incoming {
+            if self.condition.accept(&value) && extra(&value) {
+                return (Some((id, value)), ingested);
+            }
+            self.insert(id, value);
+            ingested = true;
+        }
+        (None, ingested)
+    }
+
     /// Removes and returns the first element satisfying both the standing
     /// condition and the caller-supplied `cond_val`, shifting the barriers
     /// ([`ColdQueue::cold_ready`] and [`ColdQueue::cold_available`]) that lie
     /// past the removed position.
-    pub(self) fn take_first_matching(&mut self, cond_val: &CondVal) -> Option<(UniqueId, T)> {
-        self.update_condition_value_if_due();
+    pub(self) fn take_first_matching(
+        &mut self,
+        extra: impl Fn(&T) -> bool,
+    ) -> Option<(UniqueId, T)> {
+        self.reset_barriers_if_condition_changed();
         let pos = self
             .cold_queue
             .iter()
             .take(self.cold_available)
-            .position(|(_, val)| self.satisfies_condition(cond_val, val))?;
+            .position(|(_, val)| self.condition.accept(val) && extra(val))?;
         if pos < self.cold_ready {
             self.cold_ready -= 1;
         }
@@ -202,8 +284,11 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         self.cold_queue.remove(pos)
     }
 
-    pub(self) fn satisfies_condition(&self, cond_val: &CondVal, val: &T) -> bool {
-        (self.condition)(&self.last_condition_value, val) && (self.condition)(cond_val, val)
+    fn reset_barriers_if_condition_changed(&mut self) {
+        if self.condition.update_condition() {
+            self.cold_ready = 0;
+            self.cold_available = self.cold_queue.len();
+        }
     }
 }
 
@@ -229,34 +314,27 @@ enum ColdQueueAddIfNotSatisfiedResult<T> {
     Enqueued,
 }
 
-pub struct DoubleQueue<T, CondVal> {
+pub struct DoubleQueue<T, C> {
     hot_sender: flume::Sender<(UniqueId, T)>,
     hot_receiver: flume::Receiver<(UniqueId, T)>,
-    cold_queue: Arc<Mutex<ColdQueue<T, CondVal>>>,
-    clock: Clock,
+    cold_queue: Arc<Mutex<ColdQueue<T, C>>>,
     cold_queue_new_elements: tokio::sync::Notify,
+    clock: Clock,
 }
 
-impl<T, CondVal: Default + Eq> DoubleQueue<T, CondVal>
+impl<T, C> DoubleQueue<T, C>
 where
     T: Send + 'static,
+    C: CheckAsset<T>,
 {
-    pub fn new(
-        clock: Clock,
-        condition: fn(&CondVal, &T) -> bool,
-        condition_value_fetcher: Arc<dyn Fn() -> CondVal + Send + Sync>,
-    ) -> Self {
+    pub fn new(clock: Clock, condition: C) -> Self {
         let (hot_sender, hot_receiver) = flume::unbounded();
         Self {
             hot_sender,
             hot_receiver,
-            cold_queue: Arc::new(Mutex::new(ColdQueue::new(
-                clock.clone(),
-                condition,
-                condition_value_fetcher,
-            ))),
-            clock,
+            cold_queue: Arc::new(Mutex::new(ColdQueue::new(condition))),
             cold_queue_new_elements: tokio::sync::Notify::new(),
+            clock,
         }
     }
 
@@ -270,7 +348,7 @@ where
         // but we're not yet aware of it, and the caller calls this in a loop and
         // we keep yielding undesired elements, but the caller keeps throwing them
         // away and we quickly exhaust the available assets.
-        self.cold_queue.lock().unwrap().update_condition_value();
+        //self.cold_queue.lock().unwrap().update_condition_value();
         loop {
             let cold_queue_new_elements = self.cold_queue_new_elements.notified();
             let taken = self.cold_queue.lock().unwrap().take();
@@ -314,28 +392,14 @@ where
         }
     }
 
-    pub async fn take_owned_matching(&self, cond_val: CondVal) -> (UniqueId, T) {
+    pub async fn take_owned_matching(&self, extra: impl Fn(&T) -> bool) -> (UniqueId, T) {
         loop {
             let cold_queue_new_elements = self.cold_queue_new_elements.notified();
             let (taken, ingested) = {
                 let mut cold = self.cold_queue.lock().unwrap();
-                // Refresh before selecting: an element that satisfies a stale condition value
-                // would be handed out and then fail downstream.
-                cold.update_condition_value();
-                let mut ingested = false;
-                let mut taken = None;
-                while let Ok((id, value)) = self.hot_receiver.try_recv() {
-                    if cold.satisfies_condition(&cond_val, &value) {
-                        taken = Some((id, value));
-                        break;
-                    }
-                    cold.ingest(id, value);
-                    ingested = true;
-                }
-                (
-                    taken.or_else(|| cold.take_first_matching(&cond_val)),
-                    ingested,
-                )
+                let (taken, ingested) =
+                    cold.take_or_ingest_from(self.hot_receiver.try_iter(), &extra);
+                (taken.or_else(|| cold.take_first_matching(&extra)), ingested)
             };
 
             if ingested {
@@ -365,8 +429,6 @@ where
     /// Process `num_elements_to_process`, removing any that doesn't satisfy condition.
     /// Return ids, that were removed from cold storage.
     pub async fn maybe_discard_owned(&self, mut num_elements_to_process: usize) -> Vec<UniqueId> {
-        self.cold_queue.lock().unwrap().update_condition_value();
-
         let mut removed_from_cold_queue: Vec<UniqueId> = vec![];
 
         // First process elements in the cold queue
@@ -420,6 +482,28 @@ where
     }
 }
 
+/// What the participants of an asset are checked against: all of them must be alive, and no two
+/// of them may share a broken connection.
+// todo: add
+// pub fn supports(&self, participants: &[T]) -> bool
+#[derive(Clone, PartialEq, Eq)]
+pub struct NetworkReadiness<T> {
+    alive_participants: BTreeSet<T>,
+    broken_connections: BTreeSet<UndirectedEdge<T>>,
+}
+
+impl<T> NetworkReadiness<T> {
+    pub fn new(
+        alive_participants: BTreeSet<T>,
+        broken_connections: BTreeSet<UndirectedEdge<T>>,
+    ) -> Self {
+        Self {
+            alive_participants,
+            broken_connections,
+        }
+    }
+}
+
 /// Persistent storage for a single type of asset (e.g. triples).
 /// The storage is distributed across all participants, with each participant
 /// owning some of the assets. Each asset has exactly one owner.
@@ -431,7 +515,7 @@ where
 ///
 /// As a passive participant of a computation, unowned assets are taken using
 /// `take_unowned`.
-pub struct DistributedAssetStorage<T> {
+pub struct DistributedAssetStorage<T, C> {
     db: Arc<SecretDB>,
     col: DBCol,
     /// Byte prefix prepended to every key written under `col`. Empty [`Vec`] means
@@ -439,7 +523,7 @@ pub struct DistributedAssetStorage<T> {
     /// `borsh(UniqueId)`).
     prefix: Vec<u8>,
     my_participant_id: ParticipantId,
-    owned_queue: DoubleQueue<T, Vec<ParticipantId>>,
+    owned_queue: DoubleQueue<T, C>,
     last_id: Mutex<Option<UniqueId>>,
     /// Guards against concurrent `take_unowned` calls for the same ID.
     /// An ID is inserted before the DB read and removed after the delete commits,
@@ -448,7 +532,7 @@ pub struct DistributedAssetStorage<T> {
 }
 
 /// Iterates over a key range in column `db_col`, determined by
-/// [`DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix)`],
+/// [`make_prefix_range(my_participant_id, prefix)`],
 /// and stages a delete on `update_writer` for every entry that evaluates `false`
 /// for `is_subset_of_active_participants(persistent_participants)`.
 ///
@@ -466,8 +550,7 @@ pub fn clean_db<T>(
 where
     T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
 {
-    let (start, end): (Vec<u8>, Vec<u8>) =
-        DistributedAssetStorage::<T>::make_prefix_range(my_participant_id, prefix);
+    let (start, end): (Vec<u8>, Vec<u8>) = make_prefix_range(my_participant_id, prefix);
     for item in db.iter_range(db_col, &start, &end) {
         let (key, value) = item?;
         let value: T = serde_json::from_slice(&value)?;
@@ -478,9 +561,10 @@ where
     Ok(())
 }
 
-impl<T> DistributedAssetStorage<T>
+impl<T, C> DistributedAssetStorage<T, C>
 where
-    T: Serialize + DeserializeOwned + Send + 'static,
+    T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
+    C: CheckAsset<T>,
 {
     pub fn new(
         clock: Clock,
@@ -488,16 +572,15 @@ where
         col: DBCol,
         prefix: Vec<u8>,
         my_participant_id: ParticipantId,
-        condition: fn(&Vec<ParticipantId>, &T) -> bool,
-        alive_participant_ids_query: Arc<dyn Fn() -> Vec<ParticipantId> + Send + Sync>,
+        condition: C,
     ) -> anyhow::Result<Self> {
-        let owned_queue = DoubleQueue::new(clock, condition, alive_participant_ids_query);
+        let owned_queue = DoubleQueue::new(clock, condition);
 
         // We're just going to replicate the owned assets to memory. It's not the most efficient,
         // but it's the simplest way to implement a multi-consumer, multi-producer queue that
         // supports asynchronous blocking when an asset isn't available.
         let mut last_id = None;
-        let (start, end) = Self::make_prefix_range(my_participant_id, &prefix);
+        let (start, end) = make_prefix_range(my_participant_id, &prefix);
         for item in db.iter_range(col, &start, &end) {
             let (key, value) = item?;
             let id = Self::decode_key(&key, prefix.len())?;
@@ -515,16 +598,6 @@ where
             last_id: Mutex::new(last_id),
             unowned_in_flight: Mutex::new(HashSet::new()),
         })
-    }
-
-    fn make_prefix_range(participant_id: ParticipantId, prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let mut start = prefix.to_vec();
-        let mut end = prefix.to_vec();
-        start.extend_from_slice(&UniqueId::prefix_for_participant_id(participant_id));
-        end.extend_from_slice(&UniqueId::prefix_for_participant_id(
-            ParticipantId::from_raw(participant_id.raw().checked_add(1).unwrap()),
-        ));
-        (start, end)
     }
 
     fn make_key(&self, id: UniqueId) -> Vec<u8> {
@@ -654,7 +727,10 @@ where
     /// available.
     /// Callers are expected to enforce their own timeout.
     pub async fn take_owned_matching(&self, eligible: Vec<ParticipantId>) -> (UniqueId, T) {
-        let (id, val) = self.owned_queue.take_owned_matching(eligible).await;
+        let (id, val) = self
+            .owned_queue
+            .take_owned_matching(move |a: &T| a.is_subset_of_active_participants(&eligible))
+            .await;
         let mut update = self.db.update();
         update.delete(self.col, &self.make_key(id));
         update
@@ -679,9 +755,21 @@ where
     }
 }
 
+fn make_prefix_range(participant_id: ParticipantId, prefix: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let mut start = prefix.to_vec();
+    let mut end = prefix.to_vec();
+    start.extend_from_slice(&UniqueId::prefix_for_participant_id(participant_id));
+    end.extend_from_slice(&UniqueId::prefix_for_participant_id(
+        ParticipantId::from_raw(participant_id.raw().checked_add(1).unwrap()),
+    ));
+    (start, end)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
+    use super::{
+        CheckAsset, ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId, WatchCondition,
+    };
     use crate::assets::clean_db;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::db::DBCol;
@@ -692,10 +780,8 @@ mod tests {
     use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
     use serde::{Deserialize, Serialize};
-    use std::cmp::Eq;
-    use std::default::Default;
-    use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+    use tokio::sync::watch;
 
     /// Adapter used by tests that previously took `Option<DomainId>` to compose
     /// the equivalent prefix bytes for the generalized [`DistributedAssetStorage`].
@@ -715,15 +801,15 @@ mod tests {
         }
     }
 
-    fn verify_cold_queue_internal_consistency<T, CondVal: Default + Eq>(
-        queue: &ColdQueue<T, CondVal>,
+    fn verify_cold_queue_internal_consistency<T, C: CheckAsset<T>>(
+        queue: &ColdQueue<T, C>,
         expected_len: usize,
     ) {
         assert!(queue.cold_ready <= queue.cold_available);
         assert!(queue.cold_available <= queue.cold_queue.len());
         assert_eq!(expected_len, queue.cold_queue.len());
         for (i, (_id, val)) in queue.cold_queue.iter().enumerate() {
-            let satisfies = (queue.condition)(&queue.last_condition_value, val);
+            let satisfies = queue.condition.accept(val);
             if i < queue.cold_ready {
                 assert!(satisfies);
             }
@@ -735,12 +821,8 @@ mod tests {
 
     #[test]
     fn test_cold_queue() {
-        let clock = FakeClock::default();
-        let cond_value = Arc::new(AtomicI32::new(0));
-        let mut queue = ColdQueue::new(clock.clock(), |cond, val| val % 2 == *cond, {
-            let cond_value = cond_value.clone();
-            Arc::new(move || cond_value.load(Ordering::Relaxed))
-        });
+        let (cond_value, receiver) = watch::channel(0);
+        let mut queue = ColdQueue::new(WatchCondition::new(|cond, val| val % 2 == *cond, receiver));
 
         // Operations on empty
         verify_cold_queue_internal_consistency(&queue, 0);
@@ -748,8 +830,7 @@ mod tests {
         verify_cold_queue_internal_consistency(&queue, 0);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 0);
-        cond_value.store(1, Ordering::Relaxed);
-        queue.update_condition_value();
+        cond_value.send(1).unwrap();
         verify_cold_queue_internal_consistency(&queue, 0);
 
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
@@ -771,16 +852,14 @@ mod tests {
 
         // Reset then discard
         queue.add_if_condition_satisfied(id1, 1);
-        cond_value.store(0, Ordering::Relaxed);
-        queue.update_condition_value();
+        cond_value.send(0).unwrap();
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.discard();
         verify_cold_queue_internal_consistency(&queue, 0);
         // Reset then take
         queue.add_if_condition_not_satisfied(id1, 1);
-        cond_value.store(1, Ordering::Relaxed);
-        queue.update_condition_value();
+        cond_value.send(1).unwrap();
         queue.discard();
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.take();
@@ -801,16 +880,10 @@ mod tests {
     #[test]
     fn test_double_queue_discard() {
         let clock = FakeClock::default();
-        let cond_value = Arc::new(AtomicI32::new(0));
-        let cond_value_query_count = Arc::new(AtomicUsize::new(0));
-        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, {
-            let cond_value = cond_value.clone();
-            let cond_value_query_count = cond_value_query_count.clone();
-            Arc::new(move || {
-                cond_value_query_count.fetch_add(1, Ordering::Relaxed);
-                cond_value.load(Ordering::Relaxed)
-            })
-        });
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            WatchCondition::new(|cond, val| val % 2 == *cond, watch::channel(0).1),
+        );
 
         // Discard should never block, even if the queue is completely empty
         queue.maybe_discard_owned(3).now_or_never().unwrap();
@@ -848,16 +921,11 @@ mod tests {
     #[test]
     fn test_double_queue_condition_value() {
         let clock = FakeClock::default();
-        let cond_value = Arc::new(AtomicI32::new(0));
-        let cond_value_query_count = Arc::new(AtomicUsize::new(0));
-        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, {
-            let cond_value = cond_value.clone();
-            let cond_value_query_count = cond_value_query_count.clone();
-            Arc::new(move || {
-                cond_value_query_count.fetch_add(1, Ordering::Relaxed);
-                cond_value.load(Ordering::Relaxed)
-            })
-        });
+        let (cond_value, receiver) = watch::channel(0);
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            WatchCondition::new(|cond, val| val % 2 == *cond, receiver),
+        );
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         let id2 = id1.add_to_counter(1).unwrap();
         let id3 = id1.add_to_counter(2).unwrap();
@@ -867,56 +935,49 @@ mod tests {
         queue.add_owned(id3, 5);
 
         // Make condition "% 2 == 1".
-        cond_value.store(1, Ordering::Relaxed);
+        cond_value.send(1).unwrap();
         assert_eq!(queue.take_owned().now_or_never().unwrap(), (id1, 1));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 1);
 
         // Make condition "% 2 == 0" and start taking an element.
-        cond_value.store(0, Ordering::Relaxed);
+        cond_value.send(0).unwrap();
         let fut = queue.take_owned();
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value when no element meets condition");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 2);
 
         // Change the condition to "% 2 == 1". The task that has been waiting for an element
         // does not immediately notice the condition change, until a timer has passed.
-        cond_value.store(1, Ordering::Relaxed);
+        cond_value.send(1).unwrap();
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value even when cond value changed");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 2);
 
         // Advance the clock so that the waiting task notices the condition change.
         clock.advance(near_time::Duration::seconds(1));
         assert_eq!(fut.now_or_never().unwrap(), (id2, 3));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 3);
 
         // This time change the condition before starting to take an element.
         // It will be observed immediately even though the clock has not been advanced.
-        cond_value.store(0, Ordering::Relaxed);
+        cond_value.send(0).unwrap();
         let fut = queue.take_owned();
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value when no element meets condition");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
 
         // Change the condition without advancing the clock. The waiting task won't notice.
-        cond_value.store(1, Ordering::Relaxed);
+        cond_value.send(1).unwrap();
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not be able to take value even when cond value changed");
         };
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
         queue.add_owned(id4, 4);
-        // Even though the condition changed, we may get an element returned that satisfied a
-        // stale condition (there's no point to prevent that because there can always be
-        // races).
-        assert_eq!(fut.now_or_never().unwrap(), (id4, 4));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 4);
+        // The new element wakes the waiting task, which checks it against the current
+        // condition: the new element fails it, the one that failed the previous condition
+        // is returned.
+        assert_eq!(fut.now_or_never().unwrap(), (id3, 5));
 
-        // However, if we take_owned() again, we'll use the correct condition.
-        assert_eq!(queue.take_owned().now_or_never().unwrap(), (id3, 5));
-        assert_eq!(cond_value_query_count.load(Ordering::Relaxed), 5);
+        // The new element is returned once the condition accepts it.
+        cond_value.send(0).unwrap();
+        assert_eq!(queue.take_owned().now_or_never().unwrap(), (id4, 4));
     }
 
     #[test]
@@ -940,18 +1001,17 @@ mod tests {
             ParticipantId::from_raw(2),
             ParticipantId::from_raw(3),
         ];
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
-        let store = DistributedAssetStorage::<ParticipantsWithI32>::new(
+        let (alive_participants, receiver) = watch::channel(all_participants.clone());
+        let store = DistributedAssetStorage::<ParticipantsWithI32, _>::new(
             clock.clock(),
             db,
             crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
-            |cond, val| val.is_subset_of_active_participants(cond),
-            {
-                let alive_participants = alive_participants.clone();
-                Arc::new(move || alive_participants.lock().unwrap().clone())
-            },
+            WatchCondition::new(
+                |cond, val: &ParticipantsWithI32| val.is_subset_of_active_participants(cond),
+                receiver,
+            ),
         )
         .unwrap();
         assert_eq!(store.num_owned(), 0);
@@ -977,7 +1037,9 @@ mod tests {
         );
         assert_eq!(store.num_owned(), 2);
 
-        *alive_participants.lock().unwrap() = first_participants_subset.clone();
+        alive_participants
+            .send(first_participants_subset.clone())
+            .unwrap();
         let asset_fut = store.take_owned();
 
         let MaybeReady::Future(asset_fut) = run_future_once(asset_fut) else {
@@ -1016,7 +1078,7 @@ mod tests {
         assert_eq!(store.num_owned(), 0);
 
         // Now go back to all participants being available.
-        *alive_participants.lock().unwrap() = all_participants.clone();
+        alive_participants.send(all_participants.clone()).unwrap();
         store.add_owned(id5, ParticipantsWithI32(all_participants.clone(), 161718));
         assert_eq!(store.num_owned(), 1);
 
@@ -1076,14 +1138,13 @@ mod tests {
     fn test_distributed_store_add_take_owned() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
+            WatchCondition::new(|_, _| true, watch::channel(()).1),
         )
         .unwrap();
         assert_eq!(store.num_owned(), 0);
@@ -1123,14 +1184,13 @@ mod tests {
     fn test_distributed_store_add_owned_different_order() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
+            WatchCondition::new(|_, _| true, watch::channel(()).1),
         )
         .unwrap();
 
@@ -1173,14 +1233,13 @@ mod tests {
         // be based on the key. It doesn't have to be this way, but we test it
         // here just to clarify the current behavior.
         drop(store);
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
+            WatchCondition::new(|_, _| true, watch::channel(()).1),
         )
         .unwrap();
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id5, 5));
@@ -1191,14 +1250,13 @@ mod tests {
     fn test_distribtued_store_add_take_unowned() {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
+            WatchCondition::new(|_, _| true, watch::channel(()).1),
         )
         .unwrap();
 
@@ -1232,14 +1290,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let myself = ParticipantId::from_raw(42);
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::TripleV2,
             Vec::new(),
             myself,
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
+            WatchCondition::new(|_, _| true, watch::channel(()).1),
         )
         .unwrap();
 
@@ -1256,14 +1313,13 @@ mod tests {
         store.add_unowned(UniqueId::new(other, 4, 0), 8);
 
         drop(store);
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::TripleV2,
             Vec::new(),
             myself,
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
+            WatchCondition::new(|_, _| true, watch::channel(()).1),
         )
         .unwrap();
         assert_eq!(store.num_owned(), 4);
@@ -1290,14 +1346,13 @@ mod tests {
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let myself = ParticipantId::from_raw(42);
 
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::TripleV2,
             Vec::new(),
             myself,
-            |_, x| *x != 1,
-            Arc::new(Vec::new),
+            WatchCondition::new(|_, x| *x != 1, watch::channel(()).1),
         )
         .unwrap();
 
@@ -1311,14 +1366,13 @@ mod tests {
         store.maybe_discard_owned(1).now_or_never().unwrap();
 
         drop(store);
-        let store = DistributedAssetStorage::<u32>::new(
+        let store = DistributedAssetStorage::<u32, _>::new(
             FakeClock::default().clock(),
             db,
             crate::db::DBCol::TripleV2,
             Vec::new(),
             myself,
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
+            WatchCondition::new(|_, _| true, watch::channel(()).1),
         )
         .unwrap();
 
@@ -1334,14 +1388,13 @@ mod tests {
 
         for i in 0..4 {
             let domain_id = Some(DomainId(i));
-            let store = DistributedAssetStorage::<u64>::new(
+            let store = DistributedAssetStorage::<u64, _>::new(
                 FakeClock::default().clock(),
                 db.clone(),
                 crate::db::DBCol::Presignature,
                 domain_id_to_prefix(domain_id),
                 myself,
-                |_, _| true,
-                Arc::new(std::vec::Vec::new),
+                WatchCondition::new(|_, _| true, watch::channel(()).1),
             )
             .unwrap();
 
@@ -1367,14 +1420,13 @@ mod tests {
 
         for i in 0..4 {
             let domain_id = Some(DomainId(i));
-            let store = DistributedAssetStorage::<u64>::new(
+            let store = DistributedAssetStorage::<u64, _>::new(
                 FakeClock::default().clock(),
                 db.clone(),
                 crate::db::DBCol::Presignature,
                 domain_id_to_prefix(domain_id),
                 myself,
-                |_, _| true,
-                Arc::new(std::vec::Vec::new),
+                WatchCondition::new(|_, _| true, watch::channel(()).1),
             )
             .unwrap();
 
@@ -1416,21 +1468,19 @@ mod tests {
         ];
         let participant_subset_c = vec![ParticipantId::from_raw(1), ParticipantId::from_raw(2)];
         let my_participant_id = ParticipantId::from_raw(42);
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
         let new_store_from_db = |db_col: DBCol,
                                  domain_id: Option<DomainId>|
-         -> DistributedAssetStorage<ParticipantsWithI32> {
-            DistributedAssetStorage::<ParticipantsWithI32>::new(
+         -> DistributedAssetStorage<ParticipantsWithI32, _> {
+            DistributedAssetStorage::<ParticipantsWithI32, _>::new(
                 clock.clock(),
                 db.clone(),
                 db_col,
                 domain_id_to_prefix(domain_id),
                 my_participant_id,
-                |cond, val| val.is_subset_of_active_participants(cond),
-                {
-                    let alive_participants = alive_participants.clone();
-                    Arc::new(move || alive_participants.lock().unwrap().clone())
-                },
+                WatchCondition::new(
+                    |cond, val: &ParticipantsWithI32| val.is_subset_of_active_participants(cond),
+                    watch::channel(all_participants.clone()).1,
+                ),
             )
             .unwrap()
         };
@@ -1506,8 +1556,10 @@ mod tests {
         let clock = FakeClock::default();
         let queue = DoubleQueue::new(
             clock.clock(),
-            |cond: &Vec<i32>, val| cond.contains(val),
-            Arc::new(|| vec![2, 3]),
+            WatchCondition::new(
+                |cond: &Vec<i32>, val| cond.contains(val),
+                watch::channel(vec![2, 3]).1,
+            ),
         );
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         let id2 = id1.add_to_counter(1).unwrap();
@@ -1517,7 +1569,9 @@ mod tests {
         queue.add_owned(id3, 4);
 
         // When
-        let taken = queue.take_owned_matching(vec![3, 4]).now_or_never();
+        let taken = queue
+            .take_owned_matching(|val| [3, 4].contains(val))
+            .now_or_never();
 
         // Then
         assert_eq!(taken, Some((id2, 3)));
@@ -1535,30 +1589,27 @@ mod tests {
         let offline_participant = "offline".to_owned();
         let online_participant = "online".to_owned();
         let clock = FakeClock::default();
-        let condition_value = Arc::new(Mutex::new(vec![
+        let (condition_value, receiver) = watch::channel(vec![
             offline_participant.clone(),
             online_participant.clone(),
-        ]));
-        let queue = {
-            let condition_value = condition_value.clone();
-            DoubleQueue::new(
-                clock.clock(),
-                |cond: &Vec<String>, val| cond.contains(val),
-                Arc::new(move || condition_value.lock().unwrap().clone()),
-            )
-        };
-        // make the queue cache this value, so the change below leaves it stale
-        queue.cold_queue.lock().unwrap().update_condition_value();
+        ]);
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            WatchCondition::new(|cond: &Vec<String>, val| cond.contains(val), receiver),
+        );
 
-        *condition_value.lock().unwrap() = vec![online_participant.clone()];
+        condition_value
+            .send(vec![online_participant.clone()])
+            .unwrap();
         let id_stale = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         let id_fresh = id_stale.add_to_counter(1).unwrap();
         queue.add_owned(id_stale, offline_participant.clone());
         queue.add_owned(id_fresh, online_participant.clone());
 
-        // When: the caller's own value still accepts both
+        // When: the caller's own predicate still accepts both
+        let eligible = [offline_participant, online_participant.clone()];
         let taken = queue
-            .take_owned_matching(vec![offline_participant, online_participant.clone()])
+            .take_owned_matching(|val| eligible.contains(val))
             .now_or_never();
 
         // Then: the one the stale value would have allowed is skipped
@@ -1568,7 +1619,7 @@ mod tests {
         assert_eq!(queue.available(), 0);
     }
 
-    // A take with a supplied value nothing matches yet parks; it completes once
+    // A take with a supplied predicate nothing matches yet parks; it completes once
     // a matching asset is added, without consuming the non-matching one.
     #[test]
     #[expect(non_snake_case)]
@@ -1577,15 +1628,17 @@ mod tests {
         let clock = FakeClock::default();
         let queue = DoubleQueue::new(
             clock.clock(),
-            |cond: &Vec<i32>, val| cond.contains(val),
-            Arc::new(|| vec![2, 3]),
+            WatchCondition::new(
+                |cond: &Vec<i32>, val| cond.contains(val),
+                watch::channel(vec![2, 3]).1,
+            ),
         );
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 123, 456);
         let id2 = id1.add_to_counter(1).unwrap();
         queue.add_owned(id1, 2);
 
         // When
-        let fut = queue.take_owned_matching(vec![3]);
+        let fut = queue.take_owned_matching(|val| *val == 3);
         let MaybeReady::Future(fut) = run_future_once(fut) else {
             panic!("should not take a value when no element matches");
         };
@@ -1598,17 +1651,15 @@ mod tests {
 
     // Takes from the middle and the front of the ready section, then attempts an
     // element failing the standing condition (never returned even when it
-    // satisfies the supplied value), checking barrier consistency at every step.
+    // satisfies the supplied predicate), checking barrier consistency at every step.
     #[test]
     #[expect(non_snake_case)]
     fn take_first_matching__should_maintain_barrier_invariants() {
         // Given
-        let clock = FakeClock::default();
-        let mut queue = ColdQueue::new(
-            clock.clock(),
+        let mut queue = ColdQueue::new(WatchCondition::new(
             |cond: &Vec<i32>, val| cond.contains(val),
-            Arc::new(|| vec![2, 4]),
-        );
+            watch::channel(vec![2, 4]).1,
+        ));
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
         let id2 = id1.add_to_counter(1).unwrap();
         let id3 = id1.add_to_counter(2).unwrap();
@@ -1618,47 +1669,44 @@ mod tests {
         verify_cold_queue_internal_consistency(&queue, 3);
 
         // When
-        let taken = queue.take_first_matching(&vec![2, 3]);
+        let taken = queue.take_first_matching(|val| [2, 3].contains(val));
 
         // Then
         assert_eq!(taken, Some((id1, 2)));
         verify_cold_queue_internal_consistency(&queue, 2);
 
-        assert_eq!(queue.take_first_matching(&vec![4]), Some((id2, 4)));
+        assert_eq!(queue.take_first_matching(|val| *val == 4), Some((id2, 4)));
         verify_cold_queue_internal_consistency(&queue, 1);
 
-        assert_eq!(queue.take_first_matching(&vec![3]), None);
+        assert_eq!(queue.take_first_matching(|val| *val == 3), None);
         verify_cold_queue_internal_consistency(&queue, 1);
     }
 
-    // Flips the standing condition between operations (advancing the fake
-    // clock past the refresh interval): the barrier reset must keep the
-    // sections consistent, and takes must honor the new standing value.
+    // Flips the standing condition between operations: the barrier reset must
+    // keep the sections consistent, and takes must honor the new standing value.
     #[test]
     #[expect(non_snake_case)]
     fn take_first_matching__should_stay_consistent_when_condition_value_changes() {
         // Given
-        let clock = FakeClock::default();
-        let standing = Arc::new(Mutex::new(vec![2, 4]));
-        let mut queue = ColdQueue::new(clock.clock(), |cond: &Vec<i32>, val| cond.contains(val), {
-            let standing = standing.clone();
-            Arc::new(move || standing.lock().unwrap().clone())
-        });
+        let (standing, receiver) = watch::channel(vec![2, 4]);
+        let mut queue = ColdQueue::new(WatchCondition::new(
+            |cond: &Vec<i32>, val| cond.contains(val),
+            receiver,
+        ));
         let id1 = UniqueId::new(ParticipantId::from_raw(42), 1, 0);
         let id2 = id1.add_to_counter(1).unwrap();
         queue.ingest(id1, 2);
         queue.ingest(id2, 3);
         verify_cold_queue_internal_consistency(&queue, 2);
 
-        // When: the standing condition changes and the refresh comes due.
-        *standing.lock().unwrap() = vec![3];
-        clock.advance(near_time::Duration::seconds(1));
+        // When: the standing condition changes.
+        standing.send(vec![3]).unwrap();
 
         // Then: 2 no longer satisfies the standing condition and cannot be
         // taken, while 3 (previously non-satisfying) now can.
-        assert_eq!(queue.take_first_matching(&vec![2]), None);
+        assert_eq!(queue.take_first_matching(|val| *val == 2), None);
         verify_cold_queue_internal_consistency(&queue, 2);
-        assert_eq!(queue.take_first_matching(&vec![3]), Some((id2, 3)));
+        assert_eq!(queue.take_first_matching(|val| *val == 3), Some((id2, 3)));
         verify_cold_queue_internal_consistency(&queue, 1);
     }
 
@@ -1672,16 +1720,15 @@ mod tests {
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let condition: fn(&Vec<ParticipantId>, &u32) -> bool =
             |eligible, val| eligible.contains(&ParticipantId::from_raw(*val));
-        let alive = || vec![ParticipantId::from_raw(123), ParticipantId::from_raw(456)];
+        let alive = vec![ParticipantId::from_raw(123), ParticipantId::from_raw(456)];
         let new_store = |db: Arc<crate::db::SecretDB>| {
-            DistributedAssetStorage::<u32>::new(
+            DistributedAssetStorage::<u32, _>::new(
                 FakeClock::default().clock(),
                 db,
                 crate::db::DBCol::TripleV2,
                 Vec::new(),
                 ParticipantId::from_raw(42),
-                condition,
-                Arc::new(alive),
+                WatchCondition::new(condition, watch::channel(alive.clone()).1),
             )
             .unwrap()
         };
@@ -1718,7 +1765,10 @@ mod tests {
     fn take_owned__should_wake_when_matching_take_drains_incompatible_asset() {
         // Given
         let clock = FakeClock::default();
-        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            WatchCondition::new(|cond, val| val % 2 == *cond, watch::channel(0).1),
+        );
         let MaybeReady::Future(take_owned) = run_future_once(queue.take_owned()) else {
             panic!("take_owned should park on an empty queue");
         };
@@ -1726,7 +1776,8 @@ mod tests {
         queue.add_owned(id, 2);
 
         // When
-        let MaybeReady::Future(_take_matching) = run_future_once(queue.take_owned_matching(1))
+        let MaybeReady::Future(_take_matching) =
+            run_future_once(queue.take_owned_matching(|val| val % 2 == 1))
         else {
             panic!("the asset must not satisfy the matching taker's condition");
         };
@@ -1744,11 +1795,15 @@ mod tests {
     fn take_owned__should_wake_when_parked_matching_take_receives_incompatible_asset() {
         // Given
         let clock = FakeClock::default();
-        let queue = DoubleQueue::new(clock.clock(), |cond, val| val % 2 == *cond, Arc::new(|| 0));
+        let queue = DoubleQueue::new(
+            clock.clock(),
+            WatchCondition::new(|cond, val| val % 2 == *cond, watch::channel(0).1),
+        );
         let MaybeReady::Future(take_owned) = run_future_once(queue.take_owned()) else {
             panic!("take_owned should park on an empty queue");
         };
-        let MaybeReady::Future(take_matching) = run_future_once(queue.take_owned_matching(1))
+        let MaybeReady::Future(take_matching) =
+            run_future_once(queue.take_owned_matching(|val| val % 2 == 1))
         else {
             panic!("take_owned_matching should park on an empty queue");
         };
@@ -1762,5 +1817,18 @@ mod tests {
 
         // Then
         assert_eq!(take_owned.now_or_never().unwrap(), (id, 2));
+    }
+
+    /// The asset `n` depends on participant `n`.
+    impl HasParticipants for u32 {
+        fn is_subset_of_active_participants(&self, active_participants: &[ParticipantId]) -> bool {
+            active_participants.contains(&ParticipantId::from_raw(*self))
+        }
+    }
+
+    impl HasParticipants for u64 {
+        fn is_subset_of_active_participants(&self, _: &[ParticipantId]) -> bool {
+            true
+        }
     }
 }

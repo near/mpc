@@ -1,5 +1,5 @@
-use crate::assets::DistributedAssetStorage;
 use crate::assets::cleanup::EpochData;
+use crate::assets::{DistributedAssetStorage, WatchCondition};
 use crate::config::ParticipantsConfig;
 use crate::db::SecretDB;
 use crate::indexer::participants::convert_participant_infos;
@@ -19,11 +19,12 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use threshold_signatures::ecdsa::Polynomial;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::{
     TripleGenerationOutput, TriplePub, TripleShare,
 };
+use tokio::sync::watch;
 
 pub fn random_verifying_key() -> VerifyingKey {
     let mut csprng = OsRng;
@@ -75,7 +76,7 @@ pub struct TestContext {
     pub db: Arc<SecretDB>,
     pub clock: FakeClock,
     pub my_participant_id: ParticipantId,
-    pub alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
+    pub alive_participants: watch::Sender<Vec<ParticipantId>>,
     /// GovernanceThreshold whose [`TripleV2`] prefix `populate`/`assert_owned` operate on;
     /// matches the fixture from [`gen_four_participants`].
     pub triple_threshold: ReconstructionThreshold,
@@ -105,17 +106,14 @@ pub fn make_triple(participants: &[ParticipantId]) -> PairedTriple {
 }
 
 impl TestContext {
-    pub fn new(
-        my_participant_id: ParticipantId,
-        alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
-    ) -> Self {
+    pub fn new(my_participant_id: ParticipantId, alive_participants: Vec<ParticipantId>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         Self {
             db,
             clock: FakeClock::default(),
             my_participant_id,
-            alive_participants,
+            alive_participants: watch::Sender::new(alive_participants),
             triple_threshold: ReconstructionThreshold::new(3),
         }
     }
@@ -124,21 +122,24 @@ impl TestContext {
         self.triple_threshold.value().to_be_bytes().to_vec()
     }
 
-    pub fn new_store<T>(&self, db_col: DBCol, prefix: Vec<u8>) -> DistributedAssetStorage<T>
+    pub fn new_store<T>(
+        &self,
+        db_col: DBCol,
+        prefix: Vec<u8>,
+    ) -> DistributedAssetStorage<T, WatchCondition<Vec<ParticipantId>, T>>
     where
         T: Serialize + DeserializeOwned + Send + 'static + HasParticipants,
     {
-        DistributedAssetStorage::<T>::new(
+        DistributedAssetStorage::new(
             self.clock.clock(),
             self.db.clone(),
             db_col,
             prefix,
             self.my_participant_id,
-            |cond, val| val.is_subset_of_active_participants(cond),
-            {
-                let alive = self.alive_participants.clone();
-                Arc::new(move || alive.lock().unwrap().clone())
-            },
+            WatchCondition::<Vec<ParticipantId>, T>::new(
+                |cond, val| val.is_subset_of_active_participants(cond),
+                self.alive_participants.subscribe(),
+            ),
         )
         .unwrap()
     }
