@@ -212,7 +212,8 @@ async fn observe_tx_result<C: ViewContract + Clone + Send + 'static>(
         | VerifyTee()
         | SubmitParticipantInfo(_)
         | ConcludeNodeMigration(_)
-        | RegisterForeignChainsConfig(_) => Ok(TransactionStatus::Unknown),
+        | RegisterForeignChainsConfig(_)
+        | RegisterOutcomeKey(_) => Ok(TransactionStatus::Unknown),
     }
 }
 

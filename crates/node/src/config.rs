@@ -237,19 +237,44 @@ pub struct PersistentSecrets {
         deserialize_with = "deserialize_signing_key"
     )]
     pub near_signer_key: SigningKey,
+    /// Signs this node's outcomes for V2 foreign transaction requests. The node registers its
+    /// public key with the contract.
+    #[serde(
+        serialize_with = "serialize_signing_key",
+        deserialize_with = "deserialize_signing_key"
+    )]
+    pub outcome_signing_key: SigningKey,
 }
 
+const OUTCOME_SIGNING_KEY_FIELD: &str = "outcome_signing_key";
+
 impl PersistentSecrets {
+    /// Adds an outcome signing key to a secrets file written before the key existed, and
+    /// keeps every other field of the file.
     fn maybe_get_existing(home_dir: &Path) -> anyhow::Result<Option<PersistentSecrets>> {
         let file_path = secrets_file(home_dir);
-        let secrets = if file_path.exists() {
-            let str = std::fs::read_to_string(&file_path)?;
-            let secrets_file: PersistentSecrets = serde_json::from_str(&str)?;
-            Some(secrets_file)
-        } else {
-            None
-        };
-        Ok(secrets)
+        if !file_path.exists() {
+            return Ok(None);
+        }
+        let mut stored: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file_path)?)?;
+        let fields = stored
+            .as_object_mut()
+            .context("secrets.json does not hold a JSON object")?;
+        let lacks_outcome_signing_key = !fields.contains_key(OUTCOME_SIGNING_KEY_FIELD);
+        if lacks_outcome_signing_key {
+            let key = SigningKey::generate(&mut rand::rngs::OsRng);
+            fields.insert(
+                OUTCOME_SIGNING_KEY_FIELD.to_string(),
+                serialize_signing_key(&key, serde_json::value::Serializer)?,
+            );
+        }
+        let secrets = PersistentSecrets::deserialize(&stored)?;
+        if lacks_outcome_signing_key {
+            write_secret_file(&file_path, &serde_json::to_vec(&stored)?)?;
+            tracing::info!("outcome signing key generated in {}", file_path.display());
+        }
+        Ok(Some(secrets))
     }
 
     fn gen_secrets_and_write_to_disk(home_dir: &Path) -> anyhow::Result<PersistentSecrets> {
@@ -260,10 +285,12 @@ impl PersistentSecrets {
         let mut os_rng = rand::rngs::OsRng;
         let p2p_secret = SigningKey::generate(&mut os_rng);
         let near_signer_key = SigningKey::generate(&mut os_rng);
+        let outcome_signing_key = SigningKey::generate(&mut os_rng);
 
         let secrets = PersistentSecrets {
             p2p_private_key: p2p_secret,
             near_signer_key,
+            outcome_signing_key,
         };
         let mut secrets_json = serde_json::to_value(&secrets)?;
         // TODO(#4911): stop writing this once rollback to a version that requires the field is no longer supported.
@@ -274,7 +301,10 @@ impl PersistentSecrets {
             anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
         }
         write_secret_file(&path, &serde_json::to_vec(&secrets_json)?)?;
-        tracing::debug!("p2p and near account key generated in {}", path.display());
+        tracing::debug!(
+            "p2p, near account and outcome signing keys generated in {}",
+            path.display()
+        );
 
         Ok(secrets)
     }
@@ -399,6 +429,10 @@ pub mod tests {
             actual_secrets.near_signer_key,
             expected_secrets.near_signer_key
         );
+        assert_eq!(
+            actual_secrets.outcome_signing_key,
+            expected_secrets.outcome_signing_key
+        );
 
         Ok(())
     }
@@ -465,6 +499,7 @@ pub mod tests {
         let secrets = PersistentSecrets {
             p2p_private_key: SigningKey::generate(&mut OsRng),
             near_signer_key: SigningKey::generate(&mut OsRng),
+            outcome_signing_key: SigningKey::generate(&mut OsRng),
         };
         let secrets_str = serde_json::to_string(&secrets).unwrap();
 
@@ -481,6 +516,7 @@ pub mod tests {
         let expected_secrets = PersistentSecrets {
             p2p_private_key: SigningKey::generate(&mut rng),
             near_signer_key: SigningKey::generate(&mut rng),
+            outcome_signing_key: SigningKey::generate(&mut rng),
         };
         let mut legacy_secrets = serde_json::to_value(&expected_secrets).unwrap();
         legacy_secrets["near_responder_keys"] =
@@ -496,6 +532,69 @@ pub mod tests {
 
         // Then
         assert_eq!(secrets, expected_secrets);
+    }
+
+    /// Secrets written by a node version without outcome keys, legacy responder keys included.
+    fn secrets_without_outcome_signing_key() -> serde_json::Value {
+        let mut rng = StdRng::from_seed([2u8; 32]);
+        let near_signer_key = serialize_signing_key(
+            &SigningKey::generate(&mut rng),
+            serde_json::value::Serializer,
+        )
+        .unwrap();
+        serde_json::json!({
+            "p2p_private_key": serialize_signing_key(
+                &SigningKey::generate(&mut rng),
+                serde_json::value::Serializer,
+            )
+            .unwrap(),
+            "near_signer_key": near_signer_key.clone(),
+            "near_responder_keys": [near_signer_key],
+        })
+    }
+
+    fn read_secrets_file(home_dir: &Path) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(secrets_file(home_dir)).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn generate_or_get_existing__should_add_an_outcome_signing_key_and_keep_the_other_fields() {
+        // Given
+        let temp_dir = TempDir::new().unwrap();
+        let stored = secrets_without_outcome_signing_key();
+        std::fs::write(
+            secrets_file(temp_dir.path()),
+            serde_json::to_vec(&stored).unwrap(),
+        )
+        .unwrap();
+
+        // When
+        let secrets = PersistentSecrets::generate_or_get_existing(temp_dir.path()).unwrap();
+
+        // Then
+        let mut expected = stored;
+        expected[OUTCOME_SIGNING_KEY_FIELD] =
+            serialize_signing_key(&secrets.outcome_signing_key, serde_json::value::Serializer)
+                .unwrap();
+        assert_eq!(read_secrets_file(temp_dir.path()), expected);
+    }
+
+    #[test]
+    fn generate_or_get_existing__should_keep_the_added_outcome_signing_key() {
+        // Given
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(
+            secrets_file(temp_dir.path()),
+            serde_json::to_vec(&secrets_without_outcome_signing_key()).unwrap(),
+        )
+        .unwrap();
+        let first_load = PersistentSecrets::generate_or_get_existing(temp_dir.path()).unwrap();
+
+        // When
+        let second_load = PersistentSecrets::generate_or_get_existing(temp_dir.path()).unwrap();
+
+        // Then
+        assert_eq!(second_load, first_load);
     }
 
     #[test]

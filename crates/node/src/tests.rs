@@ -63,6 +63,7 @@ mod faulty;
 mod foreign_chain_configuration;
 mod multidomain;
 mod onboarding;
+mod outcome_key_registration;
 mod protocol_yielding;
 mod reconstruction_thresholds;
 mod resharing;
@@ -245,6 +246,7 @@ impl IntegrationTestSetup {
                 persistent_secrets: PersistentSecrets {
                     p2p_private_key: p2p_key.clone(),
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
+                    outcome_signing_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                 },
                 local_storage_aes_key: rand::random(),
                 backup_encryption_key: Key::<Aes256Gcm>::generate().into(),

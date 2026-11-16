@@ -25,6 +25,7 @@ pub mod foreign_chain;
 pub mod handler;
 pub mod migrations;
 pub mod near_data_wipe;
+pub mod outcome_keys;
 pub mod participants;
 pub mod real;
 pub mod stats;
@@ -205,6 +206,9 @@ pub struct IndexerAPI<TransactionSender> {
     pub foreign_chain_whitelist_receiver: watch::Receiver<foreign_chain::ForeignChainWhitelist>,
     /// The foreign chains each node registered, keyed by TLS key, seeded with the first successful read.
     pub foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
+    /// The outcome key each participant account registered. Empty until the first successful
+    /// read.
+    pub outcome_keys_receiver: watch::Receiver<dtos::OutcomeKeys>,
 }
 
 #[cfg(test)]

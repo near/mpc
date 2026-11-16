@@ -4,6 +4,7 @@ use super::foreign_chain::{
 use super::handler::listen_blocks;
 use super::migrations::{ContractMigrationInfo, monitor_migrations};
 use super::near_data_wipe::wipe_near_data_if_requested;
+use super::outcome_keys::monitor_outcome_keys;
 use super::participants::monitor_contract_state;
 use super::stats::indexer_logger;
 use super::{IndexerAPI, IndexerState};
@@ -77,6 +78,7 @@ pub fn spawn_real_indexer(
         oneshot::channel();
     let (foreign_chain_whitelist_sender_oneshot, foreign_chain_whitelist_receiver_oneshot) =
         oneshot::channel();
+    let (outcome_keys_sender_oneshot, outcome_keys_receiver_oneshot) = oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
     let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
@@ -235,6 +237,17 @@ pub fn spawn_real_indexer(
                 )
             };
 
+            let outcome_keys_receiver =
+                monitor_outcome_keys(indexer_state.contract.clone()).await;
+            if outcome_keys_sender_oneshot
+                .send(outcome_keys_receiver)
+                .is_err()
+            {
+                tracing::error!(
+                    "Indexer thread could not send outcome keys receiver back to main driver."
+                )
+            };
+
             // Returns once the contract state is available.
             let contract_state_receiver = monitor_contract_state(
                 indexer_state.contract.clone(),
@@ -335,6 +348,10 @@ pub fn spawn_real_indexer(
         .blocking_recv()
         .expect("foreign chain whitelist receiver must be returned by indexer");
 
+    let outcome_keys_receiver = outcome_keys_receiver_oneshot
+        .blocking_recv()
+        .expect("outcome keys receiver must be returned by indexer");
+
     IndexerAPI {
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
@@ -347,6 +364,7 @@ pub fn spawn_real_indexer(
         foreign_chain_supporters_receiver: foreign_chain_registrations.supporters,
         foreign_chain_whitelist_receiver,
         foreign_chains_configs_receiver: foreign_chain_registrations.configs,
+        outcome_keys_receiver,
     }
 }
 
