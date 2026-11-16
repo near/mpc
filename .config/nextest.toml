@@ -35,6 +35,7 @@ test-group = 'chain-gateway-integration'
 # test jobs run, minus the E2E suite and the tests that need Internet access,
 # which the scanner's offline image cannot run.
 [profile.oss-scanner]
+fail-fast = false
 default-filter = 'not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^validation::tests::/) and package(tee-launcher)) and not (test(fetch_from_intel) and package(attestation-cli))'
 
 [[profile.oss-scanner.overrides]]

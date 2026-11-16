@@ -77,7 +77,7 @@ cat > /usr/local/bin/mpc-tests <<'SCRIPT'
 set -eu
 cd /src
 exec cargo nextest run --profile oss-scanner --cargo-profile=test-release \
-  --all-features --locked --no-fail-fast "$@"
+  --all-features --locked "$@"
 SCRIPT
 chmod +x /usr/local/bin/mpc-tests
 SH
