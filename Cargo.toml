@@ -291,6 +291,10 @@ unexpected_cfgs = { level = "allow", check-cfg = [
 ] }
 
 [workspace.lints.clippy]
+# TODO(#5198): remove once on Rust 1.101. Clippy 1.99 and 1.100 flag
+# `derive_more::Constructor` output as redundant field names
+# (rust-lang/rust-clippy#17525).
+redundant_field_names = "allow"
 assertions_on_result_states = "warn"
 allow_attributes = "warn"
 mod_module_files = "deny"

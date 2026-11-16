@@ -1,6 +1,6 @@
 use axum::{
     http::{StatusCode, header},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
 };
 use std::{ffi::c_void, fs::File, io::BufReader};
 
@@ -32,14 +32,20 @@ const MSG_PROFILING_UNAVAILABLE: &str =
 // (`prof_active:false` at runtime).
 const MSG_PROFILING_INACTIVE: &str = "jemalloc heap profiling is not active";
 
-async fn dump_heap_file() -> Result<File, Response> {
+async fn dump_heap_file() -> Result<File, (StatusCode, String)> {
     let Some(prof_ctl_mutex) = jemalloc_pprof::PROF_CTL.as_ref() else {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, MSG_PROFILING_UNAVAILABLE).into_response());
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            MSG_PROFILING_UNAVAILABLE.to_string(),
+        ));
     };
 
     let mut prof_ctl = prof_ctl_mutex.lock().await;
     if !prof_ctl.activated() {
-        return Err((StatusCode::SERVICE_UNAVAILABLE, MSG_PROFILING_INACTIVE).into_response());
+        return Err((
+            StatusCode::SERVICE_UNAVAILABLE,
+            MSG_PROFILING_INACTIVE.to_string(),
+        ));
     }
 
     // `prof_ctl.dump()` is using blocking IO
@@ -50,21 +56,19 @@ async fn dump_heap_file() -> Result<File, Response> {
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("failed joining on tokio task: {:?}", join_error),
             )
-                .into_response()
         })?
         .map_err(|err| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("failed to dump heap profile: {err:#}"),
             )
-                .into_response()
         })
 }
 
 pub(super) async fn jemalloc_heap_flamegraph() -> impl IntoResponse {
     let dump_file = match dump_heap_file().await {
         Ok(file) => file,
-        Err(response) => return response,
+        Err(err) => return err.into_response(),
     };
 
     let svg_result = tokio::task::spawn_blocking(move || render_flamegraph_svg(dump_file)).await;
@@ -92,7 +96,7 @@ pub(super) async fn jemalloc_heap_flamegraph() -> impl IntoResponse {
 pub(super) async fn jemalloc_heap_pprof() -> impl IntoResponse {
     let dump_file = match dump_heap_file().await {
         Ok(file) => file,
-        Err(response) => return response,
+        Err(err) => return err.into_response(),
     };
 
     let pprof_result = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
