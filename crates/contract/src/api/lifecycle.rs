@@ -221,7 +221,7 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
         .transpose()
 }
 
-#[cfg(all(test, feature = "foreign-tx-v2"))]
+#[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;

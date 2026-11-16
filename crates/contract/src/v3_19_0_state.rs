@@ -131,7 +131,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "foreign-tx-v2")]
     #[test]
     fn from__should_start_the_foreign_tx_v2_yield_counter_at_zero() {
         // Given

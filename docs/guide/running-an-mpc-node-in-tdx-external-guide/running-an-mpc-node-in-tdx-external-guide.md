@@ -987,7 +987,7 @@ For a self-hosted local PCCS, see [Appendix: Self-hosting a local PCCS](#appendi
 
 ### Foreign chain RPC providers
 
-MPC nodes verify foreign-chain transactions (`verify_foreign_transaction` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus per-provider credentials ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider: the participants vote which providers count and how many must agree, and a node serves a chain only while it meets that vote (see [Whitelist and quorum](#whitelist-and-quorum)).
+MPC nodes verify foreign chain transactions (`verify_foreign_transaction` and `read_rpc` requests) by querying RPC providers for each supported chain. Configure them in one of two forms: a preset plus credentials for each provider ([Credentials only](#credentials-only-recommended)), or a full `foreign_chains` block with, per chain, `timeout_sec`, `max_retries`, the `expected_network_fingerprint` (see [Expected network fingerprints](#expected-network-fingerprints)) and one entry per provider ([Full config](#full-config)). Either way, cover every chain with every listed provider: the participants vote which providers count and how many must agree, and a node serves a chain only while it meets that vote (see [Whitelist and quorum](#whitelist-and-quorum)).
 
 You need your own API keys:
 
@@ -1687,6 +1687,37 @@ The gauges `mpc_foreign_chain_rpc_quorum_required` and `mpc_foreign_chain_rpc_pr
 show, per chain, the quorum and how many of your providers count, see
 [Whitelist and quorum](../node-operator-metrics.md#whitelist-and-quorum) in the metrics guide.
 
+#### Read RPC requests
+
+`read_rpc` requests use the same providers and need nothing else to configure. For them, every node
+that supports the chain inspects the transaction once, signs what it found, its node outcome, and
+sends it to the other nodes. The network then signs the verdict that t nodes found, where t is the
+signing threshold, including negative answers such as a failed or missing transaction. When no
+verdict can reach t, because nodes found different verdicts, or because provider errors or
+providers that disagree kept too many nodes from a verdict, the network signs an inconclusive
+answer. A provider that answers differently from your other providers keeps your node from a
+verdict. See [Read RPC answers](../node-operator-metrics.md#read-rpc-answers) in the metrics guide.
+
+Each node signs its node outcomes with its own **outcome key**. A node release that supports
+`read_rpc` creates this key on its first start, keeps it with its other secrets, and registers its
+public key with the contract from the node's account. It registers again whenever the contract
+shows no key or another key for the account, for example after a node migration. Only check that
+the access key of the node allows `register_outcome_key`, see
+[Updating an Existing Key to Allow All Methods](#updating-an-existing-key-to-allow-all-methods).
+Read the registered keys with:
+
+```bash
+near contract call-function as-read-only \
+  v1.signer outcome_keys json-args '{}' network-config mainnet now
+```
+
+On testnet use `v1.signer-prod.testnet` and `network-config testnet`.
+
+Only node releases that support `read_rpc` serve these requests. Vote for the contract update that
+adds `read_rpc` only once every participant runs such a release and `outcome_keys` lists a key for
+every participant account. Until then, a request that a node without support leads times out, and
+the nodes cannot check the node outcomes of a participant without a key.
+
 ### Preparing a Docker Compose File
 
 The launcher Docker Compose file is **rendered** at deploy time from the
@@ -2148,7 +2179,8 @@ obvious error — on any contract method that was not in that list. A symptom of
 this is the node logging `foreign chains registration has not landed, resending;
 check that the node's access key allows register_foreign_chains_config` at
 growing intervals, while the contract reports no foreign chains supported by
-your node.
+your node. The same holds for `outcome key registration has not landed,
+resending`, while `outcome_keys` lists no key for your node's account.
 
 Access-key permissions are **immutable** in NEAR: you cannot edit an existing
 key's allowed methods. Instead, delete the restricted key and re-add the same
@@ -2177,8 +2209,8 @@ near account add-key $ACCOUNT_ID \
 > **Note:** Verify with `near account list-keys $ACCOUNT_ID` that the node key
 > now shows an empty `method_names` list.
 
-After the key is fixed, the node retries its foreign-chain registration by itself within an
-hour. To register at once, restart the node.
+After the key is fixed, the node retries its foreign chain and outcome key registrations by
+itself within an hour. To register at once, restart the node.
 
 ## Joining the MPC Cluster
 

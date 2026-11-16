@@ -312,17 +312,6 @@ pub fn must_load_contract_wasm() -> Vec<u8> {
     )
 }
 
-/// The contract with the V2 foreign transaction methods. Its release build leaves them out.
-pub fn must_load_contract_wasm_with_foreign_tx_v2() -> Vec<u8> {
-    test_utils::contract_build::must_load_wasm(
-        "MPC_CONTRACT_FOREIGN_TX_V2_WASM",
-        "target/near/mpc_contract_foreign_tx_v2/mpc_contract.wasm",
-        test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml")
-            .out_dir("target/near/mpc_contract_foreign_tx_v2")
-            .features(&["foreign-tx-v2"]),
-    )
-}
-
 pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
     test_utils::contract_build::must_load_wasm(
         "MPC_PARALLEL_CONTRACT_WASM",
