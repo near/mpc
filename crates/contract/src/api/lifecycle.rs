@@ -6,6 +6,7 @@ use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{DomainError, Error, InvalidState};
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::node_migrations::NodeMigrations;
+use crate::outcome_keys::OutcomeKeys;
 use crate::pending_verify_foreign_tx_v2::PendingVerifyForeignTxRequestsV2;
 use crate::primitives::domain::{
     AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
@@ -79,6 +80,7 @@ impl MpcContract {
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
             pending_verify_foreign_tx_v2_requests: PendingVerifyForeignTxRequestsV2::default(),
+            outcome_keys: OutcomeKeys::default(),
         })
     }
 
@@ -160,6 +162,7 @@ impl MpcContract {
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
             pending_verify_foreign_tx_v2_requests: PendingVerifyForeignTxRequestsV2::default(),
+            outcome_keys: OutcomeKeys::default(),
         })
     }
 

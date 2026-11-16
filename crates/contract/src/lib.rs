@@ -22,6 +22,7 @@ pub mod v3_19_0_state;
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
 mod dto_mapping;
+mod outcome_keys;
 mod pending_requests;
 mod pending_verify_foreign_tx_v2;
 #[cfg(feature = "sandbox-test-methods")]
@@ -33,7 +34,7 @@ mod sandbox_test_methods;
 pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
-    foreign_chains_metadata::ForeignChainsMetadata,
+    foreign_chains_metadata::ForeignChainsMetadata, outcome_keys::OutcomeKeys,
     pending_verify_foreign_tx_v2::PendingVerifyForeignTxRequestsV2,
     primitives::threshold_votes::GovernanceThresholdParametersVotes, tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
@@ -74,6 +75,7 @@ pub struct MpcContract {
     /// Pending votes for new parameters; storage-backed, so kept outside [`ProtocolContractState`].
     parameters_votes: GovernanceThresholdParametersVotes,
     pending_verify_foreign_tx_v2_requests: PendingVerifyForeignTxRequestsV2,
+    outcome_keys: OutcomeKeys,
 }
 
 impl Default for MpcContract {

@@ -114,8 +114,8 @@ impl MpcContract {
         self.foreign_chains.get().rpc_whitelist.entries.snapshot()
     }
 
-    /// Private endpoint to clean up foreign chain policy votes and node configurations
-    /// for non-participants after resharing.
+    /// Private endpoint to clean up foreign chain policy votes, node configurations and
+    /// outcome keys for non-participants after resharing.
     #[private]
     #[handle_result]
     pub fn clean_foreign_chain_data(&mut self) -> Result<(), Error> {
@@ -146,6 +146,8 @@ impl MpcContract {
             .rpc_whitelist
             .votes
             .retain(participants);
+
+        self.outcome_keys.retain_participants(participants);
 
         Ok(())
     }

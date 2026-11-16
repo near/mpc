@@ -63,6 +63,10 @@ method:   get_foreign_chains_configs
 args:     {}
 
 contract: mpc.near
+method:   outcome_keys
+args:     {}
+
+contract: mpc.near
 method:   allowed_foreign_chain_providers
 args:     {}
 

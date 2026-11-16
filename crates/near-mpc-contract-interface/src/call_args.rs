@@ -169,6 +169,11 @@ pub struct RegisterForeignChainsConfigArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct RegisterOutcomeKeyArgs {
+    pub outcome_key: Ed25519PublicKey,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteUpdateForeignChainProvidersArgs {
     pub votes: NonEmptyBTreeMap<ForeignChain, ChainEntry>,
 }

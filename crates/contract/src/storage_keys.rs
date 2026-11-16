@@ -49,4 +49,5 @@ pub enum StorageKey {
     ParametersVotesByVoter,
     ParametersVotesByProposal,
     PendingVerifyForeignTxV2RequestsByYieldId,
+    OutcomeKeysByAccount,
 }
