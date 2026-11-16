@@ -200,7 +200,7 @@ After boot, every service must continuously prove to the governance contract tha
 
 1. **Initial attestation** — the service generates a TDX quote that binds its identity (TLS public key) to the enclave measurements and submits it to the governance contract.
 2. **Periodic renewal** — every hour a fresh quote is generated and resubmitted, so the contract always holds a recent proof.
-3. **Collective verification** — every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate the participants' attestations and kick out participants whose image hashes are no longer on the approved list.
+3. **Collective verification**: every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate the participants' attestations. While any participant's image hash is no longer on the approved list, the contract stops accepting signature requests.
 
 The [TEE Context][tee-context-design] crate provides the contract interface for the above — each service is responsible for its own attestation scheduling. See the [TEE Context design doc][tee-context-design] for the interface and usage examples.
 
@@ -285,7 +285,7 @@ sequenceDiagram
     NEW ->> SC: submit_participant_info(attestation, tls_pk)
 
     Note over SC: After upgrade deadline (default 7 days)
-    SC ->> SC: verify_tee() removes nodes with expired image hashes
+    SC ->> SC: verify_tee() pauses requests while a node has an expired image hash
 ```
 
 1. Governors vote for a new Docker image hash on-chain via `vote_mpc_node_manifest_digest()`.
@@ -295,8 +295,8 @@ sequenceDiagram
 5. The operator restarts the CVM.
 6. On restart, the Launcher pulls the new image, verifies the hash, extends RTMR3, starts the container.
 7. The new app submits a fresh attestation.
-8. After the upgrade deadline (configurable, default 7 days), old image hashes expire. Any node still running an old image that has not reattested will be removed on the next `verify_tee()` call.
+8. After the upgrade deadline (configurable, default 7 days), old image hashes expire. If any node still runs an old image without having reattested, the next `verify_tee()` call stops the contract from accepting signature requests until the node reattests or a vote removes it.
 
-For the MPC-specific details (node kicking and resharing), see [Kicking out nodes with invalid attestation][kicking-nodes].
+For the MPC-specific details, see [Participants with invalid attestation][invalid-attestation].
 
-[kicking-nodes]: securing-mpc-with-tee/securing-mpc-with-tee.md#kicking-out-nodes-with-invalid-attestation
+[invalid-attestation]: securing-mpc-with-tee/securing-mpc-with-tee.md#participants-with-invalid-attestation

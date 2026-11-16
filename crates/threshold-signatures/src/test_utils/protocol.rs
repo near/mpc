@@ -57,7 +57,7 @@ pub fn run_protocol_counting_yields<T>(
                     }
                     Action::SendPrivate(to, m) => {
                         let from = ps[i].0;
-                        ps[indices[&to]].1.message(from, m.clone())?;
+                        ps[indices[&to]].1.message(from, m)?;
                         true
                     }
                     Action::Return(_) => {

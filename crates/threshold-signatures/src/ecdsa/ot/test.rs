@@ -1,6 +1,6 @@
 use rand::SeedableRng;
 
-use super::batch_random_ot::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender};
+use super::base::co15::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender};
 
 use crate::test_utils::MockCryptoRng;
 
@@ -22,17 +22,12 @@ pub fn run_batch_random_ot()
         s,
         r,
         &mut make_protocol(comms_s.clone(), {
-            let y = super::batch_random_ot::batch_random_ot_sender_helper(&mut rng);
-            super::batch_random_ot::batch_random_ot_sender(comms_s.private_channel(s, r), y)
+            let y = super::base::co15::batch_random_ot_sender_helper(&mut rng);
+            super::base::co15::batch_random_ot_sender(comms_s.private_channel(s, r), y)
         }),
         &mut make_protocol(comms_r.clone(), {
-            let (delta, x) =
-                super::batch_random_ot::batch_random_ot_receiver_random_helper(&mut rng);
-            super::batch_random_ot::batch_random_ot_receiver(
-                comms_r.private_channel(r, s),
-                delta,
-                x,
-            )
+            let (delta, x) = super::base::co15::batch_random_ot_receiver_random_helper(&mut rng);
+            super::base::co15::batch_random_ot_receiver(comms_r.private_channel(r, s), delta, x)
         }),
     )
 }

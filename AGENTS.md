@@ -118,6 +118,9 @@ fn <system_under_test>__should_<test_assertion>() {
 
 See `docs/development/engineering-standards.md` for the full rationale and additional testing conventions.
 
+### Test Duplication
+Keep test code small without weakening coverage, assertions or readability. When tests run the same steps on different inputs or expected outcomes, write one `rstest` test with named cases (`#[case::scenario(...)]`, or `#[values(...)]` for cross-products) instead of near-identical copies. Reuse existing test helpers and fixtures before adding new ones, and extract setup or assertions that several tests repeat. Keep tests separate when their steps differ: a case argument that switches control flow inside the test body means the cases belong in separate tests.
+
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
@@ -146,6 +149,9 @@ See `docs/development/engineering-standards.md` §Name capability traits after t
 If type `A` references type `B`, declare `A` before `B`. This applies to new code and reworked files, not bulk reorders.
 
 See `docs/development/engineering-standards.md` §Declare referencing types first.
+
+### File Size
+Aim for less than 500 lines per hand-written source file, and never go past 1,000. Generated files, snapshots and lockfiles are exempt. When a change would take a file over 1,000 lines, split the file by topic first. If a file you work on is already over 1,000 lines, point it out to the engineer, but do not split it unless asked.
 
 ### Current Rust Features
 Where they make the code simpler, prefer the newest language features and std APIs of the toolchain pinned in `rust-toolchain.toml` over older idioms or third-party crates, e.g. `Duration::from_hours(1)` over `Duration::from_secs(3600)`, or a let chain over nested `if let`s.

@@ -39,13 +39,15 @@ These gauges say whether that happened:
 ## Attestation freshness
 
 The node runs in trusted hardware and proves this by submitting an attestation
-on chain. If it stops doing so, the contract eventually drops the node from the
-participant set. These gauges tell you how much runway is left:
+on chain. If it stops doing so, the attestation eventually expires and the
+contract stops accepting signature requests until the node attests again or a
+vote removes it from the participant set. These gauges tell you how much runway
+is left:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
-| `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node is already out. `-1` means an attestation is stored that carries no expiry. |
+| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to the attestation expiring. |
+| `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node already counts as unattested. `-1` means an attestation is stored that carries no expiry. |
 
 ## Foreign chain RPC providers
 
@@ -139,11 +141,27 @@ network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
 After each round the node also compares the configured providers with the
-provider whitelist and logs each difference, so a wrong config is reported
-every hour until it is fixed. Until the node has synced and read the provider
-whitelist from the contract, each round logs that the whitelist is not read
-yet. The node probes again as
-soon as the whitelist is read, and whenever the whitelist changes.
+provider whitelist. A round runs at startup, every hour, and as soon as the
+whitelist is read or changes. So a wrong config is reported until it is fixed.
+
+Each round logs:
+
+* A warning for each unhealthy provider.
+* A line for each difference from the whitelist. A difference you must fix is
+  a warning or an error. Two differences are normal and are logged as info: a
+  chain that is not whitelisted yet, and an extra provider.
+* One `foreign chain probe round complete` line at the end, with these fields:
+
+| Field | What it tells you |
+| --- | --- |
+| `healthy` | providers that passed the probe |
+| `probed` | providers of a chain that has a probe |
+| `unchecked` | providers of a chain that has no probe |
+| `unchecked_chains` | the chains that have no probe |
+| `whitelist` | `not read yet`, `matches the local config`, or the number of differences logged above |
+
+The whitelist is `not read yet` until the node has synced and read it from the
+contract.
 
 ### Whitelist and quorum
 

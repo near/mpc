@@ -30,7 +30,11 @@ pub async fn run() -> Result<(), LauncherError> {
 
     let args = CliArgs::parse();
 
-    tracing::info!(platform = ?args.platform, "starting launcher");
+    tracing::info!(
+        platform = ?args.platform,
+        mpc_contract_id = %args.mpc_contract_id,
+        "starting launcher"
+    );
 
     let config = load_config()?;
 

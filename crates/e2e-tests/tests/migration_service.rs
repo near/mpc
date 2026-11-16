@@ -57,7 +57,7 @@ impl BackupService {
         );
     }
 
-    fn must_init_near_node(&self, node: &MpcNodeSetup) {
+    fn must_init_near_node(&self, node: &MpcNodeSetup, sandbox_config_path: &Path) {
         let output = Command::new(node.binary_path())
             .args(["init", "--chain-id", "mpc-localnet", "--dir"])
             .arg(self.home_dir.path())
@@ -77,6 +77,15 @@ impl BackupService {
             serde_json::from_slice(&config).expect("failed to parse the node's NEAR config");
         config["rpc"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
         config["network"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
+
+        let sandbox_config =
+            std::fs::read(sandbox_config_path).expect("failed to read the sandbox's NEAR config");
+        let sandbox_config: serde_json::Value = serde_json::from_slice(&sandbox_config)
+            .expect("failed to parse the sandbox's NEAR config");
+        config["consensus"]["min_block_production_delay"] =
+            sandbox_config["consensus"]["min_block_production_delay"].clone();
+        config["gc_blocks_limit"] = sandbox_config["gc_blocks_limit"].clone();
+        config["gc_step_period"] = sandbox_config["gc_step_period"].clone();
         std::fs::write(
             self.home_dir.path().join("config.json"),
             serde_json::to_vec_pretty(&config).expect("failed to serialize the NEAR config"),
@@ -772,7 +781,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     let rpc_url = match contract_state_source {
         ContractStateSource::JsonRpc => Some(cluster.sandbox.rpc_url()),
         ContractStateSource::EmbeddedNode => {
-            backup_service.must_init_near_node(source.setup());
+            backup_service.must_init_near_node(source.setup(), &cluster.sandbox.config_path());
             None
         }
     };

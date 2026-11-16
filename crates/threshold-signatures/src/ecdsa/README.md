@@ -10,6 +10,10 @@ Both schemes share common types defined in this module:
 - **`KeygenOutput`** / **`Tweak`** -- Secp256k1-specialized aliases for the curve-generic DKG output types. `Tweak` allows deriving different signing keys from a single DKG output
 - **Type aliases** -- `Scalar`, `Element`, `Polynomial`, `PolynomialCommitment`, `CoefficientCommitment` specialized to `Secp256K1Sha256`
 
+## Oblivious Transfer (`ot/`)
+
+Crate-internal OT protocols shared by the schemes. See [`ot/README.md`](ot/README.md) for details.
+
 ## Schemes
 
 ### OT-based ECDSA (`ot_based_ecdsa/`)

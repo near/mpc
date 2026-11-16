@@ -1,18 +1,43 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 /// Returns the workspace root directory.
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Builds a contract and returns the path to the compiled WASM artifact.
+/// Builds a contract and returns `read` applied to the path of the compiled
+/// WASM artifact.
 ///
 /// Uses `cargo near build non-reproducible-wasm` under the hood. The caller
 /// is responsible for setting all fields in `opts` (manifest_path, out_dir,
-/// profile, features, etc.).
-pub fn build_contract_path(opts: cargo_near_build::BuildOpts) -> PathBuf {
+/// profile, features, etc.). Contract builds are serialized across processes,
+/// and `read` runs before the next one starts, so it can safely read any file
+/// the build wrote to `out_dir`.
+pub fn build_contract<T>(opts: cargo_near_build::BuildOpts, read: impl FnOnce(&Path) -> T) -> T {
+    // cargo-near copies the WASM out of `target/<triple>/<profile>/`, which all
+    // feature variants of a crate share, after cargo has released its build lock.
+    // Since Cargo 1.100 a fresh build of another variant swaps that file in
+    // milliseconds, so concurrent test processes would load each other's variants.
+    let _lock = lock_contract_builds();
     let artifact = cargo_near_build::build_with_cli(opts).expect("cargo near build failed");
-    artifact.canonicalize().unwrap()
+    read(&artifact.canonicalize().unwrap())
+}
+
+fn lock_contract_builds() -> File {
+    let dir = workspace_root().join("target/near");
+    std::fs::create_dir_all(&dir).expect("failed to create the contract output directory");
+    let lock = File::options()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(dir.join("build.lock"))
+        .expect("failed to open the contract build lock file");
+    lock.lock()
+        .expect("failed to lock the contract build lock file");
+    lock
 }
 
 /// Loads the WASM from `env_var` if set, else the workspace-relative `prebuilt`
@@ -124,8 +149,10 @@ impl ContractBuilder {
             ..Default::default()
         };
 
-        let path = build_contract_path(opts);
-        std::fs::read(&path)
-            .unwrap_or_else(|e| panic!("Failed to read contract WASM at {}: {e}", path.display()))
+        build_contract(opts, |path| {
+            std::fs::read(path).unwrap_or_else(|e| {
+                panic!("Failed to read contract WASM at {}: {e}", path.display())
+            })
+        })
     }
 }
