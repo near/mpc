@@ -305,7 +305,7 @@ impl FakeMpcContractState {
         match &mut self.state {
             ProtocolContractState::Initializing(state) => {
                 self.env.set_signer(&account_id);
-                if let Err(e) = state.generating_key.start(
+                if let Err(e) = state.start(
                     id,
                     self.config
                         .key_event_timeout_blocks
@@ -324,13 +324,18 @@ impl FakeMpcContractState {
 
     pub fn vote_abort_key_event(&mut self, account_id: AccountId, id: KeyEventId) {
         self.env.set_signer(&account_id);
-        match self.state.key_event_mut() {
-            Ok(key_event) => {
-                if let Err(e) = key_event.vote_abort(id) {
+        match &mut self.state {
+            ProtocolContractState::Initializing(state) => {
+                if let Err(e) = state.vote_abort(id) {
                     tracing::info!("vote_abort_key_event transaction failed: {}", e);
                 }
             }
-            Err(_) => {
+            ProtocolContractState::Resharing(state) => {
+                if let Err(e) = state.vote_abort(id) {
+                    tracing::info!("vote_abort_key_event transaction failed: {}", e);
+                }
+            }
+            _ => {
                 tracing::info!(
                     "vote_abort_key_event transaction ignored because the contract is not in initializing or resharing state"
                 );
@@ -342,7 +347,7 @@ impl FakeMpcContractState {
         match &mut self.state {
             ProtocolContractState::Resharing(state) => {
                 self.env.set_signer(&account_id);
-                if let Err(e) = state.resharing_key.start(
+                if let Err(e) = state.start(
                     id,
                     self.config
                         .key_event_timeout_blocks

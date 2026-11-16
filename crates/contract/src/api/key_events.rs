@@ -3,7 +3,6 @@
 
 use crate::crypto_shared::types::PublicKeyExtendedConversionError;
 use crate::errors::{Error, InvalidParameters};
-use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, env, log, near};
@@ -19,9 +18,7 @@ impl MpcContract {
         self.assert_caller_is_attested_participant_and_protocol_active();
 
         self.protocol_state
-            .initializing_mut()?
-            .generating_key
-            .start(key_event_id, self.config.key_event_timeout_blocks)
+            .start_keygen_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
     /// Casts a vote for `public_key` for the attempt identified by `key_event_id`.
@@ -64,9 +61,8 @@ impl MpcContract {
                     }
                 })?;
 
-        let initializing = self.protocol_state.initializing_mut()?;
-        if let Some(running) = initializing.vote_pk(key_event_id, extended_key)? {
-            self.protocol_state = ProtocolContractState::Running(running);
+        if let Some(new_state) = self.protocol_state.vote_pk(key_event_id, extended_key)? {
+            self.protocol_state = new_state;
         }
 
         Ok(())
@@ -83,9 +79,7 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
         self.protocol_state
-            .resharing_mut()?
-            .resharing_key
-            .start(key_event_id, self.config.key_event_timeout_blocks)
+            .start_reshare_instance(key_event_id, self.config.key_event_timeout_blocks)
     }
 
     /// Casts a vote for the successful resharing of the attempt identified by `key_event_id`.
@@ -111,10 +105,9 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
-        let resharing = self.protocol_state.resharing_mut()?;
-        if let Some(running) = resharing.vote_reshared(key_event_id)? {
+        if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
-            self.protocol_state = ProtocolContractState::Running(running);
+            self.protocol_state = new_state;
             self.parameters_votes.clear();
             self.recompute_available_foreign_chains();
 
@@ -188,9 +181,8 @@ impl MpcContract {
         Self::assert_caller_is_signer();
         log!("vote_cancel_resharing: signer={}", env::signer_account_id());
 
-        let resharing = self.protocol_state.resharing_mut()?;
-        if let Some(running) = resharing.vote_cancel_resharing()? {
-            self.protocol_state = ProtocolContractState::Running(running);
+        if let Some(new_state) = self.protocol_state.vote_cancel_resharing()? {
+            self.protocol_state = new_state;
         }
 
         Ok(())
@@ -207,9 +199,8 @@ impl MpcContract {
         Self::assert_caller_is_signer();
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
 
-        let initializing = self.protocol_state.initializing_mut()?;
-        if let Some(running) = initializing.vote_cancel(next_domain_id)? {
-            self.protocol_state = ProtocolContractState::Running(running);
+        if let Some(new_state) = self.protocol_state.vote_cancel_keygen(next_domain_id)? {
+            self.protocol_state = new_state;
         }
         Ok(())
     }
@@ -229,8 +220,7 @@ impl MpcContract {
         self.assert_caller_is_attested_participant_and_protocol_active();
 
         self.protocol_state
-            .key_event_mut()?
-            .vote_abort(key_event_id)
+            .vote_abort_key_event_instance(key_event_id)
     }
 }
 
