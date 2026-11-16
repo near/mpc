@@ -1,8 +1,7 @@
 use anyhow::ensure;
 use near_indexer::near_primitives::hash::CryptoHash;
 
-/// Fails unless the node follows the chain whose genesis hash the measured launcher compose names.
-/// A node started without the launcher has no expected genesis hash and follows any chain.
+/// Fails if there is an expected genesis hash and the node follows another chain
 pub fn ensure_chain_matches_contract(
     expected_genesis_hash: Option<CryptoHash>,
     genesis_hash: CryptoHash,
