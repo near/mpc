@@ -1,4 +1,5 @@
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
+use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
@@ -230,6 +231,11 @@ pub struct PeerConnectedPeersInfo {
     pub info: ConnectedPeersInfo,
 }
 
+pub struct PeerNodeOutcome {
+    pub from: ParticipantId,
+    pub outcome: SignedNodeOutcome,
+}
+
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct ConnectedPeersInfo {
     /// Ourselves and every peer we are bidirectionally connected to, each with the latest indexer
@@ -241,6 +247,7 @@ pub enum PeerMessage {
     Mpc(MpcPeerMessage),
     IndexerHeight(PeerIndexerHeightMessage),
     ConnectedPeersInfo(PeerConnectedPeersInfo),
+    NodeOutcome(PeerNodeOutcome),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

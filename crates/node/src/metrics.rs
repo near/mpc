@@ -557,9 +557,8 @@ impl MpcTaskId {
                 ECDSA_PROTOCOL_SCHEME_LABEL,
                 match task {
                     VerifyForeignTxTaskId::VerifyForeignTx { .. }
-                    | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. } => {
-                        VERIFY_FOREIGN_TX_TASK_LABEL
-                    }
+                    | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. }
+                    | VerifyForeignTxTaskId::SignOutcome { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
                 },
             ),
         };

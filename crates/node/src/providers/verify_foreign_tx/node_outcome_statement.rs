@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use borsh::BorshSerialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
 use near_mpc_contract_interface::types::{self as dtos, YieldId};
 
@@ -18,16 +18,24 @@ const NODE_OUTCOME_STATEMENT_PREFIX: &[u8] = b"near-mpc foreign tx v2 node outco
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VerifiedNodeOutcome(SignedNodeOutcome);
 
-/// A [`NodeOutcomeStatement`] with its signature, not yet verified.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SignedNodeOutcome {
+/// A [`NodeOutcomeStatement`] with its signature, not yet verified. Its Borsh encoding is part of
+/// the P2P wire format. That encoding includes [`ForeignTxVerificationNegativeVerdict`] from the
+/// contract interface, so a change to that enum is a wire change.
+///
+/// [`ForeignTxVerificationNegativeVerdict`]: near_mpc_contract_interface::types::ForeignTxVerificationNegativeVerdict
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct SignedNodeOutcome {
     statement: NodeOutcomeStatement,
+    #[borsh(
+        serialize_with = "serialize_signature",
+        deserialize_with = "deserialize_signature"
+    )]
     signature: Signature,
 }
 
 /// The [`NodeOutcome`] of one node for one V2 foreign transaction request, in the form the node
 /// signs.
-#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize)]
+#[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub(crate) struct NodeOutcomeStatement {
     pub(crate) yield_id: YieldId,
     pub(crate) signer: ParticipantId,
@@ -132,6 +140,39 @@ fn signed_bytes(statement: &NodeOutcomeStatement) -> std::io::Result<Vec<u8>> {
     let mut bytes = NODE_OUTCOME_STATEMENT_PREFIX.to_vec();
     statement.serialize(&mut bytes)?;
     Ok(bytes)
+}
+
+fn serialize_signature<W: borsh::io::Write>(
+    signature: &Signature,
+    writer: &mut W,
+) -> borsh::io::Result<()> {
+    signature.to_bytes().serialize(writer)
+}
+
+fn deserialize_signature<R: borsh::io::Read>(reader: &mut R) -> borsh::io::Result<Signature> {
+    <[u8; Signature::BYTE_SIZE]>::deserialize_reader(reader)
+        .map(|bytes| Signature::from_bytes(&bytes))
+}
+
+#[cfg(test)]
+pub(crate) mod testing {
+    use ed25519_dalek::SigningKey;
+    use near_mpc_contract_interface::types::YieldId;
+
+    use super::{NodeOutcomeSigningKey, NodeOutcomeStatement, SignedNodeOutcome};
+    use crate::primitives::ParticipantId;
+    use crate::providers::verify_foreign_tx::node_outcome::NodeOutcome;
+
+    /// A node outcome signed with a fixed key, so its bytes are stable across runs.
+    pub(crate) fn signed_node_outcome(outcome: NodeOutcome) -> SignedNodeOutcome {
+        NodeOutcomeSigningKey(SigningKey::from_bytes(&[10; 32]))
+            .sign(NodeOutcomeStatement {
+                yield_id: YieldId([6; 32]),
+                signer: ParticipantId::from_raw(7),
+                outcome,
+            })
+            .unwrap()
+    }
 }
 
 #[cfg(test)]
@@ -341,6 +382,23 @@ mod tests {
         assert_matches!(
             result,
             Err(NodeOutcomeVerificationError::NoOutcomeKey(rejected)) if rejected == signer
+        );
+    }
+
+    #[test]
+    fn signed_node_outcome__should_still_verify_after_a_borsh_round_trip() {
+        // Given
+        let signed = signing_key(SIGNER).sign(statement()).unwrap();
+
+        // When
+        let decoded: SignedNodeOutcome =
+            borsh::from_slice(&borsh::to_vec(&signed).unwrap()).unwrap();
+
+        // Then
+        assert_eq!(decoded, signed);
+        assert_eq!(
+            decoded.verify(&outcome_keys()).unwrap().statement(),
+            &statement()
         );
     }
 

@@ -1,7 +1,8 @@
+pub(crate) mod node_outcome;
+pub(crate) mod node_outcome_statement;
+
 mod inspect_request;
 mod inspection;
-mod node_outcome;
-mod node_outcome_statement;
 mod provider_call_metrics;
 mod sign;
 
@@ -250,6 +251,10 @@ impl VerifyForeignTxProvider {
             }
             MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
                 anyhow::bail!("Retired stored-presignature task rejected");
+            }
+            // TODO(#5123): join the signing rounds of V2 requests.
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::SignOutcome { .. }) => {
+                anyhow::bail!("V2 signing rounds are not supported yet");
             }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",

@@ -7,11 +7,13 @@
 use crate::primitives::{
     ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
 };
-use crate::protocol_version::NetworkProtocolVersion;
+use crate::protocol_version::{NetworkProtocolVersion, V2_FOREIGN_TX_MIN_PROTOCOL_VERSION};
+use crate::providers::verify_foreign_tx::node_outcome::RoundOutcome;
+use crate::providers::verify_foreign_tx::node_outcome_statement::SignedNodeOutcome;
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::domain::DomainId;
-use near_mpc_contract_interface::types::KeyEventId;
+use near_mpc_contract_interface::types::{KeyEventId, YieldId};
 use std::fmt::Debug;
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
@@ -22,16 +24,19 @@ pub enum Packet {
     MpcMessage(MpcMessage) = 1,
     IndexerHeight(IndexerHeightMessage) = 2,
     ConnectedPeersInfo(ConnectedPeersInfo) = 3,
+    /// The signed node outcome of a V2 foreign tx request. Every node sends its own to every other
+    /// participant.
+    NodeOutcome(SignedNodeOutcome) = 4,
 }
 
 impl Packet {
     /// Lowest handshake version that can parse this packet.
     pub fn min_protocol_version(&self) -> NetworkProtocolVersion {
         match self {
-            Packet::Ping | Packet::MpcMessage(_) | Packet::IndexerHeight(_) => {
-                NetworkProtocolVersion::Dec2025
-            }
+            Packet::MpcMessage(message) => message.kind.min_protocol_version(),
+            Packet::Ping | Packet::IndexerHeight(_) => NetworkProtocolVersion::Dec2025,
             Packet::ConnectedPeersInfo(_) => NetworkProtocolVersion::Oct2026,
+            Packet::NodeOutcome(_) => V2_FOREIGN_TX_MIN_PROTOCOL_VERSION,
         }
     }
 }
@@ -44,6 +49,9 @@ pub enum MpcMessageKind {
     Computation(Vec<Vec<u8>>) = 1,
     Abort(String) = 2,
     Success = 3,
+    /// The signed node outcomes that back the outcome of a
+    /// [`VerifyForeignTxTaskId::SignOutcome`] round. The leader sends them right after the Start.
+    Evidence(Vec<SignedNodeOutcome>) = 4,
 }
 
 impl MpcMessageKind {
@@ -53,13 +61,29 @@ impl MpcMessageKind {
             MpcMessageKind::Computation(_) => "Computation",
             MpcMessageKind::Abort(_) => "Abort",
             MpcMessageKind::Success => "Success",
+            MpcMessageKind::Evidence(_) => "Evidence",
+        }
+    }
+
+    fn min_protocol_version(&self) -> NetworkProtocolVersion {
+        match self {
+            MpcMessageKind::Start(MpcStartMessage {
+                task_id: MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::SignOutcome { .. }),
+                ..
+            })
+            | MpcMessageKind::Evidence(_) => V2_FOREIGN_TX_MIN_PROTOCOL_VERSION,
+            MpcMessageKind::Start(_)
+            | MpcMessageKind::Computation(_)
+            | MpcMessageKind::Abort(_)
+            | MpcMessageKind::Success => NetworkProtocolVersion::Dec2025,
         }
     }
 }
 
 /// Redacts the raw bytes in Computation messages.
 /// These bytes contain serialized protocol round data (commitments, encrypted shares, proofs)
-/// which must not be leaked to logs.
+/// which must not be leaked to logs. Evidence shows only its length, because a peer can fill a
+/// whole frame with outcomes and every received message is logged.
 impl Debug for MpcMessageKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -74,6 +98,10 @@ impl Debug for MpcMessageKind {
                 .finish(),
             MpcMessageKind::Abort(err) => f.debug_tuple("Abort").field(err).finish(),
             MpcMessageKind::Success => write!(f, "Success"),
+            MpcMessageKind::Evidence(outcomes) => f
+                .debug_tuple("Evidence")
+                .field(&format_args!("[{} outcomes]", outcomes.len()))
+                .finish(),
         }
     }
 }
@@ -194,6 +222,13 @@ pub enum VerifyForeignTxTaskId {
         id: VerifyForeignTxId,
         paired_triple_id: UniqueId,
     } = 1,
+    /// A round that signs `outcome` for the V2 request waiting on `yield_id`. Each round uses
+    /// its own triple pair, so `paired_triple_id` makes the id unique per round.
+    SignOutcome {
+        yield_id: YieldId,
+        outcome: RoundOutcome,
+        paired_triple_id: UniqueId,
+    } = 2,
 }
 
 impl From<VerifyForeignTxTaskId> for MpcTaskId {
@@ -204,229 +239,4 @@ impl From<VerifyForeignTxTaskId> for MpcTaskId {
 
 #[cfg(test)]
 #[expect(non_snake_case)]
-mod tests {
-    use super::{
-        CKDTaskId, EcdsaTaskId, EddsaTaskId, MpcMessageKind, MpcTaskId, Packet, RobustEcdsaTaskId,
-        VerifyForeignTxTaskId,
-    };
-    use crate::primitives::{
-        ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage,
-        ParticipantId, UniqueId,
-    };
-    use borsh::BorshSerialize;
-    use mpc_primitives::domain::DomainId;
-    use mpc_primitives::{AttemptId, EpochId};
-    use near_indexer_primitives::CryptoHash;
-    use near_mpc_contract_interface::types::KeyEventId;
-    use std::collections::BTreeMap;
-    use std::fmt::Debug;
-
-    fn uid(counter: u32) -> UniqueId {
-        UniqueId::new(ParticipantId::from_raw(0), 1, counter)
-    }
-
-    fn hash(byte: u8) -> CryptoHash {
-        CryptoHash([byte; 32])
-    }
-
-    fn key_event() -> KeyEventId {
-        KeyEventId::new(EpochId::new(1), DomainId(2), AttemptId(3))
-    }
-
-    /// Fixed inputs are chosen so that neighbouring fields encode to visibly distinct bytes.
-    fn rows(values: &[impl BorshSerialize + Debug]) -> String {
-        values
-            .iter()
-            .map(|value| {
-                let hex = borsh::to_vec(value)
-                    .unwrap()
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                format!("{value:?} => {hex}")
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    /// Every value that crosses the wire, with the bytes it encodes to. A changed byte is a
-    /// breaking wire change; a new line is an append.
-    #[test]
-    fn wire_format__should_stay_stable() {
-        let table = [
-            rows(&[
-                Packet::Ping,
-                Packet::MpcMessage(MpcMessage {
-                    channel_id: ChannelId(uid(1)),
-                    kind: MpcMessageKind::Success,
-                }),
-                Packet::IndexerHeight(IndexerHeightMessage { height: 4 }),
-                Packet::ConnectedPeersInfo(ConnectedPeersInfo {
-                    peers: BTreeMap::from([
-                        (ParticipantId::from_raw(5), 10),
-                        (ParticipantId::from_raw(7), 20),
-                    ]),
-                }),
-            ]),
-            rows(&[
-                MpcMessageKind::Start(MpcStartMessage {
-                    task_id: EcdsaTaskId::ManyTriples {
-                        start: uid(1),
-                        count: 64,
-                    }
-                    .into(),
-                    participants: vec![ParticipantId::from_raw(5)],
-                }),
-                MpcMessageKind::Computation(vec![vec![1, 2, 3]]),
-                MpcMessageKind::Abort("err".to_owned()),
-                MpcMessageKind::Success,
-            ]),
-            rows(&[
-                EcdsaTaskId::KeyGeneration {
-                    key_event: key_event(),
-                }
-                .into(),
-                EcdsaTaskId::KeyResharing {
-                    key_event: key_event(),
-                }
-                .into(),
-                EcdsaTaskId::ManyTriples {
-                    start: uid(1),
-                    count: 64,
-                }
-                .into(),
-                EcdsaTaskId::Presignature {
-                    id: uid(1),
-                    domain_id: DomainId(2),
-                    paired_triple_id: uid(3),
-                }
-                .into(),
-                EcdsaTaskId::Signature {
-                    id: hash(1),
-                    presignature_id: uid(2),
-                }
-                .into(),
-                EcdsaTaskId::OnlinePresignSignature {
-                    id: hash(1),
-                    paired_triple_id: uid(2),
-                }
-                .into(),
-                EddsaTaskId::KeyGeneration {
-                    key_event: key_event(),
-                }
-                .into(),
-                EddsaTaskId::KeyResharing {
-                    key_event: key_event(),
-                }
-                .into(),
-                EddsaTaskId::Signature { id: hash(1) }.into(),
-                CKDTaskId::KeyGeneration {
-                    key_event: key_event(),
-                }
-                .into(),
-                CKDTaskId::KeyResharing {
-                    key_event: key_event(),
-                }
-                .into(),
-                CKDTaskId::Ckd { id: hash(1) }.into(),
-                RobustEcdsaTaskId::KeyGeneration {
-                    key_event: key_event(),
-                }
-                .into(),
-                RobustEcdsaTaskId::KeyResharing {
-                    key_event: key_event(),
-                }
-                .into(),
-                RobustEcdsaTaskId::Signature { id: hash(1) }.into(),
-                MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTx {
-                    id: hash(1),
-                    presignature_id: uid(2),
-                }),
-                MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
-                    id: hash(1),
-                    paired_triple_id: uid(2),
-                }),
-            ]),
-        ]
-        .join("\n\n");
-
-        insta::assert_snapshot!(table);
-    }
-
-    #[test]
-    fn mpc_message_kind_debug__should_redact_computation_payload() {
-        // given
-        let secret_data = b"SECRET_SHARE_DATA_THAT_MUST_NOT_LEAK".to_vec();
-        let kind = MpcMessageKind::Computation(vec![secret_data]);
-
-        // when
-        let debug_output = format!("{:?}", kind);
-
-        // then
-        assert!(
-            !debug_output.contains("SECRET_SHARE_DATA"),
-            "Debug output must not contain raw computation bytes, got: {}",
-            debug_output
-        );
-        assert!(
-            debug_output.contains("Computation"),
-            "Debug output should identify the message kind, got: {}",
-            debug_output
-        );
-        assert!(
-            debug_output.contains("1 chunks"),
-            "Debug output should show chunk count, got: {}",
-            debug_output
-        );
-    }
-
-    #[test]
-    fn mpc_message_kind_debug__should_show_chunk_count_and_total_bytes() {
-        // given
-        let kind = MpcMessageKind::Computation(vec![vec![0u8; 100], vec![0u8; 200], vec![0u8; 50]]);
-
-        // when
-        let debug_output = format!("{:?}", kind);
-
-        // then
-        assert!(
-            debug_output.contains("3 chunks"),
-            "Debug output should show 3 chunks, got: {}",
-            debug_output
-        );
-        assert!(
-            debug_output.contains("350 bytes"),
-            "Debug output should show 350 total bytes, got: {}",
-            debug_output
-        );
-    }
-
-    #[test]
-    fn mpc_message_kind_debug__should_show_non_sensitive_variants_normally() {
-        // given
-        let start = MpcMessageKind::Start(MpcStartMessage {
-            task_id: MpcTaskId::EcdsaTaskId(EcdsaTaskId::ManyTriples {
-                start: UniqueId::new(ParticipantId::from_raw(0), 42, 0),
-                count: 1,
-            }),
-            participants: vec![ParticipantId::from_raw(0)],
-        });
-        let abort = MpcMessageKind::Abort("some error".into());
-        let success = MpcMessageKind::Success;
-
-        // when
-        let start_debug = format!("{:?}", start);
-        let abort_debug = format!("{:?}", abort);
-        let success_debug = format!("{:?}", success);
-
-        // then
-        assert!(start_debug.contains("Start"), "got: {}", start_debug);
-        assert!(
-            abort_debug.contains("some error"),
-            "Abort debug should show the error string, got: {}",
-            abort_debug
-        );
-        assert_eq!(success_debug, "Success");
-    }
-}
+mod tests;
