@@ -5,17 +5,19 @@ use near_mpc_bounded_collections::BoundedVec;
 use near_mpc_contract_interface::types::{
     self as dtos, ECDSA_PAYLOAD_SIZE_BYTES, Payload, Tweak, YieldId,
 };
-use tokio::time::{Duration, timeout};
+use tokio::time::{Duration, Instant, timeout_at};
 
 use super::ROUND_DEADLINE;
 use crate::network::NetworkTaskChannel;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
+use crate::providers::verify_foreign_tx::acting_leader::{ActingLeader, LeaderRefusal};
 use crate::providers::verify_foreign_tx::counting_rule::Tally;
 use crate::providers::verify_foreign_tx::node_outcome::{NodeVerdict, RoundOutcome};
 use crate::providers::verify_foreign_tx::node_outcome_statement::{
     NodeOutcomeVerificationError, OutcomePublicKeys, SignedNodeOutcome, VerifiedNodeOutcome,
 };
+use crate::providers::verify_foreign_tx::open_requests::JoinRoundRefusal;
 use crate::types::{SignatureRequest, VerifyForeignTxRequestV2};
 
 /// The time a signer waits for its own indexer to report the request of a Start, and for the
@@ -28,6 +30,8 @@ pub(crate) enum RoundRefusal {
     // TODO(#5126): join inconclusive rounds.
     #[error("inconclusive signing rounds are not supported yet")]
     Inconclusive,
+    #[error(transparent)]
+    Leader(LeaderRefusal),
     #[error("the evidence holds {statements} statements, more than the {supporters} supporters")]
     TooManyStatements {
         statements: usize,
@@ -47,8 +51,8 @@ pub(crate) enum RoundRefusal {
         backers: usize,
         threshold: usize,
     },
-    #[error("the V2 request closed before this node joined the round")]
-    RequestClosed,
+    #[error(transparent)]
+    Join(JoinRoundRefusal),
 }
 
 /// The values a signer checks the evidence of a round for a verdict against.
@@ -62,8 +66,12 @@ struct VerdictCheck<'a> {
 }
 
 impl VerifyForeignTxProvider {
-    /// Joins a V2 signing round when the request is open and the evidence meets the counting
-    /// rule. Otherwise it refuses with the network abort.
+    /// Joins a V2 signing round when the request is open, the sender is an acting leader of it
+    /// in the view of this node, the evidence meets the counting rule, and this node joined
+    /// fewer than [`MAX_ROUNDS_PER_LEADER`] rounds of that leader for the request. Otherwise it
+    /// refuses with the network abort.
+    ///
+    /// [`MAX_ROUNDS_PER_LEADER`]: crate::providers::verify_foreign_tx::open_requests::MAX_ROUNDS_PER_LEADER
     pub(crate) async fn make_sign_outcome_follower(
         &self,
         mut channel: NetworkTaskChannel,
@@ -99,38 +107,56 @@ impl VerifyForeignTxProvider {
         let RoundOutcome::Verdict(verdict) = outcome else {
             return Err(RoundRefusal::Inconclusive.into());
         };
-        // TODO(#5124): refuse a leader that is not an acting leader of the request, or that
-        // already ran three rounds with this node.
-        let (request, evidence) = timeout(ROUND_SETUP_WAIT, async {
-            let request = self.v2.open_requests.wait_for_yield(yield_id).await;
-            let evidence = channel.receive_evidence().await?;
-            anyhow::Ok((request, evidence))
-        })
+        let setup_deadline = Instant::now() + ROUND_SETUP_WAIT;
+        let request = timeout_at(
+            setup_deadline,
+            self.v2.open_requests.wait_for_yield(yield_id),
+        )
         .await
-        .with_context(|| {
-            format!("no open V2 request or no evidence within {ROUND_SETUP_WAIT:?} of Start")
-        })??;
-        let me = self.ecdsa_signature_provider.my_participant_id();
+        .with_context(|| format!("no open V2 request within {ROUND_SETUP_WAIT:?} of Start"))?;
+        let leader = self
+            .ensure_acting_leader(&request, channel.leader())
+            .map_err(RoundRefusal::Leader)?;
+        let evidence = timeout_at(setup_deadline, channel.receive_evidence())
+            .await
+            .with_context(|| format!("no evidence within {ROUND_SETUP_WAIT:?} of Start"))??;
         let keyshare = self.ecdsa_signature_provider.keyshare(request.domain_id)?;
+        let threshold = usize::try_from(keyshare.reconstruction_threshold.value())?;
+        self.join_round_with_evidence(&request, leader, verdict, evidence, threshold)?;
+        Ok((request, verdict))
+    }
+
+    /// Joins the round of `leader` for `request` when `evidence` shows that `threshold`
+    /// supporters, this node among them, signed `verdict`. A refused round does not count
+    /// against `leader`.
+    fn join_round_with_evidence(
+        &self,
+        request: &VerifyForeignTxRequestV2,
+        leader: ActingLeader,
+        verdict: NodeVerdict,
+        evidence: Vec<SignedNodeOutcome>,
+        threshold: usize,
+    ) -> Result<(), RoundRefusal> {
+        let me = self.ecdsa_signature_provider.my_participant_id();
         let node_outcomes = self.v2.network.node_outcomes();
         let own: Vec<VerifiedNodeOutcome> = node_outcomes
-            .outcomes_of(yield_id)
+            .outcomes_of(request.yield_id)
             .into_iter()
             .filter(|outcome| outcome.statement().signer == me)
             .collect();
         VerdictCheck {
             me,
-            yield_id,
+            yield_id: request.yield_id,
             verdict,
             outcome_keys: &node_outcomes.outcome_keys(),
             supporters: &self.v2_chain_supporters(request.request.chain()),
-            threshold: usize::try_from(keyshare.reconstruction_threshold.value())?,
+            threshold,
         }
         .check(evidence, &own)?;
-        if self.v2.open_requests.get(request.id).is_none() {
-            return Err(RoundRefusal::RequestClosed.into());
-        }
-        Ok((request, verdict))
+        self.v2
+            .open_requests
+            .join_round(leader)
+            .map_err(RoundRefusal::Join)
     }
 }
 

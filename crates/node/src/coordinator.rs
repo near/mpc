@@ -611,7 +611,7 @@ where
                     VerifyForeignTransactionRequestStorage::new(secret_db.clone())?,
                 );
                 let verify_foreign_tx_v2_requests =
-                    Arc::new(OpenVerifyForeignTxRequestsV2::default());
+                    Arc::new(OpenVerifyForeignTxRequestsV2::new(clock.clone()));
 
                 let mut ecdsa_keyshares: HashMap<
                     mpc_primitives::domain::DomainId,
