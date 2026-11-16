@@ -44,13 +44,15 @@ fn expected_extracted_value<Chain: EvmChain>(
     }
 }
 
+const RECEIPT_BLOCK_HASH: [u8; 32] = [4; 32];
+
 fn test_log() -> Log {
     Log {
         removed: false,
         log_index: U64([1]),
         transaction_index: U64([2]),
         transaction_hash: H256([3; 32]),
-        block_hash: H256([4; 32]),
+        block_hash: H256(RECEIPT_BLOCK_HASH),
         block_number: U64::from(90),
         address: H160([6; 20]),
         data: "test_log".to_string(),
@@ -122,7 +124,7 @@ macro_rules! evm_inspector_tests {
                 extractor: EvmExtractor,
             ) {
                 // given
-                let tx_response = receipt_at(90, [4; 32], U64::one());
+                let tx_response = receipt_at(90, RECEIPT_BLOCK_HASH, U64::one());
                 let expected = expected_extracted_value::<$chain>(&extractor, &tx_response);
 
                 // when
@@ -146,10 +148,8 @@ macro_rules! evm_inspector_tests {
                 50,
                 U64::one(),
                 vec![EvmExtractor::BlockHash],
-                Verdict::Extracted(vec![ExtractedValue::BlockHash(BlockHash::from([4; 32]))]),
+                Verdict::Extracted(vec![ExtractedValue::BlockHash(RECEIPT_BLOCK_HASH.into())]),
             )]
-            // The status check happens after the canonical lookup, so all three RPC
-            // calls are exercised before TransactionFailed is returned.
             #[case::transaction_failed(
                 90,
                 100,
@@ -180,7 +180,7 @@ macro_rules! evm_inspector_tests {
                 #[case] expected: Verdict<ExtractedValue>,
             ) {
                 // Given
-                let tx_response = receipt_at(receipt_block_number, [4; 32], status);
+                let tx_response = receipt_at(receipt_block_number, RECEIPT_BLOCK_HASH, status);
 
                 // When
                 let response = extract_from(
@@ -243,7 +243,7 @@ macro_rules! evm_inspector_tests {
             async fn fan_out__should_return_mismatch_when_one_provider_fabricates_a_receipt() {
                 // given: single malicious provider returns finalized, two other providers answer null
                 let tx_id = TxHash::from([3;32]);
-                let tx_response = receipt_at(90, [4; 32], U64::one());
+                let tx_response = receipt_at(90, RECEIPT_BLOCK_HASH, U64::one());
                 let finality_block_response = GetBlockByNumberResponse {
                     number: U64::from(100),
                     hash: H256::from([0xaa; 32]),
@@ -415,7 +415,7 @@ macro_rules! evm_inspector_tests {
                     log_index: U64::from(20),
                     transaction_index: U64([2]),
                     transaction_hash: H256([3; 32]),
-                    block_hash: H256([4; 32]),
+                    block_hash: H256(RECEIPT_BLOCK_HASH),
                     block_number: U64::from(90),
                     address: H160([6; 20]),
                     data: "first_log".to_string(),
@@ -426,7 +426,7 @@ macro_rules! evm_inspector_tests {
                     log_index: U64::from(21),
                     transaction_index: U64([20]),
                     transaction_hash: H256([3; 32]),
-                    block_hash: H256([4; 32]),
+                    block_hash: H256(RECEIPT_BLOCK_HASH),
                     block_number: U64::from(90),
                     address: H160([60; 20]),
                     data: "second_log".to_string(),
@@ -436,7 +436,7 @@ macro_rules! evm_inspector_tests {
 
                 let tx_response = GetTransactionReceiptResponse {
                     logs: vec![log_at_index_20, log_at_index_21],
-                    ..receipt_at(90, [4; 32], U64::one())
+                    ..receipt_at(90, RECEIPT_BLOCK_HASH, U64::one())
                 };
 
                 // when: request log by its EVM logIndex (21), not array position (1)
@@ -526,10 +526,7 @@ macro_rules! evm_inspector_tests {
 
                 let tx_response = GetTransactionReceiptResponse {
                     transaction_hash: H256(returned_tx_bytes),
-                    block_hash: H256::from([2; 32]),
-                    block_number: U64::from(90),
-                    status: U64::one(),
-                    logs: vec![test_log()],
+                    ..receipt_at(90, [2; 32], U64::one())
                 };
 
                 // The receipt-hash check fires before the finality lookup, so only one
