@@ -208,6 +208,22 @@ pub(crate) fn prepay_and_attest_all_participants(contract: &mut MpcContract) {
     contract.available_attestation_grants.flush();
 }
 
+/// Installs a voting context for `signer` and casts `proposal`.
+pub(crate) fn vote_params(
+    contract: &mut MpcContract,
+    signer: &AccountId,
+    proposal: &ProposedGovernanceThresholdParameters,
+) -> Result<(), Error> {
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(signer.clone())
+            .predecessor_account_id(signer.clone())
+            .attached_deposit(NearToken::ZERO)
+            .build()
+    );
+    contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
+}
+
 /// Moves `contract` into Resharing towards `proposal`: every proposed participant votes for
 /// it, in proposal order.
 pub(crate) fn vote_into_resharing(
@@ -215,16 +231,7 @@ pub(crate) fn vote_into_resharing(
     proposal: &ProposedGovernanceThresholdParameters,
 ) {
     for (account_id, _, _) in proposal.participants().participants() {
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(account_id.clone())
-                .predecessor_account_id(account_id.clone())
-                .block_timestamp(env::block_timestamp())
-                .build()
-        );
-        contract
-            .vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
-            .unwrap();
+        vote_params(contract, account_id, proposal).unwrap();
     }
     assert_matches!(contract.protocol_state, ProtocolContractState::Resharing(_));
 }

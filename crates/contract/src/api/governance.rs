@@ -115,6 +115,7 @@ mod tests {
         prepay_and_attest_all_participants, resharing_state,
         running_contract_called_by_participant_via_forwarder, running_state,
         setup_tee_test_contract, submit_attestation, submit_valid_attestations,
+        vote_into_resharing, vote_params,
     };
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
@@ -281,22 +282,6 @@ mod tests {
         );
         prepay_and_attest_all_participants(&mut contract);
         (contract, participants, first_participant_id, domain_id)
-    }
-
-    /// Installs a voting context for `signer` and casts `proposal`.
-    fn vote_params(
-        contract: &mut MpcContract,
-        signer: &AccountId,
-        proposal: &ProposedGovernanceThresholdParameters,
-    ) -> Result<(), Error> {
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer.clone())
-                .predecessor_account_id(signer.clone())
-                .attached_deposit(NearToken::ZERO)
-                .build()
-        );
-        contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
     }
 
     #[test]
@@ -545,13 +530,7 @@ mod tests {
                 .unwrap(),
             BTreeMap::new(),
         );
-        for (account_id, _, _) in participants.participants() {
-            vote_params(&mut contract, account_id, &proposal).unwrap();
-        }
-        assert_matches!(
-            &contract.protocol_state,
-            ProtocolContractState::Resharing(_)
-        );
+        vote_into_resharing(&mut contract, &proposal);
         (contract, participants, domain_id, proposal)
     }
 
