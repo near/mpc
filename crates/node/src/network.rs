@@ -1,5 +1,6 @@
 pub mod computation;
 pub mod conn;
+pub mod connectivity;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
