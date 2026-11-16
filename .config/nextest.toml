@@ -30,3 +30,17 @@ default-filter = 'not package(mpc-node) and not package(mpc-contract) and not pa
 [[profile.ci-other.overrides]]
 filter = 'package(chain-gateway) and binary(test)'
 test-group = 'chain-gateway-integration'
+
+# Used by the `mpc-tests` script in .oss-scanner/Dockerfile. Runs what the CI
+# test jobs run, minus the E2E suite and the tests that need Internet access,
+# which the scanner's offline image cannot run.
+[profile.oss-scanner]
+default-filter = 'not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^validation::tests::/) and package(tee-launcher)) and not (test(fetch_from_intel) and package(attestation-cli))'
+
+[[profile.oss-scanner.overrides]]
+filter = 'package(mpc-contract) and test(/sandbox/)'
+test-group = 'contract-sandbox'
+
+[[profile.oss-scanner.overrides]]
+filter = 'package(chain-gateway) and binary(test)'
+test-group = 'chain-gateway-integration'

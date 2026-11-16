@@ -25,6 +25,10 @@ docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md. Past audits: audits/
    chain, keyshare storage (`keyshare/`, `db.rs`), the migration/backup service
    (`migration_service/`), foreign-chain RPC verification, and the HTTP server
    (`web.rs`).
+   `crates/chain-gateway` holds the NEAR indexer's event subscriber and the
+   transaction sender. `crates/foreign-chain-inspector` and
+   `crates/foreign-chain-rpc-*` query and parse each foreign chain's RPC
+   responses; this is the code a malicious RPC provider reaches.
    `crates/backup-cli` is its counterpart for node migration: the operator's
    tool that fetches keyshares from a node's migration service, keeps them
    encrypted with the backup key, and restores them onto the new node.
@@ -103,8 +107,9 @@ roots, and the operator's own local configuration and secrets files.
   operator misconfiguration.
 
 Account for gas costs, deposits and existing limits in resource attacks. A
-panic or assertion is a crash only if it occurs in the release build; the test
-profile has overflow checks enabled. A contract panic reverts that receipt only
+panic is a crash only if it occurs in the release build. The test profile
+enables overflow checks and `debug_assert!`, neither of which is in production
+builds, so a failing overflow check or debug assertion alone is not a crash. A contract panic reverts that receipt only
 and is not a crash unless it blocks progress.
 
 ## Known and intentional: do not report
@@ -124,8 +129,8 @@ and is not a crash unless it blocks progress.
 The checkout is at /src. The image has the Rust toolchain pinned in
 `rust-toolchain.toml` with the wasm32 target, cargo-near, cargo-nextest, and a
 `near-sandbox` binary (`NEAR_SANDBOX_BIN_PATH`). Tests are precompiled in the
-`test-release` profile (release with overflow checks), and `mpc-node` is built
-in the same profile. The contract tests compile their contract wasm variants
+`test-release` profile (release with overflow checks and debug assertions).
+The contract tests compile their contract wasm variants
 on first run, which takes a few minutes and works offline.
 
 Run the baseline offline with:
@@ -134,10 +139,11 @@ Run the baseline offline with:
 mpc-tests
 ```
 
-It runs `cargo nextest run --cargo-profile=test-release --all-features`
-over the workspace, excluding the E2E suite and tests that need Internet
-access. Extra arguments are passed to nextest, for example
-`mpc-tests -p threshold-signatures` or `mpc-tests -E 'test(sign)'`.
+It runs `cargo nextest run --profile oss-scanner --cargo-profile=test-release
+--all-features` over the workspace. The `oss-scanner` profile in
+`.config/nextest.toml` leaves out the E2E suite and the tests that need
+Internet access. Extra arguments are passed to nextest and narrow the run, for
+example `mpc-tests -p threshold-signatures` or `mpc-tests -E 'test(sign)'`.
 
 Contract sandbox tests in `crates/contract/tests/sandbox` start a local NEAR
 node and are the best place to reproduce contract issues end to end. In-process
