@@ -28,7 +28,8 @@ The points below matter most.
 - Do not weaken assertions or skip tests to make the patch pass.
 - Update a snapshot only when the fix intentionally changes that output (e.g.
   the ABI or wire-format snapshots after adding a DTO field), and explain the
-  change in the patch description.
+  change in the patch description. Regenerate snapshots with
+  `INSTA_UPDATE=always mpc-tests -E '<filter>'` and review the diff.
 
 ## Commit message
 - Conventional Commits, e.g. `fix(contract): reject responses for unknown requests`.
