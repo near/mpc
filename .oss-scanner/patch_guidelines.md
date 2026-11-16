@@ -25,7 +25,10 @@ The points below matter most.
 - Name it `<system_under_test>__should_<assertion>` and structure it with bare
   `// Given`, `// When`, `// Then` markers.
 - Use `rstest` cases instead of copying a test for different inputs.
-- Do not update snapshots, weaken assertions or skip tests to make the patch pass.
+- Do not weaken assertions or skip tests to make the patch pass.
+- Update a snapshot only when the fix intentionally changes that output (e.g.
+  the ABI or wire-format snapshots after adding a DTO field), and explain the
+  change in the patch description.
 
 ## Commit message
 - Conventional Commits, e.g. `fix(contract): reject responses for unknown requests`.

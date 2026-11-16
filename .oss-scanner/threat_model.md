@@ -119,6 +119,11 @@ so overflow wraps silently. `debug_assert!` is off in every production build,
 so a failing debug assertion alone is not a crash. A contract panic reverts
 that receipt only and is not a crash unless it blocks progress.
 
+Tests ignore `panic = "abort"` and unwind, so a panic inside a spawned task
+does not fail a test unless something awaits that task. A reproducer for such
+a panic must assert on the task's `JoinError` or call the panicking code
+directly.
+
 ## Known and intentional: do not report
 
 - `crates/threshold-signatures/src/ecdsa/robust_ecdsa` is a deliberate stub
