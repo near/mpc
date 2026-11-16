@@ -90,8 +90,9 @@ Key properties:
   itself are shared by every CVM on this host** — they're host-level
   services, not per-CVM. Because MPC's deploy passes
   `--no-instance-id` to dstack (for consistent TDX measurements
-  across operators), two CVMs running the same launcher image derive
-  the **same** sealing key. Each CVM still has its own
+  across operators), two CVMs with the same launcher compose derive
+  the **same** sealing key; a mainnet and a testnet CVM never do, since
+  their composes name different contracts. Each CVM still has its own
   per-CVM working directory under the shared `dstack-vmm`, so on-disk
   data is isolated per CVM — the keys themselves just aren't per-CVM.
 
@@ -130,7 +131,9 @@ disambiguates them on the host side.
 The first CVM is the one you already created via the single-node
 walkthrough. In the same dstack-vmm web UI (`http://127.0.0.1:10000`),
 create the second CVM following
-[Configuring and starting the MPC binary in a CVM](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#configuring-and-starting-the-mpc-binary-in-a-cvm).
+[Configuring and starting the MPC binary in a CVM](./running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#configuring-and-starting-the-mpc-binary-in-a-cvm),
+with its launcher compose rendered for its own chain's contract
+(`v1.signer` on mainnet, `v1.signer-prod.testnet` on testnet).
 
 For **every public port forward** (`:80`, `:8080`, `:24567`, **and the
 migration port `:8079`**), set the **host address** to that CVM's
@@ -157,7 +160,6 @@ for the right placement:
 | Field | Mainnet | Testnet |
 |---|---|---|
 | `chain_id` | `"mainnet"` | `"testnet"` |
-| `mpc_contract_id` | `"v1.signer"` | `"v1.signer-prod.testnet"` |
 | `near_boot_nodes` | mainnet boot list | testnet boot list |
 | `tier3_public_addr` | `"203.0.113.10:24567"` (`IP_M`) | `"203.0.113.11:24567"` (`IP_T`) |
 | `my_near_account_id` | your mainnet account | your testnet account |

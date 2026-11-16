@@ -1,6 +1,7 @@
 use std::num::NonZeroU16;
 
 use launcher_interface::types::DockerSha256Digest;
+use near_account_id::AccountId;
 
 use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,10 @@ pub struct CliArgs {
     /// Fallback image digest when the approved-hashes file is absent
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
     pub default_image_digest: DockerSha256Digest,
+
+    /// Account id of the MPC contract the node serves
+    #[arg(long, env = "MPC_CONTRACT_ID")]
+    pub mpc_contract_id: AccountId,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -40,10 +45,8 @@ pub enum Platform {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub launcher_config: LauncherConfig,
-    /// Opaque MPC node configuration table.
-    /// The launcher does not interpret these fields — they are re-serialized
-    /// to a TOML string, written to a file on disk, and mounted into the
-    /// container for the MPC binary to consume via `start-with-config-file`.
+    /// MPC node configuration table. The launcher adds its reserved keys, serializes the
+    /// result to TOML and mounts it into the container for the MPC node to read on startup.
     pub mpc_node_config: toml::Table,
 }
 

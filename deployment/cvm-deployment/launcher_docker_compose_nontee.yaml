@@ -7,6 +7,7 @@ services:
       - PLATFORM=NONTEE
       - DOCKER_CONTENT_TRUST=1
       - DEFAULT_IMAGE_DIGEST=sha256:5d1e604dcf3197f8b465c854f8073eaa89b9733f646248d59f86a15b81110ef5
+      - MPC_CONTRACT_ID=v1.signer
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
