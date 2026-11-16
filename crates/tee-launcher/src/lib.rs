@@ -33,6 +33,7 @@ pub async fn run() -> Result<(), LauncherError> {
     tracing::info!(
         platform = ?args.platform,
         mpc_contract_id = %args.mpc_contract_id,
+        near_genesis_hash = %args.near_genesis_hash,
         "starting launcher"
     );
 
