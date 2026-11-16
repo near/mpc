@@ -307,6 +307,7 @@ define_hash!(
 );
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
 
@@ -509,7 +510,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn genesis_hash__should_round_trip_in_nearcore_s_text_form() {
         // Given
         let mainnet_genesis_hash = "\"EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H\"";
@@ -525,7 +525,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(non_snake_case)]
     fn genesis_hash__should_reject_a_value_that_is_not_32_bytes() {
         // When
         let err = "2".parse::<GenesisHash>().unwrap_err();
