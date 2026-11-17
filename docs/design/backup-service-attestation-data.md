@@ -119,11 +119,11 @@ The following walkthroughs show how the attestation data defined above is used i
 
 **On restart:**
 
-8. TLS and account keys survive the restart (persisted to encrypted disk). The backup service resubmits its attestation (step 4-5) with the same keys. Keyshares are kept in memory only and must be re-fetched from MPC nodes (step 6-7).
+8. TLS and account keys survive the restart (persisted to encrypted disk). The backup service resubmits its attestation (step 4-5) with the same keys. Keyshares are also kept on the encrypted disk, so they survive a restart or power outage even while the MPC node is down.
 
 ### Recovery Flow
 
-**Precondition**: Backup service has keyshares in memory. The operator wants to migrate to a new MPC node (e.g., hardware failure, or moving to a different TEE), which is running and has its attestation stored on the contract.
+**Precondition**: Backup service has the keyshares on its encrypted disk. The operator wants to migrate to a new MPC node (e.g., hardware failure, or moving to a different TEE), which is running and has its attestation stored on the contract.
 
 1. **Operator trigger (manual)**: Operator calls `start_node_migration(destination_node_info)`.
 2. **Detection (automated)**: Backup service detects the migration event on-chain.
