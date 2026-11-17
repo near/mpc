@@ -85,7 +85,11 @@ impl RpcQuorumStatus {
     }
 
     pub fn reaches_quorum(&self) -> bool {
-        self.configured_whitelisted_providers >= self.required_whitelisted_providers.get()
+        self.is_met_by(self.configured_whitelisted_providers)
+    }
+
+    pub fn is_met_by(&self, whitelisted_providers: usize) -> bool {
+        whitelisted_providers >= self.required_whitelisted_providers.get()
     }
 }
 

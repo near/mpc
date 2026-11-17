@@ -421,22 +421,29 @@ mod tests {
         });
     }
 
-    #[test]
     #[traced_test]
-    fn finish_round__should_judge_each_chain_once_the_whitelist_is_read() {
+    #[rstest]
+    #[case::once_the_whitelist_is_read(
+        Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)),
+        "healthy_chains=1 judged_chains=1"
+    )]
+    #[case::not_before(None, "healthy_chains=0 judged_chains=0")]
+    fn finish_round__should_judge_each_chain_only_once_the_whitelist_is_read(
+        #[case] whitelist: Option<ForeignChainWhitelist>,
+        #[case] chain_counts: &str,
+    ) {
         // Given
         let ProbedConfig { local, report } = polygon_with_report(&[ProbedProvider {
             name: "alchemy",
             rpc_url: ALCHEMY_URL,
             status: ProviderStatus::Healthy,
         }]);
-        let whitelist = whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1);
 
         // When
-        finish_round(&report, &local, Some(&whitelist));
+        finish_round(&report, &local, whitelist.as_ref());
 
         // Then
-        assert!(logs_contain("healthy_chains=1 judged_chains=1"));
+        assert!(logs_contain(chain_counts));
     }
 
     #[test]

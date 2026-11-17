@@ -190,9 +190,7 @@ impl ForeignChainsConfig {
     pub fn iter_chains(
         &self,
     ) -> impl Iterator<Item = (dtos::ForeignChain, &ForeignChainConfig)> + '_ {
-        self.all_configured_chains()
-            .into_iter()
-            .map(|(cfg, id)| (id, cfg))
+        self.into_iter()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
@@ -240,6 +238,19 @@ impl ForeignChainsConfig {
         self.chain_slots()
             .filter_map(|(chain, config)| config.map(|config| (config, chain)))
             .collect()
+    }
+}
+
+impl<'a> IntoIterator for &'a ForeignChainsConfig {
+    type Item = (dtos::ForeignChain, &'a ForeignChainConfig);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    /// Every chain that has a local config, in [`ForeignChainsConfig::chain_slots`] order.
+    fn into_iter(self) -> Self::IntoIter {
+        self.chain_slots()
+            .filter_map(|(chain, config)| Some((chain, config?)))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 

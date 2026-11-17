@@ -150,7 +150,8 @@ Each round logs:
 * A line for each difference from the whitelist. A difference you must fix is
   a warning or an error. Two differences are normal and are logged as info: a
   chain that is not whitelisted yet, and an extra provider.
-* A warning for each chain that is not healthy, once the whitelist is read.
+* A warning or an error for each chain that is not healthy, once the whitelist
+  is read.
 * One `foreign chain probe round complete` line at the end, with these fields:
 
 | Field | What it tells you |
@@ -166,14 +167,25 @@ Each round logs:
 The whitelist is `not read yet` until the node has synced and read it from the
 contract.
 
-Once the whitelist is read, each round judges every chain that has a probe and
-is whitelisted. A chain is healthy when all of these hold:
+Once the whitelist is read, each round judges every whitelisted chain in your
+config. First it checks the quorum, which needs no probe:
 
-* At least its quorum of whitelisted providers is configured.
-* All of them passed the probe.
+* A voted quorum the node cannot enforce is logged as an error. The contract
+  rejects such votes, so this should never happen.
+* A chain with fewer whitelisted providers configured than its quorum gets a
+  warning. The node does not serve that chain.
+
+A chain that passes these checks is judged further only when it has a probe and
+sets an `expected_network_fingerprint`. It is healthy when all of these hold:
+
+* All of its whitelisted providers passed the probe.
 * No configured provider serves another network. Such a provider fails every
   verify request on its chain, whitelisted or not, because the verdicts of all
   configured providers must agree.
+
+When some whitelisted providers fail the probe, the warning says whether the
+others still reach the quorum. If they do not, every verify request on that
+chain fails.
 
 A configured provider counts for a whitelisted provider only when its URL host,
 scheme, port, path, chain routing and auth all match the voted entry. When two

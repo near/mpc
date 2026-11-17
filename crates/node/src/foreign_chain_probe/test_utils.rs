@@ -23,11 +23,11 @@ use crate::metrics;
 const CHAIN_TIMEOUT_SEC: NonZeroU64 = NonZeroU64::new(30).unwrap();
 const CHAIN_MAX_RETRIES: NonZeroU64 = NonZeroU64::new(3).unwrap();
 
-pub(super) const ALCHEMY_URL: &str = "https://alchemy.example.com";
-pub(super) const QUICKNODE_URL: &str = "https://quicknode.example.com";
-pub(super) const OWN_NODE_URL: &str = "https://own-node.example.org";
+pub(crate) const ALCHEMY_URL: &str = "https://alchemy.example.com";
+pub(crate) const QUICKNODE_URL: &str = "https://quicknode.example.com";
+pub(crate) const OWN_NODE_URL: &str = "https://own-node.example.org";
 
-pub(super) fn row(
+pub(crate) fn row(
     chain: dtos::ForeignChain,
     provider: &str,
     status: ProviderStatus,
@@ -39,7 +39,7 @@ pub(super) fn row(
     }
 }
 
-pub(super) fn chain_config(providers: &[(&str, ForeignChainProviderConfig)]) -> ForeignChainConfig {
+pub(crate) fn chain_config(providers: &[(&str, ForeignChainProviderConfig)]) -> ForeignChainConfig {
     let providers: BTreeMap<RpcProviderName, ForeignChainProviderConfig> = providers
         .iter()
         .map(|(name, config)| (RpcProviderName::from(name.to_string()), config.clone()))
@@ -53,7 +53,7 @@ pub(super) fn chain_config(providers: &[(&str, ForeignChainProviderConfig)]) -> 
 }
 
 /// Covers only the chains the probe tests use.
-pub(super) fn foreign_chains(
+pub(crate) fn foreign_chains(
     chains: impl IntoIterator<Item = (dtos::ForeignChain, ForeignChainConfig)>,
 ) -> ForeignChainsConfig {
     let mut local = ForeignChainsConfig::default();
@@ -63,6 +63,7 @@ pub(super) fn foreign_chains(
             dtos::ForeignChain::Ethereum => &mut local.ethereum,
             dtos::ForeignChain::Base => &mut local.base,
             dtos::ForeignChain::Bnb => &mut local.bnb,
+            dtos::ForeignChain::Arbitrum => &mut local.arbitrum,
             other => panic!("no test config slot for {other:?}"),
         };
         *slot = Some(config);
@@ -70,7 +71,7 @@ pub(super) fn foreign_chains(
     local
 }
 
-pub(super) fn chain_entry(
+pub(crate) fn chain_entry(
     providers: &[(&str, dtos::ProviderConfig)],
     quorum: u64,
 ) -> dtos::ChainEntry {
@@ -86,7 +87,7 @@ pub(super) fn chain_entry(
 
 /// Gives provider `p` the base URL `https://p.example.com`, so `ALCHEMY_URL` and `QUICKNODE_URL`
 /// match and `OWN_NODE_URL` does not.
-pub(super) fn whitelist_of(
+pub(crate) fn whitelist_of(
     chain: dtos::ForeignChain,
     providers: &[&str],
     quorum: u64,
@@ -107,19 +108,19 @@ pub(super) fn whitelist_of(
 
 /// A provider without auth, and the status its probe reports.
 #[derive(Clone)]
-pub(super) struct ProbedProvider<'a> {
-    pub(super) name: &'a str,
-    pub(super) rpc_url: &'a str,
-    pub(super) status: ProviderStatus,
+pub(crate) struct ProbedProvider<'a> {
+    pub(crate) name: &'a str,
+    pub(crate) rpc_url: &'a str,
+    pub(crate) status: ProviderStatus,
 }
 
 /// A local config and the probe report of that config.
-pub(super) struct ProbedConfig {
-    pub(super) local: ForeignChainsConfig,
-    pub(super) report: ProbeReport,
+pub(crate) struct ProbedConfig {
+    pub(crate) local: ForeignChainsConfig,
+    pub(crate) report: ProbeReport,
 }
 
-pub(super) fn config_with_report(
+pub(crate) fn config_with_report(
     providers: &[(dtos::ForeignChain, ProbedProvider)],
 ) -> ProbedConfig {
     let mut providers_per_chain: BTreeMap<_, Vec<_>> = BTreeMap::new();
@@ -148,7 +149,7 @@ pub(super) fn config_with_report(
     }
 }
 
-pub(super) fn polygon_with_report(providers: &[ProbedProvider]) -> ProbedConfig {
+pub(crate) fn polygon_with_report(providers: &[ProbedProvider]) -> ProbedConfig {
     let providers: Vec<_> = providers
         .iter()
         .map(|provider| (dtos::ForeignChain::Polygon, provider.clone()))
@@ -156,17 +157,17 @@ pub(super) fn polygon_with_report(providers: &[ProbedProvider]) -> ProbedConfig 
     config_with_report(&providers)
 }
 
-pub(super) fn no_whitelist() -> watch::Receiver<Option<ForeignChainWhitelist>> {
+pub(crate) fn no_whitelist() -> watch::Receiver<Option<ForeignChainWhitelist>> {
     watch::channel(None).1
 }
 
-pub(super) fn empty_report() -> ProbeReport {
+pub(crate) fn empty_report() -> ProbeReport {
     ProbeReport::from(vec![])
 }
 
 /// Past `max_calls` the probe never answers, so a loop that probes too often parks there and
 /// fails its test on the count instead of spinning inside one poll.
-pub(super) fn mock_probe(
+pub(crate) fn mock_probe(
     calls: &Cell<usize>,
     max_calls: usize,
     report: ProbeReport,
@@ -182,13 +183,13 @@ pub(super) fn mock_probe(
 }
 
 /// Records the whitelist each round finished with.
-pub(super) fn mock_finish_round(
+pub(crate) fn mock_finish_round(
     whitelists_seen: &RefCell<Vec<Option<ForeignChainWhitelist>>>,
 ) -> impl Fn(&ProbeReport, Option<&ForeignChainWhitelist>) + '_ {
     move |_, whitelist| whitelists_seen.borrow_mut().push(whitelist.cloned())
 }
 
-pub(super) fn logged_times(
+pub(crate) fn logged_times(
     lines: &[&str],
     level: &str,
     message: &str,
@@ -203,7 +204,7 @@ pub(super) fn logged_times(
         .ok_or_else(|| format!("{level} {message:?} logged {logged} times, expected {times}"))
 }
 
-pub(super) fn gauges(chain: &str) -> ProviderCounts {
+pub(crate) fn gauges(chain: &str) -> ProviderCounts {
     let count = |gauge: &prometheus::IntGaugeVec| {
         usize::try_from(gauge.with_label_values(&[chain]).get()).expect("a gauge is never negative")
     };
