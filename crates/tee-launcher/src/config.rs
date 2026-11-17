@@ -6,7 +6,8 @@ use crate::{constants::MPC_HOME_DIR, error::LauncherError};
 /// Inject the launcher-controlled keys into the user-provided MPC node config: the `tee`
 /// section, the contract id measured into the launcher compose, and the home directory, so
 /// that the node always starts from the chain data already on the disk. Fails if the user
-/// config sets any of them.
+/// config sets any of them to a different value. Equal values are accepted so that a user
+/// config written for an older launcher keeps working.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
@@ -48,6 +49,8 @@ fn insert_reserved(
             vacant.insert(value);
             Ok(())
         }
+        // TODO(#5225): reject equal values too once older launchers are no longer approved
+        toml::map::Entry::Occupied(occupied) if *occupied.get() == value => Ok(()),
         toml::map::Entry::Occupied(_) => Err(reserved_key()),
     }
 }
@@ -174,6 +177,26 @@ mod tests {
 
         // Then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == reserved_key);
+    }
+
+    #[rstest]
+    #[case::home_dir(r#"home_dir = "/data""#)]
+    #[case::contract_id(r#"node.indexer.mpc_contract_id = "v1.signer""#)]
+    fn intercept_node_config__should_accept_a_reserved_key_set_to_the_launcher_value(
+        #[case] user_config: &str,
+    ) {
+        // Given
+        let config: toml::Table = toml::from_str(user_config).unwrap();
+        let tee_config = sample_tee_config();
+        let contract_id = sample_contract_id();
+
+        // When
+        let result = intercept_node_config(config, &tee_config, &contract_id).unwrap();
+
+        // Then
+        let without_the_key =
+            intercept_node_config(toml::Table::new(), &tee_config, &contract_id).unwrap();
+        assert_eq!(result, without_the_key);
     }
 
     #[test]
