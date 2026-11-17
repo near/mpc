@@ -253,8 +253,7 @@ mod tests {
 
         // then — the output can be parsed back
         let reparsed: toml::Table = toml::from_str(&toml_str).unwrap();
-        assert!(reparsed.contains_key("tee"));
-        assert_eq!(reparsed["port"].as_integer(), Some(8080));
+        assert_eq!(reparsed, result);
     }
 
     // --- validate_image_reference: positive (valid references) ---
