@@ -52,7 +52,7 @@ async fn mpc_cluster_should_successfully_process_parallel_requests() {
     let key = ed25519_dalek::SigningKey::from_bytes(&[0xABu8; 32]);
     let parallel_contract = cluster
         .blockchain
-        .create_account_and_deploy("parallel.sandbox", 10, &key, &wasm)
+        .create_account_and_deploy(&near_kit::account!("parallel.sandbox"), 10, &key, &wasm)
         .await
         .expect("failed to deploy parallel contract");
 
