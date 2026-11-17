@@ -150,12 +150,12 @@ The [migration service `impl` block][migration-service-impl] needs:
 
 ### Attestation Verification
 
-[`DstackVerify::verify()`][dstack-verify] cannot be reused as-is:
+[`DstackVerify::verify()`][dstack-verify] can be reused as-is: it takes the allowed image hashes, compose hashes and measurements as arguments, which [`verify_and_store_dstack()`][verify-and-store-dstack] fills from the `TeeState` it is called on. It relies on two things:
 
-- It extracts the Docker image hash using a [hardcoded `"mpc-image-digest"` event name][mpc-image-hash-event-usage], which the backup service launcher would not use.
-- [`verify_measurements()`][verify-measurements] rejects an empty allowed measurements list — for MPC nodes these were [seeded during a contract migration][seed-measurements], and the backup service `TeeState` should be seeded the same way.
+- It reads the Docker image hash from the [`"mpc-image-digest"` event][mpc-image-hash-event-usage], so the backup service launcher must emit its image hash under that name, as the [MPC node launcher][launcher-image-hash-event] does.
+- It rejects every attestation while one of those allowed lists is empty, and a new `TeeState` starts with all three empty. For MPC nodes, the measurements were [seeded during a contract migration][seed-measurements], and the backup service `TeeState` should be seeded the same way.
 
-The allowed compose hashes need the same care. `get_docker_compose_hash()` fills in the MPC launcher compose template, including the contract's own account id as `MPC_CONTRACT_ID` and the genesis hash of the chain it runs on as `NEAR_GENESIS_HASH`. The backup service needs its own template with both values and, like the MPC node, takes them from its measured compose rather than its user config, so its embedded NEAR node reads only this contract and refuses to follow another chain. Its launcher also fixes the home directory, as the MPC node launcher does, so the embedded node stays on the chain its disk started on.
+The allowed compose hashes also need a backup service template. `get_docker_compose_hash()` fills in the MPC launcher compose template, including the contract's own account id as `MPC_CONTRACT_ID`, which the MPC node launcher takes from this measured compose rather than from its user config. The backup service template needs the contract id too, and the genesis hash of the chain the contract runs on, which [#5101](https://github.com/near/mpc/issues/5101) adds to the MPC node template. The backup service takes both from its measured compose rather than its user config, so its embedded NEAR node reads only this contract and refuses to follow another chain. Its launcher also fixes the home directory, so the embedded node stays on the chain its disk started on.
 
 ### TeeContext
 
@@ -183,8 +183,8 @@ The allowed compose hashes need the same care. `get_docker_compose_hash()` fills
 [backup-services-info-field]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/node_migrations.rs#L12
 [report-data-v1]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/report_data.rs#L34
 [dstack-verify]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/attestation.rs#L350-L351
-[verify-measurements]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/attestation.rs#L512
 [mpc-image-hash-event-usage]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/mpc-attestation/src/attestation.rs#L435
+[launcher-image-hash-event]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/tee-launcher/src/lib.rs#L130-L140
 [seed-measurements]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/v3_7_0_state.rs#L76-L83
 [persistent-secrets]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/node/src/config.rs#L229
 [public-data]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/node/src/web.rs#L311
