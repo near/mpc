@@ -244,6 +244,24 @@ expression: abi
         }
       },
       {
+        "name": "current_keyset",
+        "doc": " The keyset of the running state, or of the previous running state while resharing;\n `None` otherwise.\n\n The backup-cli, which operators upgrade independently of the contract, depends on this\n view's JSON output staying stable across contract versions.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Keyset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "derived_public_key",
         "doc": " This is the derived public key of the caller given path and predecessor\n if predecessor is not provided, it will be the caller of the contract.\n\n The domain parameter specifies which domain we're deriving the public key for;\n the default is the first domain.",
         "kind": "view",

@@ -1,25 +1,19 @@
-use near_mpc_contract_interface::types::{Keyset, ProtocolContractState};
+use near_mpc_contract_interface::types::Keyset;
 
-/// The newest concluded keyset, which is the only one worth backing up.
-pub fn keyset_to_backup(contract_state: &ProtocolContractState) -> Result<Keyset, NoKeysetInState> {
-    let keyset = match contract_state {
-        ProtocolContractState::NotInitialized => return Err(NoKeysetInState::NotInitialized),
-        ProtocolContractState::Initializing(_) => return Err(NoKeysetInState::Initializing),
-        ProtocolContractState::Resharing(state) => &state.previous_running_state.keyset,
-        ProtocolContractState::Running(state) => &state.keyset,
-    };
+/// The newest concluded keyset, which is the only one worth backing up, from the output of the
+/// contract's `current_keyset` view.
+pub fn keyset_to_backup(current_keyset: Option<Keyset>) -> Result<Keyset, NoKeysetToBackUp> {
+    let keyset = current_keyset.ok_or(NoKeysetToBackUp::NoConcludedKeyset)?;
     if keyset.domains.is_empty() {
-        return Err(NoKeysetInState::NoKeysGenerated);
+        return Err(NoKeysetToBackUp::NoKeysGenerated);
     }
-    Ok(keyset.clone())
+    Ok(keyset)
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum NoKeysetInState {
-    #[error("contract is not initialized, no key has been generated yet")]
-    NotInitialized,
-    #[error("contract is generating keys, the keyset is not concluded yet")]
-    Initializing,
+pub enum NoKeysetToBackUp {
+    #[error("contract has no concluded keyset: it is not initialized or is generating keys")]
+    NoConcludedKeyset,
     #[error("contract has concluded no key generation yet")]
     NoKeysGenerated,
 }
@@ -32,49 +26,32 @@ mod tests {
     use near_mpc_contract_interface::types::EpochId;
     use rstest::rstest;
 
-    use crate::test_utils::{
-        fixture_epoch_id, initializing_state, resharing_state, running_state_with_epoch,
-        running_state_without_domains,
-    };
+    use crate::test_utils::{keyset_with_epoch, keyset_without_domains};
 
     #[test]
-    fn keyset_to_backup__should_return_the_keyset_of_a_running_state() {
+    fn keyset_to_backup__should_return_the_current_keyset() {
         // Given
-        let state = running_state_with_epoch(5);
+        let current_keyset = Some(keyset_with_epoch(5));
 
         // When
-        let keyset = keyset_to_backup(&state).unwrap();
+        let keyset = keyset_to_backup(current_keyset).unwrap();
 
         // Then
         assert_eq!(keyset.epoch_id, EpochId::new(5));
     }
 
-    #[test]
-    fn keyset_to_backup__should_return_the_previous_keyset_while_resharing() {
-        // Given
-        let state = resharing_state();
-
-        // When
-        let keyset = keyset_to_backup(&state).unwrap();
-
-        // Then
-        assert_eq!(keyset.epoch_id, fixture_epoch_id());
-        assert!(!keyset.domains.is_empty());
-    }
-
     #[rstest]
-    #[case::not_initialized(ProtocolContractState::NotInitialized, NoKeysetInState::NotInitialized)]
-    #[case::initializing(initializing_state(), NoKeysetInState::Initializing)]
-    #[case::running_without_domains(
-        running_state_without_domains(),
-        NoKeysetInState::NoKeysGenerated
+    #[case::no_keyset(None, NoKeysetToBackUp::NoConcludedKeyset)]
+    #[case::keyset_without_domains(
+        Some(keyset_without_domains()),
+        NoKeysetToBackUp::NoKeysGenerated
     )]
     fn keyset_to_backup__should_fail_without_a_concluded_keyset(
-        #[case] state: ProtocolContractState,
-        #[case] expected_error: NoKeysetInState,
+        #[case] current_keyset: Option<Keyset>,
+        #[case] expected_error: NoKeysetToBackUp,
     ) {
         // When
-        let error = keyset_to_backup(&state).unwrap_err();
+        let error = keyset_to_backup(current_keyset).unwrap_err();
 
         // Then
         assert_eq!(error, expected_error);
