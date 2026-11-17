@@ -138,8 +138,8 @@ The following walkthroughs show how the attestation data defined above is used i
 The [migration service `impl` block][migration-service-impl] needs:
 
 - **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo` and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to `tee_state`: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback once the `tee-verifier` contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for a new entry. The grant comes from the operator account's pool, shared with its MPC nodes, so operators prepay one more grant than for their nodes. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`, which needs its own storage keys because `TeeState::default()` uses fixed ones).
-- **[`migration_info()`][migration-info]**: Replace with a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
-- **New methods** (per [migration-service.md §Backup Service TEE methods](../archive/design/migration-service.md#backup-service-tee-methods)):
+- **[`migration_info()`][migration-info]**: Keep it for ongoing migrations, and move its backup service part to a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
+- **New methods** (the first three per [migration-service.md §Backup Service TEE methods](../archive/design/migration-service.md#backup-service-tee-methods)):
   - `vote_backup_service_code_hash(code_hash)`
   - `allowed_backup_service_code_hashes()`
   - `allowed_backup_service_launcher_compose_hashes()`
