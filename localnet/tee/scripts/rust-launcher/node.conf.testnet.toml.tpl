@@ -42,6 +42,7 @@ concurrency = 2
 desired_triples_to_buffer = 128
 timeout_sec = 120
 parallel_triple_generation_stagger_time_sec = 1
+batch_size = 16
 
 [mpc_node_config.node.signature]
 timeout_sec = 60
