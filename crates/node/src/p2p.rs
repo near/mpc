@@ -1,3 +1,5 @@
+mod outgoing_queue;
+
 use crate::log_throttle::{Decision, LogThrottle};
 use crate::{
     config::MpcConfig,
@@ -31,6 +33,7 @@ use borsh::BorshDeserialize;
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
+use outgoing_queue::{OutgoingQueue, OutgoingQueueReceiver};
 use rustls::{ClientConfig, CommonState};
 use std::{
     collections::HashMap,
@@ -41,7 +44,7 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{self, UnboundedReceiver},
     time::timeout,
 };
 use tokio_rustls::{TlsAcceptor, client::TlsStream};
@@ -152,8 +155,8 @@ struct PersistentConnection {
 /// Dropping this struct will automatically close the connection.
 struct OutgoingConnection {
     /// Used to send messages via the connection.
-    sender: UnboundedSender<Packet>,
-    /// Task that reads messages from the channel (other side of `sender`) and
+    queue: OutgoingQueue,
+    /// Task that reads messages from the queue (other side of `queue`) and
     /// sends it over the TLS connection. This task owns the connection, so
     /// dropping it closes the connection.
     _sender_task: AutoAbortTask<()>,
@@ -226,7 +229,7 @@ impl OutgoingConnection {
         let peer_network_protocol_version =
             Self::negotiate_protocol(&mut tls_stream, sender_connection_id).await?;
 
-        let (sender, receiver) = mpsc::unbounded_channel::<Packet>();
+        let (queue, receiver) = OutgoingQueue::new();
         let closed = CancellationToken::new();
         let sender_task = tracking::spawn_checked(
             &format!("TLS connection to {}", target_participant_id),
@@ -234,10 +237,10 @@ impl OutgoingConnection {
         );
         let keepalive_task = tracking::spawn(
             &format!("ping keepalive task for {}", target_participant_id),
-            run_ping_keepalive(sender.clone()),
+            run_ping_keepalive(queue.clone()),
         );
         Ok(OutgoingConnection {
-            sender,
+            queue,
             _sender_task: sender_task,
             _keepalive_task: keepalive_task,
             closed,
@@ -332,7 +335,7 @@ impl OutgoingConnection {
 
     async fn run_sender_loop<T>(
         tls_stream: T,
-        mut receiver: UnboundedReceiver<Packet>,
+        mut receiver: OutgoingQueueReceiver,
         peer_id: ParticipantId,
         closed: CancellationToken,
     ) -> anyhow::Result<()>
@@ -437,15 +440,15 @@ impl OutgoingConnection {
     }
 
     fn send(&self, packet: Packet) -> anyhow::Result<()> {
-        self.sender.send(packet)?;
+        self.queue.send(packet)?;
         Ok(())
     }
 }
 
-async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
+async fn run_ping_keepalive(queue: OutgoingQueue) {
     loop {
         tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
-        if sender.send(Packet::Ping).is_err() {
+        if queue.send(Packet::Ping).is_err() {
             // The receiver side will be dropped when the sender task is
             // dropped (i.e. connection is closed).
             break;
@@ -1133,6 +1136,7 @@ pub mod testing {
         pub const VERIFY_FOREIGN_TX_RPC_QUORUM_TEST: TestPorts = TestPorts::mpc_node_tests(32);
         pub const TRIPLE_BATCH_SIZE_TEST: TestPorts = TestPorts::mpc_node_tests(33);
         pub const FOREIGN_CHAIN_REREGISTRATION_TEST: TestPorts = TestPorts::mpc_node_tests(34);
+        pub const SLOW_PEER_LINK_TEST: TestPorts = TestPorts::mpc_node_tests(35);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1185,7 +1189,7 @@ mod tests {
     use super::{
         IncomingConnection, IncomingConnectionLimits, MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
         OutgoingConnection, ParticipantIdentities, PersistentConnection,
-        incoming_connection_handler,
+        incoming_connection_handler, outgoing_queue::OutgoingQueue,
     };
     use crate::{
         config::MpcConfig,
@@ -1203,6 +1207,7 @@ mod tests {
         tracking::{self, testing::start_root_task_with_periodic_dump},
     };
     use ed25519_dalek::SigningKey;
+    use futures::FutureExt;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
     use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -1509,9 +1514,9 @@ mod tests {
         #[case] expected_sent: bool,
     ) {
         // Given
-        let (sender, mut packets) = mpsc::unbounded_channel();
+        let (queue, mut packets) = OutgoingQueue::new();
         let connection = Arc::new(OutgoingConnection {
-            sender,
+            queue,
             _sender_task: tokio::spawn(std::future::pending()).into(),
             _keepalive_task: tokio::spawn(std::future::pending()).into(),
             closed: CancellationToken::new(),
@@ -1536,7 +1541,10 @@ mod tests {
 
         // Then
         assert_eq!(result.is_ok(), expected_sent);
-        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
+        let sent = matches!(
+            packets.recv().now_or_never(),
+            Some(Some(Packet::ConnectedPeersInfo(_)))
+        );
         assert_eq!(sent, expected_sent);
     }
 
