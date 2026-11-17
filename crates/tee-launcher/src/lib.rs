@@ -134,7 +134,6 @@ async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(
         return extend_rtmr3_with_dstack_util(manifest_digest);
     }
 
-    // Only composes without the `dstack-util` mount get here; `EmitEvent` exists on dstack < 0.6 only.
     tracing::warn!(
         "{DSTACK_UTIL_PATH} is not mounted, falling back to dstack EmitEvent (fails on dstack 0.6+)"
     );
@@ -168,8 +167,8 @@ fn extend_rtmr3_with_dstack_util(
     Ok(())
 }
 
-/// The verifier hex-decodes the event payload and compares it with the raw digest bytes, so the
-/// payload must be bare hex, without the `sha256:` prefix.
+/// `dstack-util extend` hex-decodes `--payload` and measures the raw bytes, which the verifier
+/// compares with the digest; pass bare hex, without the `sha256:` prefix.
 fn dstack_util_extend_args(manifest_digest: &DockerSha256Digest) -> [String; 5] {
     [
         "extend".into(),
