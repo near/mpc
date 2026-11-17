@@ -105,7 +105,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the launcher compose hash. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses the `DEFAULT_IMAGE_DIGEST` set in its compose file (same pattern as MPC node launcher). On subsequent boots, the backup service will have written the updated hashes it receives from `TeeContext` to disk.
 2. Backup service generates an Ed25519 TLS keypair and a NEAR account keypair inside the TEE.
-3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as an access key to their NEAR account (same as for MPC nodes — see [securing-mpc-with-tee §Secret key Handling](securing-mpc-with-tee/securing-mpc-with-tee.md#secret-key-handling)).
+3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as a function-call access key to their NEAR account, as for MPC nodes (see [securing-mpc-with-tee §Secret key Handling](securing-mpc-with-tee/securing-mpc-with-tee.md#secret-key-handling)), but limited to `register_backup_service`, the only method the backup service calls with a transaction.
 
 **Attestation registration (periodic — every hour, starting on first boot):**
 
@@ -137,14 +137,14 @@ The following walkthroughs show how the attestation data defined above is used i
 
 The [migration service `impl` block][migration-service-impl] needs:
 
-- **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo` and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to `tee_state`: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback once the `tee-verifier` contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for a new entry. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`, which needs its own storage keys because `TeeState::default()` uses fixed ones).
+- **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo` and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to `tee_state`: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback once the `tee-verifier` contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for a new entry. The grant comes from the operator account's pool, shared with its MPC nodes, so operators prepay one more grant than for their nodes. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`, which needs its own storage keys because `TeeState::default()` uses fixed ones).
 - **[`migration_info()`][migration-info]**: Replace with a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
 - **New methods** (per [migration-service.md §Backup Service TEE methods](../archive/design/migration-service.md#backup-service-tee-methods)):
   - `vote_backup_service_code_hash(code_hash)`
   - `allowed_backup_service_code_hashes()`
   - `allowed_backup_service_launcher_compose_hashes()`
-  - `reverify_backup_services()`
-- **Resharing cleanup**: when operators leave the participant set, [`cleanup_orphaned_node_migrations()`][cleanup-orphaned-node-migrations] should also remove their entries from `backup_service_tee_state`, and [`clean_tee_status()`][clean-tee-status] should also drop their votes from it.
+  - `reverify_backup_services(max_scan)`: removes backup service entries that fail re-verification and returns their grants, like [`clean_invalid_attestations()`][clean-invalid-attestations] does for MPC nodes
+- **Resharing cleanup**: when operators leave the participant set, [`clean_tee_status()`][clean-tee-status] should also drop their votes from `backup_service_tee_state`; their entries stay until `reverify_backup_services()` removes them, as MPC node entries do.
 - **`start_node_migration()`** and **`conclude_node_migration()`**: No changes for backup-service attestation.
 
 ### Attestation Verification
@@ -172,7 +172,7 @@ The [migration service `impl` block][migration-service-impl] needs:
 [migration-info]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/node_migration.rs#L19
 [tee-state]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L56
 [verify-and-store-dstack]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L147
-[cleanup-orphaned-node-migrations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/node_migration.rs#L285
+[clean-invalid-attestations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/attestation.rs#L325
 [clean-tee-status]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L238
 [node-migrations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/node_migrations.rs#L11
 [backup-service-info]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/near-mpc-contract-interface/src/types/node_migrations.rs#L12
