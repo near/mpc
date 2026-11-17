@@ -86,17 +86,13 @@ mod tests {
     use crate::MpcContract;
     use crate::api::test_utils::{initializing_state, make_public_key_for_curve};
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::primitives::domain::{AddDomainsVotes, DomainRegistry};
+    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-    use crate::primitives::test_utils::{
-        DEFAULT_TEST_RECONSTRUCTION_THRESHOLD, gen_threshold_params,
-    };
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_domain_registry, gen_threshold_params};
     use crate::state::ProtocolContractState;
     use crate::state::running::RunningContractState;
     use crate::state::test_utils::{gen_resharing_state, gen_running_state};
-    use near_mpc_contract_interface::types::{
-        Curve, DomainConfig, DomainId, DomainPurpose, Protocol,
-    };
+    use near_mpc_contract_interface::types::Curve;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
@@ -153,23 +149,9 @@ mod tests {
     fn current_keyset__should_keep_its_json_format() {
         // Given
         let mut rng = StdRng::from_seed([42u8; 32]);
-        let domains: Vec<DomainConfig> = [
-            (Protocol::CaitSith, DomainPurpose::Sign),
-            (Protocol::CaitSith, DomainPurpose::ForeignTx),
-            (Protocol::Frost, DomainPurpose::Sign),
-            (Protocol::ConfidentialKeyDerivation, DomainPurpose::CKD),
-            (Protocol::RobustEcdsa, DomainPurpose::Sign),
-        ]
-        .into_iter()
-        .zip(0..)
-        .map(|((protocol, purpose), id)| DomainConfig {
-            id: DomainId(id),
-            protocol,
-            reconstruction_threshold: DEFAULT_TEST_RECONSTRUCTION_THRESHOLD,
-            purpose,
-        })
-        .collect();
+        let domains = gen_domain_registry(NUM_PROTOCOLS);
         let keys = domains
+            .domains()
             .iter()
             .map(|domain| {
                 let (key, _) = make_public_key_for_curve(Curve::from(domain.protocol), &mut rng);
@@ -180,9 +162,8 @@ mod tests {
                 }
             })
             .collect();
-        let next_domain_id = DomainId(u64::try_from(domains.len()).unwrap());
         let running = RunningContractState::new(
-            DomainRegistry::from_raw_validated(domains, next_domain_id).unwrap(),
+            domains,
             Keyset::new(EpochId::new(5), keys),
             gen_threshold_params(30),
             AddDomainsVotes::default(),

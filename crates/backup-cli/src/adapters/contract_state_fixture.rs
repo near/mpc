@@ -61,9 +61,10 @@ impl ReadCurrentKeyset for ContractStateFixture {
 mod tests {
     use std::path::PathBuf;
 
-    use near_mpc_contract_interface::types::EpochId;
-
-    use crate::{adapters::contract_state_fixture::ContractStateFixture, ports::ReadCurrentKeyset};
+    use crate::{
+        adapters::contract_state_fixture::ContractStateFixture, ports::ReadCurrentKeyset,
+        test_utils::fixture_keyset,
+    };
 
     pub const TEST_CONTRACT_STATE_PATH: &str = "assets/";
     #[tokio::test]
@@ -76,8 +77,6 @@ mod tests {
         let current_keyset = contract_interface.current_keyset().await.unwrap();
 
         // Then
-        let keyset = current_keyset.unwrap();
-        assert_eq!(keyset.epoch_id, EpochId::new(4));
-        assert_eq!(keyset.domains.len(), 2);
+        assert_eq!(current_keyset, Some(fixture_keyset()));
     }
 }
