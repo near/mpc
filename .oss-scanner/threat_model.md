@@ -97,8 +97,9 @@ host configs that set them; a bypass of that check is in scope.
 
 - **Critical**: recovery of a private key or of enough key shares to sign;
   signature forgery or signing on behalf of another account/path; theft of
-  contract funds; bypass of participant/threshold governance; a TEE node
-  exposing plaintext keyshares to its host. Reachable by any NEAR account or a
+  contract funds; bypass of participant/threshold governance; bricking the
+  contract so that no vote or upgrade can recover it; a TEE node exposing
+  plaintext keyshares to its host. Reachable by any NEAR account or a
   network attacker, or by a single malicious participant.
 - **High**: key or share recovery, forgery, fund theft or a governance bypass
   that needs several colluding participants (still below the threshold);
