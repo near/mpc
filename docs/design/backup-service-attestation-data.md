@@ -115,7 +115,7 @@ The following walkthroughs show how the attestation data defined above is used i
 **Keyshare monitoring (continuous):**
 
 6. Backup service polls the contract for missing keyshares.
-7. MPC node looks up the backup service's TLS key and attestation validity from `backup_service_tee_state` (requires a view method that maps `AccountId` to backup service attestation — see [Required Changes](#contract-methods)), then sends encrypted keyshares over mTLS.
+7. MPC node looks up the backup service's TLS key and attestation validity from `backup_service_tee_state` (requires a view method that maps `AccountId` to backup service attestation — see [Required Changes](#contract-methods)), then, once the contract lists the node's own TLS key for its account, sends encrypted keyshares over mTLS.
 
 **On restart:**
 
@@ -145,6 +145,7 @@ The [migration service `impl` block][migration-service-impl] needs:
   - `allowed_backup_service_launcher_compose_hashes()`
   - `reverify_backup_services(max_scan)`: removes backup service entries that fail re-verification and returns their grants, like [`clean_invalid_attestations()`][clean-invalid-attestations] does for MPC nodes
 - **Resharing cleanup**: when operators leave the participant set, [`clean_tee_status()`][clean-tee-status] should also drop their votes from `backup_service_tee_state`; their entries stay until `reverify_backup_services()` removes them, as MPC node entries do.
+- **Launcher retention**: [`remove_unused_launchers()`][remove-unused-launchers] counts only the launchers of participants' own nodes, so `backup_service_tee_state` needs its own rule; otherwise every backup service launcher is dropped once its retention period passes.
 - **`start_node_migration()`** and **`conclude_node_migration()`**: No changes for backup-service attestation.
 
 ### Attestation Verification
@@ -153,6 +154,8 @@ The [migration service `impl` block][migration-service-impl] needs:
 
 - It extracts the Docker image hash using a [hardcoded `"mpc-image-digest"` event name][mpc-image-hash-event-usage], which the backup service launcher would not use.
 - [`verify_measurements()`][verify-measurements] rejects an empty allowed measurements list — for MPC nodes these were [seeded during a contract migration][seed-measurements], and the backup service `TeeState` should be seeded the same way.
+
+The allowed compose hashes need the same care. `get_docker_compose_hash()` fills in the MPC launcher compose template, including the contract's own account id as `MPC_CONTRACT_ID` and the genesis hash of the chain it runs on as `NEAR_GENESIS_HASH`. The backup service needs its own template with both values and, like the MPC node, takes them from its measured compose rather than its user config, so its embedded NEAR node reads only this contract and refuses to follow another chain. Its launcher also fixes the home directory, as the MPC node launcher does, so the embedded node stays on the chain its disk started on.
 
 ### TeeContext
 
@@ -174,6 +177,7 @@ The [migration service `impl` block][migration-service-impl] needs:
 [verify-and-store-dstack]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L147
 [clean-invalid-attestations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/attestation.rs#L325
 [clean-tee-status]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L238
+[remove-unused-launchers]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L298
 [node-migrations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/node_migrations.rs#L11
 [backup-service-info]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/near-mpc-contract-interface/src/types/node_migrations.rs#L12
 [backup-services-info-field]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/node_migrations.rs#L12
