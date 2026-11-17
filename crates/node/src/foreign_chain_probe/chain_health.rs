@@ -131,6 +131,22 @@ fn judge_probed_chain(
     Some(ChainHealth::from_probe(chain_quorum.status, tally))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Summary {
+    pub(crate) healthy_chains: usize,
+    pub(crate) judged_chains: usize,
+}
+
+pub(crate) fn summarize(health_per_chain: &BTreeMap<dtos::ForeignChain, ChainHealth>) -> Summary {
+    Summary {
+        healthy_chains: health_per_chain
+            .values()
+            .filter(|health| **health == ChainHealth::Healthy)
+            .count(),
+        judged_chains: health_per_chain.len(),
+    }
+}
+
 pub(crate) fn log_if_unhealthy(chain: dtos::ForeignChain, health: &ChainHealth) {
     let chain = chain.label();
     match health {
@@ -399,6 +415,34 @@ mod tests {
                     ChainHealth::WrongNetwork { providers: 1 }
                 ),
             ])
+        );
+    }
+
+    #[test]
+    fn summarize__should_count_the_healthy_and_the_judged_chains() {
+        // Given
+        let health_per_chain = BTreeMap::from([
+            (dtos::ForeignChain::Polygon, ChainHealth::Healthy),
+            (
+                dtos::ForeignChain::Base,
+                ChainHealth::BelowQuorum(quorum(2, 1)),
+            ),
+            (
+                dtos::ForeignChain::Arbitrum,
+                ChainHealth::WrongNetwork { providers: 1 },
+            ),
+        ]);
+
+        // When
+        let summary = summarize(&health_per_chain);
+
+        // Then
+        assert_eq!(
+            summary,
+            Summary {
+                healthy_chains: 1,
+                judged_chains: 3,
+            }
         );
     }
 

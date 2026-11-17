@@ -84,11 +84,10 @@ fn finish_round(
     health_per_chain
         .iter()
         .for_each(|(chain, health)| chain_health::log_if_unhealthy(*chain, health));
-    let healthy_chains = health_per_chain
-        .values()
-        .filter(|health| matches!(health, chain_health::ChainHealth::Healthy))
-        .count();
-    let judged_chains = health_per_chain.len();
+    let chain_health::Summary {
+        healthy_chains,
+        judged_chains,
+    } = chain_health::summarize(&health_per_chain);
 
     let whitelist_state = match whitelist_differences.map(|differences| differences.len()) {
         None => WHITELIST_NOT_READ.to_string(),
