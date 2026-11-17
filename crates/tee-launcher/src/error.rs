@@ -8,8 +8,14 @@ pub enum LauncherError {
     #[error("failed to run dstack-util: {0}")]
     DstackUtilSpawn(std::io::Error),
 
-    #[error("dstack-util extend failed while extending RTMR3: {0}")]
-    DstackUtilExtendFailed(String),
+    #[error(
+        "dstack-util extend failed while extending RTMR3 ({status}): stderr: {stderr}, stdout: {stdout}"
+    )]
+    DstackUtilExtendFailed {
+        status: std::process::ExitStatus,
+        stdout: String,
+        stderr: String,
+    },
 
     #[error("MPC_HASH_OVERRIDE invalid: {0}")]
     InvalidHashOverride(String),

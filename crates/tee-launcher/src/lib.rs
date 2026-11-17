@@ -134,8 +134,10 @@ async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(
         return extend_rtmr3_with_dstack_util(manifest_digest);
     }
 
-    // dstack < 0.6 guests: no `dstack-util` is mounted, but `EmitEvent` is still served.
-    tracing::info!("measuring MPC image into RTMR3 via dstack EmitEvent");
+    // Only composes without the `dstack-util` mount get here; `EmitEvent` exists on dstack < 0.6 only.
+    tracing::warn!(
+        "{DSTACK_UTIL_PATH} is not mounted, falling back to dstack EmitEvent (fails on dstack 0.6+)"
+    );
     let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
 
     dstack_client
@@ -152,22 +154,30 @@ fn extend_rtmr3_with_dstack_util(
 ) -> Result<(), LauncherError> {
     tracing::info!("measuring MPC image into RTMR3 via dstack-util extend");
     let output = Command::new(DSTACK_UTIL_PATH)
-        .args([
-            "extend",
-            "--event",
-            MPC_IMAGE_HASH_EVENT,
-            "--payload",
-            &manifest_digest.as_hex(),
-        ])
+        .args(dstack_util_extend_args(manifest_digest))
         .output()
         .map_err(LauncherError::DstackUtilSpawn)?;
 
     if !output.status.success() {
-        return Err(LauncherError::DstackUtilExtendFailed(
-            String::from_utf8_lossy(&output.stderr).into_owned(),
-        ));
+        return Err(LauncherError::DstackUtilExtendFailed {
+            status: output.status,
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        });
     }
     Ok(())
+}
+
+/// The verifier hex-decodes the event payload and compares it with the raw digest bytes, so the
+/// payload must be bare hex, without the `sha256:` prefix.
+fn dstack_util_extend_args(manifest_digest: &DockerSha256Digest) -> [String; 5] {
+    [
+        "extend".into(),
+        "--event".into(),
+        MPC_IMAGE_HASH_EVENT.into(),
+        "--payload".into(),
+        manifest_digest.as_hex(),
+    ]
 }
 
 fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeConfig {
@@ -207,4 +217,32 @@ fn write_config_atomically(mpc_node_config: &toml::Table) -> Result<(), Launcher
     })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dstack_util_extend_args__should_pass_the_digest_as_bare_hex_payload() {
+        // Given
+        let hex = "0123456789abcdef".repeat(4);
+        let digest: DockerSha256Digest = format!("sha256:{hex}").parse().unwrap();
+
+        // When
+        let args = dstack_util_extend_args(&digest);
+
+        // Then
+        assert_eq!(
+            args,
+            [
+                "extend",
+                "--event",
+                MPC_IMAGE_HASH_EVENT,
+                "--payload",
+                hex.as_str()
+            ]
+        );
+    }
 }

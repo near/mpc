@@ -145,6 +145,7 @@ INTERNAL_MPC_MAIN_PORT=80
 INTERNAL_MPC_MIGRATION_PORT=8079
 
 # OS image
+# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
 OS_IMAGE=dstack-0.5.8
 
 # Launcher and MPC node manifest digests (filled into the launcher compose

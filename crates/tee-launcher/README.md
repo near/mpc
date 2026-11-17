@@ -9,9 +9,9 @@ This is the production launcher.
 1. Loads a TOML configuration file from `/tapp/user_config`
 2. Selects an approved manifest digest (from on-disk approved list, override, or default)
 3. Pulls the image directly by manifest digest (`docker pull <image>@sha256:<digest>`)
-4. In TEE mode: extends RTMR3 with the manifest digest. On dstack 0.6+ guests it runs the
-   guest's `dstack-util extend`, since 0.6 removed `EmitEvent`; on older guests it calls
-   dstack's `EmitEvent`
+4. In TEE mode: extends RTMR3 with the manifest digest. If `dstack-util` is mounted (the contract's
+   compose template mounts it) it runs the guest's `dstack-util extend`, since dstack 0.6 removed
+   `EmitEvent`; otherwise it warns and falls back to `EmitEvent` (dstack < 0.6 only)
 5. Writes the MPC node config to a shared volume
 6. Launches the MPC container via `docker compose up -d`
 
@@ -96,6 +96,10 @@ Priority order:
 | `/var/run/dstack.sock` | dstack unix socket (TEE mode only) |
 | `/usr/local/bin/dstack-util` | The guest's `dstack-util`, mounted from `/usr/bin/dstack-util` (TEE mode, dstack 0.6+) |
 | `/run/log/dstack/` | dstack runtime event log, written by `dstack-util extend` (TEE mode, dstack 0.6+) |
+| `/sys/devices/virtual/misc/tdx_guest/`, `/dev/tdx_guest` | TDX guest interface `dstack-util extend` uses to extend RTMR3 (TEE mode, dstack 0.6+) |
+
+`dstack-util` comes from the guest OS but runs against the launcher image's glibc (both Debian
+trixie today); re-check this when bumping the dstack guest OS.
 
 ## Building
 
