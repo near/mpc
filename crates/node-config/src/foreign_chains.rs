@@ -134,7 +134,7 @@ impl ForeignChainProviderConfig {
 
 impl ForeignChainsConfig {
     pub fn is_empty(&self) -> bool {
-        self.all_configured_chains().is_empty()
+        self.into_iter().next().is_none()
     }
 
     /// Every chain this config has a key for, configured or not, in a fixed order.
@@ -194,11 +194,9 @@ impl ForeignChainsConfig {
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        let configured_chains = self.all_configured_chains();
-
         let mut seen_rpc_urls = BTreeSet::new();
 
-        for (foreign_chain_config, identifier) in configured_chains {
+        for (identifier, foreign_chain_config) in self {
             for (provider_name, provider) in foreign_chain_config.providers.iter() {
                 let rpc_url = &provider.rpc_url;
 
@@ -232,12 +230,6 @@ impl ForeignChainsConfig {
         }
 
         Ok(())
-    }
-
-    fn all_configured_chains(&self) -> Vec<(&ForeignChainConfig, dtos::ForeignChain)> {
-        self.chain_slots()
-            .filter_map(|(chain, config)| config.map(|config| (config, chain)))
-            .collect()
     }
 }
 

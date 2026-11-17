@@ -160,7 +160,7 @@ pub(crate) fn log_if_unhealthy(chain: dtos::ForeignChain, health: &ChainHealth) 
             %chain,
             whitelisted = quorum.configured_whitelisted_providers,
             quorum = quorum.required_whitelisted_providers.get(),
-            "foreign chain is below quorum: configure more whitelisted RPC providers",
+            "foreign chain is below quorum: too few configured RPC providers match the whitelist, see the whitelist differences above",
         ),
         ChainHealth::WrongNetwork { providers } => tracing::warn!(
             %chain,
