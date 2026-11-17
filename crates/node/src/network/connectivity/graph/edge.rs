@@ -1,7 +1,5 @@
 use std::{cmp::Ordering, fmt};
 
-use petgraph::EdgeType;
-
 use crate::network::connectivity::graph::{adjacency_matrix::AddressEdge, errors::SameNodeError};
 
 /// An edge between two distinct nodes of an undirected graph. The order the nodes are given in
@@ -23,14 +21,10 @@ impl<N: Ord> UndirectedEdge<N> {
 }
 
 impl<N> AddressEdge<N> for UndirectedEdge<N> {
+    const DIRECTED: bool = false;
+
     fn endpoints(&self) -> (&N, &N) {
         (&self.low, &self.high)
-    }
-}
-
-impl<N> EdgeType for UndirectedEdge<N> {
-    fn is_directed() -> bool {
-        false
     }
 }
 
@@ -64,14 +58,10 @@ impl<N: PartialEq> DirectedEdge<N> {
 }
 
 impl<N> AddressEdge<N> for DirectedEdge<N> {
+    const DIRECTED: bool = true;
+
     fn endpoints(&self) -> (&N, &N) {
         (&self.from, &self.to)
-    }
-}
-
-impl<N> EdgeType for DirectedEdge<N> {
-    fn is_directed() -> bool {
-        true
     }
 }
 
