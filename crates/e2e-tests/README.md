@@ -104,7 +104,7 @@ The inner `Sandbox` kills the process and deletes its temp directory on drop.
 
 ### 2. `NearBlockchain` — RPC client
 
-Wraps a `near_kit::Near` client signed as the sandbox root account. All
+Wraps a `near_kit::SigningNear` client signed as the sandbox root account. All
 contract interaction, account creation, and WASM deployment goes through it.
 
 ```rust
@@ -118,7 +118,7 @@ impl NearBlockchain {
     pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
         key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
     pub fn client_for(&self, account_id: &str, key: &SigningKey)
-        -> anyhow::Result<NearKitCaller<ExecutedOptimistic>>;
+        -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>>;
 }
 ```
 
