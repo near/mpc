@@ -29,29 +29,28 @@ impl NearBlockchain {
     pub fn new(
         rpc_url: &str,
         chain_id: &str,
-        root_account: &str,
+        root_account: near_account_id::AccountId,
         root_secret_key: near_kit::signer::SecretKey,
-    ) -> anyhow::Result<Self> {
-        let signer =
-            near_kit::signer::InMemorySigner::new(parse_account_id(root_account)?, root_secret_key);
+    ) -> Self {
+        let signer = near_kit::signer::InMemorySigner::new(root_account, root_secret_key);
         let client = near_kit::Near::custom(rpc_url, chain_id)
             .build()
             .with_signer(signer);
-        Ok(Self {
+        Self {
             root_client: client,
             rpc_url: rpc_url.to_string(),
-        })
+        }
     }
 
     pub async fn create_account_with_keys(
         &self,
-        name: &str,
+        name: &near_account_id::AccountId,
         balance_near: u128,
         keys: &[SigningKey],
     ) -> anyhow::Result<()> {
         let mut tx = self
             .root_client
-            .transaction(parse_account_id(name)?)
+            .transaction(name.clone())
             .add_action(Action::create_account())
             .add_action(Action::transfer(near_kit::NearToken::from_near(
                 balance_near,
@@ -69,13 +68,13 @@ impl NearBlockchain {
 
     pub async fn create_account_and_deploy(
         &self,
-        name: &str,
+        name: &near_account_id::AccountId,
         balance_near: u128,
         key: &SigningKey,
         wasm: &[u8],
     ) -> anyhow::Result<DeployedContract> {
         self.root_client
-            .transaction(parse_account_id(name)?)
+            .transaction(name.clone())
             .add_action(Action::create_account())
             .add_action(Action::transfer(near_kit::NearToken::from_near(
                 balance_near,
@@ -86,24 +85,24 @@ impl NearBlockchain {
             .and_then(|outcome| Ok(outcome.result()?))
             .map_err(|e| anyhow::anyhow!("failed to create account and deploy to {name}: {e}"))?;
 
-        let client = self.make_client(name, key)?;
+        let client = self.make_client(name, key);
         Ok(DeployedContract {
             client,
-            contract_id: name.parse().unwrap(),
+            contract_id: name.clone(),
         })
     }
 
     pub async fn delete_access_key(
         &self,
-        account_id: &str,
+        account_id: &near_account_id::AccountId,
         signer_key: &SigningKey,
         key_to_delete: near_kit::signer::PublicKey,
     ) -> anyhow::Result<()> {
         let client = self
-            .make_client(account_id, signer_key)?
+            .make_client(account_id, signer_key)
             .wait_until::<Final>();
         let outcome = client
-            .transaction(parse_account_id(account_id)?)
+            .transaction(account_id.clone())
             .add_action(Action::delete_key(key_to_delete))
             .await
             .map_err(|e| anyhow::anyhow!("failed to delete access key on {account_id}: {e}"))?;
@@ -116,15 +115,15 @@ impl NearBlockchain {
 
     pub fn client_for(
         &self,
-        account_id: &str,
+        account_id: &near_account_id::AccountId,
         key: &SigningKey,
-    ) -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
+    ) -> NearKitCaller<SigningNear<ExecutedOptimistic>> {
         let poll_interval = PollInterval::new(VIEW_POLL_INTERVAL).expect("non-zero");
-        Ok(NearKitCaller::new(
-            self.make_client(account_id, key)?,
+        NearKitCaller::new(
+            self.make_client(account_id, key),
             poll_interval,
             VIEW_READ_TIMEOUT,
-        ))
+        )
     }
 
     pub fn rpc_url(&self) -> &str {
@@ -144,24 +143,15 @@ impl NearBlockchain {
 
     fn make_client(
         &self,
-        account_id: &str,
+        account_id: &near_account_id::AccountId,
         key: &SigningKey,
-    ) -> anyhow::Result<SigningNear<ExecutedOptimistic>> {
-        let signer = near_kit::signer::InMemorySigner::new(
-            parse_account_id(account_id)?,
-            key.to_near_secret_key(),
-        );
-        Ok(self
-            .root_client
+    ) -> SigningNear<ExecutedOptimistic> {
+        let signer =
+            near_kit::signer::InMemorySigner::new(account_id.clone(), key.to_near_secret_key());
+        self.root_client
             .with_signer(signer)
-            .wait_until::<ExecutedOptimistic>())
+            .wait_until::<ExecutedOptimistic>()
     }
-}
-
-fn parse_account_id(account_id: &str) -> anyhow::Result<near_kit::AccountId> {
-    account_id
-        .parse()
-        .map_err(|e| anyhow::anyhow!("invalid account id {account_id}: {e}"))
 }
 
 /// Handle to a deployed MPC signer contract.
