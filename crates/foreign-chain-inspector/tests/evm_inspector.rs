@@ -44,6 +44,7 @@ fn expected_extracted_value<Chain: EvmChain>(
     }
 }
 
+const FINALITY_BLOCK_NUMBER: u64 = 100;
 const RECEIPT_BLOCK_HASH: [u8; 32] = [4; 32];
 
 fn test_log() -> Log {
@@ -131,7 +132,7 @@ macro_rules! evm_inspector_tests {
                 let extracted_values = extract_from(
                     &tx_response,
                     finality,
-                    100,
+                    FINALITY_BLOCK_NUMBER,
                     Some(canonical_block_of(&tx_response)),
                     vec![extractor],
                 )
@@ -152,21 +153,21 @@ macro_rules! evm_inspector_tests {
             )]
             #[case::transaction_failed(
                 90,
-                100,
+                FINALITY_BLOCK_NUMBER,
                 U64::zero(),
                 vec![EvmExtractor::BlockHash],
                 Verdict::TransactionFailed,
             )]
             #[case::no_extractors_provided(
                 90,
-                100,
+                FINALITY_BLOCK_NUMBER,
                 U64::one(),
                 Vec::new(),
                 Verdict::Extracted(Vec::new()),
             )]
             #[case::log_index_is_absent(
                 90,
-                100,
+                FINALITY_BLOCK_NUMBER,
                 U64::one(),
                 vec![EvmExtractor::Log { log_index: 5 }],
                 Verdict::LogIndexOutOfBounds,
@@ -245,7 +246,7 @@ macro_rules! evm_inspector_tests {
                 let tx_id = TxHash::from([3;32]);
                 let tx_response = receipt_at(90, RECEIPT_BLOCK_HASH, U64::one());
                 let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
+                    number: U64::from(FINALITY_BLOCK_NUMBER),
                     hash: H256::from([0xaa; 32]),
                 };
                 let canonical_block_response = canonical_block_of(&tx_response);
@@ -320,7 +321,7 @@ macro_rules! evm_inspector_tests {
                 let expected_block_hash = BlockHash::from([5; 32]);
 
                 let finality_block_response = GetBlockByNumberResponse {
-                    number: U64::from(100),
+                    number: U64::from(FINALITY_BLOCK_NUMBER),
                     hash: H256::from([0xaa; 32]),
                 };
 
@@ -443,7 +444,7 @@ macro_rules! evm_inspector_tests {
                 let extracted_values = extract_from(
                     &tx_response,
                     EthereumFinality::Finalized,
-                    100,
+                    FINALITY_BLOCK_NUMBER,
                     Some(canonical_block_of(&tx_response)),
                     vec![EvmExtractor::Log { log_index: 21 }],
                 )
@@ -469,7 +470,7 @@ macro_rules! evm_inspector_tests {
                 let response = extract_from(
                     &tx_response,
                     EthereumFinality::Finalized,
-                    100,
+                    FINALITY_BLOCK_NUMBER,
                     Some(canonical_block),
                     vec![EvmExtractor::BlockHash],
                 )
@@ -497,7 +498,7 @@ macro_rules! evm_inspector_tests {
                 let response = extract_from(
                     &tx_response,
                     EthereumFinality::Finalized,
-                    100,
+                    FINALITY_BLOCK_NUMBER,
                     Some(canonical_block),
                     vec![EvmExtractor::BlockHash],
                 )
@@ -621,7 +622,7 @@ macro_rules! evm_inspector_tests {
                 extract_from(
                     &tx_response,
                     EthereumFinality::Finalized,
-                    100,
+                    FINALITY_BLOCK_NUMBER,
                     Some(canonical_block_of(&tx_response)),
                     vec![EvmExtractor::Log {
                         log_index: target_log_index,
