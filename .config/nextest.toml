@@ -24,8 +24,8 @@ test-group = 'e2e'
 [test-groups.chain-gateway-integration]
 max-threads = 2
 
-# Mirror changes to the Internet-dependent test exclusions in the
-# `oss-scanner` profile below, which runs offline.
+# The Internet-dependent exclusions below are duplicated in the `oss-scanner`
+# profile; keep them in sync.
 [profile.ci-other]
 default-filter = 'not package(mpc-node) and not package(mpc-contract) and not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^validation::tests::/) and package(tee-launcher)) and not (test(fetch_from_intel) and package(attestation-cli))'
 
@@ -33,9 +33,7 @@ default-filter = 'not package(mpc-node) and not package(mpc-contract) and not pa
 filter = 'package(chain-gateway) and binary(test)'
 test-group = 'chain-gateway-integration'
 
-# Used by the `mpc-tests` script in .oss-scanner/Dockerfile. Runs what the CI
-# test jobs run, minus the E2E suite and the tests that need Internet access,
-# which the scanner's offline image cannot run.
+# Used by the `mpc-tests` script in .oss-scanner/Dockerfile.
 [profile.oss-scanner]
 fail-fast = false
 default-filter = 'not package(e2e-tests) and not package(contract-history) and not test(=tee_authority::tests::test_fetch_collateral_from_pccs) and not (test(/^validation::tests::/) and package(tee-launcher)) and not (test(fetch_from_intel) and package(attestation-cli))'
