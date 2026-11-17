@@ -126,7 +126,7 @@ First, you'll need to set up the backup CLI tool and generate keys for the backu
 
 ### Install backup-cli
 
-Install the backup-cli tool using cargo (run from the repository root):
+Install the backup-cli tool using cargo, from the repository root. This is usually done from a checkout of the latest release tag:
 
 ```bash
 cargo install --path crates/backup-cli --locked
@@ -291,20 +291,20 @@ While the old node is still reachable, also capture its signer public key — yo
 export OLD_NODE_SIGNER_PUBLIC_KEY=$(curl -s http://$OLD_NODE_HOST:8080/public_data | jq -r ".near_signer_public_key")
 ```
 
-### Get Contract State
+### Get the Current Keyset
 
-Before backing up keyshares, you need to query the current contract state and save it:
+Before backing up keyshares, you need to query the contract's current keyset and save it:
 
 ```bash
 near contract call-function as-read-only \
   $MPC_CONTRACT_ACCOUNT_ID \
-  state \
+  current_keyset \
   json-args {} \
   network-config $NEAR_NETWORK \
-  now > $BACKUP_HOME_DIR/contract_state.json
+  now > $BACKUP_HOME_DIR/current_keyset.json
 ```
 
-This saves the contract state to `contract_state.json`, which the backup-cli uses to determine the current epoch and which keyshares to request from the node (based on the domains in the current keyset).
+This saves the keyset to `current_keyset.json`, which the backup-cli uses to determine the current epoch and which keyshares to request from the node (one per domain in the keyset).
 
 ### Run the Backup
 
@@ -332,7 +332,7 @@ The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch
 
 ### Keeping the Backup Up to Date
 
-`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the contract state itself over a NEAR JSON-RPC endpoint (`$BACKUP_RPC_URL` from [Environment Variables Setup](#environment-variables-setup)) and takes a backup whenever the contract's keyset is not the one already stored:
+`get-keyshares` is a one-shot backup of the keyset that is current when you run it. Every resharing produces a new epoch, and a backup of an older epoch cannot be restored into the network, so the backup has to be retaken after each one. Instead of repeating the two steps above by hand, run `backup-cli run`, which reads the current keyset itself over a NEAR JSON-RPC endpoint (`$BACKUP_RPC_URL` from [Environment Variables Setup](#environment-variables-setup)) and takes a backup whenever the contract's keyset is not the one already stored:
 
 ```bash
 backup-cli \
@@ -347,13 +347,13 @@ backup-cli \
 Notes:
 
 - Run `backup-cli run` under a supervisor such as systemd, so it restarts after a crash or reboot.
-- No `contract_state.json` is needed: the state comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
+- No `current_keyset.json` is needed: the keyset comes from `--rpc-url` (here via `BACKUP_RPC_URL`). `--near-chain-id` is required by the RPC client but unused by view calls.
 - Without `--rpc-url`, the state comes from a NEAR node that `backup-cli` embeds, with [requirements comparable to an MPC node](node-requirements.md). The node expects `config.json`, `genesis.json` and `node_key.json` in `$BACKUP_HOME_DIR`, initialized the way [`deployment/start.sh`](../../deployment/start.sh) does for an MPC node, and nothing is backed up until it has synced. The startup probe below does not apply: a contract state that cannot be read is logged at `error` and the service waits for the next one, and `--poll-interval-seconds` only delays the re-attempt of a failed fetch.
-- The endpoint is probed at startup: if the contract state cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. When starting at boot, before the network is up, rely on the supervisor's restart policy.
+- The endpoint is probed at startup: if the current keyset cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. This includes a contract that predates the `current_keyset` view. When starting at boot, before the network is up, rely on the supervisor's restart policy.
 - The encryption key again comes from `BACKUP_ENCRYPTION_KEY_HEX` (Step 3), never the command line, where `ps` would expose it for the lifetime of the service.
 - Keyshares already backed up are never overwritten, so restarting the service is safe and older epochs' files are kept.
 - On startup and then every hour, the service fetches the current keyset again even when it is already stored, and compares it with the stored keyshares. A difference is logged at `error` and the stored backup is left as it is. These fetches also keep the node's `mpc_last_backup_served_*` metrics current after a node restart or migration (see [Metrics for node operators](node-operator-metrics.md#backups)).
-- It re-reads the contract every `--poll-interval-seconds` (default 60) and backs up when the state changed. A successful backup logs at `info`, a failed fetch at `warn`, and a failed fetch is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
+- It re-reads the contract every `--poll-interval-seconds` (default 60) and backs up when the keyset changed. A successful backup logs at `info`, a failed fetch at `warn`, and a failed fetch is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
 - `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup, or the last check that confirmed it, as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`. When unset (the default), nothing is served. After a restart the backup time is unknown, so until the first fetch from the node succeeds `/status` reports `timestamp_seconds: null` and the timestamp gauge is absent, so an alert on that gauge returns no data then rather than firing.
 - This is the backup direction only. Restoring (Steps 6–8) stays manual.
 

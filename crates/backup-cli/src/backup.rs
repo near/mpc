@@ -110,12 +110,12 @@ pub async fn run_command(args: cli::Args) {
             );
             let mpc_contract = MpcContractHandle::new(rpc, subcommand_args.mpc_contract_account_id);
 
-            mpc_contract.state().await.expect(
-                "could not read the MPC contract state; check that BACKUP_RPC_URL points to a \
-                 reachable NEAR JSON-RPC endpoint of the configured chain and that \
-                 MPC_CONTRACT_ACCOUNT_ID names the MPC contract",
+            mpc_contract.current_keyset().await.expect(
+                "could not read the MPC contract's current keyset; check that BACKUP_RPC_URL \
+                 points to a reachable NEAR JSON-RPC endpoint of the configured chain and that \
+                 MPC_CONTRACT_ACCOUNT_ID names an MPC contract that has the current_keyset view",
             );
-            let contract_state = mpc_contract.state().subscribe().await;
+            let current_keyset = mpc_contract.current_keyset().subscribe().await;
 
             let shutdown = CancellationToken::new();
             spawn_shutdown_on_signal(shutdown.clone());
@@ -123,7 +123,7 @@ pub async fn run_command(args: cli::Args) {
             run_backup_service(
                 mpc_p2p_client,
                 key_shares_storage,
-                contract_state,
+                current_keyset,
                 status_reporter,
                 adapters::clock::SystemClock,
                 poll_interval.into(),
@@ -188,8 +188,8 @@ async fn run_backup_service_through_embedded_node(
             .await
             .expect("failed to start the NEAR node");
     let mpc_contract = MpcContractHandle::new(chain_gateway, mpc_contract_account_id);
-    let Some(contract_state) = shutdown
-        .run_until_cancelled(mpc_contract.state().subscribe())
+    let Some(current_keyset) = shutdown
+        .run_until_cancelled(mpc_contract.current_keyset().subscribe())
         .await
     else {
         return;
@@ -197,7 +197,7 @@ async fn run_backup_service_through_embedded_node(
     run_backup_service(
         mpc_p2p_client,
         keyshares_storage,
-        contract_state,
+        current_keyset,
         status,
         adapters::clock::SystemClock,
         retry_delay,
@@ -207,14 +207,14 @@ async fn run_backup_service_through_embedded_node(
     .expect("automatic backup service failed");
 }
 
-/// Backs up keyshares whenever the observed contract state stops being covered by what is
-/// stored, until `shutdown` is cancelled. On startup and then hourly, a covered keyset is
+/// Backs up keyshares whenever the contract's observed current keyset stops being covered by
+/// what is stored, until `shutdown` is cancelled. On startup and then hourly, a covered keyset is
 /// fetched again and compared with what is stored. A failed fetch is re-attempted after
-/// `retry_delay`, since the contract state it failed on may not change again for a long time.
+/// `retry_delay`, since the keyset it failed on may not change again for a long time.
 pub async fn run_backup_service(
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,
-    contract_state: impl ports::WatchContractState,
+    current_keyset: impl ports::WatchCurrentKeyset,
     status: impl ports::ReportBackupStatus,
     clock: impl ports::GetCurrentTime,
     retry_delay: Duration,
@@ -223,7 +223,7 @@ pub async fn run_backup_service(
     Service::new(
         mpc_p2p_client,
         keyshares_storage,
-        contract_state,
+        current_keyset,
         status,
         clock,
         retry_delay,
@@ -300,13 +300,13 @@ async fn print_register_command(
 pub async fn get_keyshares(
     mpc_p2p_client: &impl ports::P2PClient,
     keyshares_storage: &impl ports::KeyShareRepository,
-    mpc_contract: &impl ports::ReadContractState,
+    mpc_contract: &impl ports::ReadCurrentKeyset,
 ) -> anyhow::Result<()> {
-    let contract_state = mpc_contract
-        .get_contract_state()
+    let current_keyset = mpc_contract
+        .current_keyset()
         .await
-        .map_err(|err| anyhow::anyhow!("could not get contract state: {err:?}"))?;
-    let keyset = keyset_to_backup(&contract_state)?;
+        .map_err(|err| anyhow::anyhow!("could not get the current keyset: {err:?}"))?;
+    let keyset = keyset_to_backup(current_keyset)?;
     let keyshares = mpc_p2p_client
         .get_keyshares(&keyset)
         .await
