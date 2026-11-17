@@ -101,16 +101,18 @@ host configs that set them; a bypass of that check is in scope.
   exposing plaintext keyshares to its host. Reachable by any NEAR account or a
   network attacker, or by a single malicious participant.
 - **High**: key or share recovery, forgery, fund theft or a governance bypass
-  that needs several colluding participants (still below the threshold); halting the whole network's signing or key events by a
-  non-participant; a permanent denial of service by malicious participants: one
-  that outlasts their removal by vote, or that blocks the resharing that would
-  remove them; a remote crash of honest nodes by a non-participant; a false
-  foreign-chain verification.
+  that needs several colluding participants (still below the threshold);
+  halting the whole network's signing or key events by a non-participant; a
+  permanent denial of service by malicious participants: one that outlasts
+  their removal by vote, or that blocks the resharing that would remove them; a
+  remote crash of honest nodes by a non-participant; a false foreign-chain
+  verification.
 - **Medium**: denial of service against one node or one request type by a
   non-participant; griefing that costs the attacker gas proportional to the
   damage; leaks of non-secret but private operational data.
-- **Low**: temporary denial of service by malicious participants; hardening issues without a demonstrated impact;
-  issues needing operator misconfiguration on a non-TEE node.
+- **Low**: temporary denial of service by malicious participants; hardening
+  issues without a demonstrated impact; issues needing operator
+  misconfiguration on a non-TEE node.
 
 Account for gas costs, deposits and existing limits in resource attacks.
 
