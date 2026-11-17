@@ -172,7 +172,6 @@ image_reference = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
-home_dir = "/data"
 some_opaque_field = true
 "#;
 
@@ -182,7 +181,6 @@ some_opaque_field = true
         // then
         let config = result.unwrap();
         assert_eq!(config.launcher_config.image_reference, "nearone/mpc-node");
-        assert_eq!(config.mpc_node_config["home_dir"].as_str(), Some("/data"));
         assert_eq!(
             config.mpc_node_config["some_opaque_field"].as_bool(),
             Some(true)
@@ -198,7 +196,6 @@ image_reference = "ghcr.io/nearone/mpc-node"
 port_mappings = []
 
 [mpc_node_config]
-home_dir = "/data"
 "#;
 
         // when
@@ -220,7 +217,6 @@ image_reference = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
-home_dir = "/data"
 arbitrary_key = "arbitrary_value"
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
@@ -229,7 +225,6 @@ arbitrary_key = "arbitrary_value"
         let serialized = toml::to_string(&config.mpc_node_config).unwrap();
 
         // then
-        assert!(serialized.contains("home_dir"));
         assert!(serialized.contains("arbitrary_key"));
     }
 
