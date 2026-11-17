@@ -1,7 +1,12 @@
-use std::{collections::BTreeSet, hash::Hash, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    hash::Hash,
+    sync::Arc,
+};
 
+use futures::future::join_all;
 use near_block_primitives::BlockCount;
-use near_time::{Clock, Duration, Instant};
+use near_time::{Clock, Duration};
 use tokio::sync::watch;
 
 use crate::{
@@ -13,17 +18,17 @@ use crate::{
     providers::participant_selection::ComputationDuration,
 };
 
-/// Derives the [`NetworkReadiness`] for computations of `duration` from the connections and
-/// first-hand indexer heights the monitor publishes, and publishes it whenever it changes.
+/// Derives the [`NetworkReadiness`] for computations of each subscribed [`ComputationDuration`]
+/// from the connections and first-hand indexer heights.
+/// Publishes whenever the connections change and on every `publish_interval`.
 struct NetworkReadinessPublisher<N, S> {
     me: N,
-    duration: ComputationDuration,
     max_indexer_height_lag: BlockCount,
-    refresh_interval: Duration,
+    publish_interval: Duration,
     clock: Clock,
     connections: watch::Receiver<Arc<EstablishedConnections<N, S>>>,
     heights: watch::Receiver<FirstHandIndexerHeights<N>>,
-    readiness: watch::Sender<NetworkReadiness<N>>,
+    readiness: BTreeMap<ComputationDuration, watch::Sender<NetworkReadiness<N>>>,
 }
 
 impl<N, S> NetworkReadinessPublisher<N, S>
@@ -33,59 +38,63 @@ where
 {
     fn new(
         me: N,
-        duration: ComputationDuration,
         max_indexer_height_lag: BlockCount,
-        refresh_interval: Duration,
+        publish_interval: Duration,
         clock: Clock,
         connections: watch::Receiver<Arc<EstablishedConnections<N, S>>>,
         heights: watch::Receiver<FirstHandIndexerHeights<N>>,
-    ) -> (Self, watch::Receiver<NetworkReadiness<N>>) {
-        let initial = derive_network_readiness(
-            &me,
-            &heights.borrow(),
-            &connections.borrow(),
-            duration,
-            max_indexer_height_lag,
-            clock.now(),
-        );
-        let (readiness, readiness_receiver) = watch::channel(initial);
-        let publisher = Self {
+    ) -> Self {
+        Self {
             me,
-            duration,
             max_indexer_height_lag,
-            refresh_interval,
+            publish_interval,
             clock,
             connections,
             heights,
-            readiness,
-        };
-        (publisher, readiness_receiver)
+            readiness: BTreeMap::new(),
+        }
     }
 
-    /// Derives again when a connection changes, and every `refresh_interval` to pick up the
-    /// indexer heights and what the passing of time changes. The heights are not a wake-up
-    /// source: they change with every report. Runs until the monitor is gone or nothing reads the
-    /// result any more.
+    fn subscribe(&mut self, duration: ComputationDuration) -> watch::Receiver<NetworkReadiness<N>> {
+        self.readiness.entry(duration).or_default().subscribe()
+    }
+
+    /// Publishes at once, then again when a connection changes, and every `publish_interval` to
+    /// pick up the indexer heights and what the passing of time changes. The heights are not a
+    /// wake-up source: they change with every report. Runs until the monitor is gone or nothing
+    /// reads the results any more.
     async fn run(mut self) {
+        let durations: BTreeSet<_> = self.readiness.keys().copied().collect();
         loop {
+            self.publish(&durations);
             tokio::select! {
                 changed = self.connections.changed() => {
                     if changed.is_err() {
                         return;
                     }
                 }
-                _ = self.readiness.closed() => return,
-                _ = self.clock.sleep(self.refresh_interval) => {}
+                _ = join_all(self.readiness.values().map(|sender| sender.closed())) => return,
+                _ = self.clock.sleep(self.publish_interval) => {}
             }
-            let readiness = derive_network_readiness(
-                &self.me,
-                &self.heights.borrow(),
-                &self.connections.borrow(),
-                self.duration,
-                self.max_indexer_height_lag,
-                self.clock.now(),
-            );
-            self.readiness.send_if_modified(|published| {
+        }
+    }
+
+    fn publish(&self, durations: &BTreeSet<ComputationDuration>) {
+        let alive = alive_participants(
+            &self.me,
+            &self.heights.borrow(),
+            self.max_indexer_height_lag,
+        );
+        let not_supporting = self
+            .connections
+            .borrow()
+            .connections_not_supporting(durations, self.clock.now());
+        for (duration, broken_connections) in not_supporting {
+            let Some(sender) = self.readiness.get(&duration) else {
+                continue;
+            };
+            let readiness = NetworkReadiness::new(alive.clone(), broken_connections);
+            sender.send_if_modified(|published| {
                 if *published == readiness {
                     return false;
                 }
@@ -94,24 +103,6 @@ where
             });
         }
     }
-}
-
-fn derive_network_readiness<N, S>(
-    me: &N,
-    heights: &FirstHandIndexerHeights<N>,
-    connections: &EstablishedConnections<N, S>,
-    duration: ComputationDuration,
-    max_indexer_height_lag: BlockCount,
-    now: Instant,
-) -> NetworkReadiness<N>
-where
-    N: Ord + Hash + Clone,
-    S: CheckComputationSupport,
-{
-    NetworkReadiness::new(
-        alive_participants(me, heights, max_indexer_height_lag),
-        connections.connections_not_supporting(duration, now),
-    )
 }
 
 /// The participants whose first-hand indexer height is at most `max_lag` blocks behind `me`'s.
@@ -141,7 +132,7 @@ fn is_behind(
         (ReportedIndexerHeight::Unknown, _) => false,
         (ReportedIndexerHeight::Known(_), ReportedIndexerHeight::Unknown) => true,
         (ReportedIndexerHeight::Known(mine), ReportedIndexerHeight::Known(peer)) => {
-            mine.blocks_since(peer) > max_lag
+            mine.blocks_since(peer).is_some_and(|lag| lag > max_lag)
         }
     }
 }

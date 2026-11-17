@@ -45,7 +45,9 @@ impl IndexerHeightLag {
                 ReportedIndexerHeight::Known(first_hand),
                 ReportedIndexerHeight::Known(peer_reported),
             ) => {
-                let count = first_hand.blocks_since(peer_reported);
+                let count = first_hand
+                    .blocks_since(peer_reported)
+                    .unwrap_or(BlockCount::new(0));
                 Some(IndexerHeightLag::Present(count))
             }
         }

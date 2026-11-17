@@ -504,6 +504,15 @@ impl<T> NetworkReadiness<T> {
     }
 }
 
+impl<T> Default for NetworkReadiness<T> {
+    fn default() -> Self {
+        Self {
+            alive_participants: BTreeSet::new(),
+            broken_connections: BTreeSet::new(),
+        }
+    }
+}
+
 /// Persistent storage for a single type of asset (e.g. triples).
 /// The storage is distributed across all participants, with each participant
 /// owning some of the assets. Each asset has exactly one owner.

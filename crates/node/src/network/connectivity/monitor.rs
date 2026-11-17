@@ -46,28 +46,6 @@ struct DebugConnectivityView<N, S> {
     link_statuses: watch::Receiver<Arc<LinkStatuses<N, S>>>,
 }
 
-struct AssetReadynessChecker {
-    // connectoins are updated as soon as they change
-    connections: watch::Receiver<Arc<EstablishedConnections<N, C>>>,
-    // heights are updated at most once every seconds
-    heights: watch::Receiver<FirstHandIndexerHeights>,
-}
-impl CheckAsset<A> for AssetReadynessChecker {
-    fn update_condition(&mut self) -> bool {
-        match self.receiver.has_changed() {
-            Ok(true) => {
-                self.value = self.receiver.borrow_and_update().clone();
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn accept(&self, asset: &T) -> bool {
-        (self.predicate)(&self.value, asset)
-    }
-}
-
 //impl<N, C, S, L> ConnectivityMonitor<N, C, S, L>
 //where
 //    N: Ord + Clone + std::fmt::Display,

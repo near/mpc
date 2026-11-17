@@ -1,6 +1,9 @@
 //! todo description
 
-use std::{collections::BTreeSet, hash::Hash};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    hash::Hash,
+};
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_time::Instant;
@@ -95,23 +98,26 @@ where
             })
     }
 
-    /// Every pair of nodes that cannot currently run a computation of `duration` together:
-    /// their connection is not established, or does not support it.
+    /// For each of `durations`, every pair of nodes that cannot currently run a computation of
+    /// that duration together: their connection is not established, or does not support it.
     pub fn connections_not_supporting(
         &self,
-        duration: ComputationDuration,
+        durations: &BTreeSet<ComputationDuration>,
         now: Instant,
-    ) -> BTreeSet<UndirectedEdge<N>> {
-        self.connections
-            .pairs()
-            .filter(|(_, status)| {
-                !matches!(
-                    status.map(|s| s.connection_supports(duration, now)),
-                    Some(ComputationSupported::Yes)
-                )
-            })
-            .map(|(connection, _)| connection)
-            .collect()
+    ) -> BTreeMap<ComputationDuration, BTreeSet<UndirectedEdge<N>>> {
+        let mut not_supporting: BTreeMap<_, BTreeSet<_>> = durations
+            .iter()
+            .map(|duration| (*duration, BTreeSet::new()))
+            .collect();
+        for (connection, status) in self.connections.pairs() {
+            for (duration, connections) in &mut not_supporting {
+                let supported = status.map(|s| s.connection_supports(*duration, now));
+                if !matches!(supported, Some(ComputationSupported::Yes)) {
+                    connections.insert(connection.clone());
+                }
+            }
+        }
+        not_supporting
     }
 }
 

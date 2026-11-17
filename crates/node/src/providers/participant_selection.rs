@@ -23,7 +23,7 @@ pub enum SelectParticipantsError {
     MustIncludeNotEligible(ParticipantId),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ComputationDuration {
     Any,
     Seconds,
