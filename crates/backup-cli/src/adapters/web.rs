@@ -129,21 +129,13 @@ pub struct LastBackup {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    fn status_after_a_backup() -> BackupStatus {
+    fn status_with_timestamp(timestamp_seconds: Option<u64>) -> BackupStatus {
         BackupStatus {
             last_backup: Some(LastBackup {
                 epoch_id: EpochId::new(5),
-                timestamp_seconds: Some(1_700_000_000),
-            }),
-        }
-    }
-
-    fn status_after_a_restart() -> BackupStatus {
-        BackupStatus {
-            last_backup: Some(LastBackup {
-                epoch_id: EpochId::new(5),
-                timestamp_seconds: None,
+                timestamp_seconds,
             }),
         }
     }
@@ -176,7 +168,7 @@ mod tests {
     #[test]
     fn render_metrics__should_render_the_last_backup_gauges() {
         // Given
-        let status = status_after_a_backup();
+        let status = status_with_timestamp(Some(1_700_000_000));
 
         // When
         let metrics = render_metrics(&status);
@@ -195,7 +187,7 @@ mod tests {
     #[test]
     fn render_metrics__should_render_only_the_epoch_gauge_when_the_backup_time_is_unknown() {
         // Given
-        let status = status_after_a_restart();
+        let status = status_with_timestamp(None);
 
         // When
         let metrics = render_metrics(&status);
@@ -223,61 +215,42 @@ mod tests {
         assert_eq!(metrics, "");
     }
 
-    #[test]
-    fn keyset_backed_up__should_publish_the_last_backup() {
+    #[rstest]
+    #[case::the_last_backup(Some(1_700_000_000))]
+    #[case::a_backup_without_a_timestamp(None)]
+    fn keyset_backed_up__should_publish(#[case] timestamp_seconds: Option<u64>) {
         // Given
         let (reporter, status) = status_channel();
 
         // When
-        reporter.keyset_backed_up(EpochId::new(5), Some(1_700_000_000));
+        reporter.keyset_backed_up(EpochId::new(5), timestamp_seconds);
 
         // Then
-        assert_eq!(*status.0.borrow(), status_after_a_backup());
+        assert_eq!(*status.0.borrow(), status_with_timestamp(timestamp_seconds));
     }
 
-    #[test]
-    fn keyset_backed_up__should_publish_a_backup_without_a_timestamp() {
+    #[rstest]
+    #[case::the_last_backup(
+        Some(1_700_000_000),
+        serde_json::json!({
+            "last_backup": { "epoch_id": 5, "timestamp_seconds": 1_700_000_000_u64 }
+        })
+    )]
+    #[case::a_backup_with_an_unknown_time_as_null(
+        None,
+        serde_json::json!({ "last_backup": { "epoch_id": 5, "timestamp_seconds": null } })
+    )]
+    fn backup_status_json__should_expose(
+        #[case] timestamp_seconds: Option<u64>,
+        #[case] expected: serde_json::Value,
+    ) {
         // Given
-        let (reporter, status) = status_channel();
-
-        // When
-        reporter.keyset_backed_up(EpochId::new(5), None);
-
-        // Then
-        assert_eq!(*status.0.borrow(), status_after_a_restart());
-    }
-
-    #[test]
-    fn backup_status_json__should_expose_the_last_backup() {
-        // Given
-        let status = status_after_a_backup();
+        let status = status_with_timestamp(timestamp_seconds);
 
         // When
         let json = serde_json::to_value(&status).unwrap();
 
         // Then
-        assert_eq!(
-            json,
-            serde_json::json!({
-                "last_backup": { "epoch_id": 5, "timestamp_seconds": 1_700_000_000_u64 }
-            })
-        );
-    }
-
-    #[test]
-    fn backup_status_json__should_expose_a_backup_with_an_unknown_time_as_null() {
-        // Given
-        let status = status_after_a_restart();
-
-        // When
-        let json = serde_json::to_value(&status).unwrap();
-
-        // Then
-        assert_eq!(
-            json,
-            serde_json::json!({
-                "last_backup": { "epoch_id": 5, "timestamp_seconds": null }
-            })
-        );
+        assert_eq!(json, expected);
     }
 }
