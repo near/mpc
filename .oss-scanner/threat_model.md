@@ -12,8 +12,8 @@ docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md. Past audits: audits/
 ## Components, in priority order
 
 1. `crates/threshold-signatures`: DKG, resharing, OT-based ECDSA (Beaver
-   triples, presigning, signing), FROST EdDSA, CKD, and the reliable broadcast
-   and OT primitives under them.
+   triples, signing), FROST EdDSA, CKD, and the reliable broadcast and OT
+   primitives under them.
 2. `crates/contract`: the signer contract. Request intake (`sign`,
    `request_app_private_key`, `verify_foreign_transaction`), responses
    (`respond*`), key derivation from predecessor account and path, participant
@@ -73,11 +73,11 @@ host configs that set them; a bypass of that check is in scope.
 
 ## What to look for
 
-- Leakage of key shares, triples, presignatures or secret nonces (including
-  nonce reuse, biased nonces, or presignature reuse) through protocol messages,
-  logs, metrics, the HTTP server, the migration service, or `backup-cli`
-  (including keyshares going to or from a host other than the one registered
-  in the contract, and weak handling of the backup encryption key).
+- Leakage of key shares, triples or secret nonces (including nonce reuse,
+  biased nonces, or triple reuse) through protocol messages, logs, metrics,
+  the HTTP server, the migration service, or `backup-cli` (including keyshares
+  going to or from a host other than the one registered in the contract, and
+  weak handling of the backup encryption key).
 - Signature forgery, or a valid signature for a payload, key or derivation
   path the requester is not entitled to; wrong predecessor/path binding; a
   response accepted for the wrong pending request.
