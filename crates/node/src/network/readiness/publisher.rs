@@ -10,10 +10,12 @@ use near_time::{Clock, Duration};
 use tokio::sync::watch;
 
 use crate::{
-    assets::NetworkReadiness,
-    network::connectivity::{
-        first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
-        health::{CheckComputationSupport, EstablishedConnections},
+    network::{
+        connectivity::{
+            CheckComputationSupport, EstablishedConnections,
+            first_hand_indexer_heights::{FirstHandIndexerHeights, ReportedIndexerHeight},
+        },
+        readiness::NetworkReadiness,
     },
     providers::participant_selection::ComputationDuration,
 };
@@ -21,7 +23,7 @@ use crate::{
 /// Derives the [`NetworkReadiness`] for computations of each subscribed [`ComputationDuration`]
 /// from the connections and first-hand indexer heights.
 /// Publishes whenever the connections change and on every `publish_interval`.
-struct NetworkReadinessPublisher<N, S> {
+pub(super) struct NetworkReadinessPublisher<N, S> {
     me: N,
     max_indexer_height_lag: BlockCount,
     publish_interval: Duration,
@@ -55,7 +57,10 @@ where
         }
     }
 
-    fn subscribe(&mut self, duration: ComputationDuration) -> watch::Receiver<NetworkReadiness<N>> {
+    pub(super) fn subscribe(
+        &mut self,
+        duration: ComputationDuration,
+    ) -> watch::Receiver<NetworkReadiness<N>> {
         self.readiness.entry(duration).or_default().subscribe()
     }
 

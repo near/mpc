@@ -72,7 +72,8 @@ impl TripleStorage {
             PolledCondition::<Vec<ParticipantId>, PairedTriple>::new(
                 // todo: replace this `PolledCondition` with a `WatchCondition` over
                 // |readiness, pair| readiness.supports(&participants_from_triples(&pair.0, &pair.1)),
-                // and the `NetworkReadiness` receiver for `ComputationDuration::Seconds`.
+                // and the `crate::network::readiness::NetworkReadiness` receiver for
+                // `ComputationDuration::Seconds`.
                 |participants, pair| pair.is_subset_of_active_participants(participants),
                 move || client.all_alive_participant_ids(),
             ),
@@ -127,6 +128,7 @@ impl EcdsaSignatureProvider {
                     < config.concurrency * 2 * *config.batch_size
             {
                 // todo: replace the selection below with
+                // `crate::network::readiness::participant_selection::RandomParticipantClique`:
                 // random_participant_clique.select_participants(
                 //     reconstruction_threshold.value(),
                 //     &running_participants,

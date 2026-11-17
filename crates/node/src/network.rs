@@ -4,6 +4,7 @@ pub mod connectivity;
 pub mod constants;
 pub mod handshake;
 pub mod indexer_heights;
+pub mod readiness;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;

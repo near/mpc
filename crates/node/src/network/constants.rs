@@ -30,3 +30,12 @@ pub const UPTIME_HALF_MINUTE: near_time::Duration = near_time::Duration::seconds
 /// [`CONNECTED_PEERS_BROADCAST_INTERVAL`], so this is a few intervals of backlog before producers
 /// start dropping updates.
 pub const NETWORK_VIEW_UPDATES_BUFFERED_PER_PARTICIPANT: usize = 4;
+/// Picks one attempt at finding a clique of participants tries before the search starts over with
+/// the candidates in a new random order. An attempt that never backs out of a pick tries one per
+/// participant it needs; backing out of dead ends is exponential in the worst case.
+pub const MAX_PICKS_PER_CLIQUE_SEARCH_ATTEMPT: usize = 3_000;
+/// Attempts before the search for a clique gives up. With
+/// [`MAX_PICKS_PER_CLIQUE_SEARCH_ATTEMPT`], sized for 30 participants with randomly broken
+/// connections: all attempts together take about 2 ms, and giving up then means, in practice, that
+/// no clique exists.
+pub const MAX_CLIQUE_SEARCH_ATTEMPTS: usize = 10;

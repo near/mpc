@@ -39,6 +39,7 @@ impl RobustEcdsaSignatureProvider {
             .collect();
 
         // todo: replace the selection below with
+        // `crate::network::readiness::participant_selection::RandomParticipantClique`:
         // self.random_participant_clique.select_participants(
         //     num_signers,
         //     &running_participants,

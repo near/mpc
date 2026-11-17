@@ -5,14 +5,13 @@ pub mod test_utils;
 
 use crate::assets::metrics::OwnedAssetCounts;
 use crate::db::{DBCol, SecretDB, SecretDBUpdate};
-use crate::network::connectivity::UndirectedEdge;
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::providers::HasParticipants;
 use borsh::BorshDeserialize;
 use near_time::Clock;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use std::collections::{BTreeSet, HashSet, VecDeque};
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use tokio::sync::watch;
 
@@ -61,6 +60,8 @@ where
 // an example of a polled condition. This can have the time-based loop with the clock, as a drop-in
 // replcaement for the current logic (though, it would need to be implemented elsewhere, as
 // technically, the queue is just a consumer of CheckAsset)
+// todo: delete once `TripleStorage` checks its assets with a `WatchCondition` over
+// `crate::network::readiness::NetworkReadiness`.
 pub struct PolledCondition<C, T> {
     value: C,
     fetch: Box<dyn Fn() -> C + Send + Sync>,
@@ -478,37 +479,6 @@ where
             available: hot + cold_queue.cold_available,
             online: cold_queue.cold_ready,
             offline: cold_queue.cold_queue.len() - cold_queue.cold_available,
-        }
-    }
-}
-
-/// What the participants of an asset are checked against: all of them must be alive, and no two
-/// of them may share a broken connection.
-// todo: add
-// pub fn supports(&self, participants: &[T]) -> bool
-#[derive(Clone, PartialEq, Eq)]
-pub struct NetworkReadiness<T> {
-    alive_participants: BTreeSet<T>,
-    broken_connections: BTreeSet<UndirectedEdge<T>>,
-}
-
-impl<T> NetworkReadiness<T> {
-    pub fn new(
-        alive_participants: BTreeSet<T>,
-        broken_connections: BTreeSet<UndirectedEdge<T>>,
-    ) -> Self {
-        Self {
-            alive_participants,
-            broken_connections,
-        }
-    }
-}
-
-impl<T> Default for NetworkReadiness<T> {
-    fn default() -> Self {
-        Self {
-            alive_participants: BTreeSet::new(),
-            broken_connections: BTreeSet::new(),
         }
     }
 }

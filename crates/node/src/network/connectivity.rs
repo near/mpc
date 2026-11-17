@@ -12,8 +12,6 @@
 //! - `measurements`: link measurements, which turn observations into a link status. A new way
 //!   of judging a link goes here.
 //! - `monitor`: applies reports and publishes the result.
-//! - `readiness`: derives, from what the monitor publishes, which participants are alive and
-//!   which connections are broken for a computation.
 //!
 //! # From a report to a connection
 //!
@@ -55,7 +53,7 @@ mod health;
 pub mod local_network_view;
 mod measurements;
 mod monitor;
-mod readiness;
 mod reports;
 
 pub use graph::UndirectedEdge;
+pub use health::{CheckComputationSupport, EstablishedConnections};
