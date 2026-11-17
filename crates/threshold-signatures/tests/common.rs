@@ -115,7 +115,7 @@ where
     Element<C>: Send,
     Scalar<C>: Send,
 {
-    assert!(!new_participants.is_empty());
+    assert_ne!(new_participants, []);
     let mut setup = vec![];
 
     for new_participant in new_participants {

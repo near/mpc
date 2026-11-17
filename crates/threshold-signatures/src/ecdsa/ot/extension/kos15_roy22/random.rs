@@ -9,9 +9,11 @@ use crate::{
 };
 
 use crate::crypto::constants::SECURITY_PARAMETER;
-use crate::ecdsa::ot_based_ecdsa::triples::{
+use crate::ecdsa::ot::{
     bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
-    correlated_ot_extension::{CorrelatedOtParams, correlated_ot_receiver, correlated_ot_sender},
+    extension::kos15_roy22::correlated::{
+        CorrelatedOtParams, correlated_ot_receiver, correlated_ot_sender,
+    },
 };
 
 use elliptic_curve::ops::Reduce;
@@ -59,7 +61,7 @@ pub type RandomOTExtensionSenderOut = Vec<(Scalar, Scalar)>;
 pub type RandomOTExtensionReceiverOut = Vec<(Choice, Scalar)>;
 
 /// Generates the random values needed in `random_ot_extension_sender`
-pub(super) fn random_ot_extension_sender_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
+pub fn random_ot_extension_sender_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
     let mut transcript_seed = [0u8; 32];
     rng.fill_bytes(&mut transcript_seed);
     transcript_seed
@@ -149,7 +151,7 @@ pub async fn random_ot_extension_sender(
 }
 
 /// Generates the random values needed in `random_ot_extension_receiver`
-pub(super) fn random_ot_extension_receiver_helper(
+pub fn random_ot_extension_receiver_helper(
     batch_size: usize,
     rng: &mut impl CryptoRngCore,
 ) -> Result<ChoiceVector, ProtocolError> {
@@ -232,7 +234,7 @@ pub async fn random_ot_extension_receiver(
 #[cfg(test)]
 mod test {
     use crate::{
-        ecdsa::ot_based_ecdsa::triples::test::run_batch_random_ot,
+        ecdsa::ot::test::run_batch_random_ot,
         errors::ProtocolError,
         participants::Participant,
         protocol::internal::{Comms, make_protocol},
