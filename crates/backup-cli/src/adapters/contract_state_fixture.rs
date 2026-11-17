@@ -10,8 +10,11 @@ const CURRENT_KEYSET_FILENAME: &str = "current_keyset.json";
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("failed to open file: {0}")]
-    OpenFile(tokio::io::Error),
+    #[error("failed to open {}: {err}", path.display())]
+    OpenFile {
+        path: PathBuf,
+        err: tokio::io::Error,
+    },
 
     #[error("could not read from file: {0}")]
     Read(tokio::io::Error),
@@ -39,7 +42,10 @@ impl ReadCurrentKeyset for ContractStateFixture {
     async fn current_keyset(&self) -> Result<Option<Keyset>, Self::Error> {
         let mut destination = File::open(self.current_keyset_path.as_path())
             .await
-            .map_err(Error::OpenFile)?;
+            .map_err(|err| Error::OpenFile {
+                path: self.current_keyset_path.clone(),
+                err,
+            })?;
         let mut buffer = Vec::new();
         destination
             .read_to_end(&mut buffer)

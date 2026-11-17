@@ -126,7 +126,7 @@ First, you'll need to set up the backup CLI tool and generate keys for the backu
 
 ### Install backup-cli
 
-Install the backup-cli tool using cargo (run from the repository root):
+Install the backup-cli tool using cargo, from the repository root. This is usually done from a checkout of the latest release tag:
 
 ```bash
 cargo install --path crates/backup-cli --locked
