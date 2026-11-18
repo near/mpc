@@ -19,7 +19,6 @@ external-services-tests = []
 [dependencies]
 backon = { workspace = true }
 clap = { workspace = true }
-dstack-sdk = { workspace = true }
 launcher-interface = { workspace = true }
 mpc-primitives = { workspace = true }
 near-account-id = { workspace = true }

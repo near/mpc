@@ -16,7 +16,7 @@ Scripts for deploying and testing MPC nodes with the launcher on localnet (TDX C
 
 - Local NEAR network running (`mpc-localnet`)
 - dstack VMM running (default: `http://127.0.0.1:10000`)
-- OS image: `dstack-dev-0.5.8`
+- OS image: `dstack-dev-0.5.8` (TODO(#5069): the compose templates on main need dstack 0.6+)
 - MPC node image must support TOML config (`start-with-config-file`), e.g. `main-9515e18` or later
 - Tools: `near`, `jq`, `curl`, `envsubst`, `docker`
 
