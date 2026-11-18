@@ -2,8 +2,8 @@
 
 **Status:** Draft for discussion · **Author:** Haiyue Chen (with Claude) · **Date:** 28 September 2026, revised 18 November 2026
 
-**Note on naming:** the new caller facing method is named `read_rpc`. For ease of comparing the new method to current V1 foreign transaction verification, this doc still calls it `verify_foreign_transaction_v2`. Every other new name in the doc is
-the real one.
+**Note on naming:** the new caller facing method is `read_rpc`. To ease comparison with current
+foreign transaction verification (V1), the doc calls the new flow V2.
 
 ## Summary
 
@@ -59,7 +59,7 @@ The main points of the design:
 
 ![Overview: the caller requests, the nodes inspect with their providers, the leader starts a session for its own outcome, matching followers sign, and the leader responds.](attachments/overview.png)
 
-1. **Request.** The caller calls `verify_foreign_transaction_v2` with the values it expects.
+1. **Request.** The caller calls `read_rpc` with the values it expects.
    The contract stores the request under a new yield id and announces the id in an event.
 2. **Inspect.** Every node that can inspect the request (see "Node outcomes") does so once the
    request's block is final.
@@ -326,7 +326,7 @@ contract emits the id in the same call as a
 EVENT_JSON:{"standard":"mpc","version":"1.0.0","event":"read_rpc_yield_created","data":{"yield_id":"…"}}
 ```
 
-- The indexer reads the event only from a `verify_foreign_transaction_v2` receipt that
+- The indexer reads the event only from a `read_rpc` receipt that
   succeeded. A failed receipt keeps its logs but rolls back the counter, so a later request
   gets the same id.
 - The indexer reads only log entries that start with `EVENT_JSON:`, carry the `mpc` standard and
@@ -478,7 +478,7 @@ We assume, as V1 does, that fewer than t nodes are malicious.
 
 | Threat | Defense |
 | --- | --- |
-| Caller plants a fake yield id | Nodes read the id only from the `mpc` event of a `verify_foreign_transaction_v2` receipt that succeeded. Only the contract's code writes that event, and it writes only the id it generated. |
+| Caller plants a fake yield id | Nodes read the id only from the `mpc` event of a `read_rpc` receipt that succeeded. Only the contract's code writes that event, and it writes only the id it generated. |
 | Caller predicts or picks the leaders | Not new. The leader order follows from the request's receipt id, never from the yield id, which anyone can predict from the counter. |
 | Caller resubmits copies of a request until one gets a malicious leader | Not prevented outside NEAR. On NEAR the copy's answer names the copy's yield id and answers only the copy. Outside NEAR it looks like an answer to the original, with the outcome that leader picked (see the row "Malicious leader picks among honest outcomes"). |
 | Caller causes inconclusives | The contract rejects malformed requests, such as an out of range field that every provider would reject. A caller can still make providers disagree, which costs the caller a request like any other. That cause stays a warning (see "Alerts"). |
