@@ -8,13 +8,15 @@ pub mod readiness;
 pub mod wire_format;
 
 use crate::metrics::networking_metrics;
+use crate::network::connectivity::first_hand_indexer_heights::ReportedIndexerHeight;
+use crate::network::connectivity::{IndexerHeightReport, LegacyIndexerHeightReport, PeerReport};
 use crate::network::constants::{CONNECTED_PEERS_BROADCAST_INTERVAL, METRICS_EMIT_INTERVAL};
 use crate::network::indexer_heights::IndexerHeightTracker;
-use crate::network::connectivity::first_hand_indexer_heights::ReportedIndexerHeight;
 use crate::network::wire_format::{MpcMessageKind, MpcTaskId, Packet};
 use crate::primitives::{
     ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcPeerMessage,
-    MpcStartMessage, ParticipantId, PeerMessage, UniqueId,
+    MpcStartMessage, ParticipantId, PeerConnectedPeersInfo, PeerIndexerHeightMessage, PeerMessage,
+    UniqueId,
 };
 use crate::protocol_version::{CURRENT_PROTOCOL_VERSION, NetworkProtocolVersion};
 use crate::requests::queue::NetworkAPIForRequests;
@@ -28,7 +30,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::option::Option;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 /// Abstraction of the networking layer, from the view of one client, the sender side.
 /// For a running node, there should be only one such instance that handles all
@@ -105,6 +107,8 @@ pub struct MeshNetworkClient {
     transport_sender: Arc<dyn MeshNetworkTransportSender>,
     channels: Arc<Mutex<NetworkTaskChannelManager>>,
     indexer_heights: Arc<IndexerHeightTracker>,
+    /// Our own indexer height, for the task that broadcasts it.
+    own_indexer_height: watch::Sender<ReportedIndexerHeight>,
     /// Helper data to ensure [`ChannelId`] uniqueness.
     last_id: Arc<Mutex<UniqueId>>,
 }
@@ -151,6 +155,7 @@ impl MeshNetworkClient {
             transport_sender,
             channels,
             indexer_heights,
+            own_indexer_height: watch::Sender::new(ReportedIndexerHeight::Unknown),
             last_id,
         }
     }
@@ -456,6 +461,8 @@ impl MeshNetworkClient {
     pub fn update_indexer_height(&self, height: u64) {
         self.indexer_heights
             .set_height(self.my_participant_id(), height);
+        self.own_indexer_height
+            .send_replace(ReportedIndexerHeight::from_wire(height));
     }
 
     pub fn get_indexer_heights(&self) -> HashMap<ParticipantId, u64> {
@@ -538,6 +545,29 @@ async fn run_receive_message(
     Ok(())
 }
 
+impl From<PeerConnectedPeersInfo> for PeerReport<ParticipantId> {
+    fn from(message: PeerConnectedPeersInfo) -> Self {
+        PeerReport::IndexerHeightReport(IndexerHeightReport {
+            reporter: message.from,
+            indexer_heights: message
+                .info
+                .peers
+                .into_iter()
+                .map(|(peer, height)| (peer, ReportedIndexerHeight::from_wire(height)))
+                .collect(),
+        })
+    }
+}
+
+impl From<PeerIndexerHeightMessage> for PeerReport<ParticipantId> {
+    fn from(message: PeerIndexerHeightMessage) -> Self {
+        PeerReport::LegacyIndexerHeightReport(LegacyIndexerHeightReport {
+            reporter: message.from,
+            indexer_height: ReportedIndexerHeight::from_wire(message.message.height),
+        })
+    }
+}
+
 pub trait ReadFirstHandIndexerHeights {
     fn first_hand_indexer_heights_of(
         &self,
@@ -545,11 +575,18 @@ pub trait ReadFirstHandIndexerHeights {
     ) -> BTreeMap<ParticipantId, ReportedIndexerHeight>;
 }
 
-// todo: broadcast as soon as a connection with a peer was reset, and feed our own
-// ConnectedPeersInfo into the ConnectivityMonitor like any peer's.
-fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
+// todo: broadcast as soon as a connection with a peer was reset.
+// todo: once `ConnectivityMonitor` hands out the sender of its reports, report our own info to it
+// like any peer's:
+// peer_reports.try_send(PeerConnectedPeersInfo { from: me, info }.into())
+fn broadcast_connected_peers_info(
+    client: &MeshNetworkClient,
+    own_indexer_height: ReportedIndexerHeight,
+    peer_indexer_heights: &impl ReadFirstHandIndexerHeights,
+) {
     let me = client.my_participant_id();
-    let indexer_heights = client.get_indexer_heights();
+    let indexer_heights =
+        peer_indexer_heights.first_hand_indexer_heights_of(client.all_participant_ids());
     let peers = client
         .all_participant_ids()
         .into_iter()
@@ -561,13 +598,21 @@ fn broadcast_connected_peers_info(client: &MeshNetworkClient) {
                     .is_bidirectionally_connected()
         })
         .map(|participant| {
-            let height = indexer_heights.get(&participant).copied().unwrap_or(0);
+            let height = if participant == me {
+                own_indexer_height.to_wire()
+            } else {
+                indexer_heights
+                    .get(&participant)
+                    .copied()
+                    .unwrap_or(ReportedIndexerHeight::Unknown)
+                    .to_wire()
+            };
             (participant, height)
         })
         .collect();
     let info = Packet::ConnectedPeersInfo(ConnectedPeersInfo { peers });
     let my_height = Packet::IndexerHeight(IndexerHeightMessage {
-        height: indexer_heights.get(&me).copied().unwrap_or(0),
+        height: own_indexer_height.to_wire(),
     });
     for peer in client.all_participant_ids() {
         if peer == me {
@@ -663,9 +708,15 @@ pub fn run_network_client(
         "periodically broadcasts connected peers and indexer heights",
         {
             let network_client = network_client.clone();
+            let own_indexer_height = network_client.own_indexer_height.subscribe();
             async move {
                 loop {
-                    broadcast_connected_peers_info(&network_client);
+                    let own_indexer_height = *own_indexer_height.borrow();
+                    broadcast_connected_peers_info(
+                        &network_client,
+                        own_indexer_height,
+                        network_client.indexer_heights.as_ref(),
+                    );
                     tokio::time::sleep(CONNECTED_PEERS_BROADCAST_INTERVAL).await;
                 }
             }
@@ -1488,7 +1539,11 @@ mod tests {
         let (client, transport) = new_test_client_with_versions(participants, me, versions);
 
         // When
-        broadcast_connected_peers_info(&client);
+        broadcast_connected_peers_info(
+            &client,
+            *client.own_indexer_height.borrow(),
+            client.indexer_heights.as_ref(),
+        );
 
         // Then
         let sent = connected_peers_infos_sent(&transport);
@@ -1511,7 +1566,11 @@ mod tests {
         client.update_indexer_height(100);
 
         // When
-        broadcast_connected_peers_info(&client);
+        broadcast_connected_peers_info(
+            &client,
+            *client.own_indexer_height.borrow(),
+            client.indexer_heights.as_ref(),
+        );
 
         // Then
         assert_eq!(indexer_heights_sent(&transport), vec![(older_peer, 100)]);
@@ -1531,7 +1590,11 @@ mod tests {
         let (client, transport) = new_test_client_over(transport, me);
 
         // When
-        broadcast_connected_peers_info(&client);
+        broadcast_connected_peers_info(
+            &client,
+            *client.own_indexer_height.borrow(),
+            client.indexer_heights.as_ref(),
+        );
 
         // Then
         let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();
@@ -1550,7 +1613,11 @@ mod tests {
         client.indexer_heights.set_height(peer, 90);
 
         // When
-        broadcast_connected_peers_info(&client);
+        broadcast_connected_peers_info(
+            &client,
+            *client.own_indexer_height.borrow(),
+            client.indexer_heights.as_ref(),
+        );
 
         // Then
         let [(_, message)]: [_; 1] = connected_peers_infos_sent(&transport).try_into().unwrap();

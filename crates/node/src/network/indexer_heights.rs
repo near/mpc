@@ -1,6 +1,8 @@
 use crate::metrics;
+use crate::network::ReadFirstHandIndexerHeights;
+use crate::network::connectivity::first_hand_indexer_heights::ReportedIndexerHeight;
 use crate::primitives::ParticipantId;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::AtomicU64;
 
 /// Tracks the block height of the indexer of each participant.
@@ -41,6 +43,23 @@ impl IndexerHeightTracker {
                     *participant,
                     height.load(std::sync::atomic::Ordering::Relaxed),
                 )
+            })
+            .collect()
+    }
+}
+
+// todo: remove once the broadcast task reads the heights `ConnectivityMonitor` publishes.
+impl ReadFirstHandIndexerHeights for IndexerHeightTracker {
+    fn first_hand_indexer_heights_of(
+        &self,
+        peers: impl IntoIterator<Item = ParticipantId>,
+    ) -> BTreeMap<ParticipantId, ReportedIndexerHeight> {
+        peers
+            .into_iter()
+            .filter_map(|peer| {
+                let height = self.heights.get(&peer)?;
+                let height = height.load(std::sync::atomic::Ordering::Relaxed);
+                Some((peer, ReportedIndexerHeight::from_wire(height)))
             })
             .collect()
     }

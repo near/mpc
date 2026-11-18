@@ -57,3 +57,4 @@ mod reports;
 
 pub use graph::UndirectedEdge;
 pub use health::{CheckComputationSupport, EstablishedConnections};
+pub use reports::{IndexerHeightReport, LegacyIndexerHeightReport, PeerReport};
