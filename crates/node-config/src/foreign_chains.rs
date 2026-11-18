@@ -134,7 +134,7 @@ impl ForeignChainProviderConfig {
 
 impl ForeignChainsConfig {
     pub fn is_empty(&self) -> bool {
-        self.all_configured_chains().is_empty()
+        self.into_iter().next().is_none()
     }
 
     /// Every chain this config has a key for, configured or not, in a fixed order.
@@ -190,17 +190,13 @@ impl ForeignChainsConfig {
     pub fn iter_chains(
         &self,
     ) -> impl Iterator<Item = (dtos::ForeignChain, &ForeignChainConfig)> + '_ {
-        self.all_configured_chains()
-            .into_iter()
-            .map(|(cfg, id)| (id, cfg))
+        self.into_iter()
     }
 
     pub fn validate(&self) -> anyhow::Result<()> {
-        let configured_chains = self.all_configured_chains();
-
         let mut seen_rpc_urls = BTreeSet::new();
 
-        for (foreign_chain_config, identifier) in configured_chains {
+        for (identifier, foreign_chain_config) in self {
             for (provider_name, provider) in foreign_chain_config.providers.iter() {
                 let rpc_url = &provider.rpc_url;
 
@@ -235,11 +231,18 @@ impl ForeignChainsConfig {
 
         Ok(())
     }
+}
 
-    fn all_configured_chains(&self) -> Vec<(&ForeignChainConfig, dtos::ForeignChain)> {
+impl<'a> IntoIterator for &'a ForeignChainsConfig {
+    type Item = (dtos::ForeignChain, &'a ForeignChainConfig);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    /// Every chain that has a local config, in [`ForeignChainsConfig::chain_slots`] order.
+    fn into_iter(self) -> Self::IntoIter {
         self.chain_slots()
-            .filter_map(|(chain, config)| config.map(|config| (config, chain)))
-            .collect()
+            .filter_map(|(chain, config)| Some((chain, config?)))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 

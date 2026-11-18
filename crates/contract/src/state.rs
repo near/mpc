@@ -9,7 +9,7 @@ use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::{
     domain::DomainRegistry,
-    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId},
+    key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     participants::Participants,
     threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{
@@ -43,14 +43,18 @@ impl ProtocolContractState {
 
         Ok(domain_registry)
     }
-    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKeyExtended, Error> {
+    /// While resharing, the keyset being reshared.
+    pub fn current_keyset(&self) -> Option<&Keyset> {
         match self {
-            ProtocolContractState::Running(state) => state.keyset.public_key(domain_id),
-            ProtocolContractState::Resharing(state) => {
-                state.previous_keyset().public_key(domain_id)
-            }
-            _ => Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+            ProtocolContractState::Running(state) => Some(&state.keyset),
+            ProtocolContractState::Resharing(state) => Some(state.previous_keyset()),
+            ProtocolContractState::NotInitialized | ProtocolContractState::Initializing(_) => None,
         }
+    }
+    pub fn public_key(&self, domain_id: DomainId) -> Result<PublicKeyExtended, Error> {
+        self.current_keyset()
+            .ok_or(InvalidState::ProtocolStateNotRunningNorResharing)?
+            .public_key(domain_id)
     }
     pub fn threshold(&self) -> Result<GovernanceThreshold, Error> {
         match self {

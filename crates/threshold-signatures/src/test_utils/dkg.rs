@@ -87,7 +87,7 @@ pub fn run_reshare<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
     new_participants: &[Participant],
     rng: &mut R,
 ) -> GenOutput<C> {
-    assert!(!new_participants.is_empty());
+    assert_ne!(new_participants, []);
     let mut setup = vec![];
 
     for new_participant in new_participants {
