@@ -13,7 +13,8 @@ use crate::providers::robust_ecdsa::RobustEcdsaSignatureProvider;
 use crate::providers::verify_foreign_tx::VerifyForeignTxProvider;
 use crate::providers::{EcdsaSignatureProvider, SignatureProvider};
 use crate::requests::queue::{
-    CHECK_EACH_REQUEST_INTERVAL, PendingRequests, REQUEST_EXPIRATION_BLOCKS,
+    CHECK_EACH_REQUEST_INTERVAL, LegacyEligibleLeaderReader, NoRefinement, PendingRequests,
+    REQUEST_EXPIRATION_BLOCKS,
 };
 use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
@@ -259,31 +260,46 @@ impl MpcClient {
     ) {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
-            PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
+            PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs, _, _>::new(
                 Clock::real(),
                 self.network_client.all_participant_ids(),
                 self.network_client.my_participant_id(),
+                LegacyEligibleLeaderReader::new(
+                    self.network_client.all_participant_ids(),
+                    self.network_client.clone(),
+                    NoRefinement,
+                ),
                 self.network_client.clone(),
             );
-        let mut pending_ckds = PendingRequests::<CKDRequest, contract_args::CKDRespondArgs>::new(
-            Clock::real(),
-            self.network_client.all_participant_ids(),
-            self.network_client.my_participant_id(),
-            self.network_client.clone(),
-        );
+        let mut pending_ckds =
+            PendingRequests::<CKDRequest, contract_args::CKDRespondArgs, _, _>::new(
+                Clock::real(),
+                self.network_client.all_participant_ids(),
+                self.network_client.my_participant_id(),
+                LegacyEligibleLeaderReader::new(
+                    self.network_client.all_participant_ids(),
+                    self.network_client.clone(),
+                    NoRefinement,
+                ),
+                self.network_client.clone(),
+            );
 
         let mut pending_verify_foreign_txs = PendingRequests::<
             VerifyForeignTxRequest,
             contract_args::VerifyForeignTransactionRespondArgs,
+            _,
+            _,
         >::new(
             Clock::real(),
             self.network_client.all_participant_ids(),
             self.network_client.my_participant_id(),
+            LegacyEligibleLeaderReader::new(
+                self.network_client.all_participant_ids(),
+                self.network_client.clone(),
+                self.verify_foreign_tx_provider
+                    .new_eligible_leaders_refiner(),
+            ),
             self.network_client.clone(),
-        )
-        .with_eligible_leaders_refiner(
-            self.verify_foreign_tx_provider
-                .new_eligible_leaders_refiner(),
         );
 
         let mut recent_blocks = RecentBlocksTracker::new(REQUEST_EXPIRATION_BLOCKS);

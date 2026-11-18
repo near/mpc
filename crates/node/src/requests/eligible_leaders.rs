@@ -100,6 +100,10 @@ impl<RequestType: Request> ReadEligibleLeaders<RequestType> for EligibleLeaderRe
 
 /// Assumes that every participant supports every domain. Only for a foreign chain must the
 /// clique come from the chain's supporters.
+///
+/// A participant that is not connected to us is in none of the sets, so it is never an eligible
+/// leader in our view: the cliques are drawn from the participants that are not stale, and
+/// staleness is only known for those connected to us.
 // todo: store this more compactly. With clique sizes 5, 10 and 16 and every participant in a
 // clique of 17, a single set serves all three sizes.
 #[derive(Clone, Default, PartialEq)]

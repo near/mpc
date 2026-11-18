@@ -14,11 +14,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, Weak};
 use time::ext::InstantExt as _;
 
-pub trait ReadAliveParticipants {
-    /// Returns the participants that are currently connected to us, including us.
-    fn alive_participants(&self) -> HashSet<ParticipantId>;
-}
-
 pub trait ReadIndexerHeights {
     /// Returns the height of each indexer, including us. This must return all
     /// participants, even those who are never connected.
@@ -30,9 +25,8 @@ pub trait ReadEligibleLeaders<RequestType> {
     fn read_eligible_leaders(&self, request: &RequestType) -> HashSet<ParticipantId>;
 }
 
-// todo: replace this trait with `ReadAliveParticipants` and `ReadIndexerHeights`, implemented by
-// one type that the queue holds as a type parameter.
-/// Thin API that the queue needs from the network.
+// todo: remove together with `LegacyEligibleLeaderReader`.
+/// What [`LegacyEligibleLeaderReader`] reads from the network.
 pub trait NetworkAPIForRequests: Send + Sync + 'static {
     /// Returns the participants that are currently connected to us.
     fn alive_participants(&self) -> HashSet<ParticipantId>;
@@ -41,10 +35,17 @@ pub trait NetworkAPIForRequests: Send + Sync + 'static {
     fn indexer_heights(&self) -> HashMap<ParticipantId, u64>;
 }
 
+impl<Network: NetworkAPIForRequests + ?Sized> ReadIndexerHeights for Arc<Network> {
+    fn indexer_heights(&self) -> HashMap<ParticipantId, u64> {
+        NetworkAPIForRequests::indexer_heights(self.as_ref())
+    }
+}
+
 /// The minimum time that must elapse before we'll consider each request for another attempt.
 pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
 /// A participant is considered stale if its indexer's highest height is more than this many
-/// blocks behind the reference height of [`PendingRequests::eligible_leaders_and_heights`].
+/// blocks behind the reference height of
+/// [`LegacyEligibleLeaderReader::eligible_leaders_and_heights`].
 pub(super) const STALE_PARTICIPANT_THRESHOLD: BlockCount = BlockCount::new(10);
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
@@ -93,8 +94,8 @@ impl<RequestType> RefineEligibleLeaders<RequestType> for NoRefinement {
 /// The inputs to this queue are:
 ///  - Every block that comes from the indexer. For each block, we need the list of
 ///    requests as well as the list of completed requests (i.e. responses).
-///  - The set of alive participants (nodes that we're currently connected to).
-///  - The height of the indexer of each participant.
+///  - The participants that can lead each request.
+///  - The height of our own indexer.
 ///
 /// What this queue then provides, via `get_requests_to_attempt`, is a list of requests
 /// that we should attempt to generate a request for. The list will be generated based on the
@@ -109,7 +110,7 @@ impl<RequestType> RefineEligibleLeaders<RequestType> for NoRefinement {
 ///    the queue will adapt to the new state and attempt to find new leaders for the requests.
 ///  - If a request is too old so that it would have timed out on chain, it will be
 ///    discarded.
-pub struct PendingRequests<RequestType, ChainRespondArgsType, Refiner = NoRefinement> {
+pub struct PendingRequests<RequestType, ChainRespondArgsType, Leaders, Heights> {
     pub(super) clock: near_time::Clock,
 
     /// All participants in the network, regardless of whether they are online.
@@ -120,18 +121,13 @@ pub struct PendingRequests<RequestType, ChainRespondArgsType, Refiner = NoRefine
     /// from this map. This is the "queue".
     pub(super) requests: HashMap<RequestId, QueuedRequest<RequestType, ChainRespondArgsType>>,
 
-    // todo: hold the network as a type parameter of the struct:
-    // pub struct PendingRequests<RequestType, ChainRespondArgsType, Network, Refiner = NoRefinement>
-    // pub(super) network: Network,
-    // with `Network: ReadAliveParticipants + ReadIndexerHeights` on the impl blocks that read it.
-    /// Provides information about connectivity and indexer heights.
-    pub(super) network_api: Arc<dyn NetworkAPIForRequests>,
+    /// See [`ReadEligibleLeaders`].
+    pub(super) leaders: Leaders,
+    /// See [`ReadIndexerHeights`].
+    pub(super) heights: Heights,
 
     /// Recently completed requests, for debugging purposes only.
     pub(super) recently_completed_requests: CompletedRequests<RequestType, ChainRespondArgsType>,
-
-    /// See [`RefineEligibleLeaders`].
-    pub(super) refine_eligible_leaders: Refiner,
 }
 
 /// All [`IndexedRespondTx`]s observed for one queued request, across the chain's forks.
@@ -580,10 +576,87 @@ impl DropReason {
     }
 }
 
+// todo: remove once `crate::requests::eligible_leaders::EligibleLeaderReader` is wired.
+/// Eligible leaders as the queue chose them before it read them through [`ReadEligibleLeaders`]:
+/// connected to us, not stale against the majority height, and allowed by the refiner.
+pub struct LegacyEligibleLeaderReader<Refiner = NoRefinement> {
+    pub(super) all_participants: Vec<ParticipantId>,
+    pub(super) network_api: Arc<dyn NetworkAPIForRequests>,
+    refine_eligible_leaders: Refiner,
+}
+
+impl<Refiner> LegacyEligibleLeaderReader<Refiner> {
+    pub fn new(
+        all_participants: Vec<ParticipantId>,
+        network_api: Arc<dyn NetworkAPIForRequests>,
+        refine_eligible_leaders: Refiner,
+    ) -> Self {
+        Self {
+            all_participants,
+            network_api,
+            refine_eligible_leaders,
+        }
+    }
+
+    /// Returns the set of participants that are eligible to be leaders for the requests, and the
+    /// reference height their staleness is measured against.
+    ///
+    /// The reference height is the height that a majority of alive participants has reached. Peers
+    /// self-report their heights, and the majority keeps a minority of them from raising the
+    /// reference height so far that every honest participant looks stale. Our own height is only
+    /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
+    /// eligible leaders.
+    pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
+        let indexer_heights = self.network_api.indexer_heights();
+        let alive_participants = self.network_api.alive_participants();
+        let height_of = |participant: &ParticipantId| {
+            BlockHeight::new(indexer_heights.get(participant).copied().unwrap_or(0))
+        };
+        let reference_height = majority_height(alive_participants.iter().map(height_of))
+            .unwrap_or(BlockHeight::new(0));
+        let eligible_leaders = self
+            .all_participants
+            .iter()
+            .filter(|p| {
+                alive_participants.contains(p)
+                    && height_of(p).saturating_add(STALE_PARTICIPANT_THRESHOLD) >= reference_height
+            })
+            .copied()
+            .collect::<HashSet<_>>();
+        EligibleLeadersAndHeights {
+            eligible_leaders,
+            reference_height,
+        }
+    }
+}
+
+impl<RequestType, Refiner> ReadEligibleLeaders<RequestType> for LegacyEligibleLeaderReader<Refiner>
+where
+    RequestType: Request,
+    Refiner: RefineEligibleLeaders<RequestType>,
+{
+    fn read_eligible_leaders(&self, request: &RequestType) -> HashSet<ParticipantId> {
+        let EligibleLeadersAndHeights {
+            eligible_leaders, ..
+        } = self.eligible_leaders_and_heights();
+        let request_eligible_leaders = self
+            .refine_eligible_leaders
+            .refine(request, &eligible_leaders);
+        if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
+            let chain = request
+                .get_foreign_chain()
+                .map_or("", |chain| chain.label());
+            metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
+                .with_label_values(&[RequestType::get_type().to_string().as_str(), chain])
+                .inc();
+        }
+        request_eligible_leaders
+    }
+}
+
 pub(super) struct EligibleLeadersAndHeights {
     pub eligible_leaders: HashSet<ParticipantId>,
     pub reference_height: BlockHeight,
-    pub my_indexer_height: BlockHeight,
 }
 
 /// Returns the highest height reached by more than half of `heights` (their lower median), or
@@ -596,53 +669,36 @@ pub(super) fn majority_height(
     heights.get(heights.len() / 2).copied()
 }
 
-impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
-    PendingRequests<RequestType, ChainRespondArgsType>
+impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs, Leaders, Heights>
+    PendingRequests<RequestType, ChainRespondArgsType, Leaders, Heights>
 {
     pub fn new(
         clock: near_time::Clock,
         all_participants: Vec<ParticipantId>,
         my_participant_id: ParticipantId,
-        network_api: Arc<dyn NetworkAPIForRequests>,
+        leaders: Leaders,
+        heights: Heights,
     ) -> Self {
         Self {
             clock,
             all_participants,
             my_participant_id,
             requests: HashMap::new(),
-            network_api,
+            leaders,
+            heights,
             recently_completed_requests: CompletedRequests::default(),
-            refine_eligible_leaders: NoRefinement,
         }
     }
 }
 
-impl<RequestType, ChainRespondArgsType, Refiner>
-    PendingRequests<RequestType, ChainRespondArgsType, Refiner>
+impl<RequestType, ChainRespondArgsType, Leaders, Heights>
+    PendingRequests<RequestType, ChainRespondArgsType, Leaders, Heights>
 where
     RequestType: Request + Clone,
     ChainRespondArgsType: ChainRespondArgs,
-    Refiner: RefineEligibleLeaders<RequestType>,
+    Leaders: ReadEligibleLeaders<RequestType>,
+    Heights: ReadIndexerHeights,
 {
-    /// Replaces the per-request [`RefineEligibleLeaders`] hook.
-    pub fn with_eligible_leaders_refiner<NewRefiner>(
-        self,
-        refiner: NewRefiner,
-    ) -> PendingRequests<RequestType, ChainRespondArgsType, NewRefiner>
-    where
-        NewRefiner: RefineEligibleLeaders<RequestType>,
-    {
-        PendingRequests {
-            clock: self.clock,
-            all_participants: self.all_participants,
-            my_participant_id: self.my_participant_id,
-            requests: self.requests,
-            network_api: self.network_api,
-            recently_completed_requests: self.recently_completed_requests,
-            refine_eligible_leaders: refiner,
-        }
-    }
-
     /// This must be called for every block that comes from the indexer.
     /// These are the requests successfully submitted in the block, and the
     /// completed_requests are the requests whose responses are included in the block.
@@ -705,50 +761,6 @@ where
         }
     }
 
-    /// Returns the set of participants that are eligible to be leaders for the requests,
-    /// the reference height their staleness is measured against, and our own indexer height.
-    ///
-    /// The reference height is the height that a majority of alive participants has reached. Peers
-    /// self-report their heights, and the majority keeps a minority of them from raising the
-    /// reference height so far that every honest participant looks stale. Our own height is only
-    /// one of the inputs, not a floor, so that nodes with the same view of the heights agree on the
-    /// eligible leaders.
-    pub(super) fn eligible_leaders_and_heights(&self) -> EligibleLeadersAndHeights {
-        // todo: read through the new traits, in an impl block bounded by
-        // `Network: ReadAliveParticipants + ReadIndexerHeights`:
-        // let indexer_heights = self.network.indexer_heights();
-        // let alive_participants = self.network.alive_participants();
-        let indexer_heights = self.network_api.indexer_heights();
-        let alive_participants = self.network_api.alive_participants();
-        let height_of = |participant: &ParticipantId| {
-            BlockHeight::new(indexer_heights.get(participant).copied().unwrap_or(0))
-        };
-        let my_indexer_height = height_of(&self.my_participant_id);
-        let reference_height = majority_height(alive_participants.iter().map(height_of))
-            .unwrap_or(BlockHeight::new(0));
-        // todo: `alive_participants` only tells us that a participant is connected to us, not that
-        // it is connected to enough peers to lead a request.
-        // Example with participants A, B, C, D, a threshold of 3, and us being B: A is connected
-        // to B only, while B, C and D are all connected to each other. We consider A eligible, but
-        // every request A leads fails, and is only picked up after `LEADER_FAILOVER_INTERVAL`.
-        // The check should instead ask whether a clique of the required size that contains the
-        // participant exists among the peers we are connected to.
-        let eligible_leaders = self
-            .all_participants
-            .iter()
-            .filter(|p| {
-                alive_participants.contains(p)
-                    && height_of(p).saturating_add(STALE_PARTICIPANT_THRESHOLD) >= reference_height
-            })
-            .copied()
-            .collect::<HashSet<_>>();
-        EligibleLeadersAndHeights {
-            eligible_leaders,
-            reference_height,
-            my_indexer_height,
-        }
-    }
-
     /// Returns the list of requests that we should attempt to generate a response for,
     /// right now, as the leader.
     ///
@@ -783,12 +795,13 @@ where
         };
         let now = self.clock.now();
 
-        let EligibleLeadersAndHeights {
-            eligible_leaders,
-            my_indexer_height,
-            ..
-        } = self.eligible_leaders_and_heights();
-        tracing::debug!(target: "request", "Eligible leaders: {:?}", eligible_leaders);
+        let my_indexer_height = BlockHeight::new(
+            self.heights
+                .indexer_heights()
+                .get(&self.my_participant_id)
+                .copied()
+                .unwrap_or(0),
+        );
 
         let mut result = Vec::new();
 
@@ -819,18 +832,8 @@ where
                 block_height = %request.block_height,
             )
             .entered();
-            let request_eligible_leaders = self
-                .refine_eligible_leaders
-                .refine(&request.request, &eligible_leaders);
-            if request_eligible_leaders.is_empty() && !eligible_leaders.is_empty() {
-                let chain = request
-                    .request
-                    .get_foreign_chain()
-                    .map_or("", |chain| chain.label());
-                metrics::MPC_NUM_REQUESTS_WITHOUT_REFINED_LEADER_TOTAL
-                    .with_label_values(&[RequestType::get_type().to_string().as_str(), chain])
-                    .inc();
-            }
+            let request_eligible_leaders = self.leaders.read_eligible_leaders(&request.request);
+            tracing::debug!(target: "request", "Eligible leaders: {:?}", request_eligible_leaders);
             match request.process(
                 self.my_participant_id,
                 &request_eligible_leaders,
@@ -927,8 +930,8 @@ where
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        BlockCount, BlockHeight, NetworkAPIForRequests, PendingRequests, QueuedRequest,
-        majority_height,
+        BlockCount, BlockHeight, LegacyEligibleLeaderReader, NetworkAPIForRequests, NoRefinement,
+        PendingRequests, QueuedRequest, majority_height,
     };
     use crate::primitives::ParticipantId;
     use crate::requests::queue::{
@@ -1033,6 +1036,12 @@ mod tests {
 
     type TestRequest = SignatureRequest;
     type TestRequestRespondArgs = contract_args::SignatureRespondArgs;
+    type TestPendingRequests<Refiner = NoRefinement> = PendingRequests<
+        TestRequest,
+        TestRequestRespondArgs,
+        LegacyEligibleLeaderReader<Refiner>,
+        Arc<TestNetworkAPI>,
+    >;
 
     struct TestSetup {
         clock: FakeClock,
@@ -1051,22 +1060,25 @@ mod tests {
 
     impl TestSetup {
         const MY_INDEX: usize = 1;
-        fn new() -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
+        fn new() -> (TestPendingRequests, Self) {
             Self::with_participant_count(4)
         }
 
-        fn with_participant_count(
-            count: usize,
-        ) -> (PendingRequests<TestRequest, TestRequestRespondArgs>, Self) {
+        fn with_participant_count(count: usize) -> (TestPendingRequests, Self) {
             let clock = FakeClock::default();
             let participants = into_participant_ids(&generate_participants(count));
             let my_participant_id = participants[Self::MY_INDEX];
             let network_api = Arc::new(TestNetworkAPI::new(&participants));
 
-            let pending_requests = PendingRequests::<TestRequest, TestRequestRespondArgs>::new(
+            let pending_requests = PendingRequests::new(
                 clock.clock(),
                 participants.clone(),
                 my_participant_id,
+                LegacyEligibleLeaderReader::new(
+                    participants.clone(),
+                    network_api.clone(),
+                    NoRefinement,
+                ),
                 network_api.clone(),
             );
             for participant in &participants {
@@ -1139,7 +1151,7 @@ mod tests {
         /// the resulting update to `pending`. Returns the new block height.
         fn update<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
+            pending: &mut TestPendingRequests<R>,
         ) -> BlockHeight {
             let new_height = self.max_known_height() + 1;
             let new_block = self.head.descendant(new_height);
@@ -1163,7 +1175,7 @@ mod tests {
         /// Like [`update`] but forks the current head, making a new canonical chain.
         fn update_canonical_fork<R: super::RefineEligibleLeaders<TestRequest>>(
             &mut self,
-            pending: &mut PendingRequests<TestRequest, TestRequestRespondArgs, R>,
+            pending: &mut TestPendingRequests<R>,
         ) -> BlockHeight {
             let new_height = self.max_known_height() + 1;
             if self.fork.is_none() {
@@ -1496,7 +1508,7 @@ mod tests {
             .set_height(setup.participant_ids[0], peer_height);
 
         // When
-        let eligible = pending_requests.eligible_leaders_and_heights();
+        let eligible = pending_requests.leaders.eligible_leaders_and_heights();
 
         // Then
         assert_eq!(eligible.reference_height, BlockHeight::new(100));
@@ -1523,7 +1535,7 @@ mod tests {
 
         // Then
         assert!(to_attempt.is_empty());
-        let eligible = pending_requests.eligible_leaders_and_heights();
+        let eligible = pending_requests.leaders.eligible_leaders_and_heights();
         assert_eq!(eligible.reference_height, BlockHeight::new(120));
         assert_eq!(eligible.eligible_leaders, peers.copied().collect());
     }
@@ -1830,6 +1842,24 @@ mod tests {
         }
     }
 
+    /// Rebuilds `pending_requests`, which must not hold any request yet, with `refiner`.
+    fn with_eligible_leaders_refiner(
+        pending_requests: TestPendingRequests,
+        refiner: TestRefiner,
+    ) -> TestPendingRequests<TestRefiner> {
+        PendingRequests::new(
+            pending_requests.clock,
+            pending_requests.all_participants.clone(),
+            pending_requests.my_participant_id,
+            LegacyEligibleLeaderReader::new(
+                pending_requests.all_participants,
+                pending_requests.leaders.network_api,
+                refiner,
+            ),
+            pending_requests.heights,
+        )
+    }
+
     /// A request's leader order starts with participant 0 and then us; the refiner
     /// excludes participant 0, so leadership falls to us and we attempt the request.
     #[test_log::test]
@@ -1839,7 +1869,7 @@ mod tests {
         let (pending_requests, mut setup) = TestSetup::new();
         let allowed: HashSet<ParticipantId> = setup.participant_ids[1..].iter().copied().collect();
         let refiner = TestRefiner::new(allowed);
-        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
+        let mut pending_requests = with_eligible_leaders_refiner(pending_requests, refiner);
         let req = setup.add_request_leader_order(&[0, TestSetup::MY_INDEX]);
         setup.update(&mut pending_requests);
 
@@ -1858,7 +1888,7 @@ mod tests {
         let (pending_requests, mut setup) = TestSetup::new();
         let refiner = TestRefiner::new(HashSet::new());
         let allowed = refiner.allowed.clone();
-        let mut pending_requests = pending_requests.with_eligible_leaders_refiner(refiner);
+        let mut pending_requests = with_eligible_leaders_refiner(pending_requests, refiner);
         let req = setup.add_request_leader();
         setup.update(&mut pending_requests);
 

@@ -1,6 +1,6 @@
 use super::queue::{
-    ComputationProgress, EligibleLeadersAndHeights, PendingRequests, QueuedRequest,
-    RefineEligibleLeaders,
+    ComputationProgress, EligibleLeadersAndHeights, LegacyEligibleLeaderReader, PendingRequests,
+    QueuedRequest, ReadEligibleLeaders,
 };
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
@@ -177,50 +177,14 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     }
 }
 
-impl<RequestType, ChainRespondArgsType, Refiner> Debug
-    for PendingRequests<RequestType, ChainRespondArgsType, Refiner>
-where
-    RequestType: Request + Clone,
-    ChainRespondArgsType: ChainRespondArgs,
-    Refiner: RefineEligibleLeaders<RequestType>,
-{
+impl<Refiner> Debug for LegacyEligibleLeaderReader<Refiner> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut request_lines = Vec::new();
         let EligibleLeadersAndHeights {
             eligible_leaders,
             reference_height,
-            ..
         } = self.eligible_leaders_and_heights();
-        // todo: read through the new traits, with
-        // `Network: ReadAliveParticipants + ReadIndexerHeights` on this impl:
-        // let online_participants = self.network.alive_participants();
-        // let indexer_heights = self.network.indexer_heights();
         let online_participants = self.network_api.alive_participants();
         let indexer_heights = self.network_api.indexer_heights();
-
-        for request in self.requests.values() {
-            let request_eligible_leaders = self
-                .refine_eligible_leaders
-                .refine(&request.request, &eligible_leaders);
-            let debug_line = request.debug_print(
-                &self.clock,
-                self.my_participant_id,
-                &request_eligible_leaders,
-            );
-            request_lines.push((request.block_height, request.request.get_id(), debug_line));
-        }
-
-        for completed in &self.recently_completed_requests.requests {
-            let debug_line = format!("{:?}", completed);
-            request_lines.push((
-                completed.indexed_block_height,
-                completed.request.get_id(),
-                debug_line,
-            ));
-        }
-
-        request_lines.sort_unstable_by_key(|(block_height, id, _)| (*block_height, *id));
-        request_lines.reverse();
 
         writeln!(f, "Participants:")?;
         for participant in &self.all_participants {
@@ -242,7 +206,43 @@ where
             )?;
         }
 
-        writeln!(f, "Reference block height: {}", reference_height)?;
+        writeln!(f, "Reference block height: {}", reference_height)
+    }
+}
+
+impl<RequestType, ChainRespondArgsType, Leaders, Heights> Debug
+    for PendingRequests<RequestType, ChainRespondArgsType, Leaders, Heights>
+where
+    RequestType: Request + Clone,
+    ChainRespondArgsType: ChainRespondArgs,
+    Leaders: ReadEligibleLeaders<RequestType> + Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut request_lines = Vec::new();
+
+        for request in self.requests.values() {
+            let request_eligible_leaders = self.leaders.read_eligible_leaders(&request.request);
+            let debug_line = request.debug_print(
+                &self.clock,
+                self.my_participant_id,
+                &request_eligible_leaders,
+            );
+            request_lines.push((request.block_height, request.request.get_id(), debug_line));
+        }
+
+        for completed in &self.recently_completed_requests.requests {
+            let debug_line = format!("{:?}", completed);
+            request_lines.push((
+                completed.indexed_block_height,
+                completed.request.get_id(),
+                debug_line,
+            ));
+        }
+
+        request_lines.sort_unstable_by_key(|(block_height, id, _)| (*block_height, *id));
+        request_lines.reverse();
+
+        write!(f, "{:?}", self.leaders)?;
 
         writeln!(f, "Recent {}s:", RequestType::get_type())?;
         for (_, _, debug_line) in request_lines {

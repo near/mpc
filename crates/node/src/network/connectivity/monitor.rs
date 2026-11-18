@@ -102,8 +102,7 @@ struct DebugConnectivityView<N, S> {
 //    }
 //}
 
-// todo: add `ConnectivityMonitorHandle`, the read side of the monitor. It must implement the traits
-// the request queue defines: `crate::requests::queue::ReadAliveParticipants` and
+// todo: add a reader of the monitor's heights for the request queue. It must implement
 // `crate::requests::queue::ReadIndexerHeights`.
 
 trait ApplyPeerReport<N, R> {
