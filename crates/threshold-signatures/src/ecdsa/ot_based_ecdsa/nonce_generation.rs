@@ -99,6 +99,110 @@ pub fn validate_sign_arguments(
     Ok(participants)
 }
 
+/// The shares opened during nonce generation, summed over the participants seen so far.
+struct Openings {
+    e: Scalar,
+    alpha: Scalar,
+    beta: Scalar,
+}
+
+impl Openings {
+    /// Our own linearized shares.
+    fn new(
+        participants: &ParticipantList,
+        me: Participant,
+        args: &SignArguments,
+    ) -> Result<Self, ProtocolError> {
+        // linearize ki ei ai bi xi
+        // Spec 1.1
+        let lambda_me = participants.lagrange::<Secp256>(me)?;
+
+        let k_prime_i = lambda_me * args.triple0.0.a;
+        let a_prime_i = lambda_me * args.triple1.0.a;
+        let b_prime_i = lambda_me * args.triple1.0.b;
+        let x_prime_i = lambda_me * args.keygen_out.private_share.to_scalar();
+
+        Ok(Self {
+            e: lambda_me * args.triple0.0.c,
+            // alphai = ki' + ai'
+            // Spec 2.1
+            alpha: k_prime_i + a_prime_i,
+            // betai = xi' + bi'
+            beta: x_prime_i + b_prime_i,
+        })
+    }
+
+    fn add_e(&mut self, e_j: Scalar) -> Result<(), ProtocolError> {
+        if e_j.is_zero().into() {
+            return Err(ProtocolError::AssertionFailed(
+                "Received zero share of kd, indicating a triple wasn't available.".to_string(),
+            ));
+        }
+
+        // Spec 1.4
+        self.e += e_j;
+        Ok(())
+    }
+
+    fn add_alpha_beta(&mut self, alpha_j: Scalar, beta_j: Scalar) {
+        // Spec 2.4
+        self.alpha += alpha_j;
+        self.beta += beta_j;
+    }
+
+    fn check_e(&self, args: &SignArguments) -> Result<(), ProtocolError> {
+        // E =?= e*G
+        // Spec 1.5
+        if args.triple0.1.big_c != (ProjectivePoint::GENERATOR * self.e).to_affine() {
+            return Err(ProtocolError::AssertionFailed(
+                "received incorrect shares of kd".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_alpha_beta(&self, args: &SignArguments) -> Result<(), ProtocolError> {
+        let big_k: ProjectivePoint = args.triple0.1.big_a.into();
+        let big_a: ProjectivePoint = args.triple1.1.big_a.into();
+        let big_b: ProjectivePoint = args.triple1.1.big_b.into();
+        let big_x: ProjectivePoint = args.keygen_out.public_key.to_element();
+
+        // alpha*G =?= K + A
+        // beta*G =?= X + B
+        // Spec 2.5
+        if (ProjectivePoint::GENERATOR * self.alpha != big_k + big_a)
+            || (ProjectivePoint::GENERATOR * self.beta != big_x + big_b)
+        {
+            return Err(ProtocolError::AssertionFailed(
+                "received incorrect shares of additive triple phase.".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Derives `R` and our shares of `k` and `sigma` from the checked sums.
+    fn into_output(self, args: &SignArguments) -> Result<NonceGenerationOutput, ProtocolError> {
+        // Compute R = 1/e * D
+        // Spec 2.6
+        let e_inv: Option<Scalar> = self.e.invert().into();
+        let e_inv = e_inv
+            .ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
+        let big_r = (args.triple0.1.big_b * e_inv).into();
+
+        // sigmai = alpha*xi - beta*ai + ci
+        // Spec 2.7
+        let private_share = args.keygen_out.private_share.to_scalar();
+        let sigma_i =
+            self.alpha * private_share - (self.beta * args.triple1.0.a - args.triple1.0.c);
+
+        Ok(NonceGenerationOutput {
+            big_r,
+            k: args.triple0.0.a,
+            sigma: sigma_i,
+        })
+    }
+}
+
 /// The two nonce generation rounds, run on a caller-owned channel so that a longer protocol
 /// can continue on the same channel with further waitpoints.
 pub async fn nonce_generation_rounds(
@@ -107,122 +211,66 @@ pub async fn nonce_generation_rounds(
     me: Participant,
     args: SignArguments,
 ) -> Result<NonceGenerationOutput, ProtocolError> {
+    let mut openings = Openings::new(participants, me, &args)?;
+
     // Round 1
-    // Extracting triples private variables (ai, bi, ci)
-    let a_i = args.triple1.0.a;
-    let b_i = args.triple1.0.b;
-    let c_i = args.triple1.0.c;
-
-    // Extracting triples public variables (A, B, _)
-    // notice C is not used
-    let big_a: ProjectivePoint = args.triple1.1.big_a.into();
-    let big_b: ProjectivePoint = args.triple1.1.big_b.into();
-
-    // Extracting triples private variables (ki, _, ei)
-    // notice di is not used
-    let k_i = args.triple0.0.a;
-    let e_i = args.triple0.0.c;
-
-    // Extracting triples public variables (K, D, E)
-    let big_k: ProjectivePoint = args.triple0.1.big_a.into();
-    let big_d = args.triple0.1.big_b;
-    let big_e = args.triple0.1.big_c;
-
-    // linearize ki ei ai bi ci xi
-    // Spec 1.1
-    let lambda_me = participants.lagrange::<Secp256>(me)?;
-
-    let k_prime_i = lambda_me * k_i;
-    let e_i: Scalar = lambda_me * e_i;
-
-    let a_prime_i = lambda_me * a_i;
-    let b_prime_i = lambda_me * b_i;
-
-    let big_x: ProjectivePoint = args.keygen_out.public_key.to_element();
-    let private_share = args.keygen_out.private_share.to_scalar();
-    let x_prime_i = lambda_me * private_share;
-
     // Send ei
     // Spec 1.2
     let wait0 = chan.next_waitpoint();
-    chan.send_many(wait0, &e_i)?;
+    chan.send_many(wait0, &openings.e)?;
 
     // Receive ej and compute e = SUM_j ej
     // Spec 1.3
-    let mut e = e_i;
-
     for (_, e_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
-        if e_j.is_zero().into() {
-            return Err(ProtocolError::AssertionFailed(
-                "Received zero share of kd, indicating a triple wasn't available.".to_string(),
-            ));
-        }
-
-        // Spec 1.4
-        e += e_j;
+        openings.add_e(e_j)?;
     }
-
-    // E =?= e*G
-    // Spec 1.5
-    if big_e != (ProjectivePoint::GENERATOR * e).to_affine() {
-        return Err(ProtocolError::AssertionFailed(
-            "received incorrect shares of kd".to_string(),
-        ));
-    }
+    openings.check_e(&args)?;
 
     // Round 2
-    // alphai = ki' + ai'
-    // Spec 2.1
-    let alpha_i: Scalar = k_prime_i + a_prime_i;
-    // betai = xi' + bi'
-    let beta_i: Scalar = x_prime_i + b_prime_i;
-
     // Send alphai and betai
     // Spec 2.2
     let wait1 = chan.next_waitpoint();
-    chan.send_many(wait1, &(alpha_i, beta_i))?;
+    chan.send_many(wait1, &(openings.alpha, openings.beta))?;
 
     // Receive and compute alpha = SUM_j alphaj
     // Receive and compute beta = SUM_j betaj
     // Spec 2.3
-    let mut alpha = alpha_i;
-    let mut beta = beta_i;
-
     for (_, (alpha_j, beta_j)) in
         recv_from_others::<(Scalar, Scalar)>(chan, wait1, participants, me).await?
     {
-        // Spec 2.4
-        alpha += alpha_j;
-        beta += beta_j;
+        openings.add_alpha_beta(alpha_j, beta_j);
     }
+    openings.check_alpha_beta(&args)?;
 
-    // alpha*G =?= K + A
-    // beta*G =?= X + B
-    // Spec 2.5
-    if (ProjectivePoint::GENERATOR * alpha != big_k + big_a)
-        || (ProjectivePoint::GENERATOR * beta != big_x + big_b)
+    openings.into_output(&args)
+}
+
+/// [`nonce_generation_rounds`] with both rounds merged into one.
+///
+/// Not wire-compatible with [`nonce_generation_rounds`].
+pub async fn merged_nonce_generation_round(
+    chan: &mut SharedChannel,
+    participants: &ParticipantList,
+    me: Participant,
+    args: SignArguments,
+) -> Result<NonceGenerationOutput, ProtocolError> {
+    let mut openings = Openings::new(participants, me, &args)?;
+
+    // Send ei, alphai and betai
+    let wait0 = chan.next_waitpoint();
+    chan.send_many(wait0, &(openings.e, openings.alpha, openings.beta))?;
+
+    // Receive and compute e, alpha and beta
+    for (_, (e_j, alpha_j, beta_j)) in
+        recv_from_others::<(Scalar, Scalar, Scalar)>(chan, wait0, participants, me).await?
     {
-        return Err(ProtocolError::AssertionFailed(
-            "received incorrect shares of additive triple phase.".to_string(),
-        ));
+        openings.add_e(e_j)?;
+        openings.add_alpha_beta(alpha_j, beta_j);
     }
+    openings.check_e(&args)?;
+    openings.check_alpha_beta(&args)?;
 
-    // Compute R = 1/e * D
-    // Spec 2.6
-    let e_inv: Option<Scalar> = e.invert().into();
-    let e_inv =
-        e_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
-    let big_r = (big_d * e_inv).into();
-
-    // sigmai = alpha*xi - beta*ai + ci
-    // Spec 2.7
-    let sigma_i = alpha * private_share - (beta * a_i - c_i);
-
-    Ok(NonceGenerationOutput {
-        big_r,
-        k: k_i,
-        sigma: sigma_i,
-    })
+    openings.into_output(&args)
 }
 
 #[cfg(test)]

@@ -23,11 +23,13 @@ See [`triples/README.md`](triples/README.md) for the full OT pipeline.
 
 The signing protocol. Runs three rounds over one channel, consuming two Beaver triples once the message hash is known. The key-derivation tweak is applied locally between rounds 2 and 3. Nothing binds `R`, which `triple0` alone determines, to the message, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
 
+Also exposes `sign_two_rounds`, which merges the two nonce generation rounds into one and is not wire-compatible with `sign`. See the [two-round variant](../../../docs/ecdsa/ot_based_ecdsa/signing.md#two-round-variant).
+
 Also holds round 3, with a designated coordinator. Takes `R`, the shares `k_i` and tweaked `sigma_i`, and the message hash; the coordinator aggregates partial signatures into the final ECDSA `Signature`. See the [signing specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#signing).
 
 ### `nonce_generation.rs`
 
-Rounds 1 and 2 of `sign`. Consume two Beaver triples to produce `R` and the shares `k_i`, `sigma_i`, which stay local to the run. See the [nonce generation specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#nonce-generation).
+Rounds 1 and 2 of `sign`, and their merged form used by `sign_two_rounds`. Consume two Beaver triples to produce `R` and the shares `k_i`, `sigma_i`, which stay local to the run. See the [nonce generation specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md#nonce-generation).
 
 ## Types
 

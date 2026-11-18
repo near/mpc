@@ -63,7 +63,8 @@ More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/triples.md).
 
 4) **Signing (online)**: a three-round protocol that consumes two Beaver
-triples once the message is known. More details can be found in
+triples once the message is known. A two-round variant merges the two nonce
+generation rounds into one. More details can be found in
 [docs](docs/ecdsa/ot_based_ecdsa/signing.md).
 
 ### Threshold EdDSA Functionalities

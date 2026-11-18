@@ -2,7 +2,8 @@ use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
 
 use crate::ecdsa::ot_based_ecdsa::nonce_generation::{
-    NonceGenerationOutput, SignArguments, nonce_generation_rounds, validate_sign_arguments,
+    NonceGenerationOutput, SignArguments, merged_nonce_generation_round, nonce_generation_rounds,
+    validate_sign_arguments,
 };
 use crate::ecdsa::{
     AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
@@ -22,6 +23,12 @@ pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 3;
 /// before signing.
 #[cfg(test)]
 pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 2;
+/// Maximum incoming buffer entries for the coordinator of [`sign_two_rounds`]: the nonce
+/// generation waitpoint plus the signature-share waitpoint.
+pub(crate) const OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 2;
+/// Maximum incoming buffer entries for non-coordinator participants of [`sign_two_rounds`].
+#[cfg(test)]
+pub(crate) const OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
 
 /// Nonce generation and signing as a single protocol, consuming two triples directly.
 ///
@@ -47,14 +54,7 @@ pub fn sign(
     tweak: Tweak,
     msg_hash: Scalar,
 ) -> Result<impl Protocol<Output = SignatureOption> + use<>, InitializationError> {
-    let participants = validate_sign_arguments(participants, me, &args)?;
-
-    if !participants.contains(coordinator) {
-        return Err(InitializationError::MissingParticipant {
-            role: "coordinator",
-            participant: coordinator,
-        });
-    }
+    let participants = validate_signers(participants, coordinator, me, &args)?;
 
     let ctx = Comms::with_buffer_capacity(OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
     let fut = do_sign(
@@ -69,6 +69,88 @@ pub fn sign(
     Ok(make_protocol(ctx, fut))
 }
 
+/// [`sign`] with the two nonce generation rounds merged into one, for two rounds in total.
+///
+/// Not wire-compatible with [`sign`]: every participant of a run must call the same one.
+/// The safety contract of [`sign`] applies, with `big_r` known once the merged round completes.
+pub fn sign_two_rounds(
+    participants: &[Participant],
+    coordinator: Participant,
+    me: Participant,
+    args: SignArguments,
+    tweak: Tweak,
+    msg_hash: Scalar,
+) -> Result<impl Protocol<Output = SignatureOption> + use<>, InitializationError> {
+    let participants = validate_signers(participants, coordinator, me, &args)?;
+
+    let ctx =
+        Comms::with_buffer_capacity(OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_COORDINATOR_ENTRIES);
+    let fut = do_sign_two_rounds(
+        ctx.shared_channel(),
+        participants,
+        coordinator,
+        me,
+        args,
+        tweak,
+        msg_hash,
+    );
+    Ok(make_protocol(ctx, fut))
+}
+
+/// Checks `args` and that both `me` and `coordinator` are among the participants.
+fn validate_signers(
+    participants: &[Participant],
+    coordinator: Participant,
+    me: Participant,
+    args: &SignArguments,
+) -> Result<ParticipantList, InitializationError> {
+    let participants = validate_sign_arguments(participants, me, args)?;
+
+    if !participants.contains(coordinator) {
+        return Err(InitializationError::MissingParticipant {
+            role: "coordinator",
+            participant: coordinator,
+        });
+    }
+
+    Ok(participants)
+}
+
+fn derived_public_key(args: &SignArguments, tweak: &Tweak) -> AffinePoint {
+    tweak
+        .derive_verifying_key(&args.keygen_out.public_key)
+        .to_element()
+        .to_affine()
+}
+
+async fn do_sign_two_rounds(
+    mut chan: SharedChannel,
+    participants: ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    args: SignArguments,
+    tweak: Tweak,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    let derived_public_key = derived_public_key(&args, &tweak);
+
+    let nonce_package = merged_nonce_generation_round(&mut chan, &participants, me, args)
+        .await?
+        .with_tweak(&tweak);
+    chan.yield_point().await;
+
+    sign_round(
+        &mut chan,
+        &participants,
+        coordinator,
+        me,
+        derived_public_key,
+        &nonce_package,
+        msg_hash,
+    )
+    .await
+}
+
 async fn do_sign(
     mut chan: SharedChannel,
     participants: ParticipantList,
@@ -78,10 +160,7 @@ async fn do_sign(
     tweak: Tweak,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    let derived_public_key = tweak
-        .derive_verifying_key(&args.keygen_out.public_key)
-        .to_element()
-        .to_affine();
+    let derived_public_key = derived_public_key(&args, &tweak);
 
     let nonce_package = nonce_generation_rounds(&mut chan, &participants, me, args)
         .await?
@@ -271,6 +350,28 @@ mod test {
         }
 
         fn run_sign(&self, coordinator: Participant) -> Vec<(Participant, SignatureOption)> {
+            self.run_with(coordinator, sign)
+        }
+
+        fn run_sign_two_rounds(
+            &self,
+            coordinator: Participant,
+        ) -> Vec<(Participant, SignatureOption)> {
+            self.run_with(coordinator, sign_two_rounds)
+        }
+
+        fn run_with<P: Protocol<Output = SignatureOption> + 'static>(
+            &self,
+            coordinator: Participant,
+            sign: impl Fn(
+                &[Participant],
+                Participant,
+                Participant,
+                SignArguments,
+                Tweak,
+                Scalar,
+            ) -> Result<P, InitializationError>,
+        ) -> Vec<(Participant, SignatureOption)> {
             let mut protocols: GenProtocol<SignatureOption> =
                 Vec::with_capacity(self.participants.len());
             for (i, p) in self.participants.iter().enumerate() {
@@ -457,6 +558,69 @@ mod test {
                 coordinator,
                 OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
                 OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
+        );
+    }
+
+    #[rstest]
+    #[case(2, 2)]
+    #[case(3, 3)]
+    #[case(5, 3)]
+    fn sign_two_rounds__should_produce_the_same_signature_as_sign(
+        #[case] num_participants: usize,
+        #[case] threshold: usize,
+    ) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let setup = Setup::new(num_participants, threshold, &mut rng);
+        let coordinator = setup.participants[0];
+        let expected =
+            check_one_coordinator_output(setup.run_sign(coordinator), coordinator).unwrap();
+
+        // When
+        let result = setup.run_sign_two_rounds(coordinator);
+
+        // Then
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        assert_eq!((signature.big_r, signature.s), (expected.big_r, expected.s));
+        setup
+            .derived_verifying_key()
+            .verify(MSG, &to_k256_signature(&signature))
+            .unwrap();
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    fn sign_two_rounds__should_bound_message_buffer_by_role(
+        #[case] num_participants: usize,
+        #[case] threshold: usize,
+    ) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let setup = Setup::new(num_participants, threshold, &mut rng);
+        let coordinator = setup.participants[0];
+        let args = setup.args_by_participant();
+
+        // When + Then
+        assert_buffer_capacity(
+            &setup.participants,
+            &mut rng,
+            |comms, p_list, p, _rng_p| {
+                do_sign_two_rounds(
+                    comms.shared_channel(),
+                    p_list,
+                    coordinator,
+                    p,
+                    args[&p].clone(),
+                    setup.tweak,
+                    setup.msg_hash,
+                )
+            },
+            expected_buffer_by_role(
+                coordinator,
+                OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_COORDINATOR_ENTRIES,
+                OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_PARTICIPANT_ENTRIES,
             ),
         );
     }

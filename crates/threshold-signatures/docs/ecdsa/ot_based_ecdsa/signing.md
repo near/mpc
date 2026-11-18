@@ -104,5 +104,29 @@ the derived public key $X + \epsilon \cdot G$.
 
 **Output:** the signature $(R, s)$, known only to the coordinator.
 
+# Two-round variant
+
+`sign_two_rounds` merges rounds 1 and 2 of nonce generation into a single round, so the protocol
+takes two rounds instead of three. This is possible because $\alpha_i$ and $\beta_i$ depend only on
+the inputs of $P_i$, and not on any message of round 1.
+
+**Round 1:**
+
+1. Each $P_i$ linearizes their shares as in round 1 above and sets $\alpha_i \gets k'_i + a'_i$ and
+$\beta_i \gets x'_i + b'_i$.
+2. $\star$ Each $P_i$ sends $e_i$, $\alpha_i$ and $\beta_i$ to every party.
+3. $\bullet$ Each $P_i$ waits to receive $e_j$, $\alpha_j$ and $\beta_j$ from each $P_j$.
+4. Each $P_i$ sets $e \gets \sum_j e_j$, $\alpha \gets \sum_j \alpha_j$ and $\beta \gets \sum_j \beta_j$.
+5. $\blacktriangle$ Each $P_i$ *asserts* that $e \cdot G = E$, $\alpha \cdot G = K + A$ and
+$\beta \cdot G = X + B$.
+6. Each $P_i$ sets $R$ and $\sigma_i$ as in steps 6 and 7 of round 2 above.
+
+**Round 2:** key derivation and signing, exactly as in round 3 above.
+
+The values sent and the checks performed are the same as in the three-round protocol, and both
+produce the same signature from the same inputs. $R$ is known to every party once the merged
+round completes. The two variants are not wire-compatible: all parties of a run must use the same
+one.
+
 ---
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).

@@ -7,4 +7,4 @@ mod nonce_generation;
 mod test;
 
 pub use nonce_generation::SignArguments;
-pub use sign::sign;
+pub use sign::{sign, sign_two_rounds};
