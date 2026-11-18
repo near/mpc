@@ -364,11 +364,12 @@ pub fn get_docker_compose_hash(
 #[expect(non_snake_case)]
 mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
+    use serde_yaml::Value;
 
     use super::{
-        AllowedLauncherImageInsertion, AllowedLauncherImages, Duration, LauncherImageHash,
-        LauncherVoteAction, NodeImageHash, StoredDockerImageHashes, ToProposalHash,
-        get_docker_compose_hash,
+        AllowedLauncherImageInsertion, AllowedLauncherImages, Duration,
+        LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE, LauncherImageHash, LauncherVoteAction,
+        NodeImageHash, StoredDockerImageHashes, ToProposalHash, get_docker_compose_hash,
     };
     use crate::tee::test_utils::set_block_secs;
     const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_hours(10 * 24);
@@ -815,8 +816,88 @@ mod tests {
         // Then
         assert_ne!(compose_bound_to_signer, compose_bound_to_other);
     }
-}
 
-#[cfg(test)]
-#[expect(non_snake_case)]
-mod launcher_docker_compose_template_tests;
+    fn parsed_template() -> Value {
+        serde_yaml::from_str(LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE).unwrap()
+    }
+
+    fn key_paths(value: &Value, parent: &str) -> Vec<String> {
+        match value {
+            Value::Mapping(mapping) => mapping
+                .iter()
+                .flat_map(|(key, value)| {
+                    let path = format!("{parent}{}", key.as_str().unwrap());
+                    let nested_paths = key_paths(value, &format!("{path}."));
+                    std::iter::once(path).chain(nested_paths)
+                })
+                .collect(),
+            Value::Sequence(items) => items
+                .iter()
+                .flat_map(|item| key_paths(item, parent))
+                .collect(),
+            Value::Tagged(tagged) => key_paths(&tagged.value, parent),
+            _ => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn launcher_docker_compose_template__should_not_use_variable_substitution() {
+        // Given
+        let template = LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE;
+
+        // When
+        let lines_with_substitution: Vec<&str> =
+            template.lines().filter(|line| line.contains('$')).collect();
+
+        // Then
+        assert_eq!(lines_with_substitution, Vec::<&str>::new());
+    }
+
+    #[test]
+    fn launcher_docker_compose_template__should_only_use_reviewed_keys() {
+        // Given
+        let template = parsed_template();
+
+        // When
+        let keys = key_paths(&template, "");
+
+        // Then
+        assert_eq!(
+            keys,
+            [
+                "version",
+                "services",
+                "services.launcher",
+                "services.launcher.image",
+                "services.launcher.container_name",
+                "services.launcher.environment",
+                "services.launcher.volumes",
+                "services.launcher.devices",
+                "services.launcher.security_opt",
+                "services.launcher.read_only",
+                "services.launcher.tmpfs",
+                "volumes",
+                "volumes.shared-volume",
+                "volumes.shared-volume.name",
+            ]
+        );
+    }
+
+    #[test]
+    fn launcher_docker_compose_template__should_not_inherit_environment_variables_from_compose() {
+        // Given
+        let template = parsed_template();
+
+        // When
+        let inherited_variables: Vec<&str> = template["services"]["launcher"]["environment"]
+            .as_sequence()
+            .unwrap()
+            .iter()
+            .map(|entry| entry.as_str().unwrap())
+            .filter(|entry| !entry.contains('='))
+            .collect();
+
+        // Then
+        assert_eq!(inherited_variables, Vec::<&str>::new());
+    }
+}
