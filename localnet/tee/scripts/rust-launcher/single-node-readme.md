@@ -75,7 +75,7 @@ cp <WORKDIR>/public_data.json crates/test-utils/assets/dstack-<version>/public_d
 cp crates/test-utils/assets/dstack-<version>/tcb_info.json crates/attestation-types/assets/tcb_info.json
 ```
 
-Then update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs`.
+Then follow the remaining steps in [the assets README](../../../../crates/test-utils/assets/README.md#steps).
 
 ## Cleanup
 

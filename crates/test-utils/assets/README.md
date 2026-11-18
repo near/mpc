@@ -2,8 +2,8 @@
 
 Updating test assets is needed when updating launcher code (or when updating other measured components).  See [updating-launcher-internal-guide.md](../../../docs/development/updating-launcher-internal-guide.md)
 
-Each attestation fixture lives in its own `dstack-<version>/` folder, named after the guest OS
-it was captured on, and is exposed as an `AttestationFixture` constant in
+Each attestation fixture lives in its own `dstack-<version>/` folder, named after the dstack
+version it was captured on, and is exposed as an `AttestationFixture` constant in
 `crates/test-utils/src/attestation.rs`. `LATEST` is the fixture most tests use; tests that must
 pass on every fixture take it as an `rstest` `#[values(...)]` parameter. Keep a fixture for an
 older OS while nodes still run it.
@@ -20,7 +20,7 @@ curl http://<MPC_NODE_IP>:<MPC_NODE_PORT>/public_data -o public_data.json
 
 See [single-node-readme.md](../../../localnet/tee/scripts/rust-launcher/single-node-readme.md)
 for an automation script that will launch a TEE MPC node, collect the attestation, and save the public data to a temp directory (path printed by the script).
-Capture on the release (non-dev) image: its measurements then double as the set operators vote in.
+Capture on the release (non-dev) image: set `OS_IMAGE=dstack-<version>`, since the script defaults to a dev image.
 
 
 ## Steps
@@ -82,6 +82,9 @@ All files will be written into the specified output directory.
    vote in with `vote_add_os_measurement`. It covers `mrtd`, `rtmr0`-`rtmr2` and the key-provider
    event, none of which the compose files affect; `rtmr0` depends on the CVM's vCPU and memory
    configuration.
+
+   TODO(#5069): it still holds the 0.5.8 release set; switch it to 0.6.5 together with the
+   operator docs.
 
 8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
    contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test

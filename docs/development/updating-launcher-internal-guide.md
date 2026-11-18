@@ -58,23 +58,11 @@ measurements match the updated launcher/contract expectations.
 
 ## 4) Update the test "measurements validity" timestamp
 
-Tests often treat the stored measurements as valid only after a given timestamp
-(to avoid accepting stale measurements).
+Each fixture is an `AttestationFixture` in `crates/test-utils/src/attestation.rs`, and is
+valid only at its `valid_timestamp`.
 
-- `crates/test-utils/src/attestation.rs`
-
-Update:
-
-- `VALID_ATTESTATION_TIMESTAMP`
-
-**Rule:** Set it to a Unix timestamp **after** the date/time when the
-measurements were taken.
-
-Example:
-
-```rust
-pub const VALID_ATTESTATION_TIMESTAMP: u64 = 1774018367;
-```
+**Rule:** Set `valid_timestamp` to a Unix timestamp **after** the date/time when the
+measurements were taken (step 4 of the [assets README](../../crates/test-utils/assets/README.md#steps)).
 
 ---
 
