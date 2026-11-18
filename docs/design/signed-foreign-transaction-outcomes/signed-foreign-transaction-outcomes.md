@@ -2,7 +2,8 @@
 
 **Status:** Draft for discussion · **Author:** Haiyue Chen (with Claude) · **Date:** 28 September 2026, revised 18 November 2026
 
-**Note on naming:** the new caller facing method is named `read_rpc`. For ease of comparing the new method to current V1 foreign transaction verification, this doc still calls it `verify_foreign_transaction_v2`.
+**Note on naming:** the new caller facing method is named `read_rpc`. For ease of comparing the new method to current V1 foreign transaction verification, this doc still calls it `verify_foreign_transaction_v2`. Every other new name in the doc is
+the real one.
 
 ## Summary
 
@@ -103,34 +104,33 @@ attempt as a leader.
 
 ### Attempts
 
-A session is bound to its request, its message and its asset. Each signer builds the message
-from its own indexed request and its own outcome, so a request has exactly three possible
-messages. A node joins only the session its Start names, so followers that got different
-Starts never join the same session.
+Each attempt uses one asset. The session id comes from the request, the asset and an outcome,
+so one attempt has three possible session ids: one for verified, one for negative and one for
+inconclusive. The Start names one of them, which fixes the outcome and so the message to sign.
+Each signer builds that message from its own indexed request. Followers that got Starts for
+different outcomes never join the same session.
 
 1. **Start.** The leader sends Start for a session for its own outcome.
-2. **Followers check.** A follower first makes these checks, which need no provider call:
-   - The follower has indexed the request. In its view, the request is open and its block is
-     final. Open means not answered and at most 200 blocks old.
-   - The sender supports the chain.
-   - This Start is at most the sender's third to this follower for this request, counting every
-     earlier Start whatever the follower replied. An honest leader stays within this cap,
-     unless it restarts.
-   - Every earlier Start from this sender for this request named the same outcome as this one.
+2. **Check.** Before it calls any provider, a follower refuses the Start unless all of these
+   hold:
+   - It has indexed the request, and the request's block is final.
+   - The request is open: not answered and at most 200 blocks old.
+   - The node that sent the Start supports the chain.
+   - The node that sent the Start has sent the follower at most three Starts for this request, refused ones included, and
+     all for the same outcome.
    - The asset is the sender's, the Start lists exactly the asset's holders, and the follower
-     holds its share of the asset.
+     holds a share of it.
 
-   If one of these checks fails, the follower refuses. Otherwise it inspects again where "When
-   nodes inspect" requires it, then compares its own node outcome with the session's. If they
-   differ, the follower abstains. A follower that refuses or abstains sends an abort.
    Followers don't check whose turn it is.
-3. **Result.** If every follower signs, the shares combine and the leader responds. If any
-   follower abstains, refuses, stays silent or sends a bad share, the attempt fails. The
-   leader then retries with another asset and the same outcome, up to three attempts in all.
-   It stops earlier if an answer lands or its outcome changes (see "When nodes inspect").
-   Resending a signed response that didn't land is not a new attempt.
+3. **Compare.** The follower gets its node outcome (see "When nodes inspect"). It signs if
+   that outcome matches the session's, and abstains if not. Refusing and abstaining both send
+   an abort.
+4. **Result.** If every follower signs, the leader responds with the signed answer. Otherwise
+   the attempt fails, and the leader retries with another asset and the same outcome, up to
+   three attempts (per leader). It stops earlier if an answer lands or its outcome changes.
+   Resending a response that didn't land is not a new attempt.
 
-![Attempts: one leader's turn. The leader inspects, picks an asset and starts a session for its own outcome. If every follower signs, it responds. Otherwise it retries with another asset, up to three attempts, while no answer has landed and its outcome stays the same. Then it stops, and the next leader takes over on its turn.](attachments/attempts.png)
+![Attempts: one leader's turn. The leader inspects, picks an asset and starts a session for its own outcome. If every follower signs, it responds. Otherwise it retries with another asset, up to three attempts, while no answer has landed and its outcome stays the same. Then it stops, and the next leader takes over on its turn.](attachments/leader-turn.png)
 
 In a split, nodes find different outcomes. Retries and
 backup leaders pick other assets, and when few nodes differ, one of these attempts usually
@@ -145,45 +145,48 @@ still check Starts and see the answer.
 
 #### When nodes inspect
 
-A node inspects as soon as the request's block is final, because any node can become a
-follower. Before finality, a fork could give the same yield id to another request.
+Because of leader failover, one node can follow other leaders' attempts and lead its own
+attempts for the same request. It keeps a single local outcome per request, from its latest
+inspection, and uses that outcome in both roles.
 
-- A node keeps one current outcome per request, from its latest inspection.
-- A backup leader inspects again when its turn starts. Every leader inspects again before it
-  uses an outcome older than the maximum outcome age.
-- A follower uses its current outcome for every Start from the first sender it hears from for
-  the request, in its turn or not, which saves a provider call. It inspects again on the first Start
-  from each other sender. It also inspects again on any Start that arrives when its outcome is
-  older than the maximum outcome age. It compares every Start, from any sender, with its current
-  outcome.
-- A leader keeps one outcome for all its attempts, because followers accept only one outcome
-  from each sender. Before its first Start, a leader whose outcome changes uses the new one.
-  After its first Start, a changed outcome means the leader starts no new attempt for this
-  request, even when the change comes from an inspection it ran as a follower. An attempt
-  already running finishes with the old outcome.
-- A follower whose inspection still runs when Start arrives waits for the inspection. If the
-  inspection doesn't finish before the attempt deadline, the follower abstains.
+Every node in the cluster inspects immediately when the request's block is final. It inspects
+again:
+
+- when its turn as a backup leader starts.
+- on the first Start from each leader except the first leader it hears from.
+- before it uses a local outcome older than the maximum outcome age.
+
+As a follower, the node compares every Start with its local outcome. Starts from the first
+leader it hears from, in its turn or not, use the local outcome without a new inspection, which
+saves a provider call. If an inspection is still running when a Start arrives, the node waits
+for it, and abstains if it doesn't finish before the attempt deadline.
+
+As a leader, the node starts its attempts for its local outcome and keeps that outcome for all
+of them, because followers accept only one outcome from each leader. If the local outcome
+changes after its first Start, for example through an inspection it ran as a follower, it
+starts no new attempt for this request. A running attempt finishes with the old outcome.
 
 #### Picking assets
 
 A leader only uses an asset whose holders all support the chain and have a recent view of
-NEAR, so each has indexed the request by the time Start arrives.
+NEAR, so each holder has indexed the request when Start arrives. Among those assets, it tries to avoid
+two kinds of holders:
 
-Across requests, a leader records only which nodes replied to its recent Starts at all, with a
-protocol message or an abort. The record never shows whether a node agreed, and the leader shares it with nobody. The
-leader prefers assets whose holders all replied.
+- **Within this request:** holders that sent an abort or stayed silent in its earlier
+  attempts. An abort can mean the holder found a different outcome, so it would abort again.
+- **Across requests:** holders that didn't reply at all to its recent Starts. Here an abort
+  counts as a reply. The leader keeps no record of who disagreed with it, so an honest node
+  that found a different outcome once isn't avoided on later requests. It does not share this record
+  with other nodes.
 
-Within one request, and outside that record, a retry also prefers assets without the followers
-that abstained, refused or stayed silent in the leader's earlier attempts. When no free asset meets both preferences,
-the leader falls back to one that meets either, in an order the implementation picks. After
-that, it takes any free asset the rule in the first paragraph allows.
+It first picks a free asset with neither kind of holder. If there is none, it picks one that
+avoids one kind, in an order the implementation sets. After that, it takes any free asset.
 
 #### Races between leaders
 
 Turns follow a fixed schedule, so two leaders' attempts can overlap. Two leaders can then sign
 different outcomes for one yield, for example a negative and then a verified outcome once the
-transaction lands. The contract accepts the first response and rejects the other. We accept this race instead of adding a round to make leaders agree: each signed
-outcome is what an honest node found.
+transaction lands. The contract accepts the first response and rejects the other. We accept this race instead of adding a round to make leaders agree: each signed outcome is what an honest node found.
 
 ### Alerts
 
@@ -232,10 +235,10 @@ struct ForeignTxSignPayloadV2 {
     expected_values_hash: Hash256,                 // sha256(borsh(expected_values)), length prefix included
     request_block_height: BlockHeight,             // the block that executed the request's receipt
     yield_id: YieldId,                             // the one yield this answers
-    outcome: ForeignTxVerificationOutcome,
+    outcome: ReadRpcOutcome,
 }
 
-enum ForeignTxVerificationOutcome {
+enum ReadRpcOutcome {
     Verified {},                                   // the values match the expected ones
     Negative {},                                   // the transaction doesn't check out as requested
     Inconclusive {},
@@ -246,23 +249,25 @@ struct YieldId([u8; 32]);                          // picked by the contract, se
 
 The payload hash is the sha256 of the Borsh encoded `ForeignTxSignPayload`, enum tag included.
 
+- **`ForeignTxPayloadVersion` stays V1 only.** The V1 method keeps rejecting any other
+  version, and the V2 method always signs `ForeignTxSignPayload::V2`.
 - **A negative carries no reason.** Each node logs its reason.
 - **The block height dates the answer.** A receiver outside NEAR sets the age it accepts, and
   measures it against its own source of NEAR's current block height.
 
 ```rust
-struct VerifyForeignTransactionRequestV2 {
+struct ReadRpcRequest {
     request: ForeignChainRpcRequest,
     domain_id: DomainId,
     expected_values: Vec<ExtractedValue>,          // one per extractor, in extractor order
 }
 
-struct VerifyForeignTransactionResponseV2 {
+struct ReadRpcResponse {
     payload_hash: Hash256,
     signature: SignatureResponse,
     request_block_height: BlockHeight,
     yield_id: YieldId,
-    outcome: ForeignTxVerificationOutcome,
+    outcome: ReadRpcOutcome,
 }
 ```
 
@@ -298,7 +303,7 @@ The contract keeps a `u64` counter that every successful V2 request increases an
 survives every migration. For each V2 request it:
 
 1. hashes the next counter value into an id,
-   `sha256("verify_foreign_tx_v2" || counter.to_le_bytes())`,
+   `sha256("read_rpc" || counter.to_le_bytes())`,
 2. creates the yield under that id with `promise_yield_create_with_id`, with the id in the
    callback's arguments,
 3. stores the request, the hash of its expected values and the current block height under
@@ -318,14 +323,14 @@ contract emits the id in the same call as a
 [NEP 297](https://github.com/near/NEPs/blob/master/neps/nep-0297.md) event:
 
 ```text
-EVENT_JSON:{"standard":"mpc","version":"1.0.0","event":"verify_foreign_tx_v2_yield_created","data":{"yield_id":"…"}}
+EVENT_JSON:{"standard":"mpc","version":"1.0.0","event":"read_rpc_yield_created","data":{"yield_id":"…"}}
 ```
 
 - The indexer reads the event only from a `verify_foreign_transaction_v2` receipt that
   succeeded. A failed receipt keeps its logs but rolls back the counter, so a later request
   gets the same id.
 - The indexer reads only log entries that start with `EVENT_JSON:`, carry the `mpc` standard and
-  name `verify_foreign_tx_v2_yield_created`. It stores the yield id with the request, and skips
+  name `read_rpc_yield_created`. It stores the yield id with the request, and skips
   a request with no such event, or several.
 
 #### The respond method
@@ -333,9 +338,9 @@ EVENT_JSON:{"standard":"mpc","version":"1.0.0","event":"verify_foreign_tx_v2_yie
 Attested participants answer through a new respond method:
 
 ```rust
-fn respond_verify_foreign_tx_v2(
+fn respond_read_rpc(
     yield_id: YieldId,
-    outcome: ForeignTxVerificationOutcome,
+    outcome: ReadRpcOutcome,
     signature: SignatureResponse,
 )
 ```
@@ -349,7 +354,7 @@ This method:
    the yield id and the outcome.
 4. Verifies the signature with the key of the request's `domain_id`.
 5. Resumes that yield through `promise_yield_resume_with_yield_id` with a
-   `VerifyForeignTransactionResponseV2`, and removes the entry. If the resume fails, the call
+   `ReadRpcResponse`, and removes the entry. If the resume fails, the call
    fails and nothing changes.
 
 The V2 yield callback, the counterpart of V1's
@@ -366,8 +371,10 @@ and nodes see the request as answered, when the callback runs on the answer.
 V1 must not change, so V2 has to be opt in.
 
 - **A. Extend V1 in place.** It changes every V1 payload hash.
-- **B. A `payload_version` flag on the existing method.** It needs a hand written deserializer
-  and breaks existing V1 callers.
+- **B. A new `payload_version` value on the existing method.** V1 requests already carry
+  `payload_version`. But V2 changes both the request, which carries expected values instead of
+  an expected payload hash, and the response, which carries the outcome, yield id and block
+  height. One flag would switch the shape of both on one method.
 - **C. A new method with its own request type (chosen).**
 
 ### Why does each leader sign only its own outcome?
@@ -433,8 +440,7 @@ No upgrade order breaks V1 callers.
 
 ## Security analysis
 
-We assume, as V1 does, that fewer than t nodes are malicious. A signature then proves that at
-least one honest node found that outcome, not that t nodes did.
+We assume, as V1 does, that fewer than t nodes are malicious.
 
 ### Leaders and followers
 
@@ -447,8 +453,8 @@ least one honest node found that outcome, not that t nodes did.
 | Leader reruns an answered or timed out request | Honest nodes refuse to join once their indexer shows the request answered or older than 200 blocks. |
 | Malicious node uses up assets with Starts, in its turn or out of it | A follower refuses every Start after a sender's third for a request. Every holder counts Starts, whether or not it supports the chain. Each Start goes to t − 1 followers, so at most 3(n − 1)/(t − 1) Starts from one sender fit within the cap per request. A Start uses up the sender's asset whether or not followers join. Followers refuse Starts beyond the cap without a provider call, so those cost only the sender. A Start within the cap costs each follower at most one inspection. |
 | Malicious node shifts who leads, for example by overstating its indexer height | Not new. V2 uses the queue's leader rule unchanged, and followers don't check whose turn it is. |
-| Followers of one session sign different messages | A session is bound to its request, message and asset, lists exactly the asset's holders, and only followers with the same Start join it (see "Attempts"). |
-| Follower abstains, refuses, stays silent or sends a bad share | Liveness only. The attempt fails and the leader retries with another asset (see "Picking assets"). A node that sends bad shares can't be left out (see "How many attempts does a leader make?"). |
+| Followers of one session sign different messages | The session id comes from the request, the asset and the outcome. A session lists exactly the asset's holders, and only followers with the same Start join it (see "Attempts"). |
+| Follower abstains, refuses, stays silent or sends a bad share | Liveness only. A bad share is a signature share that isn't the follower's correct share for the session's message. The leader sums the shares and checks the result against the domain's public key, as in V1, so a bad share makes the attempt fail. The leader then retries with another asset (see "Picking assets"). The check doesn't show whose share was bad, so the sender can't be left out (see "How many attempts does a leader make?"). |
 
 ### Providers
 
