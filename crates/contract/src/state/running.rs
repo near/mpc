@@ -60,44 +60,6 @@ impl RunningContractState {
         }
     }
 
-    pub fn transition_to_resharing_no_checks(
-        &mut self,
-        proposal: &ProposedGovernanceThresholdParameters,
-    ) -> Option<ResharingContractState> {
-        if let Some(first_domain) = self.domains.get_domain_by_index(0) {
-            let epoch_id = self.prospective_epoch_id();
-
-            Some(ResharingContractState {
-                previous_running_state: RunningContractState::new(
-                    self.domains.clone(),
-                    self.keyset.clone(),
-                    self.parameters.clone(),
-                    self.add_domains_votes.clone(),
-                ),
-                reshared_keys: Vec::new(),
-                resharing_key: KeyEvent::new(
-                    epoch_id,
-                    first_domain.clone(),
-                    proposal.parameters().clone(),
-                ),
-                cancellation_requests: BTreeSet::new(),
-                per_domain_thresholds: proposal.per_domain_thresholds().clone(),
-            })
-        } else {
-            // New parameters were proposed, but we have no keys, so directly
-            // transition into Running state but bump the EpochId. With no
-            // domains the per-domain threshold updates have nothing to apply to
-            // and are dropped.
-            *self = RunningContractState::new(
-                self.domains.clone(),
-                Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
-                proposal.parameters().clone(),
-                self.add_domains_votes.clone(),
-            );
-            None
-        }
-    }
-
     /// Casts a vote for `proposal` to the current state, propagating any errors.
     /// Returns ResharingContractState if the proposal is accepted.
     pub fn vote_new_parameters(
@@ -116,10 +78,38 @@ impl RunningContractState {
             .into());
         }
 
-        if self.process_new_parameters_proposal(proposal, votes)? {
-            return Ok(self.transition_to_resharing_no_checks(proposal));
+        if !self.process_new_parameters_proposal(proposal, votes)? {
+            return Ok(None);
         }
-        Ok(None)
+        let Some(first_domain) = self.domains.get_domain_by_index(0) else {
+            // New parameters were proposed, but we have no keys, so directly
+            // transition into Running state but bump the EpochId. With no
+            // domains the per-domain threshold updates have nothing to apply to
+            // and are dropped.
+            *self = RunningContractState::new(
+                self.domains.clone(),
+                Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
+                proposal.parameters().clone(),
+                self.add_domains_votes.clone(),
+            );
+            return Ok(None);
+        };
+        Ok(Some(ResharingContractState {
+            previous_running_state: RunningContractState::new(
+                self.domains.clone(),
+                self.keyset.clone(),
+                self.parameters.clone(),
+                self.add_domains_votes.clone(),
+            ),
+            reshared_keys: Vec::new(),
+            resharing_key: KeyEvent::new(
+                self.prospective_epoch_id(),
+                first_domain.clone(),
+                proposal.parameters().clone(),
+            ),
+            cancellation_requests: BTreeSet::new(),
+            per_domain_thresholds: proposal.per_domain_thresholds().clone(),
+        }))
     }
 
     pub fn prospective_epoch_id(&self) -> EpochId {

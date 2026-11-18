@@ -52,7 +52,7 @@ fn bench_lagrange_computation(c: &mut Criterion) {
         let point_x0 = Some(Secp256K1ScalarField::zero());
         group.bench_with_input(
             format!("batch_x0_degree_{degree}"),
-            &(ids.clone(), point_x0),
+            &(ids, point_x0),
             |b, (ids, point)| {
                 b.iter(|| {
                     let coeff = batch_compute_lagrange_coefficients::<C>(ids, point.as_ref())

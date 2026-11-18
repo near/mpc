@@ -532,40 +532,4 @@ mod tests {
         // Then
         assert_eq!(json[proposal.as_hex()][0], "alice.near");
     }
-
-    // TODO(#4984): drop once no deployed contract reports the pre-tally voter-keyed shape.
-    #[test]
-    #[expect(non_snake_case)]
-    fn running_contract_state__should_ignore_the_legacy_parameters_votes_report() {
-        // Given: the `state()` of a 3.18 contract while a vote is pending
-        let parameters = GovernanceThresholdParameters {
-            participants: sample_participants(),
-            threshold: GovernanceThreshold::new(1),
-        };
-        let state = RunningContractState {
-            domains: DomainRegistry {
-                domains: Vec::new(),
-                next_domain_id: DomainId(0),
-            },
-            keyset: Keyset::new(EpochId::new(0), Vec::new()),
-            parameters: parameters.clone(),
-            add_domains_votes: AddDomainsVotes {
-                proposal_by_account: BTreeMap::new(),
-            },
-            previously_cancelled_resharing_epoch_id: None,
-        };
-        let mut json = serde_json::to_value(&state).unwrap();
-        json["parameters_votes"] = serde_json::json!({ "proposal_by_account": {
-            "alice.near": ProposedGovernanceThresholdParameters {
-                parameters,
-                per_domain_thresholds: BTreeMap::new(),
-            },
-        }});
-
-        // When
-        let parsed: RunningContractState = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(parsed, state);
-    }
 }

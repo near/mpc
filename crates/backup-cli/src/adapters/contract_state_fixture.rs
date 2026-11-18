@@ -1,17 +1,20 @@
 use std::path::{Path, PathBuf};
 
-use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::Keyset;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-use crate::ports::ReadContractState;
+use crate::ports::ReadCurrentKeyset;
 
-const CONTRACT_STATE_FILENAME: &str = "contract_state.json";
+const CURRENT_KEYSET_FILENAME: &str = "current_keyset.json";
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("failed to open file: {0}")]
-    OpenFile(tokio::io::Error),
+    #[error("failed to open {}: {err}", path.display())]
+    OpenFile {
+        path: PathBuf,
+        err: tokio::io::Error,
+    },
 
     #[error("could not read from file: {0}")]
     Read(tokio::io::Error),
@@ -21,25 +24,28 @@ pub enum Error {
 }
 
 pub struct ContractStateFixture {
-    contract_state_path: PathBuf,
+    current_keyset_path: PathBuf,
 }
 
 impl ContractStateFixture {
     pub fn new(storage_path: impl AsRef<Path>) -> Self {
-        let contract_state_path = storage_path.as_ref().join(CONTRACT_STATE_FILENAME);
+        let current_keyset_path = storage_path.as_ref().join(CURRENT_KEYSET_FILENAME);
         Self {
-            contract_state_path,
+            current_keyset_path,
         }
     }
 }
 
-impl ReadContractState for ContractStateFixture {
+impl ReadCurrentKeyset for ContractStateFixture {
     type Error = Error;
 
-    async fn get_contract_state(&self) -> Result<ProtocolContractState, Self::Error> {
-        let mut destination = File::open(self.contract_state_path.as_path())
+    async fn current_keyset(&self) -> Result<Option<Keyset>, Self::Error> {
+        let mut destination = File::open(self.current_keyset_path.as_path())
             .await
-            .map_err(Error::OpenFile)?;
+            .map_err(|err| Error::OpenFile {
+                path: self.current_keyset_path.clone(),
+                err,
+            })?;
         let mut buffer = Vec::new();
         destination
             .read_to_end(&mut buffer)
@@ -51,28 +57,26 @@ impl ReadContractState for ContractStateFixture {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use std::path::PathBuf;
 
-    use near_mpc_contract_interface::types::{GovernanceThreshold, ProtocolContractState};
-
-    use crate::{adapters::contract_state_fixture::ContractStateFixture, ports::ReadContractState};
+    use crate::{
+        adapters::contract_state_fixture::ContractStateFixture, ports::ReadCurrentKeyset,
+        test_utils::fixture_keyset,
+    };
 
     pub const TEST_CONTRACT_STATE_PATH: &str = "assets/";
     #[tokio::test]
-    async fn test_get_contract_state() {
+    async fn current_keyset__should_read_the_saved_view_output() {
         // Given
         let storage_path = PathBuf::from(TEST_CONTRACT_STATE_PATH);
         let contract_interface = ContractStateFixture::new(storage_path);
 
         // When
-        let contract_state = contract_interface.get_contract_state().await.unwrap();
+        let current_keyset = contract_interface.current_keyset().await.unwrap();
 
         // Then
-        let ProtocolContractState::Running(state) = &contract_state else {
-            panic!("expected Running state, got {contract_state:?}");
-        };
-        assert_eq!(state.parameters.threshold, GovernanceThreshold::new(7));
-        assert_eq!(state.domains.domains.len(), 2);
+        assert_eq!(current_keyset, Some(fixture_keyset()));
     }
 }
