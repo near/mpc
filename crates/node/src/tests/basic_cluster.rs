@@ -135,7 +135,7 @@ async fn cluster__should_serve_every_domain_after_keygen() {
 #[tokio::test]
 #[test_log::test]
 #[expect(non_snake_case)]
-async fn cluster__should_generate_triples_with_a_non_legacy_batch_size() {
+async fn cluster__should_generate_triples_with_a_non_default_batch_size() {
     // Given
     let temp_dir = tempfile::tempdir().unwrap();
     let mut setup = IntegrationTestSetup::new(
