@@ -34,15 +34,16 @@ pub fn deserialize_hash<'de, const N: usize, D: serde::Deserializer<'de>>(
 ) -> Result<[u8; N], D::Error> {
     let hex_str = <String as serde::Deserialize>::deserialize(deserializer)?;
     let decoded = hex::decode(&hex_str).map_err(serde::de::Error::custom)?;
-    decoded.try_into().map_err(|v: Vec<u8>| {
-        serde::de::Error::custom(alloc::format!("expected {} bytes, got {}", N, v.len()))
-    })
+    to_array(decoded).map_err(serde::de::Error::custom)
 }
 
 #[doc(hidden)]
 pub fn parse_hash<const N: usize>(s: &str) -> Result<[u8; N], HashParseError> {
-    let decoded = hex::decode(s)?;
-    decoded
+    to_array(hex::decode(s)?)
+}
+
+fn to_array<const N: usize>(bytes: Vec<u8>) -> Result<[u8; N], HashParseError> {
+    bytes
         .try_into()
         .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
             expected: N,
@@ -273,14 +274,7 @@ impl core::str::FromStr for GenesisHash {
     type Err = HashParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        bs58::decode(s)
-            .into_vec()?
-            .try_into()
-            .map(Self)
-            .map_err(|v: Vec<u8>| HashParseError::InvalidLength {
-                expected: 32,
-                got: v.len(),
-            })
+        to_array(bs58::decode(s).into_vec()?).map(Self)
     }
 }
 
