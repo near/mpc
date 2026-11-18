@@ -10,6 +10,7 @@ use ed25519_dalek::SigningKey;
 use near_contract_transport::{
     NearKitCaller, NearKitViewError, NearToken, Subscription, WatchContractState,
 };
+use near_indexer_primitives::CryptoHash;
 use near_kit::AccountId;
 use near_kit::SigningNear;
 use near_kit::transaction::ExecutedOptimistic;
@@ -20,8 +21,8 @@ use near_mpc_contract_interface::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo, BlockCount,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
-        ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters, InitConfig,
-        MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, ParticipantUrl,
+        ForeignChainsConfigs, GenesisHash, GovernanceThreshold, GovernanceThresholdParameters,
+        InitConfig, MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, ParticipantUrl,
         Participants, Payload, ProposedGovernanceThresholdParameters, Protocol,
         ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
         SignRequestArgs, TeeVerifierCodeHash, Update,
@@ -331,6 +332,7 @@ impl MpcCluster {
             SANDBOX_ROOT_ACCOUNT.parse()?,
             root_secret_key,
         );
+        let genesis_hash = blockchain.genesis_hash().await?;
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
@@ -379,6 +381,7 @@ impl MpcCluster {
                 participant_indices: participant_indices.clone(),
                 init_format: config.init_format,
                 tee_verifier_account_id: tee_verifier_account(),
+                genesis_hash,
             },
         )
         .await?;
@@ -399,6 +402,7 @@ impl MpcCluster {
             &node_near_keys,
             &node_p2p_keys,
             &contract_account,
+            genesis_hash,
             test_dir.path(),
             &ports,
         )?;
@@ -1342,6 +1346,7 @@ struct InitContractArgs {
     participant_indices: Vec<usize>,
     init_format: ContractInitFormat,
     tee_verifier_account_id: ContractAccountId,
+    genesis_hash: CryptoHash,
 }
 
 /// Prepays `attestation_grants[i]` attestation-storage grants for the account of node `i`.
@@ -1400,6 +1405,7 @@ async fn init_contract(
         participant_indices,
         init_format,
         tee_verifier_account_id,
+        genesis_hash,
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
@@ -1424,7 +1430,7 @@ async fn init_contract(
                 .init(
                     params,
                     tee_verifier_account_id,
-                    blockchain.genesis_hash().await?,
+                    GenesisHash::from(genesis_hash.0),
                     Some(init_config),
                 )
                 .await?
@@ -1545,12 +1551,14 @@ async fn add_initial_domains(
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments)]
 fn start_mpc_nodes(
     config: &MpcClusterConfig,
     sandbox: &NearSandbox,
     near_keys: &[SigningKey],
     p2p_keys: &[SigningKey],
     contract_account: &AccountId,
+    genesis_hash: CryptoHash,
     test_dir: &Path,
     ports: &TestPorts,
 ) -> anyhow::Result<Vec<MpcNodeState>> {
@@ -1590,6 +1598,7 @@ fn start_mpc_nodes(
             triples_to_buffer: config.triples_to_buffer,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
+            near_genesis_hash: genesis_hash,
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config,
             tls_trust_roots: config.tls_trust_roots.clone(),
@@ -1617,6 +1626,7 @@ fn start_mpc_nodes(
             triples_to_buffer: 10,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
+            near_genesis_hash: genesis_hash,
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config: Default::default(),
             tls_trust_roots: config.tls_trust_roots.clone(),
