@@ -9,9 +9,8 @@ This is the production launcher.
 1. Loads a TOML configuration file from `/tapp/user_config`
 2. Selects an approved manifest digest (from on-disk approved list, override, or default)
 3. Pulls the image directly by manifest digest (`docker pull <image>@sha256:<digest>`)
-4. In TEE mode: extends RTMR3 with the manifest digest. If `dstack-util` is mounted (the contract's
-   compose template mounts it) it runs the guest's `dstack-util extend`, since dstack 0.6 removed
-   `EmitEvent`; otherwise it warns and falls back to `EmitEvent` (dstack < 0.6 only)
+4. In TEE mode: extends RTMR3 with the manifest digest by running the guest's `dstack-util extend`
+   (dstack 0.6 removed `EmitEvent`)
 5. Writes the MPC node config to a shared volume
 6. Launches the MPC container via `docker compose up -d`
 

@@ -11220,7 +11220,6 @@ version = "3.19.0"
 dependencies = [
  "backon",
  "clap",
- "dstack-sdk",
  "launcher-interface",
  "mpc-primitives",
  "near-account-id",

@@ -60,7 +60,7 @@ pub async fn run() -> Result<(), LauncherError> {
     .await?;
 
     if args.platform == Platform::Tee {
-        emit_image_hash_event(&manifest_digest).await?;
+        extend_rtmr3_with_dstack_util(&manifest_digest)?;
     }
 
     let tee_config = build_tee_config(args.platform, manifest_digest.clone());
@@ -129,46 +129,24 @@ fn load_approved_hashes(
     }
 }
 
-async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(), LauncherError> {
-    if Path::new(DSTACK_UTIL_PATH).exists() {
-        return extend_rtmr3_with_dstack_util(manifest_digest);
-    }
-
-    tracing::warn!(
-        "{DSTACK_UTIL_PATH} is not mounted, falling back to dstack EmitEvent (fails on dstack 0.6+)"
-    );
-    let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
-
-    dstack_client
-        .emit_event(
-            MPC_IMAGE_HASH_EVENT.to_string(),
-            manifest_digest.as_ref().to_vec(),
-        )
-        .await
-        .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))
-}
-
 fn extend_rtmr3_with_dstack_util(
     manifest_digest: &DockerSha256Digest,
 ) -> Result<(), LauncherError> {
     tracing::info!("measuring MPC image into RTMR3 via dstack-util extend");
     let output = Command::new(DSTACK_UTIL_PATH)
+        .env_clear()
         .args(dstack_util_extend_args(manifest_digest))
         .output()
         .map_err(LauncherError::DstackUtilSpawn)?;
 
     if !output.status.success() {
-        return Err(LauncherError::DstackUtilExtendFailed {
-            status: output.status,
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        });
+        return Err(LauncherError::DstackUtilExtendFailed(output));
     }
     Ok(())
 }
 
 /// `dstack-util extend` hex-decodes `--payload` and measures the raw bytes, which the verifier
-/// compares with the digest; pass bare hex, without the `sha256:` prefix.
+/// compares with the digest.
 fn dstack_util_extend_args(manifest_digest: &DockerSha256Digest) -> [String; 5] {
     [
         "extend".into(),
