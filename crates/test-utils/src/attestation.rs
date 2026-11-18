@@ -314,6 +314,9 @@ mod tests {
     fn fixture_accessors__should_parse_every_asset(
         #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
     ) {
+        // Given: the fixture's committed asset files
+
+        // When / Then: every accessor parses its asset without panicking
         fixture.dto_dstack_attestation();
         fixture.dstack_attestation();
         fixture.near_p2p_tls_key();
