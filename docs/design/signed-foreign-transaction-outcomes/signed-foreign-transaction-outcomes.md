@@ -2,6 +2,8 @@
 
 **Status:** Draft for discussion · **Author:** Haiyue Chen (with Claude) · **Date:** 28 September 2026, revised 18 November 2026
 
+**Note on naming:** the new caller facing method is named `read_rpc`. For ease of comparing the new method to current V1 foreign transaction verification, this doc still calls it `verify_foreign_transaction_v2`.
+
 ## Summary
 
 Today a foreign transaction request is signed only when the transaction checks out. Anything
@@ -24,7 +26,7 @@ request still times out.
 
 The main points of the design:
 
-- Callers opt in through a new method, `verify_foreign_transaction_v2`. V1 is unchanged.
+- Callers opt in through a new method, `read_rpc`. `verify_foreign_transaction` (V1) is unchanged.
 - Every V2 answer names the one yield it answers, so on NEAR an old negative can never answer a
   newer request.
 - Every V2 answer records the request's block height, and nodes sign only within 200 blocks of
@@ -32,8 +34,7 @@ The main points of the design:
 - The caller states the values it expects. Nodes check them, so a verified answer confirms
   exactly those values.
 - An honest leader signs only what it found, and an honest follower signs only if it found the same. So the
-  signers of one session always agree on the message, with no extra round. With fewer than t malicious nodes, a
-  signature shows that at least one honest node found that outcome.
+  signers of one session always agree on the message, with no extra round.
 - Each leader makes up to three attempts, and backup leaders start on a fixed schedule.
 - An inconclusive outcome at any node raises a warning, and so does every inconclusive a leader
   signs.
@@ -48,7 +49,7 @@ The main points of the design:
 | Session | One run of the threshold signing protocol, for one message with one asset. |
 | Attempt | One session a leader starts for a request. |
 | Leader | The node that starts an attempt. An honest node leads only from its turn on, and starts no attempt once an answer has landed. |
-| Backup leader | A later node in the failover order: three backups follow the first leader. Each node counts turns from when it indexed the request. The first leader's turn starts then, and it acts once the request's block is final, well within one failover interval. Each backup's turn starts one failover interval after the previous leader's. |
+| Backup leader | A later node in the queue's failover order. It leads only if no answer has landed when its turn starts. |
 | t, s, n | t is the signing threshold. Every asset has exactly t holders. s is the number of nodes that support the request's chain, and n the number of participants. |
 
 ---

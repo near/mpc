@@ -1,11 +1,10 @@
 flowchart LR
-    C["Caller"] -->|"1. V2 request with<br/>expected values"| K["MPC contract"]
-    K -->|"5. answer"| C
-    K -.->|"1. request and yield id event"| L
-    K -.->|"1. request and yield id event"| F
+    C["Caller"] -->|"V2 request with<br/>expected values"| K["MPC contract"]
+    K -->|"signed answer"| C
+    K -.->|"every node indexes<br/>requests and yield ids"| N
     subgraph N["MPC nodes"]
-        L["Leader"] -->|"3. Start for<br/>its own outcome"| F["Followers"]
-        F -->|"4. shares if their outcome<br/>matches, else abstain"| L
+        L["Leader"] -->|"Start for<br/>its own outcome"| F["Followers"]
+        F -->|"shares if their outcome<br/>matches, else abort"| L
     end
-    N -->|"2. inspect"| P["Foreign chain<br/>RPC providers"]
-    L -->|"5. response"| K
+    N -->|"every node inspects"| P["Foreign chain<br/>RPC providers"]
+    L -->|"signed response"| K
