@@ -18,7 +18,9 @@ pub(super) const RECENT_UPTIMES: NonZeroUsize =
 pub(super) const MAX_ROUND_TRIP_LAG: BlockCount = BlockCount::new(40);
 /// Round trip lag above which a connection is not used for `HalfMinute` computations.
 pub(super) const AT_RISK_ROUND_TRIP_LAG: BlockCount = BlockCount::new(20);
-// todo: calibrate the two computation lengths and the required chance
+// todo: calibrate the two computation lengths and the required chance. If the required chance is
+// raised, an old bad period can count against a link for hours: then forget everything before a
+// disconnect-free hour.
 /// How long a `Seconds` computation is taken to run, for the chance that a link stays up
 /// throughout.
 pub(super) const SECONDS_COMPUTATION_LENGTH: Duration = Duration::seconds(5);

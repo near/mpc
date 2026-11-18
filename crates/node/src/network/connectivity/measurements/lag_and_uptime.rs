@@ -40,6 +40,7 @@ impl UpdateLinkStatus<IndexerHeightLag> for LagsAndUptimeHistory {
                 self.uptime_history.record_up(at);
                 self.lags.record(lag);
             }
+            IndexerHeightLag::Unknown => self.uptime_history.record_up(at),
             IndexerHeightLag::Absent => {
                 self.uptime_history.record_down(at);
                 self.lags.clear();
@@ -125,12 +126,24 @@ impl UptimeHistory {
     }
 
     /// `None` while the link is down.
+    ///
+    /// Leaves out the shortest finished up period, so that one disconnect is free: when the
+    /// protocol state changes, a link may come up with a peer that is still in the previous state,
+    /// and drop again as soon as that peer follows.
     fn summary(&self) -> Option<UptimeSummary> {
         let up_since = self.up_since?;
+        let shortest = self
+            .finished_uptimes
+            .iter()
+            .min()
+            .copied()
+            .unwrap_or_default();
+        let finished_uptime = self.finished_uptimes.iter().sum::<Duration>() - shortest;
+        let disconnects = self.finished_uptimes.len().saturating_sub(1);
         Some(UptimeSummary {
             up_since,
-            disconnects: u32::try_from(self.finished_uptimes.len()).unwrap_or(u32::MAX),
-            finished_uptime: self.finished_uptimes.iter().sum(),
+            disconnects: u32::try_from(disconnects).unwrap_or(u32::MAX),
+            finished_uptime,
         })
     }
 }
@@ -237,7 +250,7 @@ impl RoundTripLag {
 pub struct UptimeSummary {
     /// When the running up period started.
     up_since: Instant,
-    /// Finished up periods in the history. Each one ended in a disconnect.
+    /// Finished up periods in the history, without the shortest. Each one ended in a disconnect.
     disconnects: u32,
     /// The total length of those finished up periods.
     finished_uptime: Duration,
