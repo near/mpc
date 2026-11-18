@@ -13,7 +13,6 @@ use crate::sandbox::{
             get_tee_accounts, prepay_and_submit_participant_info, prepay_attestation_grants,
             submit_participant_info, vote_add_launcher_hash, vote_for_hash,
         },
-        resharing_utils::conclude_resharing,
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         sign_utils::DomainResponseTest,
         transactions::CallMpcContract,
@@ -723,132 +722,8 @@ async fn test_function_allowed_launcher_compose_hashes() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Tests that when a participant's TEE attestation expires and [`verify_tee()`] is called,
-/// the contract transitions to Resharing state and eventually removes that participant.
-///
-/// Steps:
-/// 1. Initialize contract with 3 participants
-/// 2. Submit an expiring attestation for the last participant
-/// 3. Fast-forward blocks past the attestation expiry
-/// 4. Call [`verify_tee()`] which detects the expired attestation and triggers resharing
-/// 5. Complete resharing with remaining 2 participants
-/// 6. Verify participant count reduced from 3 to 2
 #[tokio::test]
-async fn test_verify_tee_expired_attestation_triggers_resharing() -> Result<()> {
-    const PARTICIPANT_COUNT: usize = 3;
-    const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-    // Add 100 blocks margin to account for block time variance and ensure attestation is
-    // reliably expired. This assumed that 100 blocks takes always more than `ATTESTATION_EXPIRY_SECONDS` seconds
-    const BLOCKS_TO_FAST_FORWARD: u64 = 100;
-
-    let SandboxTestSetup {
-        worker,
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
-        .with_protocols(&[Protocol::CaitSith])
-        .with_number_of_participants(PARTICIPANT_COUNT)
-        .build()
-        .await;
-
-    let initial_participants = assert_running_return_participants(&contract).await?;
-    assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);
-
-    // Calculate expiry timestamp from current block time
-    let block_info = worker.view_block().await?;
-    let expiry_timestamp = block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
-
-    // Submit an expiring attestation for the last participant
-    let target_account = &mpc_signer_accounts[2];
-    let internal_participants: Participants = (&initial_participants).into_contract_type();
-    let target_info = internal_participants
-        .info(target_account.id())
-        .expect("target participant not found");
-
-    let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp));
-
-    let submit_result = submit_participant_info(
-        target_account,
-        &contract,
-        &expiring_attestation,
-        &target_info.tls_public_key,
-    )
-    .await?
-    .is_success();
-    assert!(submit_result, "failed to submit expiring attestation");
-
-    // Fast-forward past the attestation expiry
-    worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
-    let block_info = worker.view_block().await?;
-    let current_timestamp = block_info.timestamp() / 1_000_000_000;
-    // Putting this assertion here such that if the test fails for this reason
-    // we already know
-    assert!(
-        current_timestamp > expiry_timestamp,
-        "Going forward {} was not enough: {} {}",
-        BLOCKS_TO_FAST_FORWARD,
-        current_timestamp,
-        expiry_timestamp
-    );
-
-    // Call verify_tee() to trigger resharing
-    let verify_result = mpc_signer_accounts[0]
-        .call_mpc(contract.id())
-        .verify_tee()
-        .await?;
-    dbg!(&verify_result);
-    assert!(
-        verify_result.is_success(),
-        "verify_tee call failed: {:?}",
-        verify_result
-    );
-
-    // Verify contract transitioned to Resharing state
-    let state_after_verify = get_state(&contract).await;
-    let prospective_epoch_id = match &state_after_verify {
-        dtos::ProtocolContractState::Resharing(resharing_state) => {
-            resharing_state.resharing_key.epoch_id
-        }
-        _ => panic!("expected Resharing state, got {:?}", state_after_verify),
-    };
-
-    // Complete resharing with the remaining participants (first 2)
-    let remaining_accounts = &mpc_signer_accounts[..2];
-    conclude_resharing(&contract, remaining_accounts, prospective_epoch_id).await?;
-
-    // Verify final state: 2 participants, target removed
-    let final_participants = assert_running_return_participants(&contract).await?;
-    assert_eq!(final_participants.participants.len(), PARTICIPANT_COUNT - 1);
-
-    let final_accounts: Vec<String> = final_participants
-        .participants
-        .iter()
-        .map(|(account_id, _, _)| account_id.to_string())
-        .collect();
-    let expected_accounts: Vec<String> = remaining_accounts
-        .iter()
-        .map(|a| a.id().to_string())
-        .collect();
-    assert_eq!(final_accounts, expected_accounts);
-
-    Ok(())
-}
-
-/// Complements [`test_verify_tee_expired_attestation_triggers_resharing`]: when kicking out the
-/// participants with expired attestations would leave fewer than `threshold` participants with a
-/// valid TEE status, the contract must NOT remove anyone (that would permanently break the
-/// network). Instead every participant is kept and the network stops accepting signature requests.
-///
-/// Steps:
-/// 1. Initialize contract with 3 participants (threshold 2).
-/// 2. Expire the attestations of 2 of the 3 participants, leaving only 1 valid (< threshold).
-/// 3. Fast-forward blocks past the attestation expiry.
-/// 4. Call [`verify_tee()`], which returns `false` and does NOT enter resharing.
-/// 5. Verify the contract stays Running with all 3 participants (no kickout).
-/// 6. Verify a `sign` request is now refused with the TEE-validation-failed error.
-#[tokio::test]
-async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drops_below_threshold()
+async fn verify_tee__should_stop_signing_without_kicking_out_when_an_attestation_expired()
 -> Result<()> {
     // Given
     const PARTICIPANT_COUNT: usize = 3;
@@ -867,42 +742,24 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
         .build()
         .await;
 
-    let threshold = assert_running_return_threshold(&contract).await;
     let initial_participants = assert_running_return_participants(&contract).await?;
-    assert_eq!(initial_participants.participants.len(), PARTICIPANT_COUNT);
-
-    // Expire all but `threshold - 1` attestations, leaving the valid set exactly one
-    // below threshold regardless of the participant/threshold constants above.
-    let remaining_valid = threshold.0 as usize - 1;
-    assert!(
-        remaining_valid < threshold.0 as usize,
-        "test precondition: surviving participants ({remaining_valid}) must be below threshold ({})",
-        threshold.0
-    );
-
-    // Compute the expiry timestamp from the current block time.
-    let block_info = worker.view_block().await?;
-    let expiry_timestamp = block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
-    let expiring_attestation = Attestation::Mock(mock_expiring_at(expiry_timestamp));
-
-    // Submit an expiring attestation for every participant past the first `remaining_valid`.
+    let expiry_timestamp =
+        worker.view_block().await?.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
+    let target_account = &mpc_signer_accounts[PARTICIPANT_COUNT - 1];
     let internal_participants: Participants = (&initial_participants).into_contract_type();
-    for target_account in &mpc_signer_accounts[remaining_valid..] {
-        let target_info = internal_participants
-            .info(target_account.id())
-            .expect("target participant not found");
-        let submit_success = submit_participant_info(
-            target_account,
-            &contract,
-            &expiring_attestation,
-            &target_info.tls_public_key,
-        )
-        .await?
-        .is_success();
-        assert!(submit_success, "failed to submit expiring attestation");
-    }
+    let target_info = internal_participants
+        .info(target_account.id())
+        .expect("target participant not found");
+    let submit_success = submit_participant_info(
+        target_account,
+        &contract,
+        &Attestation::Mock(mock_expiring_at(expiry_timestamp)),
+        &target_info.tls_public_key,
+    )
+    .await?
+    .is_success();
+    assert!(submit_success, "failed to submit expiring attestation");
 
-    // Fast-forward past the attestation expiry.
     worker.fast_forward(BLOCKS_TO_FAST_FORWARD).await?;
     let current_timestamp = worker.view_block().await?.timestamp() / 1_000_000_000;
     assert!(
@@ -910,48 +767,40 @@ async fn verify_tee__should_keep_participants_and_stop_signing_when_kickout_drop
         "fast-forwarding {BLOCKS_TO_FAST_FORWARD} blocks was not enough: {current_timestamp} {expiry_timestamp}"
     );
 
-    // When: a participant calls verify_tee while too few valid attestations remain.
+    // When
     let verify_result = mpc_signer_accounts[0]
         .call_mpc(contract.id())
         .verify_tee()
         .await?;
+
+    // Then
     assert!(
         verify_result.is_success(),
         "verify_tee call failed: {verify_result:?}"
     );
-
-    // Then: verify_tee reports the network is no longer accepting requests.
     let accepting_requests: bool = verify_result.json()?;
-    assert!(
-        !accepting_requests,
-        "verify_tee should return false when fewer than threshold participants remain valid"
-    );
+    assert!(!accepting_requests);
 
-    // Then: no participant is kicked out — the contract stays Running with all participants.
     let state_after_verify = get_state(&contract).await;
     let dtos::ProtocolContractState::Running(running_after) = &state_after_verify else {
         panic!("expected Running state (no resharing), got {state_after_verify:?}");
     };
-    assert_eq!(
-        running_after.parameters.participants.participants.len(),
-        PARTICIPANT_COUNT,
-        "no participant should be removed when kickout would drop below threshold"
-    );
+    assert_eq!(running_after.parameters.participants, initial_participants);
 
-    // Then: signature requests are refused while the TEE validation is degraded.
-    let mut rng = rand::rngs::StdRng::seed_from_u64(42);
     let requester = &mpc_signer_accounts[0];
     let DomainResponseTest::Sign(sign_request) = DomainResponseTest::new(
-        &mut rng,
+        &mut rand::rngs::StdRng::seed_from_u64(42),
         keys.first().expect("CaitSith sign domain exists"),
         requester.id(),
     ) else {
         panic!("CaitSith domain must yield a sign request");
     };
-    let contract_handle = requester.call_mpc(contract.id());
-    let sign_result = contract_handle.sign(sign_request.args).await?;
+    let sign_result = requester
+        .call_mpc(contract.id())
+        .sign(sign_request.args)
+        .await?;
     let Err(sign_err) = sign_result.into_result() else {
-        panic!("sign request must be refused while the network is not accepting requests");
+        panic!("sign request must be refused while the contract is not accepting requests");
     };
     let sign_err = format!("{sign_err:?}");
     assert!(

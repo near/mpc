@@ -1,0 +1,79 @@
+---
+source: crates/contract/src/api/keys.rs
+expression: keyset
+---
+{
+  "epoch_id": 5,
+  "domains": [
+    {
+      "domain_id": 0,
+      "key": {
+        "Secp256k1": {
+          "near_public_key": "secp256k1:4mjh95rRQVG1BAFfQfdbhcgLbbvEv1djERH9dEanDPZ7yMPZuVZQaDyKjtDNRo18HHvgWtbZQFzHomDnoekctLHc"
+        }
+      },
+      "attempt": 1
+    },
+    {
+      "domain_id": 2,
+      "key": {
+        "Ed25519": {
+          "near_public_key_compressed": "ed25519:9wvAboQeb4xCnC9aHW9jkS5GLeWgi8P9hF5FpJvTw6dt",
+          "edwards_point": [
+            132,
+            238,
+            249,
+            58,
+            27,
+            170,
+            132,
+            207,
+            61,
+            202,
+            232,
+            246,
+            255,
+            165,
+            22,
+            163,
+            78,
+            161,
+            232,
+            244,
+            116,
+            186,
+            220,
+            189,
+            155,
+            105,
+            68,
+            49,
+            47,
+            204,
+            1,
+            255
+          ]
+        }
+      },
+      "attempt": 1
+    },
+    {
+      "domain_id": 4,
+      "key": {
+        "Bls12381": {
+          "public_key": "bls12381g2:sV4zmGM1dkTAVi1HNmfPXrbpdBVyypciPk9va9kRQGb7feCaQyPnRC2WiYaBgkh1cX7QZv8PcY4J17yWLL4MjU1VUxoGxbxEdn9C1CYz6onU5QKMa8tAkoKT2gpkkMpuEFK"
+        }
+      },
+      "attempt": 1
+    },
+    {
+      "domain_id": 6,
+      "key": {
+        "Secp256k1": {
+          "near_public_key": "secp256k1:fQaTzJPXxm229aGEJQ4bLDCp5a5QnPssuvM25eZDoxeQLEABkca9zsC2UiDqGSxbr4MzVDsxkiHK5BN7wmmgVkQ"
+        }
+      },
+      "attempt": 1
+    }
+  ]
+}

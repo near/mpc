@@ -43,6 +43,10 @@ method:   state
 args:     {}
 
 contract: mpc.near
+method:   current_keyset
+args:     {}
+
+contract: mpc.near
 method:   config
 args:     {}
 
