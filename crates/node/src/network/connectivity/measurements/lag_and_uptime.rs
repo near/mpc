@@ -264,3 +264,6 @@ impl DisconnectRate {
         (-self.0 * length.as_seconds_f64()).exp()
     }
 }
+
+// todo: tests
+// todo: test that a peer lying about heights only affects links with itself as an endpoint

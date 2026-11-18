@@ -11,7 +11,9 @@ pub(super) const RECENT_DELAY_SAMPLES: NonZeroUsize =
 /// Finished up periods kept per link, for its disconnect rate.
 pub(super) const RECENT_UPTIMES: NonZeroUsize =
     NonZeroUsize::new(16).expect("literal must be non-zero");
-// todo: calibrate the two round trip lags
+// todo: calibrate the two round trip lags on localnet with injected delay (tc netem): how much of
+// a delay shows up as lag, how the path-difference error smears it, and how fast the mean over
+// `RECENT_DELAY_SAMPLES` reacts
 /// Round trip lag above which a connection counts as broken.
 pub(super) const MAX_ROUND_TRIP_LAG: BlockCount = BlockCount::new(40);
 /// Round trip lag above which a connection is not used for `HalfMinute` computations.
