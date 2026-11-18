@@ -1,4 +1,3 @@
-use std::num::NonZeroUsize;
 use std::time::Duration;
 
 //use crate::network::view::network_link_latency::MeanBlockLag;
@@ -18,10 +17,6 @@ pub const FIRST_HAND_INDEXER_HEIGHTS_PUBLISH_INTERVAL: near_time::Duration =
     near_time::Duration::milliseconds(300);
 
 pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);
-/// Lags kept per link direction for the mean lag. One arrives per received report, so at one per
-/// [`CONNECTED_PEERS_BROADCAST_INTERVAL`] the mean spans a minute.
-pub const RECENT_DELAY_SAMPLES: NonZeroUsize =
-    NonZeroUsize::new(60).expect("literal must be non-zero");
 ///// Largest moving-average gossip delay, in blocks, at which a link still counts as online: the
 ///// liveness lag plus a buffer for the extra gossip hop in the measurement.
 // todo: uncalibrated; see the todo on `RecentBlockLags`' `GradeLink` impl

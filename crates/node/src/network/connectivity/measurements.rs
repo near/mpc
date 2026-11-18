@@ -1,2 +1,2 @@
-mod network_link_latency;
-mod network_link_uptime;
+mod constants;
+mod lag_and_uptime;
