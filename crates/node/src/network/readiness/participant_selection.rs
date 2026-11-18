@@ -132,6 +132,61 @@ impl<T: Ord + Clone> NetworkReadiness<T> {
             .collect())
     }
 
+    /// The participants of `among` that are in a clique of `size` drawn from `among`. A
+    /// participant whose search is given up counts as in none.
+    // todo:
+    // - building `usable_neighbors` and dropping the poorly connected from it can probably be
+    //   combined into one cheaper step;
+    // - the worst case is one search per participant, each of `MAX_CLIQUE_SEARCH_ATTEMPTS`
+    //   attempts of `MAX_PICKS_PER_CLIQUE_SEARCH_ATTEMPT` picks, which can be large;
+    // - the attempts are in random order, so when a search is given up, two nodes with the same
+    //   view of the network can return different sets.
+    pub fn participants_in_clique(
+        &self,
+        size: usize,
+        among: &BTreeSet<T>,
+        rng: &mut impl Rng,
+    ) -> BTreeSet<T> {
+        if among.len() < size {
+            return BTreeSet::new();
+        }
+        if self.broken_connections.is_empty() {
+            return among.clone();
+        }
+        let candidates: Vec<&T> = among.iter().collect();
+        let neighbors_needed = size.saturating_sub(1);
+        let mut usable_neighbors = self.usable_neighbors(&candidates);
+        drop_poorly_connected(&mut usable_neighbors, neighbors_needed);
+        let mut in_clique = BTreeSet::new();
+        for (participant, neighbors) in &usable_neighbors {
+            if in_clique.contains(participant) {
+                continue;
+            }
+            let mut neighbors: Vec<&T> = neighbors.iter().copied().collect();
+            for _ in 0..MAX_CLIQUE_SEARCH_ATTEMPTS {
+                neighbors.shuffle(rng);
+                let mut clique = Vec::new();
+                let mut picks_left = MAX_PICKS_PER_CLIQUE_SEARCH_ATTEMPT;
+                match extend_clique(
+                    &mut clique,
+                    &neighbors,
+                    neighbors_needed,
+                    &usable_neighbors,
+                    &mut picks_left,
+                ) {
+                    Ok(true) => {
+                        in_clique.insert(*participant);
+                        in_clique.extend(clique);
+                        break;
+                    }
+                    Ok(false) => break,
+                    Err(OutOfPicksError) => {}
+                }
+            }
+        }
+        in_clique.into_iter().cloned().collect()
+    }
+
     /// For each of `candidates`, the other candidates it shares no broken connection with.
     fn usable_neighbors<'a>(&self, candidates: &[&'a T]) -> BTreeMap<&'a T, BTreeSet<&'a T>> {
         candidates

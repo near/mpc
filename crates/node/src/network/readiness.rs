@@ -38,6 +38,16 @@ impl<T: Ord + Clone> NetworkReadiness<T> {
             && !participants.iter().array_combinations::<2>().any(is_broken)
     }
 
+    /// The alive participants that share no broken connection with `participant`, including
+    /// `participant` itself if it is alive.
+    pub fn connected_to(&self, participant: &T) -> BTreeSet<T> {
+        self.alive_participants
+            .iter()
+            .filter(|other| !self.is_broken(participant, other))
+            .cloned()
+            .collect()
+    }
+
     fn is_broken(&self, a: &T, b: &T) -> bool {
         UndirectedEdge::new(a.clone(), b.clone())
             .is_ok_and(|connection| self.broken_connections.contains(&connection))

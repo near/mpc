@@ -25,6 +25,11 @@ pub trait ReadIndexerHeights {
     fn indexer_heights(&self) -> HashMap<ParticipantId, u64>;
 }
 
+pub trait ReadEligibleLeaders<RequestType> {
+    /// Returns the participants that can lead `request`, including us.
+    fn read_eligible_leaders(&self, request: &RequestType) -> HashSet<ParticipantId>;
+}
+
 // todo: replace this trait with `ReadAliveParticipants` and `ReadIndexerHeights`, implemented by
 // one type that the queue holds as a type parameter.
 /// Thin API that the queue needs from the network.
@@ -40,7 +45,7 @@ pub trait NetworkAPIForRequests: Send + Sync + 'static {
 pub const CHECK_EACH_REQUEST_INTERVAL: Duration = Duration::seconds(1);
 /// A participant is considered stale if its indexer's highest height is more than this many
 /// blocks behind the reference height of [`PendingRequests::eligible_leaders_and_heights`].
-const STALE_PARTICIPANT_THRESHOLD: BlockCount = BlockCount::new(10);
+pub(super) const STALE_PARTICIPANT_THRESHOLD: BlockCount = BlockCount::new(10);
 /// The number of blocks after which a request is assumed to have timed out.
 /// This is equal to the yield-resume timeout on the blockchain.
 pub const REQUEST_EXPIRATION_BLOCKS: BlockCount = BlockCount::new(200);
@@ -583,7 +588,9 @@ pub(super) struct EligibleLeadersAndHeights {
 
 /// Returns the highest height reached by more than half of `heights` (their lower median), or
 /// `None` if `heights` is empty.
-fn majority_height(heights: impl IntoIterator<Item = BlockHeight>) -> Option<BlockHeight> {
+pub(super) fn majority_height(
+    heights: impl IntoIterator<Item = BlockHeight>,
+) -> Option<BlockHeight> {
     let mut heights: Vec<BlockHeight> = heights.into_iter().collect();
     heights.sort_unstable_by_key(|height| Reverse(*height));
     heights.get(heights.len() / 2).copied()
