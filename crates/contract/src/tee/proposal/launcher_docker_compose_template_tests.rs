@@ -57,6 +57,7 @@ fn launcher_docker_compose_template__should_only_use_reviewed_keys() {
             "services.launcher.container_name",
             "services.launcher.environment",
             "services.launcher.volumes",
+            "services.launcher.devices",
             "services.launcher.security_opt",
             "services.launcher.read_only",
             "services.launcher.tmpfs",
