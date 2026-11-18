@@ -172,6 +172,7 @@ network, including those beyond `--init-participants`, so each node can store it
 attestation. The contract account pays the fee, which it reads from the contract's `config()`.
 A participant created with `update` after `init-contract` gets no grant; prepay one by hand as
 described in [Prepay Your Node's Attestation Storage](../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#prepay-your-nodes-attestation-storage).
+The contract refuses requests until every initial participant has attested.
 
 The `--init-participants` can be fewer than the total number of participants,
 if we wish to have fewer participants join the network at the beginning.

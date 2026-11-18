@@ -48,8 +48,8 @@ pub struct TripleConfig {
 pub struct TripleBatchSize(usize);
 
 impl TripleBatchSize {
-    /// The fixed batch size used before the value became configurable.
-    pub const LEGACY: Self = Self(64);
+    /// The batch size used when the config does not set one.
+    pub const DEFAULT: Self = Self(64);
 
     /// The largest batch a follower accepts.
     pub const MAX: Self = Self(64);
@@ -65,7 +65,7 @@ impl TripleBatchSize {
 
 impl Default for TripleBatchSize {
     fn default() -> Self {
-        Self::LEGACY
+        Self::DEFAULT
     }
 }
 
@@ -263,7 +263,7 @@ parallel_triple_generation_stagger_time_sec: 1
     }
 
     #[test]
-    fn triple_config__should_default_the_batch_size_to_the_legacy_one() {
+    fn triple_config__should_default_the_batch_size_when_the_config_sets_none() {
         // Given
         // a config written before the batch size became configurable
 
@@ -271,7 +271,7 @@ parallel_triple_generation_stagger_time_sec: 1
         let config: TripleConfig = serde_yaml::from_str(TRIPLE_CONFIG_YAML).unwrap();
 
         // Then
-        assert_eq!(config.batch_size, TripleBatchSize::LEGACY);
+        assert_eq!(config.batch_size, TripleBatchSize::DEFAULT);
     }
 
     #[test]

@@ -30,10 +30,10 @@ use crate::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS, AVAILABLE_ATTESTATION_GRANTS,
     CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS, CLEAN_TEE_STATUS, CONFIG,
-    CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS,
-    GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
-    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
-    LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
+    CONTRACT_UPDATE_VOTES, CURRENT_KEYSET, DERIVED_PUBLIC_KEY, GET_ATTESTATION,
+    GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
+    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
+    INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
     OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
     REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
@@ -651,6 +651,13 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(STATE))
     }
 
+    /// The keyset of the running state, or of the previous running state while resharing;
+    /// `None` otherwise. Unlike [`Self::state`], its JSON format stays stable across contract
+    /// versions.
+    pub fn current_keyset(&self) -> ViewCall<C, Option<Keyset>> {
+        self.view(ViewArgs::no_args(CURRENT_KEYSET))
+    }
+
     pub fn config(&self) -> ViewCall<C, Config> {
         self.view(ViewArgs::no_args(CONFIG))
     }
@@ -1147,6 +1154,7 @@ mod tests {
         let _ = handle.os_measurement_votes().await;
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;
+        let _ = handle.current_keyset().await;
         let _ = handle.config().await;
         let _ = handle.get_tee_accounts().await;
         let _ = handle.migration_info().await;

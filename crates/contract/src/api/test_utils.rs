@@ -10,7 +10,9 @@ use crate::primitives::test_utils::{
     NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_tee_verifier_account_id,
     gen_participant_url, gen_participants, infer_purpose_from_protocol, node_for,
 };
-use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
+use crate::primitives::thresholds::{
+    GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+};
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
 use crate::storage_keys::StorageKey;
@@ -28,7 +30,7 @@ use near_sdk::test_utils::VMContextBuilder;
 use near_sdk::{NearToken, VMContext, env, testing_env};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
-use std::{str::FromStr, time::Duration};
+use std::{assert_matches, str::FromStr, time::Duration};
 use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_core::Group as _;
 use threshold_signatures::frost_ed25519::Ed25519Group;
@@ -204,6 +206,34 @@ pub(crate) fn prepay_and_attest_all_participants(contract: &mut MpcContract) {
     // they are written when the contract is dropped, against the gas of the test's last call.
     contract.tee_state.nodes.flush();
     contract.available_attestation_grants.flush();
+}
+
+/// Installs a voting context for `signer` and casts `proposal`.
+pub(crate) fn vote_params(
+    contract: &mut MpcContract,
+    signer: &AccountId,
+    proposal: &ProposedGovernanceThresholdParameters,
+) -> Result<(), Error> {
+    testing_env!(
+        VMContextBuilder::new()
+            .signer_account_id(signer.clone())
+            .predecessor_account_id(signer.clone())
+            .attached_deposit(NearToken::ZERO)
+            .build()
+    );
+    contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
+}
+
+/// Moves `contract` into Resharing towards `proposal`: every proposed participant votes for
+/// it, in proposal order.
+pub(crate) fn vote_into_resharing(
+    contract: &mut MpcContract,
+    proposal: &ProposedGovernanceThresholdParameters,
+) {
+    for (account_id, _, _) in proposal.participants().participants() {
+        vote_params(contract, account_id, proposal).unwrap();
+    }
+    assert_matches!(contract.protocol_state, ProtocolContractState::Resharing(_));
 }
 
 /// Prepays one attestation-storage grant for `account_id`, then submits a valid mock

@@ -1,0 +1,57 @@
+{
+  "epoch_id": 4,
+  "domains": [
+    {
+      "domain_id": 0,
+      "key": {
+        "Secp256k1": {
+          "near_public_key": "secp256k1:3tFRbMqmoa6AAALMrEFAYCEoHcqKxeW38YptwowBVBtXK1vo36HDbUWuR6EZmoK4JcH6HDkNMGGqP1ouV7VZUWya"
+        }
+      },
+      "attempt": 240
+    },
+    {
+      "domain_id": 1,
+      "key": {
+        "Ed25519": {
+          "near_public_key_compressed": "ed25519:G9hwngxWNKdmqMCmU1Yt6LPhFpayJeKFxyAV1HqMNLtF",
+          "edwards_point": [
+            225,
+            26,
+            63,
+            32,
+            184,
+            108,
+            201,
+            78,
+            91,
+            117,
+            55,
+            216,
+            102,
+            209,
+            196,
+            106,
+            227,
+            228,
+            26,
+            70,
+            161,
+            208,
+            143,
+            122,
+            234,
+            22,
+            150,
+            164,
+            165,
+            0,
+            191,
+            208
+          ]
+        }
+      },
+      "attempt": 0
+    }
+  ]
+}

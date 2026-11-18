@@ -10,9 +10,7 @@ use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
 use crate::protocol::NamedProtocol;
 use crate::providers::HasParticipants;
-use crate::providers::ecdsa::{
-    CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION, EcdsaSignatureProvider,
-};
+use crate::providers::ecdsa::EcdsaSignatureProvider;
 use crate::tracking::AutoAbortTaskCollection;
 use mpc_node_config::{TripleBatchSize, TripleConfig};
 use mpc_primitives::ReconstructionThreshold;
@@ -134,7 +132,7 @@ impl EcdsaSignatureProvider {
                     }
                 };
 
-                let batch_size = batch_size_for(&client, &participants, config.batch_size);
+                let batch_size = config.batch_size;
                 let count = u32::from(batch_size);
                 let id_start = triple_store.generate_and_reserve_id_range(count);
                 let task_id = EcdsaTaskId::ManyTriples {
@@ -233,26 +231,6 @@ impl EcdsaSignatureProvider {
         .await?;
 
         Ok(())
-    }
-}
-
-/// The batch size to generate with `participants`: `configured`, unless one of them is older than
-/// [`CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION`] and so only accepts
-/// [`TripleBatchSize::LEGACY`].
-fn batch_size_for(
-    client: &MeshNetworkClient,
-    participants: &[ParticipantId],
-    configured: TripleBatchSize,
-) -> TripleBatchSize {
-    let supporting =
-        client.participants_supporting(CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION);
-    if participants
-        .iter()
-        .all(|participant| supporting.contains(participant))
-    {
-        configured
-    } else {
-        TripleBatchSize::LEGACY
     }
 }
 
@@ -386,19 +364,16 @@ pub fn validate_paired_triple_request(
 mod tests {
     use super::{
         ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleBatchSize,
-        TripleStorage, batch_size_for, caitsith_triple_thresholds, validate_paired_triple_request,
+        TripleStorage, caitsith_triple_thresholds, validate_paired_triple_request,
     };
     use crate::assets::test_utils::{make_triple, triple_v2_key};
     use crate::db::{DBCol, SecretDB};
     use crate::metrics;
     use crate::network::computation::MpcLeaderCentricComputation;
-    use crate::network::testing::{
-        current_protocol_versions, new_test_client, new_test_client_with_versions, run_test_clients,
-    };
+    use crate::network::testing::{new_test_client, run_test_clients};
     use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{ParticipantId, UniqueId};
-    use crate::protocol_version::NetworkProtocolVersion;
     use crate::tests::into_participant_ids;
     use crate::tracking;
     use futures::{FutureExt, StreamExt, stream};
@@ -448,42 +423,6 @@ mod tests {
 
         // Then
         assert_eq!(result.is_ok(), accepted, "{result:?}");
-    }
-
-    /// Three participants, the last one still on the version that predates configurable batch
-    /// sizes.
-    fn client_with_one_outdated_peer() -> (Vec<ParticipantId>, Arc<MeshNetworkClient>) {
-        let participants: Vec<_> = (0..3).map(ParticipantId::from_raw).collect();
-        let mut versions = current_protocol_versions(&participants);
-        versions.insert(participants[2], NetworkProtocolVersion::Sep2026);
-        let (client, _) =
-            new_test_client_with_versions(participants.clone(), participants[0], versions);
-        (participants, client)
-    }
-
-    #[test]
-    fn batch_size_for__should_use_the_configured_size_when_every_participant_accepts_it() {
-        // Given
-        let (participants, client) = client_with_one_outdated_peer();
-        let configured = TripleBatchSize::new(8).unwrap();
-
-        // When
-        let batch_size = batch_size_for(&client, &participants[..2], configured);
-
-        // Then
-        assert_eq!(batch_size, configured);
-    }
-
-    #[test]
-    fn batch_size_for__should_use_the_legacy_size_when_a_participant_is_outdated() {
-        // Given
-        let (participants, client) = client_with_one_outdated_peer();
-
-        // When
-        let batch_size = batch_size_for(&client, &participants, TripleBatchSize::new(8).unwrap());
-
-        // Then
-        assert_eq!(batch_size, TripleBatchSize::LEGACY);
     }
 
     fn domain(id: u64, protocol: Protocol, t: u64) -> DomainConfig {
