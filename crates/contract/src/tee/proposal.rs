@@ -813,6 +813,7 @@ mod tests {
         // Given
         let launcher = dummy_launcher_hash(1);
         let mpc_hash = dummy_code_hash(10);
+        let contract_id = "v1.signer";
         let genesis_hash = bogus_genesis_hash();
         let compose_hash_for = |account: &str, genesis_hash: &GenesisHash| {
             testing_env!(
@@ -824,10 +825,10 @@ mod tests {
         };
 
         // When
-        let compose_hash = compose_hash_for("v1.signer", &genesis_hash);
+        let compose_hash = compose_hash_for(contract_id, &genesis_hash);
         let compose_hash_of_other_contract = compose_hash_for("other.near", &genesis_hash);
         let compose_hash_on_other_chain =
-            compose_hash_for("v1.signer", &GenesisHash::from([2; 32]));
+            compose_hash_for(contract_id, &GenesisHash::from([2; 32]));
 
         // Then
         assert_ne!(compose_hash, compose_hash_of_other_contract);

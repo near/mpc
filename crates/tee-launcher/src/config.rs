@@ -137,9 +137,7 @@ mod tests {
             config,
             tee_config,
             &"v1.signer".parse().unwrap(),
-            &"EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H"
-                .parse()
-                .unwrap(),
+            &GenesisHash::MAINNET,
         )
     }
 
@@ -158,15 +156,16 @@ mod tests {
         let result = intercept(config, &sample_tee_config()).unwrap();
 
         // Then
-        let mut expected: toml::Table = toml::from_str(
+        let mut expected: toml::Table = toml::from_str(&format!(
             r#"
             port = 8080
             home_dir = "/data"
             node.indexer.sync_mode = "Latest"
             node.indexer.mpc_contract_id = "v1.signer"
-            node.indexer.genesis_hash = "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H"
+            node.indexer.genesis_hash = "{}"
             "#,
-        )
+            GenesisHash::MAINNET
+        ))
         .unwrap();
         expected.insert(
             "tee".into(),

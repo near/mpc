@@ -210,6 +210,7 @@ pub enum DownloadConfigType {
 mod tests {
     use super::*;
     use launcher_interface::types::PccsTlsTrust;
+    use near_indexer_primitives::CryptoHash;
     use std::assert_matches;
 
     #[rstest::rstest]
@@ -509,10 +510,10 @@ timeout_sec = 60
         .unwrap();
         mpc_node_config.insert("tee".into(), tee.into());
         mpc_node_config.insert("home_dir".into(), "/data".into());
-        let testnet_genesis_hash = "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b";
+        let genesis_hash = CryptoHash([1; 32]);
         let indexer = mpc_node_config["node"]["indexer"].as_table_mut().unwrap();
         indexer.insert("mpc_contract_id".into(), "v1.signer-prod.testnet".into());
-        indexer.insert("genesis_hash".into(), testnet_genesis_hash.into());
+        indexer.insert("genesis_hash".into(), genesis_hash.to_string().into());
 
         // When
         let config: StartConfig = mpc_node_config.try_into().unwrap();
@@ -523,9 +524,6 @@ timeout_sec = 60
             config.node.my_near_account_id.as_str(),
             "your-mpc-account.testnet"
         );
-        assert_eq!(
-            config.node.indexer.genesis_hash,
-            Some(testnet_genesis_hash.parse().unwrap())
-        );
+        assert_eq!(config.node.indexer.genesis_hash, Some(genesis_hash));
     }
 }

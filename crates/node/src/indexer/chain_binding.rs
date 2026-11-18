@@ -22,24 +22,18 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    const MAINNET_GENESIS_HASH: &str = "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H";
-    const TESTNET_GENESIS_HASH: &str = "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b";
+    const GENESIS_HASH: CryptoHash = CryptoHash([1; 32]);
 
     #[rstest]
-    #[case::same_chain(Some(MAINNET_GENESIS_HASH), MAINNET_GENESIS_HASH, true)]
-    #[case::other_chain(Some(MAINNET_GENESIS_HASH), TESTNET_GENESIS_HASH, false)]
-    #[case::no_expected_chain(None, TESTNET_GENESIS_HASH, true)]
+    #[case::same_chain(Some(GENESIS_HASH), true)]
+    #[case::other_chain(Some(CryptoHash([2; 32])), false)]
+    #[case::no_expected_chain(None, true)]
     fn ensure_chain_matches_contract__should_reject_a_chain_other_than_the_expected_one(
-        #[case] expected_genesis_hash: Option<&str>,
-        #[case] genesis_hash: &str,
+        #[case] expected_genesis_hash: Option<CryptoHash>,
         #[case] accepted: bool,
     ) {
-        // Given
-        let expected_genesis_hash = expected_genesis_hash.map(|hash| hash.parse().unwrap());
-        let genesis_hash: CryptoHash = genesis_hash.parse().unwrap();
-
         // When
-        let result = ensure_chain_matches_contract(expected_genesis_hash, genesis_hash);
+        let result = ensure_chain_matches_contract(expected_genesis_hash, GENESIS_HASH);
 
         // Then
         assert_eq!(result.is_ok(), accepted);

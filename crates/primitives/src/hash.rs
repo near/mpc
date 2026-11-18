@@ -264,6 +264,15 @@ pub struct GenesisHash(
     [u8; 32],
 );
 
+impl GenesisHash {
+    pub const MAINNET: Self = Self::from_base58("EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H");
+    pub const TESTNET: Self = Self::from_base58("FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b");
+
+    const fn from_base58(s: &str) -> Self {
+        Self(bs58::decode(s.as_bytes()).into_array_const_unwrap())
+    }
+}
+
 impl core::fmt::Display for GenesisHash {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(&bs58::encode(self.0).into_string())
@@ -512,6 +521,7 @@ mod tests {
         let genesis_hash: GenesisHash = serde_json::from_str(mainnet_genesis_hash).unwrap();
 
         // Then
+        assert_eq!(genesis_hash, GenesisHash::MAINNET);
         assert_eq!(
             serde_json::to_string(&genesis_hash).unwrap(),
             mainnet_genesis_hash

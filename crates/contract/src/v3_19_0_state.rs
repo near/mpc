@@ -79,14 +79,11 @@ impl From<MpcContract> for crate::MpcContract {
 /// production contracts. Any other contract gets a hash no chain has, so TEE nodes refuse to serve
 /// it until it is redeployed.
 fn known_genesis_hash() -> GenesisHash {
-    let genesis_hash = match env::current_account_id().as_str() {
-        "v1.signer" => "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H",
-        "v1.signer-prod.testnet" => "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b",
-        _ => return GenesisHash::from([0; 32]),
-    };
-    genesis_hash
-        .parse()
-        .expect("the production genesis hashes are valid")
+    match env::current_account_id().as_str() {
+        "v1.signer" => GenesisHash::MAINNET,
+        "v1.signer-prod.testnet" => GenesisHash::TESTNET,
+        _ => GenesisHash::from([0; 32]),
+    }
 }
 
 #[cfg(test)]
@@ -97,15 +94,12 @@ mod tests {
     use rstest::rstest;
 
     #[rstest]
-    #[case::mainnet("v1.signer", "EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H")]
-    #[case::testnet(
-        "v1.signer-prod.testnet",
-        "FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b"
-    )]
-    #[case::other_contract("mpc.sandbox", "11111111111111111111111111111111")]
+    #[case::mainnet("v1.signer", GenesisHash::MAINNET)]
+    #[case::testnet("v1.signer-prod.testnet", GenesisHash::TESTNET)]
+    #[case::other_contract("mpc.sandbox", GenesisHash::from([0; 32]))]
     fn known_genesis_hash__should_return_the_genesis_hash_of_the_production_contract_s_chain(
         #[case] contract_id: &str,
-        #[case] genesis_hash: &str,
+        #[case] genesis_hash: GenesisHash,
     ) {
         // Given
         testing_env!(
@@ -118,6 +112,6 @@ mod tests {
         let known = known_genesis_hash();
 
         // Then
-        assert_eq!(known, genesis_hash.parse().unwrap());
+        assert_eq!(known, genesis_hash);
     }
 }
