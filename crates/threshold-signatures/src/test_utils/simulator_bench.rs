@@ -12,8 +12,8 @@ use crate::protocol::{Action, Protocol};
 // All participants share a single global timeline starting at t=0.
 // Each participant tracks its position on this timeline via a clock (in ns).
 // The clock advances in two ways:
-//   - Computation: wall-clock time of each productive poke() call is added
-//     (Send/Return actions only, not Wait).
+//   - Computation: wall-clock time of each poke() call is added, including
+//     pokes that end in Wait, which may have processed received messages.
 //   - Waiting: on message receipt, clock = max(clock, arrival_time).
 // Messages are delivered via a priority queue ordered by arrival_time,
 // where arrival_time = sender_clock + latency at the time of sending.
@@ -317,16 +317,14 @@ fn drain_poke<T>(
     loop {
         let poke_start = Instant::now();
         let action = protocols[idx].1.poke().expect("Protocol poke failed");
-        let poke_elapsed_ns = poke_start.elapsed().as_nanos() as u64;
+        states[idx].clock += u64::try_from(poke_start.elapsed().as_nanos())
+            .expect("a poke takes less than 584 years");
 
         match action {
             Action::Wait => break,
-            // Keep poking; yields still count toward the participant's clock.
-            Action::Yield => {
-                states[idx].clock += poke_elapsed_ns;
-            }
+            // Keep poking.
+            Action::Yield => {}
             Action::SendMany(data) => {
-                states[idx].clock += poke_elapsed_ns;
                 for &recipient in all_participants {
                     if recipient == sender {
                         continue;
@@ -349,7 +347,6 @@ fn drain_poke<T>(
                 }
             }
             Action::SendPrivate(recipient, data) => {
-                states[idx].clock += poke_elapsed_ns;
                 if indices.contains_key(&recipient) {
                     let data_len = data.len() as u64;
                     metrics.total_bytes_sent += data_len;
@@ -369,11 +366,68 @@ fn drain_poke<T>(
                 }
             }
             Action::Return(result) => {
-                states[idx].clock += poke_elapsed_ns;
                 states[idx].finished = true;
                 outputs.push((sender, result));
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use std::thread;
+    use std::time::Duration;
+
+    use rstest::rstest;
+
+    use super::{LatencyModel, run_simulation};
+    use crate::errors::{MessageError, ProtocolError};
+    use crate::participants::Participant;
+    use crate::protocol::{Action, MessageData, Protocol};
+
+    const POKE_WORK: Duration = Duration::from_millis(5);
+
+    struct BusyFirstPoke {
+        first_action: Option<Action<()>>,
+    }
+
+    impl Protocol for BusyFirstPoke {
+        type Output = ();
+
+        fn poke(&mut self) -> Result<Action<()>, ProtocolError> {
+            let Some(action) = self.first_action.take() else {
+                return Ok(Action::Wait);
+            };
+            thread::sleep(POKE_WORK);
+            Ok(action)
+        }
+
+        fn message(&mut self, _from: Participant, _data: MessageData) -> Result<(), MessageError> {
+            Ok(())
+        }
+    }
+
+    #[rstest]
+    #[case::wait(Action::Wait)]
+    #[case::yield_(Action::Yield)]
+    #[case::send_many(Action::SendMany(vec![0]))]
+    #[case::send_private(Action::SendPrivate(Participant::from(1_u32), vec![0]))]
+    #[case::return_(Action::Return(()))]
+    fn run_simulation__should_count_poke_time_whatever_the_action(#[case] action: Action<()>) {
+        // Given
+        let protocols = vec![(
+            Participant::from(0_u32),
+            BusyFirstPoke {
+                first_action: Some(action),
+            },
+        )];
+
+        // When
+        let (_, metrics) = run_simulation(protocols, &LatencyModel::Fixed(0));
+
+        // Then
+        assert!(Duration::from_nanos(metrics.virtual_time_elapsed) >= POKE_WORK);
     }
 }

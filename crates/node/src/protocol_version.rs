@@ -19,8 +19,7 @@ pub enum NetworkProtocolVersion {
     /// and [`VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign`](crate::network::wire_format::VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign).
     /// Also honours the `count` of
     /// [`EcdsaTaskId::ManyTriples`](crate::network::wire_format::EcdsaTaskId::ManyTriples)
-    /// instead of requiring it to equal
-    /// [`TripleBatchSize::LEGACY`](mpc_node_config::TripleBatchSize::LEGACY).
+    /// instead of requiring it to equal 64.
     Oct2026 = 10,
     /// Adds [`Packet::Echo`](crate::network::wire_format::Packet::Echo)
     /// and [`Packet::EchoAck`](crate::network::wire_format::Packet::EchoAck)

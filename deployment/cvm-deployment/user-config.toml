@@ -23,10 +23,6 @@ port_mappings = [
     { host = 24567, container = 24567 }, # decentralized state sync
 ]
 
-[mpc_node_config]
-# Must be /data or a path under it: the only persistent volume in the CVM.
-home_dir = "/data"
-
 # PCCS endpoints for TDX attestation collateral. The node tries each
 # entry in order until one succeeds. Defaults below: Phala primary,
 # Intel direct as fallback.
@@ -103,7 +99,6 @@ cores = 6
 validate_genesis = false
 sync_mode = "Latest"
 concurrency = 1
-mpc_contract_id = "v1.signer-prod.testnet" # mainnet: "v1.signer"
 finality = "optimistic"
 # MPC P2P convention is port 80. Forces it on every peer URL (listen +
 # dial) regardless of the URL's scheme/port.

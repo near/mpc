@@ -176,7 +176,7 @@ mod tests {
         basic_setup, basic_setup_with_protocol, destination_of, init_running_with_domain,
         make_public_key_for_curve, must_attest_new_node, must_get_attested_signer_key,
         participant_account_ids, prepay_and_attest_all_participants,
-        prepay_and_submit_mock_attestation,
+        prepay_and_submit_mock_attestation, vote_into_resharing,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
@@ -729,19 +729,12 @@ mod tests {
         assert!(contract.get_available_foreign_chains().is_empty());
 
         // Transition to Resharing. Use the same participant set so mocked attestations remain valid.
-        let resharing = {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running state");
-            };
-            let proposal = ProposedGovernanceThresholdParameters::new(
-                state.parameters.clone(),
-                BTreeMap::new(),
-            );
-            state
-                .transition_to_resharing_no_checks(&proposal)
-                .expect("contract has at least one domain")
+        let ProtocolContractState::Running(ref state) = contract.protocol_state else {
+            panic!("expected Running state");
         };
-        contract.protocol_state = ProtocolContractState::Resharing(resharing);
+        let proposal =
+            ProposedGovernanceThresholdParameters::new(state.parameters.clone(), BTreeMap::new());
+        vote_into_resharing(&mut contract, &proposal);
 
         // When: the 3rd participant (from the old running set) registers during Resharing.
         register_foreign_chains_config_for(
@@ -903,21 +896,13 @@ mod tests {
         )
         .unwrap();
         let proposal = ProposedGovernanceThresholdParameters::new(proposed, BTreeMap::new());
-        let resharing = {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running state");
-            };
-            state
-                .transition_to_resharing_no_checks(&proposal)
-                .expect("contract has at least one domain")
-        };
-        contract.protocol_state = ProtocolContractState::Resharing(resharing);
         prepay_and_submit_mock_attestation(
             &mut contract,
             &joining,
             joining_info.tls_public_key.clone(),
         )
         .expect("the joining participant's attestation should be accepted");
+        vote_into_resharing(&mut contract, &proposal);
         let joining_pk = must_get_attested_signer_key(&contract, &joining_info.tls_public_key);
         let departing_pk = must_get_attested_signer_key(&contract, &departing_info.tls_public_key);
 

@@ -18,7 +18,7 @@ use crate::storage_keys::StorageKey;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ContractUpdateVotes;
-use crate::{MpcContract, MpcContractExt, v3_18_0_state};
+use crate::{MpcContract, MpcContractExt, v3_19_0_state};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
@@ -45,11 +45,6 @@ impl MpcContract {
         );
         parameters.validate()?;
 
-        // TODO(#1087): Every participant must have a valid attestation, otherwise we risk
-        // participants being immediately kicked out once contract transitions into running.
-        let initial_participants = parameters.participants();
-        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
-
         let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(Self {
@@ -66,8 +61,9 @@ impl MpcContract {
             ),
             contract_update_votes: ContractUpdateVotes::default(),
             config,
-            tee_state,
-            accept_requests: true,
+            tee_state: TeeState::default(),
+            // Frozen until every initial participant has an accepted attestation.
+            accept_requests: false,
             node_migrations: NodeMigrations::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -127,9 +123,6 @@ impl MpcContract {
             return Err(DomainError::DomainsMismatch.into());
         }
 
-        let initial_participants = parameters.participants();
-        let tee_state = TeeState::with_mocked_participant_attestations(initial_participants);
-
         let config: Config = init_config.map(Into::into).unwrap_or_default();
 
         Ok(MpcContract {
@@ -146,8 +139,9 @@ impl MpcContract {
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             contract_update_votes: Default::default(),
-            tee_state,
-            accept_requests: true,
+            tee_state: TeeState::default(),
+            // Frozen until every initial participant has an accepted attestation.
+            accept_requests: false,
             node_migrations: NodeMigrations::default(),
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
@@ -172,11 +166,11 @@ impl MpcContract {
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
 
-        match try_state_read::<v3_18_0_state::MpcContract>() {
+        match try_state_read::<v3_19_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => {
-                log!("failed to deserialize state into 3.18.0 state: {:?}", err);
+                log!("failed to deserialize state into 3.19.0 state: {:?}", err);
             }
         };
 
@@ -205,4 +199,57 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
     env::storage_read(MpcContract::state_key())
         .map(|data| T::try_from_slice(&data))
         .transpose()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use crate::api::test_utils::init_running_with_domain;
+    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::thresholds::GovernanceThreshold;
+    use dtos::{DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold};
+
+    fn parameters() -> GovernanceThresholdParameters {
+        GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
+            .unwrap()
+    }
+
+    #[test]
+    fn init__should_store_no_attestations_and_not_accept_requests() {
+        // Given
+        let parameters = parameters();
+
+        // When
+        let contract = MpcContract::init(
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            None,
+        )
+        .unwrap();
+
+        // Then
+        assert!(contract.tee_state.nodes.is_empty());
+        assert!(!contract.accept_requests);
+    }
+
+    #[test]
+    fn init_running__should_store_no_attestations_and_not_accept_requests() {
+        // Given
+        let parameters = parameters();
+        let domain = DomainConfig {
+            id: DomainId::default(),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        };
+
+        // When
+        let contract = init_running_with_domain(&parameters, domain);
+
+        // Then
+        assert!(contract.tee_state.nodes.is_empty());
+        assert!(!contract.accept_requests);
+    }
 }
