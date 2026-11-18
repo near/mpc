@@ -34,6 +34,8 @@ jobs:
       contents: read
       pull-requests: read # reads the diff, comments and reviews
       issues: read # reads the issues the pull request refers to
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     outputs:
       review: ${{ fromJSON(steps.claude-review.outputs.structured_output).review }}
 
@@ -84,6 +86,14 @@ jobs:
             echo '</review_instructions>'
             echo "$DELIM"
           } >> "$GITHUB_ENV"
+
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install sandbox dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
 
       - name: Run Claude Code Review
         id: claude-review
