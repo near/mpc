@@ -69,12 +69,12 @@ fn launcher_docker_compose_template__should_only_use_reviewed_keys() {
 }
 
 #[test]
-fn launcher_docker_compose_template__should_set_a_value_for_every_environment_variable() {
+fn launcher_docker_compose_template__should_not_inherit_environment_variables_from_compose() {
     // Given
     let template = parsed_template();
 
     // When
-    let variables_without_value: Vec<&str> = template["services"]["launcher"]["environment"]
+    let inherited_variables: Vec<&str> = template["services"]["launcher"]["environment"]
         .as_sequence()
         .unwrap()
         .iter()
@@ -83,5 +83,5 @@ fn launcher_docker_compose_template__should_set_a_value_for_every_environment_va
         .collect();
 
     // Then
-    assert_eq!(variables_without_value, Vec::<&str>::new());
+    assert_eq!(inherited_variables, Vec::<&str>::new());
 }
