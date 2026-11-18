@@ -244,6 +244,15 @@ EOF
   run_quiet_on_success "$(mpc_tx init "file-args ${init_args}" '0 NEAR' mpc-contract.test.near)"
   run_quiet_on_success_with_retries "$(mpc_view state)"
 
+  echo "Prepaying attestation storage for the nodes"
+  for ((i = 1; i <= N; i++)); do
+    node_name="mpc-node-$i.test.near"
+    run_quiet_on_success "$(mpc_tx prepay_attestation_storage "json-args '{\"account_id\":\"${node_name}\",\"grants\":1}'" '0.02 NEAR' "${node_name}")"
+  done
+
+  echo "Waiting for every node to attest"
+  wait_for_success "[[ \$($(mpc_view get_tee_accounts) 2>/dev/null | jq length) -eq ${N} ]]"
+
   echo "Adding domains to contract"
 
   pids_adding_domains=()
