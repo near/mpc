@@ -1,10 +1,8 @@
 flowchart LR
-    FL["The first leader, once the<br/>request's block is final"] --> I
-    BT["A backup leader's<br/>scheduled turn starts"] -->|"if no answer has landed,<br/>even while earlier leaders still try"| I
-    I["Leader inspects"] --> A["Leader starts a session<br/>for its own outcome"]
-    A --> Q{"Every follower<br/>signs?"}
-    Q -->|"yes"| S["Signed answer"]
-    Q -->|"no: a follower abstains, refuses,<br/>stays silent or sends a bad share"| R{"Fewer than three attempts,<br/>no answer landed, and<br/>the outcome unchanged?"}
-    R -->|"yes: another asset,<br/>same outcome"| A
-    R -->|"no"| X["This leader stops"]
-    X -.->|"if no other attempt signs"| T["The request times out<br/>at 200 blocks"]
+    T["A leader's turn starts"] --> I["The leader inspects"]
+    I --> S["It picks an asset and starts<br/>a session for its own outcome"]
+    S --> Q{"Did every<br/>follower sign?"}
+    Q -->|"yes"| R["It responds with<br/>the signed answer"]
+    Q -->|"no"| M{"Fewer than three attempts,<br/>no answer yet,<br/>and the same outcome?"}
+    M -->|"yes: retry with<br/>another asset"| S
+    M -->|"no"| X["It stops. The next leader<br/>takes over on its turn."]

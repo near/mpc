@@ -17,9 +17,9 @@ With this design, a V2 request gets one of three signed answers:
   found, its values differ from the expected ones, or it is not final enough yet. The answer
   doesn't say which. A later request can get a different answer, because the transaction may
   still land.
-- **Inconclusive:** each honest signer found no conclusive outcome, because of provider errors,
-  providers that disagree, or too few whitelisted providers with a conclusive result. It says nothing about the
-  transaction, and the caller may try again.
+- **Inconclusive:** each honest signer found no conclusive outcome, because its providers
+  disagreed or too few of them answered. It says nothing about the transaction, and the caller
+  may try again.
 
 If the network can't sign at all, or its nodes split between outcomes and no attempt signs, the
 request still times out.
@@ -43,7 +43,7 @@ The main points of the design:
 
 | Term | Meaning |
 |---|---|
-| Conclusive | Verified or negative. A provider result is conclusive or inconclusive. |
+| Conclusive | Verified or negative. |
 | Node outcome | What one node concludes from its providers: verified, negative, or inconclusive. |
 | Answer | The signed outcome the caller gets: verified, negative, or inconclusive. |
 | Session | One run of the threshold signing protocol, for one message with one asset. |
@@ -72,27 +72,29 @@ The main points of the design:
 
 ### Node outcomes
 
-A node asks every provider it has configured, whitelisted or not, and maps each result to
-verified, negative or inconclusive:
+A node asks every provider it has configured, whitelisted or not. Each provider's answer counts
+as verified, as negative, or as an error:
 
-| Provider result | Maps to |
+| Provider answer | Counts as |
 |---|---|
 | Found, with values equal to the expected ones | verified |
 | Found, with values that differ | negative |
 | Failed, not found, log index out of bounds, account not found, block not canonical | negative |
 | Not finalized, or fewer block confirmations than requested | negative |
-| Transport errors, timeouts, a rejected call, a malformed or inconsistent response, a log not bound to its receipt | inconclusive |
+| Transport error, timeout, rejected call, malformed or inconsistent response, log not bound to its receipt | error |
 
-A node retries transport errors within its inspection deadline, and a provider that hasn't
-replied by then counts as a timeout. A rejected call is inconclusive, not negative, because a
-misconfigured provider rejects calls too. Not finalized is negative, because the request states
-its finality and the transaction doesn't meet it yet.
+The node's outcome aggregates these answers. Errors are ignored.
 
-A node's outcome is conclusive when two conditions hold. Every provider with a conclusive
-result, whitelisted or not, found the same one. The number of whitelisted providers among them is at least
-the chain's quorum. Otherwise the outcome is inconclusive. An inconclusive provider result
-counts toward neither condition. A node compares the mapped results, so two providers that report *not found*
-and *failed* agree on negative.
+- **Verified or negative,** when every provider that answered gave the same one, and at least
+  the chain's quorum of whitelisted providers answered.
+- **Inconclusive,** when a single provider disagrees, whitelisted or not, or when fewer
+  whitelisted providers answered than the chain's quorum.
+
+A node compares what the answers count as, so two providers that report *not found* and
+*failed* agree on negative. A node retries transport errors within its inspection deadline, and
+a provider that hasn't replied by then counts as a timeout. A rejected call is an error, not a
+negative, because a misconfigured provider rejects calls too. Not finalized is negative,
+because the request states its finality and the transaction doesn't meet it yet.
 
 A node can't inspect a request when it doesn't support the chain, has fewer whitelisted
 providers configured than the chain's quorum, or can't convert the request. Such a node
@@ -128,7 +130,7 @@ Starts never join the same session.
    It stops earlier if an answer lands or its outcome changes (see "When nodes inspect").
    Resending a signed response that didn't land is not a new attempt.
 
-![Attempts: each leader inspects and starts a session for its own outcome. After a failed attempt it retries with another asset, up to three attempts, unless an answer landed or its outcome changed.](attachments/attempts.png)
+![Attempts: one leader's turn. The leader inspects, picks an asset and starts a session for its own outcome. If every follower signs, it responds. Otherwise it retries with another asset, up to three attempts, while no answer has landed and its outcome stays the same. Then it stops, and the next leader takes over on its turn.](attachments/attempts.png)
 
 In a split, nodes find different outcomes. Retries and
 backup leaders pick other assets, and when few nodes differ, one of these attempts usually
@@ -195,9 +197,9 @@ warning, labelled with the cause, the chain and the providers, in two cases:
 
 The cause is the first of these that applies:
 
-1. no provider has a conclusive result,
+1. every provider returned an error,
 2. providers disagree,
-3. too few whitelisted providers among those with a conclusive result.
+3. fewer whitelisted providers answered than the chain's quorum.
 
 On call gets a page when one of two rates passes its limit on one chain: the rate of V2 request
 timeouts, or the rate of signed inconclusives whose leader's cause is 1 or 3. Cause 2 stays a warning,
@@ -453,7 +455,7 @@ least one honest node found that outcome, not that t nodes did.
 | Threat | Defense |
 | --- | --- |
 | Honest nodes find different reasons for one negative | A negative carries no reason or provider data, so honest nodes sign the same bytes. |
-| Faulty provider drives a conclusive outcome | A node reaches a conclusive outcome only with the chain's quorum of whitelisted providers and no provider that disagrees (see "Node outcomes"). So faulty providers drive one only if, at every honest holder of an asset, they reach that quorum while every other provider there is inconclusive. V1 has the same limit. Otherwise a provider that lies to every node only makes those nodes inconclusive. |
+| Faulty provider drives a conclusive outcome | A node reaches a conclusive outcome only with the chain's quorum of whitelisted providers and no provider that disagrees (see "Node outcomes"). So faulty providers drive one only if, at every honest holder of an asset, they reach that quorum while every other provider there returns an error. V1 has the same limit. Otherwise a provider that lies to every node only makes those nodes inconclusive. |
 
 ### Replay and reuse
 
