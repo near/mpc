@@ -134,13 +134,9 @@ pub fn whitelist_dstack_measurements(
     launcher: LauncherImageHash,
     compose_hash: Option<LauncherDockerComposeHash>,
 ) {
-    tee_state.whitelist_tee_proposal(image, &bogus_genesis_hash(), Duration::MAX);
-    tee_state.add_launcher_image(
-        launcher,
-        &bogus_genesis_hash(),
-        Duration::MAX,
-        Duration::MAX,
-    );
+    let genesis_hash = bogus_genesis_hash();
+    tee_state.whitelist_tee_proposal(image, &genesis_hash, Duration::MAX);
+    tee_state.add_launcher_image(launcher, &genesis_hash, Duration::MAX, Duration::MAX);
     tee_state.add_measurement(dev_measurements().into_dto_type());
     if let Some(compose_hash) = compose_hash {
         tee_state
@@ -158,6 +154,21 @@ pub fn whitelist_dstack_in_state(
     let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
     whitelist_dstack_measurements(&mut contract.tee_state, image, launcher, compose_hash);
     borsh::to_vec(&contract).expect("STATE serializes")
+}
+
+#[cfg(test)]
+pub(crate) fn allow_launcher(
+    tee_state: &mut TeeState,
+    launcher: LauncherImageHash,
+    mpc_hash: NodeImageHash,
+    ttl: Duration,
+) {
+    tee_state.allowed_launcher_images.add_or_refresh(
+        launcher,
+        &[mpc_hash],
+        &bogus_genesis_hash(),
+        ttl,
+    );
 }
 
 #[cfg(test)]

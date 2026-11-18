@@ -523,7 +523,8 @@ mod tests {
     use crate::tee::{
         proposal::get_docker_compose_hash,
         test_utils::{
-            dstack_fixture_node, set_block_secs, set_block_timestamp, whitelist_dstack_measurements,
+            allow_launcher, dstack_fixture_node, set_block_secs, set_block_timestamp,
+            whitelist_dstack_measurements,
         },
     };
     use mpc_attestation::attestation::MockAttestation;
@@ -786,19 +787,6 @@ mod tests {
         added_at_secs + LAUNCHER_TTL.as_secs() + 1
     }
 
-    fn allow_launcher(
-        tee_state: &mut TeeState,
-        launcher: LauncherImageHash,
-        mpc_hash: NodeImageHash,
-    ) {
-        tee_state.allowed_launcher_images.add_or_refresh(
-            launcher,
-            &[mpc_hash],
-            &bogus_genesis_hash(),
-            LAUNCHER_TTL,
-        );
-    }
-
     fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
         let compose_hash = get_docker_compose_hash(launcher, mpc_hash, &bogus_genesis_hash());
         MockAttestation::WithConstraints {
@@ -819,8 +807,8 @@ mod tests {
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
         let unused = LauncherImageHash::from([2u8; 32]);
-        allow_launcher(&mut tee_state, adopted, mpc_hash);
-        allow_launcher(&mut tee_state, unused, mpc_hash);
+        allow_launcher(&mut tee_state, adopted, mpc_hash, LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, unused, mpc_hash, LAUNCHER_TTL);
         submit_mock(
             &mut tee_state,
             &create_node(&account_id, &participant_info.tls_public_key),
@@ -855,7 +843,7 @@ mod tests {
         for ((account_id, _, participant_info), launcher) in
             participants.participants().iter().zip(&used)
         {
-            allow_launcher(&mut tee_state, *launcher, mpc_hash);
+            allow_launcher(&mut tee_state, *launcher, mpc_hash, LAUNCHER_TTL);
             submit_mock(
                 &mut tee_state,
                 &create_node(account_id, &participant_info.tls_public_key),
@@ -863,7 +851,7 @@ mod tests {
             )
             .unwrap();
         }
-        allow_launcher(&mut tee_state, unused, mpc_hash);
+        allow_launcher(&mut tee_state, unused, mpc_hash, LAUNCHER_TTL);
 
         // When
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
@@ -882,10 +870,10 @@ mod tests {
         let old = LauncherImageHash::from([1u8; 32]);
         let newest = LauncherImageHash::from([2u8; 32]);
         set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
-        allow_launcher(&mut tee_state, old, mpc_hash);
+        allow_launcher(&mut tee_state, old, mpc_hash, LAUNCHER_TTL);
         submit_mock(&mut tee_state, &node, launcher_mock(&old, &mpc_hash)).unwrap();
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
-        allow_launcher(&mut tee_state, newest, mpc_hash);
+        allow_launcher(&mut tee_state, newest, mpc_hash, LAUNCHER_TTL);
         (tee_state, newest)
     }
 
@@ -932,9 +920,9 @@ mod tests {
             LauncherImageHash::from([2u8; 32]),
         ];
         set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
-        allow_launcher(&mut tee_state, launchers[0], mpc_hash);
+        allow_launcher(&mut tee_state, launchers[0], mpc_hash, LAUNCHER_TTL);
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
-        allow_launcher(&mut tee_state, launchers[1], mpc_hash);
+        allow_launcher(&mut tee_state, launchers[1], mpc_hash, LAUNCHER_TTL);
 
         // When
         set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
@@ -1269,9 +1257,9 @@ mod tests {
         let newest = LauncherImageHash::from([2u8; 32]);
         let mut tee_state = TeeState::default();
         set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
-        allow_launcher(&mut tee_state, removed, mpc_hash);
+        allow_launcher(&mut tee_state, removed, mpc_hash, LAUNCHER_TTL);
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
-        allow_launcher(&mut tee_state, newest, mpc_hash);
+        allow_launcher(&mut tee_state, newest, mpc_hash, LAUNCHER_TTL);
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
         tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 
