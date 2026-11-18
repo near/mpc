@@ -147,7 +147,7 @@ The [migration service `impl` block][migration-service-impl] needs:
   - `allowed_backup_service_launcher_compose_hashes()`
   - `reverify_backup_services(max_scan)`: removes backup service entries that fail re-verification and returns their grants, like [`clean_invalid_attestations()`][clean-invalid-attestations] does for MPC nodes
 - **Resharing cleanup**: when operators leave the participant set, [`clean_tee_status()`][clean-tee-status] should also drop their votes from `backup_service_tee_state`; their entries stay until `reverify_backup_services()` removes them, as MPC node entries do.
-- **Launcher retention**: [`remove_unused_launchers()`][remove-unused-launchers] counts only the launchers of participants' own nodes, so `backup_service_tee_state` needs its own rule; otherwise every backup service launcher is dropped once its retention period passes.
+- **Launcher retention**: [`remove_unused_launchers()`][remove-unused-launchers] counts only the launchers of participants' own nodes, so `backup_service_tee_state` needs its own rule; otherwise every backup service launcher except the newest is dropped once its retention period passes, which invalidates backup services still running an older one.
 - **`start_node_migration()`** and **`conclude_node_migration()`**: No changes for backup-service attestation.
 
 ### Attestation Verification
