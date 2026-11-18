@@ -5,6 +5,7 @@ use crate::db::{DBCol, SecretDB};
 use crate::metrics;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::computation::MpcLeaderCentricComputation;
+use crate::network::readiness::NetworkReadiness;
 use crate::network::wire_format::EcdsaTaskId;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::{ParticipantId, UniqueId};
@@ -53,7 +54,10 @@ pub fn caitsith_triple_thresholds(domains: &[DomainConfig]) -> BTreeSet<Reconstr
 ///
 /// Backed by [`DBCol::TripleV2`] under prefix `t.value().to_be_bytes()` (8 BE).
 pub struct TripleStorage(
-    DistributedAssetStorage<PairedTriple, PolledCondition<Vec<ParticipantId>, PairedTriple>>,
+    DistributedAssetStorage<
+        PairedTriple,
+        PolledCondition<NetworkReadiness<ParticipantId>, PairedTriple>,
+    >,
 );
 
 impl TripleStorage {
@@ -69,21 +73,26 @@ impl TripleStorage {
             DBCol::TripleV2,
             reconstruction_threshold.value().to_be_bytes().to_vec(),
             client.my_participant_id(),
-            PolledCondition::<Vec<ParticipantId>, PairedTriple>::new(
-                // todo: replace this `PolledCondition` with a `WatchCondition` over
-                // |readiness, pair| readiness.supports(&participants_from_triples(&pair.0, &pair.1)),
-                // and the `crate::network::readiness::NetworkReadiness` receiver for
-                // `ComputationDuration::Seconds`.
-                |participants, pair| pair.is_subset_of_active_participants(participants),
-                move || client.all_alive_participant_ids(),
+            PolledCondition::<NetworkReadiness<ParticipantId>, PairedTriple>::new(
+                |readiness, pair| readiness.supports(&participants_from_triples(&pair.0, &pair.1)),
+                // todo: replace this `PolledCondition` and its closure with a `WatchCondition`
+                // over the `NetworkReadiness` receiver for `ComputationDuration::Seconds`.
+                move || {
+                    NetworkReadiness::new(
+                        client.all_alive_participant_ids().into_iter().collect(),
+                        BTreeSet::new(),
+                    )
+                },
             ),
         )?))
     }
 }
 
 impl Deref for TripleStorage {
-    type Target =
-        DistributedAssetStorage<PairedTriple, PolledCondition<Vec<ParticipantId>, PairedTriple>>;
+    type Target = DistributedAssetStorage<
+        PairedTriple,
+        PolledCondition<NetworkReadiness<ParticipantId>, PairedTriple>,
+    >;
 
     fn deref(&self) -> &Self::Target {
         &self.0
