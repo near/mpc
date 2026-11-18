@@ -126,6 +126,11 @@ name = "simulate_ckd"
 harness = false
 required-features = ["test-utils"]
 
+[[bench]]
+name = "simulate_triples"
+harness = false
+required-features = ["test-utils"]
+
 [lints.clippy]
 mod_module_files = "deny"
 # We might revisit these exceptions in the future
