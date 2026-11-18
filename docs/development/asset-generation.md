@@ -360,7 +360,6 @@ loop {
     if num_owned + in_flight < desired_triples_to_buffer
        AND in_flight < concurrency * 2 * batch_size:
         pick threshold random online participants
-        (64 instead of batch_size if one of them does not accept it)
         reserve batch of batch_size IDs
         spawn async task (semaphore-limited to `concurrency`):
             run MPC triple protocol → batch_size triples
@@ -377,9 +376,7 @@ loop {
 
 - Each batch produces `batch_size` raw triples, paired into half as many
   `PairedTriple` values, which is why the size must be even.
-- The leader selects `threshold` random online participants, and generates at
-  64 instead of `batch_size` unless all of them advertise the protocol version
-  that made the size configurable.
+- The leader selects `threshold` random online participants.
 - `InFlightGenerationTracker` counts how many triples are "in flight"
   (spawned but not yet completed) using an atomic counter with a drop guard.
 - A tokio semaphore limits actual concurrent protocol executions to
