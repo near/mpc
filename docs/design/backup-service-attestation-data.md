@@ -99,7 +99,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 ### Backup Flow
 
-**Precondition**: MPC participants have voted for a backup service Docker image hash via `vote_backup_service_code_hash()`.
+**Precondition**: MPC participants have voted for a backup service Docker image hash via `vote_backup_service_code_hash()` and for a backup service launcher via `vote_add_backup_service_launcher_hash()`.
 
 **On boot (one-time):**
 
@@ -139,8 +139,10 @@ The [migration service `impl` block][migration-service-impl] needs:
 
 - **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo` and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to `tee_state`: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback once the `tee-verifier` contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for a new entry. The grant comes from the operator account's pool, shared with its MPC nodes, so operators prepay one more grant than for their nodes. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`, which needs its own storage keys because `TeeState::default()` uses fixed ones).
 - **[`migration_info()`][migration-info]**: Keep it for ongoing migrations, and move its backup service part to a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
-- **New methods** (the first three per [migration-service.md §Backup Service TEE methods](../archive/design/migration-service.md#backup-service-tee-methods)):
+- **New methods**:
   - `vote_backup_service_code_hash(code_hash)`
+  - `vote_add_backup_service_launcher_hash(launcher_hash)` and `vote_remove_backup_service_launcher_hash(launcher_hash)`, like [`vote_add_launcher_hash()`][vote-add-launcher-hash] and [`vote_remove_launcher_hash()`][vote-remove-launcher-hash]: the contract derives compose hashes only for allowed launchers, so without these the backup service has none
+  - `vote_add_backup_service_os_measurement(measurement)` and `vote_remove_backup_service_os_measurement(measurement)`, like [`vote_add_os_measurement()`][vote-add-os-measurement] and [`vote_remove_os_measurement()`][vote-remove-os-measurement], so the allowed measurements follow dstack OS upgrades
   - `allowed_backup_service_code_hashes()`
   - `allowed_backup_service_launcher_compose_hashes()`
   - `reverify_backup_services(max_scan)`: removes backup service entries that fail re-verification and returns their grants, like [`clean_invalid_attestations()`][clean-invalid-attestations] does for MPC nodes
@@ -153,7 +155,7 @@ The [migration service `impl` block][migration-service-impl] needs:
 [`DstackVerify::verify()`][dstack-verify] can be reused as-is: it takes the allowed image hashes, compose hashes and measurements as arguments, which [`verify_and_store_dstack()`][verify-and-store-dstack] fills from the `TeeState` it is called on. It relies on two things:
 
 - It reads the Docker image hash from the [`"mpc-image-digest"` event][mpc-image-hash-event-usage], so the backup service launcher must emit its image hash under that name, as the [MPC node launcher][launcher-image-hash-event] does.
-- It rejects every attestation while one of those allowed lists is empty, and a new `TeeState` starts with all three empty. For MPC nodes, the measurements were [seeded during a contract migration][seed-measurements], and the backup service `TeeState` should be seeded the same way.
+- It rejects every attestation while one of those allowed lists is empty, and a new `TeeState` starts with all three empty. The backup service votes listed under [Contract Methods](#contract-methods) fill all three. For MPC nodes, the measurements were also [seeded during a contract migration][seed-measurements], and the backup service `TeeState` should be seeded the same way, leaving the measurement votes for dstack OS upgrades.
 
 The allowed compose hashes also need a backup service template. `get_docker_compose_hash()` fills in the MPC launcher compose template, including the contract's own account id as `MPC_CONTRACT_ID`, which the MPC node launcher takes from this measured compose rather than from its user config. The backup service template needs the contract id too, and the genesis hash of the chain the contract runs on, which [#5101](https://github.com/near/mpc/issues/5101) adds to the MPC node template. The backup service takes both from its measured compose rather than its user config, so its embedded NEAR node reads only this contract and refuses to follow another chain. Its launcher also fixes the home directory, so the embedded node stays on the chain its disk started on.
 
@@ -177,6 +179,10 @@ The allowed compose hashes also need a backup service template. `get_docker_comp
 [verify-and-store-dstack]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L147
 [clean-invalid-attestations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/attestation.rs#L325
 [clean-tee-status]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L238
+[vote-add-launcher-hash]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L54
+[vote-remove-launcher-hash]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L94
+[vote-add-os-measurement]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L127
+[vote-remove-os-measurement]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/api/tee_measurements.rs#L159
 [remove-unused-launchers]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/tee/tee_state.rs#L298
 [node-migrations]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/contract/src/node_migrations.rs#L11
 [backup-service-info]: https://github.com/near/mpc/blob/b970a0ceced3b365dc77feaacc1082945436aba9/crates/near-mpc-contract-interface/src/types/node_migrations.rs#L12
