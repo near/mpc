@@ -8,6 +8,7 @@ use futures::future::join_all;
 use near_block_primitives::BlockCount;
 use near_time::{Clock, Duration};
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     network::{
@@ -66,13 +67,15 @@ where
 
     /// Publishes at once, then again when a connection changes, and every `publish_interval` to
     /// pick up the indexer heights and what the passing of time changes. The heights are not a
-    /// wake-up source: they change with every report. Runs until the monitor is gone or nothing
-    /// reads the results any more.
-    async fn run(mut self) {
+    /// wake-up source: they are published several times a second. Runs until
+    /// `cancellation_token` is cancelled, the monitor is gone or nothing reads the results any
+    /// more.
+    async fn run(mut self, cancellation_token: CancellationToken) {
         let durations: BTreeSet<_> = self.readiness.keys().copied().collect();
         loop {
             self.publish(&durations);
             tokio::select! {
+                _ = cancellation_token.cancelled() => return,
                 changed = self.connections.changed() => {
                     if changed.is_err() {
                         return;
@@ -90,7 +93,8 @@ where
             &self.heights.borrow(),
             self.max_indexer_height_lag,
         );
-        // Taken out of the channel first, so that the pass does not block the monitor's next publish.
+        // Taken out of the channel first, so that the pass does not block the monitor's next
+        // publish.
         let connections = self.connections.borrow().clone();
         let not_supporting = connections.connections_not_supporting(durations, self.clock.now());
         for (duration, broken_connections) in not_supporting {

@@ -5,6 +5,7 @@ use std::{hash::Hash, num::NonZeroUsize, sync::Arc};
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
 use near_time::{Clock, Duration, Interval};
 use tokio::sync::{mpsc, watch};
+use tokio_util::sync::CancellationToken;
 
 use crate::network::connectivity::{
     errors::PeerReportError,
@@ -98,12 +99,13 @@ where
     L: UpdateLinkStatus<IndexerHeightLag, LinkStatus = S>,
     S: InferConnection<ConnectionStatus = C>,
 {
-    /// Runs until every sender of peer reports is gone.
-    pub async fn run(mut self) {
+    /// Runs until `cancellation_token` is cancelled or every sender of peer reports is gone.
+    pub async fn run(mut self, cancellation_token: CancellationToken) {
         let mut link_statuses_tick = Interval::new(self.clock.now(), self.report_interval);
         let mut heights_tick = Interval::new(self.clock.now(), self.heights_publish_interval);
         loop {
             tokio::select! {
+                _ = cancellation_token.cancelled() => return,
                 report = self.peer_reports.recv() => {
                     let Some(report) = report else {
                         return;
@@ -142,44 +144,6 @@ pub struct ConnectivityMonitorHandles<N, C, S> {
     pub heights: watch::Receiver<FirstHandIndexerHeights<N>>,
     pub link_statuses: watch::Receiver<LinkStatuses<N, S>>,
 }
-
-/// The manager runs until `cancellation_token` is cancelled or every `updates` sender is gone.
-//pub fn run_network_view_manager<M>(
-//    me: ParticipantId,
-//    participants: &NonEmptyBTreeSet<ParticipantId>,
-//    measurement: M,
-//    report_interval: Duration,
-//    clock: Clock,
-//    cancellation_token: CancellationToken,
-//) -> NetworkViewHandles<M::Link>
-//where
-//    M: MeasureNetworkConnections + Send + 'static,
-//    M::Link: Send + Sync + 'static,
-//{
-//    let first_hand_heights = FirstHandIndexerHeights::new(participants);
-//    let (updates, observations) = mpsc::channel(update_buffer_size(participants.len()));
-//    let (connections, connections_receiver) =
-//        watch::channel(Arc::new(measurement.usable_connections()));
-//    let (heights, heights_receiver) = watch::channel(first_hand_heights.snapshot());
-//    let (link_reports, link_reports_receiver) =
-//        watch::channel(measurement.link_report(clock.now()));
-//    let manager = NetworkViewManager {
-//        first_hand_heights,
-//        measurement,
-//        observations,
-//        connections,
-//        heights,
-//        link_reports,
-//        report_interval,
-//        clock,
-//    };
-//    tokio::spawn(manager.run(cancellation_token));
-//    NetworkViewHandles {
-//        local_view: LocalNetworkView::new(me, connections_receiver, heights_receiver),
-//        updates,
-//        link_reports: link_reports_receiver,
-//    }
-//}
 
 // todo: add a reader of the monitor's heights for the request queue. It must implement
 // `crate::requests::queue::ReadIndexerHeights`.

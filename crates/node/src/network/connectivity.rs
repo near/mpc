@@ -50,7 +50,6 @@ pub mod first_hand_indexer_heights;
 #[expect(unused_imports, reason = "the graph has no consumer yet")]
 mod graph;
 mod health;
-pub mod local_network_view;
 mod measurements;
 mod monitor;
 mod reports;

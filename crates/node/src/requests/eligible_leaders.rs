@@ -5,6 +5,7 @@ use near_contract_transport::BlockHeight;
 use near_mpc_contract_interface::types as dtos;
 use near_time::{Clock, Duration};
 use tokio::sync::watch;
+use tokio_util::sync::CancellationToken;
 
 use crate::foreign_chain_policy::{SupportersByForeignChain, foreign_tx_required_active_signers};
 use crate::network::connectivity::first_hand_indexer_heights::FirstHandIndexerHeights;
@@ -129,9 +130,10 @@ pub(crate) struct EligibleLeadersPublisher {
 
 impl EligibleLeadersPublisher {
     /// Publishes at once, then looks again when `readiness` or `foreign_chain_supporters` change,
-    /// and every `publish_interval` for the heights, which change with every report. Runs until
-    /// one of those two channels is gone or nothing reads the result any more.
-    pub(crate) async fn run(mut self) {
+    /// and every `publish_interval` for the heights, which are published several times a second.
+    /// Runs until `cancellation_token` is cancelled, one of those two channels is gone or nothing
+    /// reads the result any more.
+    pub(crate) async fn run(mut self, cancellation_token: CancellationToken) {
         let mut published_for = None;
         loop {
             let readiness = self.readiness.borrow_and_update().clone();
@@ -148,6 +150,7 @@ impl EligibleLeadersPublisher {
                 published_for = Some(inputs);
             }
             tokio::select! {
+                _ = cancellation_token.cancelled() => return,
                 changed = self.readiness.changed() => {
                     if changed.is_err() {
                         return;
