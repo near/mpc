@@ -27,12 +27,9 @@ impl ToProposalHash for LauncherVoteAction {
 /// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
 /// - `{{MPC_CONTRACT_ID}}`: the account id of this contract
 ///
-/// Attestation binds the launcher to this text only through its hash, so nothing in it may be
-/// left for Docker Compose to resolve when the CVM starts: no variable substitution, no
-/// environment variable without a value, no key that makes Compose read guest files into the
-/// service definition, such as `env_file` or `build`. Those values come from the guest's
-/// environment and disk, which the host partly controls, and would change the launcher without
-/// changing the hash
+/// Attestation binds the launcher to this text only through its hash, so it must leave nothing
+/// for Docker Compose to resolve at start-up: no variable substitution, no environment variable
+/// without a value, no key such as `env_file` or `build` that makes Compose read guest files
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
 
