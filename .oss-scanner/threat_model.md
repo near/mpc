@@ -63,11 +63,6 @@ State which position an attack needs:
 - **Malicious host of a TEE node.** Controls the OS, disk, network and launcher
   inputs outside the Intel TDX CVM, but not CVM memory. Keyshare exposure or
   running unapproved code with a valid attestation is in scope.
-  The launcher's Docker Compose file is trusted only as the text whose hash
-  the contract approves: anything Compose resolves when the CVM starts it
-  (variable substitution, environment variables without a value, files loaded
-  through keys such as `env_file` or `build`) is host input. dstack starts
-  Compose with the host's `PCCS_URL` in its environment.
 
 Trusted: the NEAR blockchain's consensus, Intel TDX hardware and its attestation
 roots, and, on non-TEE nodes, the operator's own local configuration and secrets
