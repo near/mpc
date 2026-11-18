@@ -69,9 +69,10 @@ bash localnet/tee/scripts/rust-launcher/single-node.sh
 After collecting `public_data.json`, update test assets:
 
 ```bash
-cp <WORKDIR>/public_data.json crates/test-utils/assets/public_data.json
-cd crates/test-utils/assets && bash ./create-assets.sh public_data.json .
-cp crates/test-utils/assets/tcb_info.json crates/attestation-types/assets/tcb_info.json
+mkdir -p crates/test-utils/assets/dstack-<version>
+cp <WORKDIR>/public_data.json crates/test-utils/assets/dstack-<version>/public_data.json
+(cd crates/test-utils/assets && bash ./create-assets.sh dstack-<version>/public_data.json dstack-<version>)
+cp crates/test-utils/assets/dstack-<version>/tcb_info.json crates/attestation-types/assets/tcb_info.json
 ```
 
 Then update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs`.

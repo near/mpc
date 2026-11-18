@@ -6,9 +6,11 @@ use attestation_cli::verify;
 use mpc_attestation::attestation::{Attestation, VerificationError};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
+use rstest::rstest;
 use test_utils::attestation::{
-    TEST_LAUNCHER_IMAGE_COMPOSE_STRING, TEST_MPC_IMAGE_DIGEST_HEX, VALID_ATTESTATION_TIMESTAMP,
-    account_key, collateral_dates, mock_dstack_attestation, p2p_tls_key,
+    AttestationFixture, DSTACK_0_5_8, TEST_LAUNCHER_IMAGE_COMPOSE_STRING,
+    TEST_MPC_IMAGE_DIGEST_HEX, VALID_ATTESTATION_TIMESTAMP, account_key, mock_dstack_attestation,
+    p2p_tls_key,
 };
 
 fn make_static_web_data(attestation: Attestation) -> StaticWebData {
@@ -19,8 +21,12 @@ fn make_static_web_data(attestation: Attestation) -> StaticWebData {
     }
 }
 
-fn dev_measurements_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../mpc-attestation/assets/tcb_info_dev.json")
+fn fixture_static_web_data(fixture: &AttestationFixture) -> StaticWebData {
+    StaticWebData {
+        near_signer_public_key: Ed25519PublicKey(fixture.account_key()),
+        near_p2p_public_key: Ed25519PublicKey(fixture.p2p_tls_key()),
+        tee_participant_info: Some(fixture.dstack_attestation()),
+    }
 }
 
 fn make_args(
@@ -39,23 +45,24 @@ fn make_args(
     }
 }
 
-#[test]
-fn full_verification_succeeds_with_valid_attestation() {
-    let attestation = mock_dstack_attestation();
-    let static_data = make_static_web_data(attestation);
+#[rstest]
+fn full_verification_succeeds_with_valid_attestation(
+    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+) {
+    let static_data = fixture_static_web_data(fixture);
 
     // Write the launcher compose to a temp file
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
-    std::fs::write(&compose_path, TEST_LAUNCHER_IMAGE_COMPOSE_STRING).unwrap();
+    std::fs::write(&compose_path, fixture.launcher_compose).unwrap();
 
     let args = make_args(
         &compose_path,
-        TEST_MPC_IMAGE_DIGEST_HEX,
-        Some(dev_measurements_path()),
+        fixture.mpc_image_digest_hex,
+        Some(fixture.asset_path("tcb_info.json")),
     );
 
-    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);
 
     assert!(
         result.is_ok(),
@@ -63,26 +70,29 @@ fn full_verification_succeeds_with_valid_attestation() {
         result.unwrap_err()
     );
     let result = result.unwrap();
-    assert_eq!(result.mpc_image_hash.as_hex(), TEST_MPC_IMAGE_DIGEST_HEX);
+    assert_eq!(result.mpc_image_hash.as_hex(), fixture.mpc_image_digest_hex);
     assert_eq!(
         result.expiry_timestamp_seconds,
-        collateral_dates().earliest_expiration_date
+        fixture.collateral_dates().earliest_expiration_date
     );
 }
 
-#[test]
-fn verification_fails_with_wrong_image_hash() {
-    let attestation = mock_dstack_attestation();
-    let static_data = make_static_web_data(attestation);
+#[rstest]
+fn verification_fails_with_wrong_image_hash(#[values(&DSTACK_0_5_8)] fixture: &AttestationFixture) {
+    let static_data = fixture_static_web_data(fixture);
 
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
-    std::fs::write(&compose_path, TEST_LAUNCHER_IMAGE_COMPOSE_STRING).unwrap();
+    std::fs::write(&compose_path, fixture.launcher_compose).unwrap();
 
     let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
-    let args = make_args(&compose_path, wrong_hash, Some(dev_measurements_path()));
+    let args = make_args(
+        &compose_path,
+        wrong_hash,
+        Some(fixture.asset_path("tcb_info.json")),
+    );
 
-    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
@@ -92,10 +102,11 @@ fn verification_fails_with_wrong_image_hash() {
     );
 }
 
-#[test]
-fn verification_fails_with_wrong_compose_file() {
-    let attestation = mock_dstack_attestation();
-    let static_data = make_static_web_data(attestation);
+#[rstest]
+fn verification_fails_with_wrong_compose_file(
+    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+) {
+    let static_data = fixture_static_web_data(fixture);
 
     let dir = tempfile::tempdir().unwrap();
     let compose_path = dir.path().join("launcher-compose.yaml");
@@ -103,11 +114,11 @@ fn verification_fails_with_wrong_compose_file() {
 
     let args = make_args(
         &compose_path,
-        TEST_MPC_IMAGE_DIGEST_HEX,
-        Some(dev_measurements_path()),
+        fixture.mpc_image_digest_hex,
+        Some(fixture.asset_path("tcb_info.json")),
     );
 
-    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
+    let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);
 
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
