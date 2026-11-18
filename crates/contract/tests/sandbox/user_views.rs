@@ -1,11 +1,13 @@
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::types::{
-    AuthScheme, ChainEntry, ChainRouting, ForeignChain, Protocol, ProviderConfig, ProviderId,
+    AuthScheme, ChainEntry, ChainRouting, ForeignChain, Protocol, ProtocolContractState,
+    ProviderConfig, ProviderId,
 };
 use near_sdk::{CurveType, PublicKey};
 use std::str::FromStr;
 
 use crate::sandbox::common::SandboxTestSetup;
+use crate::sandbox::utils::mpc_contract::get_state;
 use crate::sandbox::utils::transactions::CallMpcContract;
 
 #[tokio::test]
@@ -43,6 +45,33 @@ async fn test_derived_public_key() -> anyhow::Result<()> {
     let pk = PublicKey::from_str(&String::from(&key))?;
     assert_eq!(pk.curve_type(), CurveType::SECP256K1);
     Ok(())
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn current_keyset__should_return_the_keyset_of_the_running_state() {
+    // Given
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[
+            Protocol::CaitSith,
+            Protocol::Frost,
+            Protocol::ConfidentialKeyDerivation,
+        ])
+        .build()
+        .await;
+    let ProtocolContractState::Running(running) = get_state(&contract).await else {
+        panic!("expected a running contract");
+    };
+
+    // When
+    let keyset = contract.current_keyset().await.unwrap().value;
+
+    // Then
+    assert_eq!(keyset, Some(running.keyset));
 }
 
 #[tokio::test]

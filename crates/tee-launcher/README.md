@@ -41,8 +41,8 @@ port_mappings = [
 
 # MPC node configuration. The launcher passes these fields through and adds
 # `tee`, `home_dir`, `node.indexer.mpc_contract_id` and
-# `node.indexer.genesis_hash`, rejecting a config that already sets any of
-# them. The result is re-serialized to TOML and written to
+# `node.indexer.genesis_hash`, rejecting a config that sets any of them to a
+# different value. The result is re-serialized to TOML and written to
 # /mnt/shared/mpc-config.toml, on a volume shared with the MPC container, for
 # the MPC binary to consume via `start-with-config-file`.
 [mpc_node_config]
@@ -59,7 +59,7 @@ port_mappings = [
 
 ### `[mpc_node_config]`
 
-Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section, `home_dir`, `node.indexer.mpc_contract_id` and `node.indexer.genesis_hash`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that already sets any of them is rejected.
+Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section, `home_dir`, `node.indexer.mpc_contract_id` and `node.indexer.genesis_hash`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that sets any of them to a different value is rejected.
 
 ## Supported Registries
 
