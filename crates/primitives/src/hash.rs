@@ -1,6 +1,7 @@
 use alloc::{string::String, vec::Vec};
 use borsh::{BorshDeserialize, BorshSerialize};
 use hex::FromHexError;
+use serde_with::{DeserializeFromStr, SerializeDisplay};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -250,8 +251,19 @@ define_hash!(
 /// Hash of the genesis block of a NEAR chain, which identifies the chain. Its text form is base58,
 /// as nearcore prints it.
 #[derive(
-    Clone, Copy, Debug, PartialEq, Eq, derive_more::From, BorshSerialize, BorshDeserialize,
+    Clone,
+    Copy,
+    Debug,
+    PartialEq,
+    Eq,
+    derive_more::From,
+    derive_more::Display,
+    BorshSerialize,
+    BorshDeserialize,
+    SerializeDisplay,
+    DeserializeFromStr,
 )]
+#[display("{}", bs58::encode(_0).into_string())]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -273,31 +285,11 @@ impl GenesisHash {
     }
 }
 
-impl core::fmt::Display for GenesisHash {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(&bs58::encode(self.0).into_string())
-    }
-}
-
 impl core::str::FromStr for GenesisHash {
     type Err = HashParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         to_array(bs58::decode(s).into_vec()?).map(Self)
-    }
-}
-
-impl serde::Serialize for GenesisHash {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for GenesisHash {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        <String as serde::Deserialize>::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)
     }
 }
 
