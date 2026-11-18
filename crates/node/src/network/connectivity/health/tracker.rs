@@ -7,7 +7,10 @@ use crate::network::connectivity::{
     graph::{TooManyNodesError, UnknownNodeError},
     health::{
         connections::{ConnectionChanged, EstablishedConnections, InferredConnection},
-        links::{LinkMeasurements, LinkObservation, LinkStatusChange, UpdateLinkStatus},
+        links::{
+            LinkMeasurements, LinkObservation, LinkStatusChange, LinkStatuses, ReportLinkStatus,
+            UpdateLinkStatus,
+        },
     },
 };
 
@@ -27,6 +30,17 @@ impl<N: Ord + Hash + Clone, C, L> ConnectionTracker<N, C, L> {
             link_measurements,
             established_connections,
         })
+    }
+
+    pub fn established_connections(&self) -> &EstablishedConnections<N, C> {
+        &self.established_connections
+    }
+
+    pub fn report_link_statuses(&self) -> LinkStatuses<N, L::LinkStatus>
+    where
+        L: ReportLinkStatus,
+    {
+        self.link_measurements.report_link_statuses()
     }
 
     pub fn update_with_observation<O>(

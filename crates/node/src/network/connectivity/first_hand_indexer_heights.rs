@@ -8,6 +8,7 @@ use crate::network::connectivity::graph::UnknownNodeError;
 /// Every participant's indexer height as that participant itself last reported it: its own entry
 /// in its [`ConnectedPeersInfo`](crate::primitives::ConnectedPeersInfo), or its legacy
 /// `IndexerHeight` message.
+#[derive(Clone)]
 pub struct FirstHandIndexerHeights<N> {
     heights: NonEmptyBTreeMap<N, ReportedIndexerHeight>,
 }

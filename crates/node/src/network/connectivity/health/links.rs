@@ -68,7 +68,7 @@ impl<N: Ord + Hash + Clone, L> LinkMeasurements<N, L> {
     {
         Ok(self.measurements.edge(link)?.map(L::link_status))
     }
-    fn report_link_statuses(&self) -> LinkStatuses<N, L::LinkStatus>
+    pub fn report_link_statuses(&self) -> LinkStatuses<N, L::LinkStatus>
     where
         L: ReportLinkStatus,
     {

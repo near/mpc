@@ -90,10 +90,9 @@ where
             &self.heights.borrow(),
             self.max_indexer_height_lag,
         );
-        let not_supporting = self
-            .connections
-            .borrow()
-            .connections_not_supporting(durations, self.clock.now());
+        // Taken out of the channel first, so that the pass does not block the monitor's next publish.
+        let connections = self.connections.borrow().clone();
+        let not_supporting = connections.connections_not_supporting(durations, self.clock.now());
         for (duration, broken_connections) in not_supporting {
             let Some(sender) = self.readiness.get(&duration) else {
                 continue;

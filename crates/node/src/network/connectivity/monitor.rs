@@ -1,22 +1,22 @@
 // todo: clean this file
 
-use std::{hash::Hash, sync::Arc};
+use std::{hash::Hash, num::NonZeroUsize, sync::Arc};
 
 use near_mpc_bounded_collections::NonEmptyBTreeSet;
-use near_time::{Clock, Duration};
+use near_time::{Clock, Duration, Interval};
 use tokio::sync::{mpsc, watch};
 
 use crate::network::connectivity::{
     errors::PeerReportError,
     first_hand_indexer_heights::FirstHandIndexerHeights,
-    graph::UnknownNodeError,
+    graph::{TooManyNodesError, UnknownNodeError},
     health::{
         ConnectionChanged, ConnectionTracker, EstablishedConnections, InferConnection,
-        LinkStatuses, UpdateLinkStatus,
+        LinkStatuses, ReportLinkStatus, UpdateLinkStatus,
     },
     reports::{
-        DeriveLinkObservations, IndexerHeightLag, IndexerHeightReport, ObservationContext,
-        PeerReport,
+        DeriveLinkObservations, IndexerHeightLag, IndexerHeightReport, LegacyIndexerHeightReport,
+        ObservationContext, PeerReport,
     },
 };
 
@@ -46,24 +46,97 @@ struct DebugConnectivityView<N, S> {
     link_statuses: watch::Receiver<Arc<LinkStatuses<N, S>>>,
 }
 
-//impl<N, C, S, L> ConnectivityMonitor<N, C, S, L>
-//where
-//    N: Ord + Clone + std::fmt::Display,
-//    L: UpdateLinkStatus<IndexerHeightLag>,
-//    L::LinkStatus: InferConnection<ConnectionStatus = C>,
-//    C: PartialEq,
-//{
-//    pub async fn new(
-//        clock: Clock,
-//        report_interval: Duration,
-//        nodes: &NonEmptyBTreeSet<N>,
-//        report_buffer_size: usize,
-//    ) -> Self {
-//        let first_hand_indexer_heights = FirstHandIndexerHeights::new(nodes);
-//        let connection_tracker = ConnectionTracker::new(nodes);
-//        let (peer_reports_sender, peer_reports_receiver) = mpsc::channel(report_buffer_size);
-//    }
-//}
+impl<N, C, S, L> ConnectivityMonitor<N, C, S, L>
+where
+    N: Ord + Hash + Clone,
+    C: Clone,
+    L: ReportLinkStatus<LinkStatus = S>,
+{
+    /// Returns the monitor, which the caller has to run, and its channels.
+    pub fn new(
+        clock: Clock,
+        report_interval: Duration,
+        nodes: &NonEmptyBTreeSet<N>,
+        report_buffer_size: NonZeroUsize,
+    ) -> Result<(Self, ConnectivityMonitorHandles<N, C, S>), TooManyNodesError> {
+        let first_hand_heights = FirstHandIndexerHeights::new(nodes);
+        let connection_tracker: ConnectionTracker<N, C, L> = ConnectionTracker::new(nodes)?;
+        let (peer_reports_sender, peer_reports) = mpsc::channel(report_buffer_size.get());
+        let connections = watch::Sender::new(Arc::new(
+            connection_tracker.established_connections().clone(),
+        ));
+        let heights = watch::Sender::new(first_hand_heights.clone());
+        let link_statuses = watch::Sender::new(connection_tracker.report_link_statuses());
+        let handles = ConnectivityMonitorHandles {
+            peer_reports: peer_reports_sender,
+            connections: connections.subscribe(),
+            clock: clock.clone(),
+            heights: heights.subscribe(),
+            link_statuses: link_statuses.subscribe(),
+        };
+        let monitor = Self {
+            clock,
+            report_interval,
+            first_hand_heights,
+            connection_tracker,
+            peer_reports,
+            connections,
+            heights,
+            link_statuses,
+        };
+        Ok((monitor, handles))
+    }
+}
+
+impl<N, C, S, L> ConnectivityMonitor<N, C, S, L>
+where
+    N: Ord + Hash + Clone + std::fmt::Debug + std::fmt::Display,
+    C: Clone + PartialEq,
+    L: UpdateLinkStatus<IndexerHeightLag, LinkStatus = S>,
+    S: InferConnection<ConnectionStatus = C>,
+{
+    /// Runs until every sender of peer reports is gone.
+    pub async fn run(mut self) {
+        let mut link_statuses_tick = Interval::new(self.clock.now(), self.report_interval);
+        loop {
+            tokio::select! {
+                report = self.peer_reports.recv() => {
+                    let Some(report) = report else {
+                        return;
+                    };
+                    self.apply_and_publish(report);
+                }
+                _ = link_statuses_tick.tick(&self.clock) => {
+                    self.link_statuses
+                        .send_replace(self.connection_tracker.report_link_statuses());
+                }
+            }
+        }
+    }
+
+    fn apply_and_publish(&mut self, report: PeerReport<N>) {
+        match self.apply(report) {
+            Ok(ConnectionsChanged::Yes) => {
+                let connections = self.connection_tracker.established_connections().clone();
+                self.connections.send_replace(Arc::new(connections));
+            }
+            Ok(ConnectionsChanged::No) => {}
+            Err(err) => tracing::warn!(%err, "peer report not applied"),
+        }
+        self.heights.send_replace(self.first_hand_heights.clone());
+    }
+}
+
+/// The channels of a [`ConnectivityMonitor`] that the other components use.
+pub struct ConnectivityMonitorHandles<N, C, S> {
+    pub peer_reports: mpsc::Sender<PeerReport<N>>,
+    pub connections: watch::Receiver<Arc<EstablishedConnections<N, C>>>,
+    /// The times stored in `connections` are from this clock, so ask them with its `now`.
+    pub clock: Clock,
+    pub heights: watch::Receiver<FirstHandIndexerHeights<N>>,
+    pub link_statuses: watch::Receiver<LinkStatuses<N, S>>,
+}
+
 /// The manager runs until `cancellation_token` is cancelled or every `updates` sender is gone.
 //pub fn run_network_view_manager<M>(
 //    me: ParticipantId,
@@ -115,6 +188,21 @@ enum ConnectionsChanged {
     No,
 }
 
+impl<N, C, S, L> ApplyPeerReport<N, PeerReport<N>> for ConnectivityMonitor<N, C, S, L>
+where
+    N: Ord + Hash + Clone + std::fmt::Display,
+    L: UpdateLinkStatus<IndexerHeightLag>,
+    L::LinkStatus: InferConnection<ConnectionStatus = C>,
+    C: PartialEq,
+{
+    fn apply(&mut self, report: PeerReport<N>) -> Result<ConnectionsChanged, PeerReportError<N>> {
+        match report {
+            PeerReport::IndexerHeightReport(report) => self.apply(report),
+            PeerReport::LegacyIndexerHeightReport(report) => self.apply(report),
+        }
+    }
+}
+
 impl<N, C, S, L> ApplyPeerReport<N, IndexerHeightReport<N>> for ConnectivityMonitor<N, C, S, L>
 where
     N: Ord + Hash + Clone + std::fmt::Display,
@@ -133,6 +221,21 @@ where
         self.first_hand_heights
             .set(report.reporter.clone(), own_height)?;
         Ok(self.update_connections(&report)?)
+    }
+}
+
+impl<N, C, S, L> ApplyPeerReport<N, LegacyIndexerHeightReport<N>>
+    for ConnectivityMonitor<N, C, S, L>
+where
+    N: Ord + Clone + std::fmt::Display,
+{
+    fn apply(
+        &mut self,
+        report: LegacyIndexerHeightReport<N>,
+    ) -> Result<ConnectionsChanged, PeerReportError<N>> {
+        self.first_hand_heights
+            .set(report.reporter, report.indexer_height)?;
+        Ok(ConnectionsChanged::No)
     }
 }
 
