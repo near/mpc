@@ -69,13 +69,13 @@ Once verified, the attestation is stored in a new field on [`NodeMigrations`][no
 
 ```rust
 pub struct NodeMigrations {
+    backup_services_info: IterableMap<AccountId, Ed25519PublicKey>,
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
-    pub backup_service_tee_state: TeeState, // replaces backup_services_info
+    pub backup_service_tee_state: TeeState,
 }
 ```
 
-`backup_services_info` is removed — `TeeState` already stores each node's TLS key.
-The MPC node reads the backup service's TLS key from `backup_service_tee_state` instead.
+`backup_services_info` keeps only each account's backup service TLS key. [`TeeState`][tee-state] is keyed by TLS key and must not be scanned, so this index is how an account's backup service is found in `backup_service_tee_state`.
 
 The attestation uses the same [`NodeInfo`](../../crates/near-mpc-contract-interface/src/types/tee.rs) struct as MPC nodes:
 
@@ -137,8 +137,8 @@ The following walkthroughs show how the attestation data defined above is used i
 
 The [migration service `impl` block][migration-service-impl] needs:
 
-- **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo` and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to `tee_state`: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback once the `tee-verifier` contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for a new entry. The grant comes from the operator account's pool, shared with its MPC nodes, so operators prepay one more grant than for their nodes. Remove [`backup_services_info`][backup-services-info-field] (replaced by `backup_service_tee_state`, which needs its own storage keys because `TeeState::default()` uses fixed ones).
-- **[`migration_info()`][migration-info]**: Keep it for ongoing migrations, and move its backup service part to a view method that returns the backup service's TLS key and attestation validity from `backup_service_tee_state` given an `AccountId`. The MPC node needs this to look up its operator's backup service (since `TeeState` is keyed by TLS public key, not `AccountId`).
+- **[`register_backup_service()`][register-backup-service]**: Accept extended `BackupServiceInfo` and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to `tee_state`: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback once the `tee-verifier` contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for a new entry. The grant comes from the operator account's pool, shared with its MPC nodes, so operators prepay one more grant than for their nodes. The callback also records the TLS key in [`backup_services_info`][backup-services-info-field] and, if that replaces a different key, removes the entry under the old key and returns its grant, so each account has at most one backup service entry. `backup_service_tee_state` needs its own storage keys because `TeeState::default()` uses fixed ones.
+- **[`migration_info()`][migration-info]**: Keep it for ongoing migrations, and move its backup service part to a view method that, given an `AccountId`, returns the backup service's TLS key from `backup_services_info` and its attestation validity from `backup_service_tee_state`. The MPC node needs this to look up its operator's backup service.
 - **New methods**:
   - `vote_backup_service_code_hash(code_hash)`
   - `vote_add_backup_service_launcher_hash(launcher_hash)` and `vote_remove_backup_service_launcher_hash(launcher_hash)`, like [`vote_add_launcher_hash()`][vote-add-launcher-hash] and [`vote_remove_launcher_hash()`][vote-remove-launcher-hash]: the contract derives compose hashes only for allowed launchers, so without these the backup service has none
