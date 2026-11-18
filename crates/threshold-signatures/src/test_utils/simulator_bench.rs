@@ -4,6 +4,8 @@ use std::env;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
+use average::{Max, Mean, Min};
+
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
 
@@ -111,40 +113,57 @@ pub fn run_simulation<T>(
     (outputs, metrics)
 }
 
-#[allow(clippy::cast_precision_loss)]
 pub fn bench_simulation(name: &str, run: &dyn Fn() -> SimulationMetrics, samples: usize) {
     let bar_width = 20;
     eprint!("{name}: ");
-    let mut times = Vec::with_capacity(samples);
-    let mut first_metrics: Option<SimulationMetrics> = None;
-    for i in 0..samples {
-        let metrics = run();
-        times.push(metrics.virtual_time_ms());
-        if let Some(first) = &first_metrics {
-            metrics.assert_deterministic(first, name);
-        } else {
-            first_metrics = Some(metrics);
-        }
-        let done = (i + 1) * bar_width / samples;
-        eprint!(
-            "\r{name}: [{}{}] {}/{}",
-            "#".repeat(done),
-            ".".repeat(bar_width - done),
-            i + 1,
-            samples
-        );
-        let _ = std::io::stderr().flush();
-    }
+    let metrics: Vec<SimulationMetrics> = (0..samples)
+        .map(|i| {
+            let sample = run();
+            let done = (i + 1) * bar_width / samples;
+            eprint!(
+                "\r{name}: [{}{}] {}/{}",
+                "#".repeat(done),
+                ".".repeat(bar_width - done),
+                i + 1,
+                samples
+            );
+            let _ = std::io::stderr().flush();
+            sample
+        })
+        .collect();
     eprintln!();
-    let first_metrics = first_metrics.expect("samples > 0");
-
-    let avg = times.iter().sum::<f64>() / samples as f64;
-    let min = times.iter().copied().reduce(f64::min).expect("samples > 0");
-    let max = times.iter().copied().reduce(f64::max).expect("samples > 0");
+    let first = metrics.first().expect("samples > 0");
+    for sample in &metrics[1..] {
+        sample.assert_deterministic(first, name);
+    }
 
     println!("=== {name} ===");
-    print!("{first_metrics}");
-    println!("Virtual time: avg {avg:.3} ms, min {min:.3} ms, max {max:.3} ms");
+    print!("{first}");
+    print_spread(
+        "Virtual time",
+        metrics.iter().map(SimulationMetrics::virtual_time_ms),
+    );
+    print_spread(
+        "Avg compute/participant",
+        metrics.iter().map(SimulationMetrics::avg_compute_ms),
+    );
+    print_spread(
+        "Max burst",
+        metrics.iter().map(|m| m.max_burst_time.as_secs_f64() * 1e3),
+    );
+}
+
+fn print_spread(label: &str, values_ms: impl Iterator<Item = f64>) {
+    let values_ms: Vec<f64> = values_ms.collect();
+    let mean: Mean = values_ms.iter().collect();
+    let min: Min = values_ms.iter().collect();
+    let max: Max = values_ms.iter().collect();
+    println!(
+        "{label}: avg {:.3} ms, min {:.3} ms, max {:.3} ms",
+        mean.mean(),
+        min.min(),
+        max.max()
+    );
 }
 
 /// Extensible to statistical distributions (normal, log-normal, etc.).
@@ -172,9 +191,9 @@ pub struct SimulationMetrics {
     /// Wall-clock time each participant spent in [`Protocol::poke`], including pokes that return
     /// [`Action::Wait`].
     pub compute_time_per_participant: HashMap<Participant, Duration>,
-    /// Longest run of consecutive [`Protocol::poke`] calls up to an [`Action::Wait`],
-    /// [`Action::Yield`] or [`Action::Return`]: how long the node's protocol runner holds a
-    /// runtime thread without yielding to other tasks.
+    /// How long the node's protocol runner holds a runtime thread without yielding to other
+    /// tasks, estimated from below by the longest run of consecutive [`Protocol::poke`] calls up
+    /// to an [`Action::Wait`], [`Action::Yield`] or [`Action::Return`].
     pub max_burst_time: Duration,
     /// Largest single protocol message, in bytes.
     pub max_message_bytes: u64,
@@ -186,6 +205,14 @@ impl SimulationMetrics {
     #[allow(clippy::cast_precision_loss)]
     pub fn virtual_time_ms(&self) -> f64 {
         self.virtual_time_elapsed as f64 / 1_000_000.0
+    }
+
+    fn avg_compute_ms(&self) -> f64 {
+        self.compute_time_per_participant
+            .values()
+            .map(|time| time.as_secs_f64() * 1e3)
+            .collect::<Mean>()
+            .mean()
     }
 
     fn record_sent(&mut self, sender: Participant, data: &[u8]) {
@@ -247,14 +274,7 @@ impl std::fmt::Display for SimulationMetrics {
             self.total_bytes_sent as f64 / n,
             self.total_bytes_received as f64 / n
         )?;
-        let compute: Duration = self.compute_time_per_participant.values().sum();
-        writeln!(
-            f,
-            "Avg compute/participant: {:.3} ms, max burst: {:.3} ms, max message: {} bytes",
-            compute.as_secs_f64() * 1e3 / n,
-            self.max_burst_time.as_secs_f64() * 1e3,
-            self.max_message_bytes
-        )?;
+        writeln!(f, "Max message: {} bytes", self.max_message_bytes)?;
         Ok(())
     }
 }
