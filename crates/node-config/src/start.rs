@@ -508,6 +508,7 @@ timeout_sec = 60
         ))
         .unwrap();
         mpc_node_config.insert("tee".into(), tee.into());
+        mpc_node_config.insert("home_dir".into(), "/data".into());
         mpc_node_config["node"]["indexer"]
             .as_table_mut()
             .unwrap()

@@ -9,9 +9,6 @@ port_mappings = [
     { host = 8080, container = 8080 },
 ]
 
-[mpc_node_config]
-home_dir = "/data"
-
 # PCCS endpoints for TDX attestation collateral. The node tries each
 # entry in order until one succeeds. Defaults below: Phala primary,
 # Intel direct as fallback.

@@ -7,9 +7,6 @@ port_mappings = [
     { host = 80, container = 80 },
 ]
 
-[mpc_node_config]
-home_dir = "/data"
-
 [mpc_node_config.log]
 format = "json"
 filter = "info"

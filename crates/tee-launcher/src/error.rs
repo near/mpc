@@ -53,7 +53,9 @@ pub enum LauncherError {
         source: toml::de::Error,
     },
 
-    #[error("User config contains reserved key [{0}] — remove it from mpc_node_config")]
+    #[error(
+        "User config sets reserved key [{0}] to a value other than the launcher's; remove it from mpc_node_config"
+    )]
     ReservedConfigKey(String),
 
     #[error("Image pull failed: {0}")]

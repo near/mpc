@@ -23,10 +23,6 @@ port_mappings = [
     { host = 24567, container = 24567 }, # decentralized state sync
 ]
 
-[mpc_node_config]
-# Must be /data or a path under it: the only persistent volume in the CVM.
-home_dir = "/data"
-
 # PCCS endpoints for TDX attestation collateral. The node tries each
 # entry in order until one succeeds. Defaults below: Phala primary,
 # Intel direct as fallback.

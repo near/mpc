@@ -68,9 +68,6 @@ mod tests {
 [launcher_config]
 image_reference = "nearone/mpc-node:3.10.0"
 
-[mpc_node_config]
-home_dir = "/data"
-
 [mpc_node_config.node.foreign_chains.base]
 timeout_sec = 30
 max_retries = 3

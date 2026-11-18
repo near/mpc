@@ -5,6 +5,7 @@ pub const DSTACK_USER_CONFIG_FILE: &str = "/tapp/user_config";
 /// The guest's `dstack-util`, bind-mounted into the launcher on dstack 0.6+. It comes from the
 /// guest rootfs (dm-verity, measured in RTMR2), so the host cannot swap it.
 pub const DSTACK_UTIL_PATH: &str = "/usr/local/bin/dstack-util";
+pub const MPC_HOME_DIR: &str = "/data";
 
 /// Path on the shared volume where the launcher writes the MPC config and the
 /// MPC container reads it.  Both containers mount `shared-volume` at `/mnt/shared`.

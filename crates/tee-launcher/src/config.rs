@@ -1,11 +1,13 @@
 use launcher_interface::types::TeeConfig;
 use near_account_id::AccountId;
 
-use crate::error::LauncherError;
+use crate::{constants::MPC_HOME_DIR, error::LauncherError};
 
 /// Inject the launcher-controlled keys into the user-provided MPC node config: the `tee`
-/// section and the contract id measured into the launcher compose. Fails if the user config
-/// sets either of them.
+/// section, the contract id measured into the launcher compose, and the home directory, so
+/// that the node always starts from the chain data already on the disk. Fails if the user
+/// config sets any of them to a different value. Equal values are accepted so that a user
+/// config written for an older launcher keeps working.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
@@ -17,6 +19,7 @@ pub fn intercept_node_config(
         "tee",
         toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
     )?;
+    insert_reserved(&mut node_config, &[], "home_dir", MPC_HOME_DIR.into())?;
     insert_reserved(
         &mut node_config,
         &["node", "indexer"],
@@ -46,6 +49,8 @@ fn insert_reserved(
             vacant.insert(value);
             Ok(())
         }
+        // TODO(#5225): reject equal values too once older launchers are no longer approved
+        toml::map::Entry::Occupied(occupied) if *occupied.get() == value => Ok(()),
         toml::map::Entry::Occupied(_) => Err(reserved_key()),
     }
 }
@@ -139,6 +144,7 @@ mod tests {
         let mut expected: toml::Table = toml::from_str(
             r#"
             port = 8080
+            home_dir = "/data"
             node.indexer = { sync_mode = "Latest", mpc_contract_id = "v1.signer" }
             "#,
         )
@@ -153,6 +159,7 @@ mod tests {
     #[rstest]
     #[case::tee_table(r#"tee.type = "Local""#, "tee")]
     #[case::tee_value(r#"tee = "sneaky""#, "tee")]
+    #[case::home_dir(r#"home_dir = "/tmp""#, "home_dir")]
     #[case::contract_id(
         r#"node.indexer.mpc_contract_id = "other.near""#,
         "node.indexer.mpc_contract_id"
@@ -170,6 +177,26 @@ mod tests {
 
         // Then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == reserved_key);
+    }
+
+    #[rstest]
+    #[case::home_dir(r#"home_dir = "/data""#)]
+    #[case::contract_id(r#"node.indexer.mpc_contract_id = "v1.signer""#)]
+    fn intercept_node_config__should_accept_a_reserved_key_set_to_the_launcher_value(
+        #[case] user_config: &str,
+    ) {
+        // Given
+        let config: toml::Table = toml::from_str(user_config).unwrap();
+        let tee_config = sample_tee_config();
+        let contract_id = sample_contract_id();
+
+        // When
+        let result = intercept_node_config(config, &tee_config, &contract_id).unwrap();
+
+        // Then
+        let without_the_key =
+            intercept_node_config(toml::Table::new(), &tee_config, &contract_id).unwrap();
+        assert_eq!(result, without_the_key);
     }
 
     #[test]
@@ -240,7 +267,7 @@ mod tests {
     #[test]
     fn intercept_config_output_re_serializes_to_valid_toml() {
         // given
-        let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
+        let config: toml::Table = toml::from_str("port = 8080").unwrap();
 
         // when
         let result =
@@ -249,8 +276,7 @@ mod tests {
 
         // then — the output can be parsed back
         let reparsed: toml::Table = toml::from_str(&toml_str).unwrap();
-        assert!(reparsed.contains_key("tee"));
-        assert_eq!(reparsed["home_dir"].as_str(), Some("/data"));
+        assert_eq!(reparsed, result);
     }
 
     // --- validate_image_reference: positive (valid references) ---
