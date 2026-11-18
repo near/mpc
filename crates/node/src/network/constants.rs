@@ -12,6 +12,10 @@ pub const MAX_MESSAGE_SIZE_BYTES: usize = 100 * 1024 * 1024;
 pub const MESSAGE_READ_TIMEOUT_DURATION: Duration = Duration::from_secs(30);
 
 pub const CONNECTED_PEERS_BROADCAST_INTERVAL: Duration = Duration::from_secs(1);
+/// How often the first-hand indexer heights are published to their readers. Less than a block, so
+/// the heights we broadcast are hardly older than the ones we received.
+pub const FIRST_HAND_INDEXER_HEIGHTS_PUBLISH_INTERVAL: near_time::Duration =
+    near_time::Duration::milliseconds(300);
 
 pub const METRICS_EMIT_INTERVAL: Duration = Duration::from_secs(5);
 /// Lags kept per link direction for the mean lag. One arrives per received report, so at one per

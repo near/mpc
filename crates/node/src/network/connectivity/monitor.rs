@@ -24,6 +24,7 @@ struct ConnectivityMonitor<N, C, S, L> {
     // state
     clock: Clock,
     report_interval: Duration,
+    heights_publish_interval: Duration,
     first_hand_heights: FirstHandIndexerHeights<N>,
     connection_tracker: ConnectionTracker<N, C, L>,
 
@@ -33,7 +34,7 @@ struct ConnectivityMonitor<N, C, S, L> {
     // everything we send to other components
     /// as soon as a connection changes its status, this is updated
     connections: watch::Sender<Arc<EstablishedConnections<N, C>>>,
-    /// updated on every height update
+    /// updated every heights_publish_interval
     heights: watch::Sender<FirstHandIndexerHeights<N>>,
 
     /// update every report_interval
@@ -56,6 +57,7 @@ where
     pub fn new(
         clock: Clock,
         report_interval: Duration,
+        heights_publish_interval: Duration,
         nodes: &NonEmptyBTreeSet<N>,
         report_buffer_size: NonZeroUsize,
     ) -> Result<(Self, ConnectivityMonitorHandles<N, C, S>), TooManyNodesError> {
@@ -77,6 +79,7 @@ where
         let monitor = Self {
             clock,
             report_interval,
+            heights_publish_interval,
             first_hand_heights,
             connection_tracker,
             peer_reports,
@@ -98,6 +101,7 @@ where
     /// Runs until every sender of peer reports is gone.
     pub async fn run(mut self) {
         let mut link_statuses_tick = Interval::new(self.clock.now(), self.report_interval);
+        let mut heights_tick = Interval::new(self.clock.now(), self.heights_publish_interval);
         loop {
             tokio::select! {
                 report = self.peer_reports.recv() => {
@@ -105,6 +109,9 @@ where
                         return;
                     };
                     self.apply_and_publish(report);
+                }
+                _ = heights_tick.tick(&self.clock) => {
+                    self.heights.send_replace(self.first_hand_heights.clone());
                 }
                 _ = link_statuses_tick.tick(&self.clock) => {
                     self.link_statuses
@@ -123,7 +130,6 @@ where
             Ok(ConnectionsChanged::No) => {}
             Err(err) => tracing::warn!(%err, "peer report not applied"),
         }
-        self.heights.send_replace(self.first_hand_heights.clone());
     }
 }
 
