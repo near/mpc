@@ -11,7 +11,9 @@ use mpc_attestation::attestation::{
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use rstest::rstest;
 use std::assert_matches;
-use test_utils::attestation::{AttestationFixture, DSTACK_0_5_8, account_key, p2p_tls_key};
+use test_utils::attestation::{
+    AttestationFixture, DSTACK_0_5_8, DSTACK_0_6_5, account_key, p2p_tls_key,
+};
 
 #[test]
 fn valid_mock_attestation_succeeds_verification() {
@@ -55,7 +57,7 @@ fn invalid_mock_attestation_fails_verification() {
 
 #[rstest]
 fn validated_dstack_attestation_can_be_reverified(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     // given
     let attestation = fixture.dstack_attestation();
@@ -91,7 +93,7 @@ fn validated_dstack_attestation_can_be_reverified(
 
 #[rstest]
 fn validated_dstack_attestation_fails_reverification_when_expired(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     // given
     let attestation = fixture.dstack_attestation();
@@ -146,7 +148,7 @@ fn validated_mock_attestation_passes_reverification() {
 
 #[rstest]
 fn validated_dstack_attestation_fails_reverification_with_rotated_hashes(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     let attestation = fixture.dstack_attestation();
     let tls_key = fixture.p2p_tls_key();
@@ -188,7 +190,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes(
 
 #[rstest]
 fn validated_dstack_attestation_fails_reverification_with_removed_measurements(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     // given
     let attestation = fixture.dstack_attestation();
@@ -234,7 +236,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements(
 
 #[rstest]
 fn validated_dstack_attestation_fails_reverification_with_empty_measurements(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     // given
     let attestation = fixture.dstack_attestation();
@@ -270,7 +272,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements(
 
 #[rstest]
 fn validated_dstack_attestation_passes_reverification_with_superset_measurements(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     // given
     let attestation = fixture.dstack_attestation();

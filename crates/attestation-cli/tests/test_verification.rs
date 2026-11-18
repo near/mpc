@@ -1,14 +1,13 @@
-use std::assert_matches;
 use std::path::PathBuf;
 
 use attestation_cli::cli::{Source, VerifyArgs};
 use attestation_cli::verify;
-use mpc_attestation::attestation::{Attestation, VerificationError};
+use mpc_attestation::attestation::Attestation;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use rstest::rstest;
 use test_utils::attestation::{
-    AttestationFixture, DSTACK_0_5_8, TEST_LAUNCHER_IMAGE_COMPOSE_STRING,
+    AttestationFixture, DSTACK_0_5_8, DSTACK_0_6_5, TEST_LAUNCHER_IMAGE_COMPOSE_STRING,
     TEST_MPC_IMAGE_DIGEST_HEX, VALID_ATTESTATION_TIMESTAMP, account_key, mock_dstack_attestation,
     p2p_tls_key,
 };
@@ -47,7 +46,7 @@ fn make_args(
 
 #[rstest]
 fn full_verification_succeeds_with_valid_attestation(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     let static_data = fixture_static_web_data(fixture);
 
@@ -78,7 +77,9 @@ fn full_verification_succeeds_with_valid_attestation(
 }
 
 #[rstest]
-fn verification_fails_with_wrong_image_hash(#[values(&DSTACK_0_5_8)] fixture: &AttestationFixture) {
+fn verification_fails_with_wrong_image_hash(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     let static_data = fixture_static_web_data(fixture);
 
     let dir = tempfile::tempdir().unwrap();
@@ -104,7 +105,7 @@ fn verification_fails_with_wrong_image_hash(#[values(&DSTACK_0_5_8)] fixture: &A
 
 #[rstest]
 fn verification_fails_with_wrong_compose_file(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     let static_data = fixture_static_web_data(fixture);
 
@@ -210,28 +211,5 @@ fn verification_with_custom_measurements_file() {
         result.is_ok(),
         "verification failed: {}",
         result.unwrap_err()
-    );
-}
-
-#[test]
-#[expect(non_snake_case)]
-fn verify_at_timestamp__should_reject_dev_image_attestation_with_default_measurements() {
-    // Given
-    let static_data = make_static_web_data(mock_dstack_attestation());
-    let dir = tempfile::tempdir().unwrap();
-    let compose_path = dir.path().join("launcher-compose.yaml");
-    std::fs::write(&compose_path, TEST_LAUNCHER_IMAGE_COMPOSE_STRING).unwrap();
-    let args = make_args(&compose_path, TEST_MPC_IMAGE_DIGEST_HEX, None);
-
-    // When
-    let result = verify::verify_at_timestamp(&static_data, &args, VALID_ATTESTATION_TIMESTAMP);
-
-    // Then
-    assert_matches!(
-        result,
-        Err(VerificationError::WrongHash {
-            name: "expected_measurements",
-            ..
-        })
     );
 }

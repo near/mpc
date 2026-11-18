@@ -35,7 +35,25 @@ pub struct AttestationFixture {
     account_secret_key: &'static str,
 }
 
+/// Taken on a `dstack-0.6.5` (release) CVM running the `main-a70db1b` launcher and node images.
+pub const DSTACK_0_6_5: AttestationFixture = AttestationFixture {
+    tcb_info: include_str!("../assets/dstack-0.6.5/tcb_info.json"),
+    collateral: include_str!("../assets/dstack-0.6.5/collateral.json"),
+    public_data: include_str!("../assets/dstack-0.6.5/public_data.json"),
+    app_compose: include_str!("../assets/dstack-0.6.5/app_compose.json"),
+    mpc_image_digest_hex: include_str!("../assets/dstack-0.6.5/mpc_image_digest.txt"),
+    launcher_compose: include_str!("../assets/dstack-0.6.5/launcher_image_compose.yaml"),
+    dir: concat!(env!("CARGO_MANIFEST_DIR"), "/assets/dstack-0.6.5"),
+    measurements: include_measurements!("assets/dstack-0.6.5/tcb_info.json"),
+    valid_timestamp: 1_795_046_400,
+    quote: include_str!("../assets/dstack-0.6.5/quote.json"),
+    p2p_public_key: include_str!("../assets/dstack-0.6.5/near_p2p_public_key.pub"),
+    account_public_key: include_str!("../assets/dstack-0.6.5/near_account_public_key.pub"),
+    account_secret_key: include_str!("../assets/dstack-0.6.5/near_account_secret_key"),
+};
+
 /// Taken on a `dstack-dev-0.5.8` CVM.
+// TODO(#5237): remove once mainnet nodes run dstack 0.6.
 pub const DSTACK_0_5_8: AttestationFixture = AttestationFixture {
     tcb_info: include_str!("../assets/dstack-0.5.8/tcb_info.json"),
     collateral: include_str!("../assets/dstack-0.5.8/collateral.json"),
@@ -53,7 +71,7 @@ pub const DSTACK_0_5_8: AttestationFixture = AttestationFixture {
 };
 
 /// The fixture tests use unless they run on every fixture.
-pub const LATEST: &AttestationFixture = &DSTACK_0_5_8;
+pub const LATEST: &AttestationFixture = &DSTACK_0_6_5;
 
 impl AttestationFixture {
     pub fn asset_path(&self, file: &str) -> std::path::PathBuf {
@@ -294,7 +312,7 @@ mod tests {
 
     #[rstest]
     fn fixture_accessors__should_parse_every_asset(
-        #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+        #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
     ) {
         fixture.dto_dstack_attestation();
         fixture.dstack_attestation();
@@ -313,7 +331,7 @@ mod tests {
     ///   UPDATE_FIXTURES=1 cargo test -p test-utils collateral_fixture
     #[rstest]
     fn collateral_fixture__should_match_the_captured_public_data(
-        #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+        #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
     ) {
         // Given
         const BYTE_FIELDS: [&str; 4] = [
@@ -348,7 +366,7 @@ mod tests {
 
     #[rstest]
     fn account_secret_key__should_pair_with_account_public_key(
-        #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+        #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
     ) {
         // Given: a NEAR ed25519 secret key is base58 of `seed || public_key`.
         let secret = fixture
