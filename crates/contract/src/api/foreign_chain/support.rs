@@ -332,7 +332,7 @@ mod tests {
                 )
                 .unwrap(),
             );
-            for domain in state.domains_mut().domains_mut() {
+            for domain in state.domains_mut() {
                 if domain.purpose == dtos::DomainPurpose::ForeignTx {
                     domain.reconstruction_threshold = ReconstructionThreshold::new(4);
                 }
@@ -437,7 +437,7 @@ mod tests {
                 )
                 .unwrap(),
             );
-            for domain in state.domains_mut().domains_mut() {
+            for domain in state.domains_mut() {
                 if domain.purpose == dtos::DomainPurpose::ForeignTx {
                     domain.reconstruction_threshold = ReconstructionThreshold::new(4);
                 }

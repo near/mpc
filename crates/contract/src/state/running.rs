@@ -303,8 +303,8 @@ impl RunningContractState {
         self.parameters = parameters;
     }
 
-    pub(crate) fn domains_mut(&mut self) -> &mut DomainRegistry {
-        &mut self.domains
+    pub(crate) fn domains_mut(&mut self) -> &mut [DomainConfig] {
+        self.domains.domains_mut()
     }
 }
 
