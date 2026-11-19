@@ -294,6 +294,33 @@ mod tests {
         let _ = contract.vote_update_foreign_chain_providers(batch);
     }
 
+    /// Raises the governance threshold and every ForeignTx domain's reconstruction threshold to 4,
+    /// so that all four participants must cover a chain for it to be available.
+    fn require_all_four_participants(contract: &mut MpcContract) {
+        let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
+            panic!("expected Running");
+        };
+        let threshold_updates = state
+            .domains()
+            .domains()
+            .iter()
+            .filter(|domain| domain.purpose == dtos::DomainPurpose::ForeignTx)
+            .map(|domain| (domain.id, ReconstructionThreshold::new(4)))
+            .collect();
+        *state = RunningContractState::new(
+            state
+                .domains()
+                .with_threshold_updates(&threshold_updates)
+                .unwrap(),
+            state.keyset().clone(),
+            GovernanceThresholdParameters::new(
+                state.participants().clone(),
+                GovernanceThreshold::new(4),
+            )
+            .unwrap(),
+            AddDomainsVotes::default(),
+        );
+    }
     #[test]
     // Setup with 4 participants, first 3 supporting 4 chains, 4th one supports only 2.
     // Node operator of 4th node spins up new node and declares the migration, and the new node
@@ -319,25 +346,7 @@ mod tests {
             whitelist_chain(&mut contract, chain);
         }
 
-        // Raise both the governance threshold and ForeignTx domain threshold to 4 so that all
-        // participants must cover a chain for it to be available.
-        {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running");
-            };
-            state.set_parameters(
-                GovernanceThresholdParameters::new(
-                    state.participants().clone(),
-                    GovernanceThreshold::new(4),
-                )
-                .unwrap(),
-            );
-            for domain in state.domains_mut() {
-                if domain.purpose == dtos::DomainPurpose::ForeignTx {
-                    domain.reconstruction_threshold = ReconstructionThreshold::new(4);
-                }
-            }
-        }
+        require_all_four_participants(&mut contract);
 
         let participants = contract
             .protocol_state
@@ -385,18 +394,9 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            // Reconstruct GovernanceThresholdParameters with the updated participants.
-            let mut updated_participants = state.participants().clone();
-            updated_participants
-                .update_info(operator4.clone(), new_info)
+            state
+                .update_participant_info(operator4.clone(), new_info)
                 .unwrap();
-            state.set_parameters(
-                GovernanceThresholdParameters::new(
-                    updated_participants,
-                    GovernanceThreshold::new(4),
-                )
-                .unwrap(),
-            );
         }
         contract.recompute_available_foreign_chains();
 
@@ -426,23 +426,7 @@ mod tests {
         for chain in all_chains {
             whitelist_chain(&mut contract, chain);
         }
-        {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running");
-            };
-            state.set_parameters(
-                GovernanceThresholdParameters::new(
-                    state.participants().clone(),
-                    GovernanceThreshold::new(4),
-                )
-                .unwrap(),
-            );
-            for domain in state.domains_mut() {
-                if domain.purpose == dtos::DomainPurpose::ForeignTx {
-                    domain.reconstruction_threshold = ReconstructionThreshold::new(4);
-                }
-            }
-        }
+        require_all_four_participants(&mut contract);
         let participant_ids = participant_account_ids(&contract);
         for account_id in participant_ids.iter().take(3) {
             register_foreign_chains_config_for(&mut contract, account_id, all_chains);

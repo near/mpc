@@ -298,17 +298,6 @@ impl RunningContractState {
 }
 
 #[cfg(test)]
-impl RunningContractState {
-    pub(crate) fn set_parameters(&mut self, parameters: GovernanceThresholdParameters) {
-        self.parameters = parameters;
-    }
-
-    pub(crate) fn domains_mut(&mut self) -> &mut [DomainConfig] {
-        self.domains.domains_mut()
-    }
-}
-
-#[cfg(test)]
 #[expect(non_snake_case)]
 pub mod running_tests {
     use std::collections::BTreeMap;
