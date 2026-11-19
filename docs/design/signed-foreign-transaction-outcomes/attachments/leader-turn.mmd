@@ -1,8 +1,0 @@
-flowchart LR
-    T["A leader's turn starts"] --> I["The leader inspects"]
-    I --> S["It picks an asset and starts<br/>a session for its own outcome"]
-    S --> Q{"Did every<br/>follower sign?"}
-    Q -->|"yes"| R["It responds with<br/>the signed answer"]
-    Q -->|"no"| M{"Fewer than three attempts,<br/>no answer yet,<br/>and the same outcome?"}
-    M -->|"yes: retry with<br/>another asset"| S
-    M -->|"no"| X["It stops. The next leader<br/>takes over on its turn."]
