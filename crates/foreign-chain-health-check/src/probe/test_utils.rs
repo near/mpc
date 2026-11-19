@@ -177,25 +177,10 @@ pub(crate) fn one_provider(
     NonEmptyBTreeMap::new(name.to_string().into(), provider(rpc_url))
 }
 
-pub(crate) fn starknet_only(config: ForeignChainConfig) -> ForeignChainsConfig {
-    ForeignChainsConfig {
-        starknet: Some(config),
-        ..Default::default()
-    }
-}
-
-pub(crate) fn sui_only(config: ForeignChainConfig) -> ForeignChainsConfig {
-    ForeignChainsConfig {
-        sui: Some(config),
-        ..Default::default()
-    }
-}
-
-pub(crate) fn bitcoin_only(config: ForeignChainConfig) -> ForeignChainsConfig {
-    ForeignChainsConfig {
-        bitcoin: Some(config),
-        ..Default::default()
-    }
+pub(crate) fn single_chain(chain: ForeignChain, config: ForeignChainConfig) -> ForeignChainsConfig {
+    let mut chains = ForeignChainsConfig::default();
+    put_chain(&mut chains, chain, config);
+    chains
 }
 
 pub(crate) fn put_chain(
@@ -215,6 +200,10 @@ pub(crate) fn put_chain(
         ForeignChain::Polygon => &mut chains.polygon,
         ForeignChain::Solana => &mut chains.solana,
         ForeignChain::Fogo => &mut chains.fogo,
+        ForeignChain::Starknet => &mut chains.starknet,
+        ForeignChain::Bitcoin => &mut chains.bitcoin,
+        ForeignChain::Aptos => &mut chains.aptos,
+        ForeignChain::Sui => &mut chains.sui,
         other => panic!("no config slot wired for `{other:?}`"),
     };
     *slot = Some(config);
