@@ -2,7 +2,7 @@ use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
 use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
-use crate::primitives::participants::IdentifiesParticipant;
+use crate::primitives::participants::{IdentifiesParticipant, ParticipantInfo, Participants};
 use crate::primitives::{
     domain::{
         AddDomainsVotes, DomainRegistry, validate_domain_purpose,
@@ -12,6 +12,7 @@ use crate::primitives::{
     threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
 };
+use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
 use std::collections::BTreeSet;
@@ -110,6 +111,22 @@ impl RunningContractState {
             cancellation_requests: BTreeSet::new(),
             per_domain_thresholds: proposal.per_domain_thresholds().clone(),
         }))
+    }
+
+    pub fn participants(&self) -> &Participants {
+        self.parameters.participants()
+    }
+
+    pub fn keyset(&self) -> &Keyset {
+        &self.keyset
+    }
+
+    pub fn update_participant_info(
+        &mut self,
+        account_id: AccountId,
+        new_info: ParticipantInfo,
+    ) -> Result<(), Error> {
+        self.parameters.update_info(account_id, new_info)
     }
 
     pub fn prospective_epoch_id(&self) -> EpochId {
