@@ -1,3 +1,5 @@
+mod outgoing_queue;
+
 use crate::log_throttle::{Decision, LogThrottle};
 use crate::network::rfc1982::Rfc1982SerialU8;
 use crate::{
@@ -35,6 +37,7 @@ use borsh::BorshDeserialize;
 use bytes::Bytes;
 use ed25519_dalek::VerifyingKey;
 use futures::{SinkExt, StreamExt};
+use outgoing_queue::{OutgoingQueue, OutgoingQueueReceiver};
 use prometheus::Histogram;
 use rustls::{ClientConfig, CommonState};
 use std::{
@@ -165,8 +168,8 @@ struct PersistentConnection {
 /// Dropping this struct will automatically close the connection.
 struct OutgoingConnection {
     /// Used to send messages via the connection.
-    sender: UnboundedSender<Packet>,
-    /// Task that reads messages from the channel (other side of `sender`) and
+    queue: OutgoingQueue,
+    /// Task that reads messages from the queue (other side of `queue`) and
     /// sends it over the TLS connection. This task owns the connection, so
     /// dropping it closes the connection.
     _sender_task: AutoAbortTask<()>,
@@ -246,7 +249,7 @@ impl OutgoingConnection {
         let peer_network_protocol_version =
             Self::negotiate_protocol(&mut tls_stream, sender_connection_id).await?;
 
-        let (sender, receiver) = mpsc::unbounded_channel::<Packet>();
+        let (queue, receiver) = OutgoingQueue::new();
         let closed = CancellationToken::new();
         let liveness_failed = CancellationToken::new();
         let sender_task = tracking::spawn_checked(
@@ -261,7 +264,7 @@ impl OutgoingConnection {
         );
         let keepalive_task = tracking::spawn(
             &format!("ping keepalive task for {}", target_participant_id),
-            run_ping_keepalive(sender.clone()),
+            run_ping_keepalive(queue.clone()),
         );
         // An older peer cannot parse `Echo`
         let (echo_task, echo_ack_sender) = if peer_supports_echo(peer_network_protocol_version) {
@@ -273,7 +276,7 @@ impl OutgoingConnection {
             let echo_task = tracking::spawn(
                 &format!("echo liveness task for {}", target_participant_id),
                 run_echo_liveness(
-                    sender.clone(),
+                    queue.clone(),
                     echo_tracker,
                     echo_nonces,
                     ack_receiver,
@@ -286,7 +289,7 @@ impl OutgoingConnection {
             (None, None)
         };
         Ok(OutgoingConnection {
-            sender,
+            queue,
             _sender_task: sender_task,
             _keepalive_task: keepalive_task,
             _echo_task: echo_task,
@@ -383,7 +386,7 @@ impl OutgoingConnection {
 
     async fn run_sender_loop<T>(
         tls_stream: T,
-        mut receiver: UnboundedReceiver<Packet>,
+        mut receiver: OutgoingQueueReceiver,
         peer_id: ParticipantId,
         closed: CancellationToken,
         liveness_failed: CancellationToken,
@@ -504,7 +507,7 @@ impl OutgoingConnection {
     }
 
     fn send(&self, packet: Packet) -> anyhow::Result<()> {
-        self.sender.send(packet)?;
+        self.queue.send(packet)?;
         Ok(())
     }
 
@@ -539,10 +542,10 @@ fn peer_supports_echo(version: NetworkProtocolVersion) -> bool {
     version.supports(echo.min_protocol_version())
 }
 
-async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
+async fn run_ping_keepalive(queue: OutgoingQueue) {
     loop {
         tokio::time::sleep(PING_KEEPALIVE_INTERVAL).await;
-        if sender.send(Packet::Ping).is_err() {
+        if queue.send(Packet::Ping).is_err() {
             // The receiver side will be dropped when the sender task is
             // dropped (i.e. connection is closed).
             break;
@@ -551,7 +554,7 @@ async fn run_ping_keepalive(sender: UnboundedSender<Packet>) {
 }
 
 async fn run_echo_liveness(
-    sender: UnboundedSender<Packet>,
+    queue: OutgoingQueue,
     mut echo_tracker: EchoTracker,
     echo_nonces: Arc<AtomicU8>,
     mut acks: mpsc::Receiver<Rfc1982SerialU8>,
@@ -576,7 +579,7 @@ async fn run_echo_liveness(
                 }
                 echo_tracker.prepare_next_nonce();
                 echo_nonces.store(echo_tracker.next_nonce().0, Ordering::Relaxed);
-                if sender.send(Packet::Echo(Heartbeat { nonce })).is_err() {
+                if queue.send(Packet::Echo(Heartbeat { nonce })).is_err() {
                     break;
                 }
             }
@@ -1346,6 +1349,7 @@ pub mod testing {
         pub const VERIFY_FOREIGN_TX_RPC_QUORUM_TEST: TestPorts = TestPorts::mpc_node_tests(32);
         pub const TRIPLE_BATCH_SIZE_TEST: TestPorts = TestPorts::mpc_node_tests(33);
         pub const FOREIGN_CHAIN_REREGISTRATION_TEST: TestPorts = TestPorts::mpc_node_tests(34);
+        pub const SLOW_PEER_LINK_TEST: TestPorts = TestPorts::mpc_node_tests(35);
     }
 
     pub fn generate_test_p2p_configs(
@@ -1398,7 +1402,7 @@ mod tests {
     use super::{
         IncomingConnection, IncomingConnectionLimits, MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
         OUTGOING_MAX_MISSED_CHECKS, OutgoingConnection, OutgoingWatchdog, ParticipantIdentities,
-        PersistentConnection, incoming_connection_handler,
+        PersistentConnection, incoming_connection_handler, outgoing_queue::OutgoingQueue,
     };
     use crate::{
         config::MpcConfig,
@@ -1416,6 +1420,7 @@ mod tests {
         tracking::{self, testing::start_root_task_with_periodic_dump},
     };
     use ed25519_dalek::SigningKey;
+    use futures::FutureExt;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId, domain::DomainId};
     use mpc_tls::tls::configure_tls;
     use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -1717,11 +1722,11 @@ mod tests {
     }
 
     fn test_outgoing_connection(
-        sender: mpsc::UnboundedSender<Packet>,
+        queue: OutgoingQueue,
         peer_version: NetworkProtocolVersion,
     ) -> Arc<OutgoingConnection> {
         Arc::new(OutgoingConnection {
-            sender,
+            queue,
             _sender_task: tokio::spawn(futures::future::pending()).into(),
             _keepalive_task: tokio::spawn(futures::future::pending()).into(),
             _echo_task: None,
@@ -1741,8 +1746,8 @@ mod tests {
         #[case] expected_sent: bool,
     ) {
         // Given
-        let (sender, mut packets) = mpsc::unbounded_channel();
-        let connection = test_outgoing_connection(sender, peer_version);
+        let (queue, mut packets) = OutgoingQueue::new();
+        let connection = test_outgoing_connection(queue, peer_version);
         let connectivity =
             Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
         connectivity.set_outgoing_connection(&connection);
@@ -1762,7 +1767,10 @@ mod tests {
 
         // Then
         assert_eq!(result.is_ok(), expected_sent);
-        let sent = matches!(packets.try_recv(), Ok(Packet::ConnectedPeersInfo(_)));
+        let sent = matches!(
+            packets.recv().now_or_never(),
+            Some(Some(Packet::ConnectedPeersInfo(_)))
+        );
         assert_eq!(sent, expected_sent);
     }
 
@@ -2147,6 +2155,7 @@ mod tests {
 
     mod liveness_test {
         use super::*;
+        use crate::p2p::outgoing_queue::OutgoingQueueReceiver;
         use crate::{
             network::{
                 constants::{ECHO_INTERVAL, ECHO_TIMEOUT},
@@ -2172,21 +2181,15 @@ mod tests {
         use tokio_util::sync::CancellationToken;
 
         fn setup_liveness() -> (
-            mpsc::UnboundedSender<Packet>,
-            mpsc::UnboundedReceiver<Packet>,
+            OutgoingQueue,
+            OutgoingQueueReceiver,
             mpsc::Sender<Rfc1982SerialU8>,
             mpsc::Receiver<Rfc1982SerialU8>,
             CancellationToken,
         ) {
-            let (packet_tx, packet_rx) = mpsc::unbounded_channel();
+            let (queue, receiver) = OutgoingQueue::new();
             let (ack_tx, ack_rx) = mpsc::channel(1);
-            (
-                packet_tx,
-                packet_rx,
-                ack_tx,
-                ack_rx,
-                CancellationToken::new(),
-            )
+            (queue, receiver, ack_tx, ack_rx, CancellationToken::new())
         }
 
         async fn assert_cancelled(token: &CancellationToken) {
@@ -2271,16 +2274,17 @@ mod tests {
         ) {
             // Given
             resume();
-            let (sender, mut packets) = mpsc::unbounded_channel();
-            let connection = test_outgoing_connection(sender, peer_version);
+            let (queue, mut packets) = OutgoingQueue::new();
+            let connection = test_outgoing_connection(queue, peer_version);
 
             // When
             connection.send_echo_ack(Heartbeat {
                 nonce: Rfc1982SerialU8::new(5),
             });
 
+            let recv = packets.recv().now_or_never().is_some();
             // Then
-            assert_eq!(packets.try_recv().is_ok(), expected_sent);
+            assert_eq!(recv, expected_sent);
         }
 
         #[tokio::test(start_paused = true)]
@@ -2472,10 +2476,10 @@ mod tests {
         async fn outgoing_connection__should_forward_echo_acks_until_channel_is_full() {
             // Given
             resume();
-            let (tx, _rx) = mpsc::unbounded_channel();
+            let (queue, _receiver) = OutgoingQueue::new();
             let (ack_tx, mut ack_rx) = mpsc::channel(1);
             let connection = OutgoingConnection {
-                sender: tx,
+                queue,
                 _sender_task: tokio::spawn(async {}).into(),
                 _keepalive_task: tokio::spawn(async {}).into(),
                 _echo_task: None,
@@ -2500,7 +2504,7 @@ mod tests {
         async fn run_sender_loop__should_error_when_liveness_fails() {
             // Given
             let (local, _remote) = tokio::io::duplex(1);
-            let (tx, rx) = mpsc::unbounded_channel();
+            let (queue, rx) = OutgoingQueue::new();
             let closed = CancellationToken::new();
             let liveness_failed = CancellationToken::new();
             let handle = tokio::spawn(OutgoingConnection::run_sender_loop(
@@ -2512,8 +2516,10 @@ mod tests {
             ));
 
             // When
-            (0..10).map(|_| Packet::Ping).for_each(|p| {
-                let _ = tx.send(p);
+            (0..10).for_each(|i| {
+                let _ = queue.send(Packet::Echo(Heartbeat {
+                    nonce: Rfc1982SerialU8::new(i),
+                }));
             });
             advance(Duration::from_millis(250)).await;
             liveness_failed.cancel();
@@ -2560,8 +2566,8 @@ mod tests {
                 resume();
                 let mut loopback = LoopbackPeer::connect().await;
                 pause();
-                let (tx, mut rx) = mpsc::unbounded_channel();
-                let outgoing = test_outgoing_connection(tx, NetworkProtocolVersion::Nov2026);
+                let (queue, mut rx) = OutgoingQueue::new();
+                let outgoing = test_outgoing_connection(queue, NetworkProtocolVersion::Nov2026);
                 match open_state {
                     None => {}
                     Some(false) => {
@@ -2588,7 +2594,9 @@ mod tests {
                             nonce: Rfc1982SerialU8::new(1),
                         }))
                         .await;
-                    let reply = timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
+                    let reply = timeout(Duration::from_secs(5), &mut rx.recv())
+                        .await
+                        .unwrap();
                     assert!(matches!(reply, Some(Packet::EchoAck(_))));
                 }
             })
@@ -2601,8 +2609,8 @@ mod tests {
                 // Given
                 resume();
                 let mut loopback = LoopbackPeer::connect().await;
-                let (tx, mut rx) = mpsc::unbounded_channel();
-                let outgoing = test_outgoing_connection(tx, NetworkProtocolVersion::Nov2026);
+                let (queue, mut rx) = OutgoingQueue::new();
+                let outgoing = test_outgoing_connection(queue, NetworkProtocolVersion::Nov2026);
                 loopback.connectivity.set_outgoing_connection(&outgoing);
 
                 // When
@@ -2628,10 +2636,10 @@ mod tests {
                 // Given
                 resume();
                 let mut loopback = LoopbackPeer::connect().await;
-                let ((tx, _rx), (ack_tx, mut ack_rx)) =
-                    (mpsc::unbounded_channel(), mpsc::channel(1));
+                let (queue, _receiver) = OutgoingQueue::new();
+                let (ack_tx, mut ack_rx) = mpsc::channel(1);
                 let outgoing = Arc::new(OutgoingConnection {
-                    sender: tx,
+                    queue,
                     _sender_task: tokio::spawn(async {}).into(),
                     _keepalive_task: tokio::spawn(async {}).into(),
                     _echo_task: None,
@@ -2663,7 +2671,7 @@ mod tests {
             // Given
             let (local, remote) = tokio::io::duplex(64);
             let mut framed_client = configure_framed_stream(remote);
-            let (tx, rx) = mpsc::unbounded_channel();
+            let (queue, rx) = OutgoingQueue::new();
             let (closed, liveness_failed) = (CancellationToken::new(), CancellationToken::new());
             let handle = tokio::spawn(OutgoingConnection::run_sender_loop(
                 local,
@@ -2689,7 +2697,7 @@ mod tests {
                     .contains("liveness check failed")
             );
             assert!(closed.is_cancelled());
-            drop(tx);
+            drop(queue);
         }
     }
 }
