@@ -5,6 +5,8 @@ pub mod running;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
+mod dto;
+
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::{
@@ -76,38 +78,28 @@ impl ProtocolContractState {
         key_event_id: KeyEventId,
         key_event_timeout_blocks: BlockCount,
     ) -> Result<(), Error> {
-        let ProtocolContractState::Initializing(state) = self else {
-            return Err(InvalidState::ProtocolStateNotInitializing.into());
-        };
-        state.start(key_event_id, key_event_timeout_blocks)
+        self.initializing_mut()?
+            .start(key_event_id, key_event_timeout_blocks)
     }
     pub fn start_reshare_instance(
         &mut self,
         key_event_id: KeyEventId,
         key_event_timeout_blocks: BlockCount,
     ) -> Result<(), Error> {
-        let ProtocolContractState::Resharing(state) = self else {
-            return Err(InvalidState::ProtocolStateNotResharing.into());
-        };
-        state.start(key_event_id, key_event_timeout_blocks)
+        self.resharing_mut()?
+            .start(key_event_id, key_event_timeout_blocks)
     }
     pub fn vote_reshared(
         &mut self,
         key_event_id: KeyEventId,
     ) -> Result<Option<ProtocolContractState>, Error> {
-        let ProtocolContractState::Resharing(state) = self else {
-            return Err(InvalidState::ProtocolStateNotResharing.into());
-        };
-        state
+        self.resharing_mut()?
             .vote_reshared(key_event_id)
             .map(|x| x.map(ProtocolContractState::Running))
     }
 
     pub fn vote_cancel_resharing(&mut self) -> Result<Option<ProtocolContractState>, Error> {
-        let ProtocolContractState::Resharing(state) = self else {
-            return Err(InvalidState::ProtocolStateNotResharing.into());
-        };
-        state
+        self.resharing_mut()?
             .vote_cancel_resharing()
             .map(|x| x.map(ProtocolContractState::Running))
     }
@@ -120,10 +112,7 @@ impl ProtocolContractState {
         key_event_id: KeyEventId,
         public_key: PublicKeyExtended,
     ) -> Result<Option<ProtocolContractState>, Error> {
-        let ProtocolContractState::Initializing(state) = self else {
-            return Err(InvalidState::ProtocolStateNotInitializing.into());
-        };
-        state
+        self.initializing_mut()?
             .vote_pk(key_event_id, public_key)
             .map(|x| x.map(ProtocolContractState::Running))
     }
@@ -171,11 +160,23 @@ impl ProtocolContractState {
         &mut self,
         next_domain_id: DomainId,
     ) -> Result<Option<ProtocolContractState>, Error> {
-        match self {
-            ProtocolContractState::Initializing(state) => state.vote_cancel(next_domain_id),
-            _ => Err(InvalidState::ProtocolStateNotInitializing.into()),
-        }
-        .map(|x| x.map(ProtocolContractState::Running))
+        self.initializing_mut()?
+            .vote_cancel(next_domain_id)
+            .map(|x| x.map(ProtocolContractState::Running))
+    }
+
+    fn initializing_mut(&mut self) -> Result<&mut InitializingContractState, Error> {
+        let ProtocolContractState::Initializing(state) = self else {
+            return Err(InvalidState::ProtocolStateNotInitializing.into());
+        };
+        Ok(state)
+    }
+
+    fn resharing_mut(&mut self) -> Result<&mut ResharingContractState, Error> {
+        let ProtocolContractState::Resharing(state) = self else {
+            return Err(InvalidState::ProtocolStateNotResharing.into());
+        };
+        Ok(state)
     }
 
     pub(super) fn threshold_parameters(

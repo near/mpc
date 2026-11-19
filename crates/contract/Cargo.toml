@@ -140,6 +140,7 @@ near-workspaces = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 rstest = { workspace = true }
+serde_yaml = { workspace = true }
 sha2 = { workspace = true }
 signature = { workspace = true }
 test-utils = { workspace = true, features = ["sandbox"] }

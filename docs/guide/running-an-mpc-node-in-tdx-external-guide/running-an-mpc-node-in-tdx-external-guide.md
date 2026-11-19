@@ -138,6 +138,9 @@ All steps below assume the current user is `mpc` and the current directory is
 > version). Only the **`key-provider-build/`** recipe is taken from dstack
 > **v0.5.11** (see the [key-provider step](#3-local-gramine-sealing-key-provider-setup)),
 > which builds a reproducible `mr_enclave` from build-args.
+>
+> TODO(#5069): the launcher compose template on `main` needs a dstack 0.6+ guest; this guide
+> still describes 0.5.8.
 
    ```bash
    git clone https://github.com/Dstack-TEE/dstack
