@@ -83,7 +83,7 @@ The attestation uses the same [`NodeInfo`][node-info] struct as MPC nodes:
 
 ```rust
 NodeInfo {
-    account_id: Self::assert_caller_is_signer(),
+    account_id,
     tls_public_key,
     account_public_key,
 }
