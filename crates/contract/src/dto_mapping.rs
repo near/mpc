@@ -27,10 +27,7 @@ use crate::{
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
     },
-    state::{
-        ProtocolContractState,
-        key_event::{KeyEvent, KeyEventInstance},
-    },
+    state::key_event::{KeyEvent, KeyEventInstance},
     tee::tee_state::Node,
 };
 
@@ -621,8 +618,9 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 mod test_conversions {
     use super::{
         GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, Keyset,
-        ParticipantInfo, ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
+        ParticipantInfo, ProposedGovernanceThresholdParameters, dtos,
     };
+    use crate::state::ProtocolContractState;
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
