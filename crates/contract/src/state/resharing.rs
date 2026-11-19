@@ -42,6 +42,27 @@ pub struct ResharingContractState {
 }
 
 impl ResharingContractState {
+    pub fn previous_running_state(&self) -> &RunningContractState {
+        &self.previous_running_state
+    }
+
+    pub fn resharing_key(&self) -> &KeyEvent {
+        &self.resharing_key
+    }
+
+    pub fn per_domain_thresholds(&self) -> &BTreeMap<DomainId, ReconstructionThreshold> {
+        &self.per_domain_thresholds
+    }
+
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn with_per_domain_thresholds(
+        mut self,
+        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Self {
+        self.per_domain_thresholds = per_domain_thresholds;
+        self
+    }
+
     pub fn previous_keyset(&self) -> &Keyset {
         &self.previous_running_state.keyset
     }
@@ -74,28 +95,19 @@ impl ResharingContractState {
             .previous_running_state
             .process_new_parameters_proposal(proposal, votes)?
         {
-            return Ok(Some(ResharingContractState {
-                previous_running_state: RunningContractState::new(
-                    self.previous_running_state.domains.clone(),
-                    self.previous_running_state.keyset.clone(),
-                    self.previous_running_state.parameters.clone(),
-                    self.previous_running_state.add_domains_votes.clone(),
-                ),
-                reshared_keys: Vec::new(),
-                resharing_key: KeyEvent::new(
-                    self.prospective_epoch_id().next(),
-                    self.previous_running_state
-                        .domains
-                        .get_domain_by_index(0)
-                        .unwrap()
-                        .clone(),
-                    proposal.parameters().clone(),
-                ),
-                cancellation_requests: BTreeSet::new(),
-                per_domain_thresholds: proposal.per_domain_thresholds().clone(),
-            }));
+            return Ok(Some(self.reproposed_state(proposal)));
         }
         Ok(None)
+    }
+
+    /// The state that restarts this resharing for `proposal` under the next prospective epoch.
+    pub(super) fn reproposed_state(
+        &self,
+        proposal: &ProposedGovernanceThresholdParameters,
+    ) -> ResharingContractState {
+        self.previous_running_state
+            .resharing_state(self.prospective_epoch_id().next(), proposal)
+            .expect("a resharing state has at least one domain")
     }
 
     /// Starts a new attempt to reshare the key for the current domain.

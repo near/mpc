@@ -730,11 +730,12 @@ mod tests {
     fn from_contract_state__should_override_resharing_key_threshold_from_per_domain_thresholds() {
         // Given a resharing state where the threshold update travels only in
         // per_domain_thresholds; the contract leaves resharing_key at the old threshold.
-        let (_, mut resharing) = gen_resharing_state(1);
-        let domain_id = resharing.resharing_key.domain().id;
-        let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
+        let (_, resharing) = gen_resharing_state(1);
+        let domain_id = resharing.resharing_key().domain().id;
+        let old_threshold = resharing.resharing_key().domain().reconstruction_threshold;
         let new_threshold = ReconstructionThreshold::new(old_threshold.value() + 1);
-        resharing.per_domain_thresholds = BTreeMap::from([(domain_id, new_threshold)]);
+        let resharing =
+            resharing.with_per_domain_thresholds(BTreeMap::from([(domain_id, new_threshold)]));
         let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
 
         // When converting the on-chain state into the node's representation.
@@ -765,8 +766,8 @@ mod tests {
     fn from_contract_state__should_keep_resharing_key_threshold_when_no_update_present() {
         // Given a resharing state with no per-domain threshold updates.
         let (_, resharing) = gen_resharing_state(1);
-        let old_threshold = resharing.resharing_key.domain().reconstruction_threshold;
-        assert!(resharing.per_domain_thresholds.is_empty());
+        let old_threshold = resharing.resharing_key().domain().reconstruction_threshold;
+        assert!(resharing.per_domain_thresholds().is_empty());
         let dto: ProtocolContractState = InternalContractState::Resharing(resharing).into();
 
         // When converting the on-chain state.
