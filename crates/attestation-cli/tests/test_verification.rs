@@ -1,8 +1,9 @@
+use std::assert_matches;
 use std::path::PathBuf;
 
 use attestation_cli::cli::{Source, VerifyArgs};
 use attestation_cli::verify;
-use mpc_attestation::attestation::Attestation;
+use mpc_attestation::attestation::{Attestation, VerificationError};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use rstest::rstest;
@@ -170,4 +171,28 @@ fn run_verification_rejects_mock_attestation() {
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(err.contains("Mock"), "unexpected error: {err}");
+}
+
+#[test]
+#[expect(non_snake_case)]
+fn verify_at_timestamp__should_reject_dev_image_attestation_with_default_measurements() {
+    // Given
+    let fixture = &DSTACK_0_5_8;
+    let static_data = make_static_web_data(fixture);
+    let dir = tempfile::tempdir().unwrap();
+    let compose_path = dir.path().join("launcher-compose.yaml");
+    std::fs::write(&compose_path, fixture.launcher_compose).unwrap();
+    let args = make_args(&compose_path, fixture.mpc_image_digest_hex, None);
+
+    // When
+    let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);
+
+    // Then
+    assert_matches!(
+        result,
+        Err(VerificationError::WrongHash {
+            name: "expected_measurements",
+            ..
+        })
+    );
 }

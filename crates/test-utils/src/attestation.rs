@@ -15,17 +15,17 @@ use tee_verifier_interface::{Collateral, CollateralDates, VerifiedReport};
 /// An attestation captured from a real CVM with the `/public_data` endpoint, and the files
 /// `create-assets.sh` derives from it. See `assets/README.md`.
 pub struct AttestationFixture {
-    pub tcb_info: &'static str,
+    tcb_info: &'static str,
     /// The captured collateral with its byte fields hex-encoded, the shape the contract DTO reads.
-    pub collateral: &'static str,
-    pub public_data: &'static str,
-    pub app_compose: &'static str,
+    collateral: &'static str,
+    public_data: &'static str,
+    app_compose: &'static str,
     /// The `DEFAULT_IMAGE_DIGEST` in [`Self::launcher_compose`], as bare hex.
     pub mpc_image_digest_hex: &'static str,
     pub launcher_compose: &'static str,
     /// Absolute path of the fixture's asset folder.
-    pub dir: &'static str,
-    /// The OS measurements the fixture CVM ran with, as voted in with `vote_add_os_measurement`.
+    dir: &'static str,
+    /// The OS measurements the fixture CVM ran with.
     pub measurements: ExpectedMeasurements,
     /// The instant (Unix seconds) at which the attestation verifies.
     pub valid_timestamp: u64,

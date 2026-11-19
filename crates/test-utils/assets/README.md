@@ -41,6 +41,12 @@ Capture on the release (non-dev) image: set `OS_IMAGE=dstack-<version>`, since t
    bash ./create-assets.sh dstack-<version>/public_data.json dstack-<version>
    ```
 
+   Then create an empty `collateral.json`, so the crate compiles until step 8 fills it in:
+
+   ```shell
+   touch dstack-<version>/collateral.json
+   ```
+
 This will regenerate the following files:
 
 - `near_p2p_public_key.pub`
@@ -95,6 +101,9 @@ All files will be written into the specified output directory.
    UPDATE_FIXTURES=1 cargo test -p tee-verifier --test verify_quote verify_quote_args_fixture
    cargo test -p tee-verifier --test verify_quote
    ```
+
+   The first `collateral_fixture` run fails, since it checks against the empty file compiled in
+   before it wrote the new one; run it again to confirm it passes.
 
    The last run fails on `verify_quote__should_return_verified_td10_report_for_valid_fixture`
    and prints the values actually produced; copy them into

@@ -68,12 +68,4 @@ measurements were taken (step 4 of the [assets README](../../crates/test-utils/a
 
 ## 5) Verify
 
-Run the tests that depend on attestation assets:
-
-```shell
-cargo test -p mpc-contract test_submit_participant_info_succeeds_with_valid_dstack_attestation
-cargo test -p mpc-contract test_tee_attestation_fails_with_invalid_tls_key
-cargo test -p mpc-contract test_submit_participant_info_fails_without_approved_mpc_hash
-cargo test -p mpc-contract verify_tee__should_stop_requests_without_kicking_out_when_an_attestation_expired
-cargo test -p test-utils
-```
+Run the tests listed in [Tests that depend on these assets](../../crates/test-utils/assets/README.md#tests-that-depend-on-these-assets).
