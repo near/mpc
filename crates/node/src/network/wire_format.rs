@@ -5,7 +5,7 @@
 //! [`NetworkProtocolVersion`] check decides.
 
 use crate::primitives::{
-    ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
+    ConnectedPeersInfo, Heartbeat, IndexerHeightMessage, MpcMessage, MpcStartMessage, UniqueId,
 };
 use crate::protocol_version::NetworkProtocolVersion;
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
@@ -22,6 +22,8 @@ pub enum Packet {
     MpcMessage(MpcMessage) = 1,
     IndexerHeight(IndexerHeightMessage) = 2,
     ConnectedPeersInfo(ConnectedPeersInfo) = 3,
+    Echo(Heartbeat) = 4,
+    EchoAck(Heartbeat) = 5,
 }
 
 impl Packet {
@@ -32,6 +34,7 @@ impl Packet {
                 NetworkProtocolVersion::Dec2025
             }
             Packet::ConnectedPeersInfo(_) => NetworkProtocolVersion::Oct2026,
+            Packet::Echo(_) | Packet::EchoAck(_) => NetworkProtocolVersion::Nov2026,
         }
     }
 }
@@ -210,9 +213,10 @@ mod tests {
         VerifyForeignTxTaskId,
     };
     use crate::primitives::{
-        ChannelId, ConnectedPeersInfo, IndexerHeightMessage, MpcMessage, MpcStartMessage,
-        ParticipantId, UniqueId,
+        ChannelId, ConnectedPeersInfo, Heartbeat, IndexerHeightMessage, MpcMessage,
+        MpcStartMessage, ParticipantId, UniqueId,
     };
+    use crate::protocol_version::NetworkProtocolVersion;
     use borsh::BorshSerialize;
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId};
@@ -267,6 +271,12 @@ mod tests {
                         (ParticipantId::from_raw(5), 10),
                         (ParticipantId::from_raw(7), 20),
                     ]),
+                }),
+                Packet::Echo(Heartbeat {
+                    nonce: Default::default(),
+                }),
+                Packet::EchoAck(Heartbeat {
+                    nonce: Default::default(),
                 }),
             ]),
             rows(&[
@@ -352,6 +362,24 @@ mod tests {
         .join("\n\n");
 
         insta::assert_snapshot!(table);
+    }
+
+    #[test]
+    fn packet__should_require_nov2026_for_echos() {
+        assert_eq!(
+            Packet::Echo(Heartbeat {
+                nonce: Default::default()
+            })
+            .min_protocol_version(),
+            NetworkProtocolVersion::Nov2026
+        );
+        assert_eq!(
+            Packet::EchoAck(Heartbeat {
+                nonce: Default::default()
+            })
+            .min_protocol_version(),
+            NetworkProtocolVersion::Nov2026
+        );
     }
 
     #[test]
