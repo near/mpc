@@ -244,8 +244,6 @@ pub mod running_tests {
     use super::RunningContractState;
     use crate::errors::{Error, InvalidState, InvalidThreshold};
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::participants::ParticipantCount;
-    use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::{
@@ -253,7 +251,7 @@ pub mod running_tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
-        RunningStateParams, gen_running_state, gen_running_state_with_params,
+        RunningStateParams, account_ids, gen_running_state, gen_running_state_with_params,
         gen_valid_params_proposal, threshold_voters,
     };
     use near_mpc_contract_interface::types::{
@@ -367,10 +365,7 @@ pub mod running_tests {
             // If there are no domains, we should transition directly to Running with a higher
             // epoch ID, not resharing.
             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-            assert_eq!(
-                votes.n_votes(&proposal, proposal.participants()),
-                ParticipantCount::new(0)
-            );
+            assert!(votes.is_empty());
             assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
         } else {
             let resharing = resharing.unwrap();
@@ -578,14 +573,6 @@ pub mod running_tests {
         retained: Vec<AccountId>,
         removed: Vec<AccountId>,
         added: Vec<AccountId>,
-    }
-
-    fn account_ids(participants: &Participants) -> Vec<AccountId> {
-        participants
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect()
     }
 
     const NUM_PARTICIPANTS: usize = 5;

@@ -77,11 +77,14 @@ pub fn gen_valid_params_proposal(
 /// votes for a proposal make `vote_new_parameters` accept it.
 pub fn threshold_voters(parameters: &GovernanceThresholdParameters) -> Vec<AccountId> {
     let threshold = usize::try_from(parameters.threshold().value()).unwrap();
-    parameters
-        .participants()
+    account_ids(&parameters.participants().subset(0..threshold))
+}
+
+/// The account ids of `participants`, in participant order.
+pub fn account_ids(participants: &Participants) -> Vec<AccountId> {
+    participants
         .participants()
         .iter()
-        .take(threshold)
         .map(|(account_id, _, _)| account_id.clone())
         .collect()
 }
