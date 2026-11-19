@@ -9,7 +9,7 @@ pub enum HashParseError {
     #[error("not a valid hex string")]
     HexError(#[from] FromHexError),
     #[error("not a valid base58 string")]
-    Base58Error(#[from] bs58::decode::Error),
+    Base58Error,
     #[error("expected {expected} bytes, got {got}")]
     InvalidLength { expected: usize, got: usize },
 }
@@ -263,7 +263,7 @@ define_hash!(
     SerializeDisplay,
     DeserializeFromStr,
 )]
-#[display("{}", bs58::encode(_0).into_string())]
+#[display("{}", encode_base58(_0))]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
     derive(schemars::JsonSchema, borsh::BorshSchema)
@@ -277,20 +277,59 @@ pub struct GenesisHash(
 );
 
 impl GenesisHash {
-    pub const MAINNET: Self = Self::from_base58("EPnLgE7iEq9s7yTkos96M3cWymH5avBAPm3qx3NXqR8H");
-    pub const TESTNET: Self = Self::from_base58("FWJ9kR6KFWoyMoNjpLXXGHeuiy7tEY6GmoFeCA5yuc6b");
-
-    const fn from_base58(s: &str) -> Self {
-        Self(bs58::decode(s.as_bytes()).into_array_const_unwrap())
-    }
+    pub const MAINNET: Self = Self([
+        0xc6, 0xfd, 0xf9, 0x1c, 0x8e, 0x82, 0xf8, 0xf9, 0x17, 0xcc, 0x19, 0x75, 0xe9, 0xde, 0x1c,
+        0x64, 0xbe, 0x11, 0x89, 0x9e, 0x32, 0x1d, 0xfd, 0xf5, 0xfe, 0xbc, 0xfb, 0xb7, 0x31, 0x3f,
+        0x14, 0x86,
+    ]);
+    pub const TESTNET: Self = Self([
+        0xd7, 0x84, 0xda, 0x5a, 0x9e, 0x5e, 0x66, 0x66, 0x85, 0x16, 0xc1, 0x9a, 0x80, 0x95, 0x44,
+        0x8f, 0xc5, 0x4a, 0x22, 0xa2, 0x89, 0x71, 0xdc, 0x33, 0x0f, 0x00, 0x99, 0xdf, 0x94, 0x37,
+        0x94, 0x10,
+    ]);
 }
 
 impl core::str::FromStr for GenesisHash {
     type Err = HashParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        to_array(bs58::decode(s).into_vec()?).map(Self)
+        to_array(decode_base58(s)?).map(Self)
     }
+}
+
+const BASE58_ALPHABET: &str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+fn encode_base58(bytes: &[u8]) -> String {
+    let leading_zeros = bytes.iter().take_while(|&&byte| byte == 0).count();
+    let digits = convert_base(bytes.iter().copied().map(usize::from), 256, 58);
+    let symbols = digits.iter().map(|&digit| &BASE58_ALPHABET[digit..=digit]);
+    "1".repeat(leading_zeros) + &symbols.collect::<String>()
+}
+
+fn decode_base58(text: &str) -> Result<Vec<u8>, HashParseError> {
+    let leading_ones = text.chars().take_while(|&c| c == '1').count();
+    let digits: Option<Vec<usize>> = text.chars().map(|c| BASE58_ALPHABET.find(c)).collect();
+    let bytes = convert_base(digits.ok_or(HashParseError::Base58Error)?, 58, 256);
+    let bytes = bytes.iter().map(|byte| byte.to_le_bytes()[0]);
+    Ok(core::iter::repeat_n(0, leading_ones).chain(bytes).collect())
+}
+
+fn convert_base(digits: impl IntoIterator<Item = usize>, from: usize, to: usize) -> Vec<usize> {
+    let mut converted = Vec::new();
+    for digit in digits {
+        let mut carry = digit;
+        for converted_digit in &mut converted {
+            carry += *converted_digit * from;
+            *converted_digit = carry % to;
+            carry /= to;
+        }
+        while carry > 0 {
+            converted.push(carry % to);
+            carry /= to;
+        }
+    }
+    converted.reverse();
+    converted
 }
 
 pub const PROPOSAL_HASH_BYTES: usize = 32;
