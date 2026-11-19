@@ -11,6 +11,7 @@ sandbox = ["dep:anyhow", "dep:near-sandbox", "dep:near-workspaces"]
 anyhow = { workspace = true, optional = true }
 cargo-near-build = { workspace = true }
 hex = { workspace = true }
+include-measurements = { workspace = true }
 mpc-attestation = { workspace = true, features = ["test-utils", "local-verify"] }
 mpc-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
@@ -26,6 +27,7 @@ tee-verifier-interface = { workspace = true, features = ["serde"] }
 [dev-dependencies]
 bs58 = { workspace = true }
 ed25519-dalek = { workspace = true }
+rstest = { workspace = true }
 
 [lints]
 workspace = true

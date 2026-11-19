@@ -318,13 +318,6 @@ pub fn default_measurements() -> ExpectedMeasurements {
     include_measurements!("assets/tcb_info.json")
 }
 
-/// Returns the TCB measurements of the dev OS image that the `test-utils` fixture quote was taken
-/// on.
-#[cfg(any(test, feature = "test-utils"))]
-pub fn dev_measurements() -> ExpectedMeasurements {
-    include_measurements!("assets/tcb_info_dev.json")
-}
-
 /// Post-DCAP verification of a dstack [`TcbInfo`] at the `mpc-attestation` layer.
 ///
 /// [`TcbInfo`] comes from the lower `attestation` crates, which know nothing of

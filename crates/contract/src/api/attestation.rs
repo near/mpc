@@ -490,7 +490,7 @@ mod tests {
     use std::assert_matches;
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_expiring_at, mock_tcb_info, verified_report,
+        launcher_image_hash, measurements, mock_expiring_at, mock_tcb_info, verified_report,
     };
 
     #[test]
@@ -643,6 +643,7 @@ mod tests {
             &mut contract.tee_state,
             image_digest(),
             launcher_image_hash(),
+            measurements(),
             Some(launcher_compose_digest()),
         );
 

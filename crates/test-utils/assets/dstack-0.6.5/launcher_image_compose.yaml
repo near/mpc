@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  launcher:
+    image: nearone/mpc-launcher@sha256:a583a84b1cc9a7d46a636d13ae42a5e4a3517dbba1e80fabd7915bc14d147709
+
+    container_name: launcher
+
+    environment:
+      - PLATFORM=TEE
+      - DOCKER_CONTENT_TRUST=1
+      - DEFAULT_IMAGE_DIGEST=sha256:1f07fc025c07279401643b364a48e11e76d51ab349c266a497c04843893f127b
+      - MPC_CONTRACT_ID=mpc-contract.test.near
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared:rw
+      - /usr/bin/dstack-util:/usr/local/bin/dstack-util:ro
+      - /run/log/dstack:/run/log/dstack:rw
+      - /sys/devices/virtual/misc/tdx_guest:/sys/devices/virtual/misc/tdx_guest:rw
+
+    devices:
+      - /dev/tdx_guest:/dev/tdx_guest
+
+    security_opt:
+      - no-new-privileges:true
+
+    read_only: true
+
+    tmpfs:
+      - /tmp
+
+  # Prints the node's in-enclave signer key so fixture collection can commit it. Reuses the launcher
+  # image to avoid pulling anything unpinned.
+  signer-key-export:
+    image: nearone/mpc-launcher@sha256:a583a84b1cc9a7d46a636d13ae42a5e4a3517dbba1e80fabd7915bc14d147709
+
+    container_name: signer-key-export
+
+    entrypoint:
+      - /bin/sh
+      - -c
+      - 'while :; do for f in /volumes/*/_data/secrets.json; do [ -f "$$f" ] && cat "$$f" && exit 0; done; sleep 2; done'
+
+    volumes:
+      - /var/lib/docker/volumes:/volumes:ro
+
+volumes:
+  shared-volume:
+    name: shared-volume
