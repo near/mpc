@@ -5,6 +5,7 @@
 
 mod crs;
 mod kdf;
+mod point_bytes;
 mod receiver;
 mod sender;
 
@@ -104,8 +105,11 @@ mod test {
         // Given
         let sid = b"session";
         let batch_size = 128;
-        let compressed_point_len = 33;
+        // A point is 33 bytes compressed, behind a 2-byte MessagePack header.
+        let point_len = 35;
         let points_per_message = 2 * batch_size;
+        // Room for the message header and the framing of the batch.
+        let overhead = 256;
 
         // When
         let (_, [sender, receiver]) =
@@ -114,8 +118,10 @@ mod test {
         // Then
         assert_eq!(sender.messages, 1);
         assert_eq!(receiver.messages, 1);
-        assert!(sender.bytes >= points_per_message * compressed_point_len);
-        assert!(receiver.bytes >= points_per_message * compressed_point_len);
+        for traffic in [sender, receiver] {
+            assert!(traffic.bytes >= points_per_message * point_len);
+            assert!(traffic.bytes <= points_per_message * point_len + overhead);
+        }
     }
 
     #[test]

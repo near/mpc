@@ -7,6 +7,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use super::{
     crs::Crs,
     kdf::{derive_key, serialize},
+    point_bytes,
     sender::SenderCiphertext,
 };
 use crate::{
@@ -142,7 +143,9 @@ impl_secret_debug!(ReceiverOutput);
 #[derive(Serialize, Deserialize)]
 #[serde(bound = "C: Ciphersuite")]
 pub struct ReceiverPublicKey<C: Ciphersuite> {
+    #[serde(with = "point_bytes")]
     pub(super) p: CoefficientCommitment<C>,
+    #[serde(with = "point_bytes")]
     pub(super) q: CoefficientCommitment<C>,
 }
 

@@ -259,8 +259,8 @@ sampling of their randomness.
 
 | Base OT | Transfers | Sender + receiver |
 |:-------:|:---------:|------------------:|
-| **CO15**  | 128 | 16.68 ms |
-| **PVW08** | 128 | 50.61 ms |
+| **CO15**  | 128 | 17.40 ms |
+| **PVW08** | 128 | 50.19 ms |
 
 | **Network Latency: 0 ms** |
 |---------------------------|
@@ -272,8 +272,8 @@ the size of the two messages once serialized.
 
 | Transfers | CRS derivation | Receiver public keys | Sender encapsulation | Receiver decapsulation | Receiver message | Sender message |
 |:---------:|---------------:|---------------------:|---------------------:|-----------------------:|-----------------:|---------------:|
-| 128  | 0.14 ms | 7.29 ms  | 33.66 ms  | 5.69 ms  | 13367 Bytes  | 13445 Bytes  |
-| 1024 | 0.14 ms | 61.34 ms | 259.82 ms | 43.49 ms | 107394 Bytes | 107288 Bytes |
+| 128  | 0.14 ms | 7.68 ms  | 33.58 ms  | 5.73 ms  | 9091 Bytes  | 9091 Bytes  |
+| 1024 | 0.14 ms | 61.92 ms | 267.25 ms | 45.63 ms | 72707 Bytes | 72707 Bytes |
 
 | **Network Latency: 0 ms** |
 |---------------------------|
@@ -282,7 +282,8 @@ Reading: PVW08 costs about three times the computation of CO15 for the same batc
 sender accounts for roughly 70% of it, as it computes eight scalar multiplications per
 transfer ($U_ i^b$ and $V_ i^b$ for both branches) against two for the receiver's public
 keys and one for its decapsulation. Every step is linear in the batch size, and each
-message carries about 105 bytes per transfer. The string is derived once per batch by
+message carries 71 bytes per transfer: two points of 33 bytes, compressed, each behind a
+2-byte MessagePack header, and one byte of framing. The string is derived once per batch by
 each party, so its cost does not depend on the batch size.
 
 The third table counts what the two end-to-end runs hand to the transport for a batch of
@@ -292,13 +293,15 @@ that the crate prepends to every message.
 | Base OT | Transfers | Sender | Receiver | Total |
 |:-------:|:---------:|-------:|---------:|------:|
 | **CO15**  | 128 | 91 Bytes in 1 message     | 11814 Bytes in 128 messages | 11905 Bytes in 129 messages |
-| **PVW08** | 128 | 13518 Bytes in 1 message  | 13588 Bytes in 1 message    | 27106 Bytes in 2 messages   |
+| **PVW08** | 128 | 9131 Bytes in 1 message   | 9131 Bytes in 1 message     | 18262 Bytes in 2 messages   |
 
-Reading: PVW08 moves about 2.3 times the bytes of CO15, not four times as its four points
-per transfer against one would suggest. CO15 sends each of the receiver's 128 points as a
-message of its own, so headers make up 43% of its traffic. A serialized point takes about
-52 bytes in both protocols, against 33 for its compressed encoding, and that size depends
-on the value of each byte, so the totals move by about a percent from one run to the next.
+Reading: PVW08 moves about 1.5 times the bytes of CO15, not four times as its four points
+per transfer against one would suggest, for two reasons. CO15 sends each of the receiver's
+128 points as a message of its own, so headers make up 43% of its traffic. And PVW08
+encodes a point as a byte string of 35 bytes, while a CO15 point takes about 52 bytes: it
+is encoded as a list of integers, on which MessagePack spends two bytes for every value
+above 127. That size depends on the value of each byte, so the CO15 totals move by about a
+percent from one run to the next.
 
 Both protocols take two rounds of communication: CO15 opens with the sender, PVW08 with
 the receiver. PVW08 sends one message in each direction, while CO15 sends one message
@@ -309,14 +312,14 @@ not simulate latency.
 
 | Base OT | Transfers | Rounds | Sender + receiver |
 |:-------:|:---------:|:------:|------------------:|
-| **CO15**  | 128 | 2 | 216.68 ms |
-| **PVW08** | 128 | 2 | 250.61 ms |
+| **CO15**  | 128 | 2 | 217.40 ms |
+| **PVW08** | 128 | 2 | 250.19 ms |
 
 | **Network Latency: 100 ms** |
 |-----------------------------|
 
-The extra computation of PVW08 is a constant 34 ms that does not grow with the latency,
-so the ratio between the two drops from about 3 to about 1.16.
+The extra computation of PVW08 is a constant 33 ms that does not grow with the latency,
+so the ratio between the two drops from about 3 to about 1.15.
 
 Reproduce with:
 
