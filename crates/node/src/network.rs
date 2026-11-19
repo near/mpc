@@ -46,7 +46,9 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     ///
     /// For packets P = [p_0, p_1, p_2, ..., p_n] sent via this method to the same recipient
     /// for which this method returned Ok, it is guaranteed that the recipient will receive
-    /// P[0..i] for some 0 <= i <= n.
+    /// P[0..i] for some 0 <= i <= n. This holds separately for [`Packet::MpcMessage`]s and
+    /// for control packets (all other variants): a control packet may overtake MPC messages
+    /// queued before it.
     ///
     /// The connection_version is used to detect if the connection is broken, in which case
     /// such a guarantee is no longer possible. Without one, the packet is sent on whichever
