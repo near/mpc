@@ -44,7 +44,7 @@ pub struct TripleBatchSize(usize);
 
 impl TripleBatchSize {
     /// The batch size used when the config does not set one.
-    pub const DEFAULT: Self = Self(64);
+    pub const DEFAULT: Self = Self(16);
 
     /// The largest batch a follower accepts.
     pub const MAX: Self = Self(64);
@@ -285,7 +285,7 @@ parallel_triple_generation_stagger_time_sec: 1
     #[test]
     fn triple_config__should_round_trip_a_configured_batch_size() {
         // Given
-        let yaml = format!("{TRIPLE_CONFIG_YAML}batch_size: 16\n");
+        let yaml = format!("{TRIPLE_CONFIG_YAML}batch_size: 8\n");
         let config: TripleConfig = serde_yaml::from_str(&yaml).unwrap();
 
         // When
@@ -293,7 +293,7 @@ parallel_triple_generation_stagger_time_sec: 1
             serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
 
         // Then
-        assert_eq!(*reparsed.batch_size, 16);
+        assert_eq!(*reparsed.batch_size, 8);
         assert_eq!(reparsed, config);
     }
 }
