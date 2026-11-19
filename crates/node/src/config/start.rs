@@ -56,6 +56,7 @@ impl StartConfigExt for StartConfig {
         let near_config_path = near_config_file(&self.home_dir);
         if near_config_path.exists() {
             tracing::info!("NEAR node already initialized, skipping init");
+            refresh_boot_nodes(&near_config_path, near_init)?;
             return Ok(());
         }
 
@@ -214,6 +215,44 @@ fn set_decentralized_state_sync(config: &mut serde_json::Value) -> anyhow::Resul
     Ok(true)
 }
 
+/// Applies `near_init.boot_nodes` to an existing `config.json`. [`run_near_init`]
+/// runs only on first init, so without this a changed boot list would be
+/// ignored on every later start. No-op when `boot_nodes` is unset.
+fn refresh_boot_nodes(config_path: &Path, near_init: &NearInitConfig) -> anyhow::Result<()> {
+    if near_init.boot_nodes.is_none() {
+        return Ok(());
+    }
+
+    let raw = std::fs::read_to_string(config_path)
+        .with_context(|| format!("failed to read {}", config_path.display()))?;
+    let mut config: serde_json::Value =
+        serde_json::from_str(&raw).context("failed to parse NEAR config.json")?;
+
+    if set_boot_nodes(&mut config, near_init)? {
+        write_near_config_atomic(config_path, &config)?;
+        tracing::info!("NEAR node config.json boot_nodes updated from near_init");
+    }
+    Ok(())
+}
+
+/// Sets `network.boot_nodes` when `near_init` provides a boot list. No-op when
+/// unset. Returns whether the config was changed.
+fn set_boot_nodes(
+    config: &mut serde_json::Value,
+    near_init: &NearInitConfig,
+) -> anyhow::Result<bool> {
+    let Some(boot_nodes) = &near_init.boot_nodes else {
+        return Ok(false);
+    };
+    let boot_nodes = serde_json::Value::String(boot_nodes.clone());
+    let network = object_at(config, &["network"])?;
+    if network.get("boot_nodes") == Some(&boot_nodes) {
+        return Ok(false);
+    }
+    network.insert("boot_nodes".to_owned(), boot_nodes);
+    Ok(true)
+}
+
 /// Sets the advertised `tier3_public_addr` when `near_init` provides one (it is
 /// required for decentralized state sync to be reachable). No-op when unset.
 /// Returns whether the config was changed.
@@ -348,6 +387,122 @@ mod tests {
             "rpc": {},
             "state_sync": { "sync": { "ExternalStorage": {} } }
         })
+    }
+
+    fn near_config_with_boot_nodes(boot_nodes: &str) -> serde_json::Value {
+        serde_json::json!({
+            "network": { "boot_nodes": boot_nodes, "addr": "0.0.0.0:24567" }
+        })
+    }
+
+    #[test]
+    fn set_boot_nodes__should_overwrite_stale_boot_nodes() {
+        // Given
+        let mut config = near_config_with_boot_nodes("ed25519:OLD@10.0.0.1:24567");
+        let mut init = near_init(ChainId::Testnet);
+        init.boot_nodes = Some("ed25519:NEW@10.0.0.2:24567".to_owned());
+
+        // When
+        let changed = set_boot_nodes(&mut config, &init).unwrap();
+
+        // Then
+        assert!(changed);
+        assert_eq!(
+            config["network"]["boot_nodes"],
+            serde_json::json!("ed25519:NEW@10.0.0.2:24567")
+        );
+    }
+
+    #[test]
+    fn set_boot_nodes__should_create_boot_nodes_when_missing() {
+        // Given
+        let mut config = serde_json::json!({});
+        let mut init = near_init(ChainId::Testnet);
+        init.boot_nodes = Some("ed25519:NEW@10.0.0.2:24567".to_owned());
+
+        // When
+        let changed = set_boot_nodes(&mut config, &init).unwrap();
+
+        // Then
+        assert!(changed);
+        assert_eq!(
+            config["network"]["boot_nodes"],
+            serde_json::json!("ed25519:NEW@10.0.0.2:24567")
+        );
+    }
+
+    #[test]
+    fn set_boot_nodes__should_leave_config_unchanged_when_unset() {
+        // Given
+        let mut config = near_config_with_boot_nodes("ed25519:OLD@10.0.0.1:24567");
+        let before = config.clone();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        let changed = set_boot_nodes(&mut config, &init).unwrap();
+
+        // Then
+        assert!(!changed);
+        assert_eq!(config, before);
+    }
+
+    #[test]
+    fn set_boot_nodes__should_report_no_change_when_already_equal() {
+        // Given
+        let mut config = near_config_with_boot_nodes("ed25519:SAME@10.0.0.1:24567");
+        let mut init = near_init(ChainId::Testnet);
+        init.boot_nodes = Some("ed25519:SAME@10.0.0.1:24567".to_owned());
+
+        // When
+        let changed = set_boot_nodes(&mut config, &init).unwrap();
+
+        // Then
+        assert!(!changed);
+    }
+
+    #[test]
+    fn refresh_boot_nodes__should_rewrite_existing_config_json_on_restart() {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        std::fs::write(
+            &config_path,
+            near_config_with_boot_nodes("ed25519:OLD@10.0.0.1:24567").to_string(),
+        )
+        .unwrap();
+        let mut init = near_init(ChainId::Testnet);
+        init.boot_nodes = Some("ed25519:NEW@10.0.0.2:24567".to_owned());
+
+        // When
+        refresh_boot_nodes(&config_path, &init).unwrap();
+
+        // Then
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(
+            written["network"]["boot_nodes"],
+            serde_json::json!("ed25519:NEW@10.0.0.2:24567")
+        );
+        assert_eq!(
+            written["network"]["addr"],
+            serde_json::json!("0.0.0.0:24567")
+        );
+    }
+
+    #[test]
+    fn refresh_boot_nodes__should_not_touch_config_json_when_unset() {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.json");
+        let original = near_config_with_boot_nodes("ed25519:OLD@10.0.0.1:24567").to_string();
+        std::fs::write(&config_path, &original).unwrap();
+        let init = near_init(ChainId::Testnet);
+
+        // When
+        refresh_boot_nodes(&config_path, &init).unwrap();
+
+        // Then
+        assert_eq!(std::fs::read_to_string(&config_path).unwrap(), original);
     }
 
     #[test]
