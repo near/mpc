@@ -31,11 +31,7 @@ pub(crate) const OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_PARTICIPANT_ENTRIES: usiz
 
 /// The arguments needed to create a signature.
 ///
-/// Each of [`triple0`](Self::triple0) and [`triple1`](Self::triple1) must be an unmodified output
-/// of [`generate_triple`](super::triples::generate_triple) or
-/// [`generate_triple_many`](super::triples::generate_triple_many), used at most once: in one slot
-/// of one run of [`sign`], aborted runs included. A reused or modified triple
-/// leaks the private key, and no participant can detect this.
+/// Each triple must be an unmodified triple generation output, used at most once.
 #[derive(Debug, Clone)]
 pub struct SignArguments {
     /// The first triple's public information, and our share.
