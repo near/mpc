@@ -16,7 +16,15 @@ The inputs to this protocol are:
 
 **Common Reference String:**
 
-1. Each party derives $(G_ 0, H_ 0, G_ 1, H_ 1) \in \mathbb{G}^4$ by hashing $\mathsf{sid}$ to the curve four times.
+1. Each party derives the four points from four distinct inputs:
+
+$$
+(G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathsf{sid} \,\|\, j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
+$$
+
+Here $\mathsf{HashToCurve}$ is a hash to $\mathbb{G}$ whose outputs have unknown
+discrete logarithms, and $\mathsf{DST}$ is a domain separation tag that only
+this protocol uses.
 
 **Round 1 (Receiver):**
 
@@ -48,7 +56,8 @@ $$
 **Round 2 (Receiver):**
 
 1. $\bullet$ $\mathcal{R}$ waits to receive $(U_ i^0, W_ i^0, U_ i^1, W_ i^1)_ {i \in [l]}$ from $\mathcal{S}$.
-2. For $i \in [l]$, $\mathcal{R}$ computes $M_ i^{b_ i} \gets W_ i^{b_ i} - r_ i \cdot U_ i^{b_ i}$.
+2. $\blacktriangle$ $\mathcal{R}$ *asserts* that it holds $l$ quadruples.
+3. For $i \in [l]$, $\mathcal{R}$ computes $M_ i^{b_ i} \gets W_ i^{b_ i} - r_ i \cdot U_ i^{b_ i}$.
 
 **Output:** $\mathcal{R}$ outputs the messages $(M_ i^{b_ i})_ {i \in [l]}$.
 
@@ -71,19 +80,49 @@ using $x_ 0, x_ 1$ to recover the choice bits.
 Hashing $\mathsf{sid}$ to the curve gives four points whose discrete logarithms
 nobody knows, in messy mode except with probability $1/q$, with no extra round
 and no trusted setup.
+This relies on the four inputs being distinct and on the tag being used nowhere
+else: it is what makes $x_ 0$ and $x_ 1$ independent and uniform.
+Hashing the same input four times would give $G_ 0 = H_ 0 = G_ 1 = H_ 1$, so
+$x_ 0 = x_ 1$, and the receiver would learn both messages.
 
 **Messages as inputs.** The sender's messages are inputs, as in the paper, and
 each is encrypted with $V_ i^b$.
-Hashing $V_ i^b$ straight into a key would halve the sender's message, but the
-paper's proof does not cover it.
-To seed an OT extension the caller samples the messages uniformly from
-$\mathbb{G}$ and derives the $\lambda$-bit keys from them outside this protocol.
+Hashing $V_ i^b$ straight into a key would halve what the sender sends in
+round 1, as it would no longer send $W_ i^b$, but the paper's proof does not
+cover it.
+An OT extension needs $\lambda$-bit keys instead of group elements:
+[Seeding an OT extension](#seeding-an-ot-extension) derives them from random
+messages.
 
 **One string per batch, fresh randomness per transfer.** The whole batch shares
 the string and takes one message in each direction.
-The sender's $(s, t)$ is sampled independently for every $i$ and $b$: sharing
-it across the batch would make the hidden values $V_ i^b$ dependent on one
-another.
+The sender's $(s, t)$ is sampled independently for every $i$ and $b$, and
+neither is optional.
+Reusing $(s, t)$ across $b$ gives $V_ i^0 = V_ i^1$, so the receiver learns both
+messages: it decrypts $M_ i^{b_ i}$ and gets the other one from
+$W_ i^0 - W_ i^1 = M_ i^0 - M_ i^1$.
+Reusing it across $i$ makes the hidden values $V_ i^b$ linearly related.
 
 **Identity check.** The pair $(0, 0)$ is consistent with both branches and
 gives $V_ i^0 = V_ i^1 = 0$, which sends both messages in the clear, so the sender must reject it in round 1.
+
+# Seeding an OT extension
+
+An OT extension consumes a batch of random OTs on $\lambda$-bit keys: for each
+$i \in [l]$ the sender gets two keys $K_ i^0, K_ i^1 \in \\\{0, 1\\\}^\lambda$ and
+the receiver gets $K_ i^{b_ i}$.
+This is the output of `Batch-Random-OT` in
+[triples](./ot_based_ecdsa/triples.md#simplest-ot-protocol), which this wrapper
+reproduces on top of the protocol above.
+
+Protocol `PVW08-Batch-Random-OT`:
+
+1. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples $M_ i^b \xleftarrow{R} \mathbb{G}$.
+2. $\mathcal{R}$ and $\mathcal{S}$ run the protocol above, with the messages $M_ i^b$ as the input of $\mathcal{S}$.
+3. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ computes $K_ i^b \gets \mathsf{KDF}_ {(\mathsf{sid}, i, b)}(M_ i^b)$.
+4. For $i \in [l]$, $\mathcal{R}$ computes $K_ i^{b_ i} \gets \mathsf{KDF}_ {(\mathsf{sid}, i, b_ i)}(M_ i^{b_ i})$.
+
+Here $\mathsf{KDF}$ is a hash function providing a key derivation function
+$\mathbb{G} \to \mathbb{F}_ 2^\lambda$, under a domain separation tag of its own,
+distinct from the one of $\mathsf{HashToCurve}$ and from the one of the hash of
+`Batch-Random-OT`.
