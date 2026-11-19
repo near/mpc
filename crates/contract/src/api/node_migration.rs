@@ -399,7 +399,7 @@ mod tests {
 
     fn running_contract() -> (MpcContract, Keyset, Participants) {
         let running_state = gen_running_state(NUM_DOMAINS);
-        let keyset = running_state.keyset.clone();
+        let keyset = running_state.keyset().clone();
         let participants = running_state.participants().clone();
         let contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
@@ -443,7 +443,7 @@ mod tests {
             let ProtocolContractState::Running(running) = &contract.protocol_state else {
                 panic!("expected running state");
             };
-            running.parameters.participants().clone()
+            running.participants().clone()
         };
         let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
@@ -786,10 +786,9 @@ mod tests {
     fn test_conclude_node_migration_failure_resharing() {
         let (_, resharing_state) = gen_resharing_state(NUM_DOMAINS);
 
-        let keyset = resharing_state.previous_running_state.keyset.clone();
+        let keyset = resharing_state.previous_running_state.keyset().clone();
         let participants = resharing_state
             .previous_running_state
-            .parameters
             .participants()
             .clone();
         let resharing_state = ProtocolContractState::Resharing(resharing_state);
@@ -858,9 +857,7 @@ mod tests {
             {
                 let res_participants = {
                     match &contract.protocol_state {
-                        ProtocolContractState::Running(running) => {
-                            running.parameters.participants()
-                        }
+                        ProtocolContractState::Running(running) => running.participants(),
                         ProtocolContractState::Resharing(resharing) => {
                             resharing.previous_running_state.participants()
                         }
@@ -1104,12 +1101,9 @@ mod tests {
         let ProtocolContractState::Running(running) = &contract.protocol_state else {
             panic!("expected running state");
         };
+        assert_eq!(running.participants().info(&account_id), Some(&own_info));
         assert_eq!(
-            running.parameters.participants().info(&account_id),
-            Some(&own_info)
-        );
-        assert_eq!(
-            running.parameters.participants().id(&account_id).unwrap(),
+            running.participants().id(&account_id).unwrap(),
             participant_id
         );
     }

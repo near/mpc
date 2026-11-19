@@ -1,10 +1,11 @@
-mod dto;
 pub mod initializing;
 pub mod key_event;
 pub mod resharing;
 pub mod running;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
+
+mod dto;
 
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState};
