@@ -39,6 +39,7 @@ export LAUNCHER_MANIFEST_DIGEST=sha256:e28cb0425db06255fe5fc7aadb79534ac63c94c7a
 export VMM_RPC=http://127.0.0.1:<port>
 
 # Guest OS image (default: dstack-dev-0.5.8)
+# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
 export OS_IMAGE=dstack-0.5.8
 
 # Custom NEAR accounts
