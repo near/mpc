@@ -186,13 +186,6 @@ impl ForeignChainsConfig {
         }
     }
 
-    /// Iterate over every chain that has a local config, paired with its DTO identifier.
-    pub fn iter_chains(
-        &self,
-    ) -> impl Iterator<Item = (dtos::ForeignChain, &ForeignChainConfig)> + '_ {
-        self.into_iter()
-    }
-
     pub fn validate(&self) -> anyhow::Result<()> {
         let mut seen_rpc_urls = BTreeSet::new();
 
@@ -848,7 +841,7 @@ quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
             });
 
             // Then
-            let configured: Vec<_> = config.iter_chains().map(|(c, _)| c).collect();
+            let configured: Vec<_> = config.into_iter().map(|(c, _)| c).collect();
             assert_eq!(configured, vec![chain]);
         }
     }
@@ -899,10 +892,7 @@ quicknode = { env = "QUICKNODE_API_KEY", slug = "my-endpoint" }
             .keys()
             .map(|key| key.as_str().expect("a chain key"))
             .collect();
-        let labels: BTreeSet<&str> = config
-            .iter_chains()
-            .map(|(chain, _)| chain.label())
-            .collect();
+        let labels: BTreeSet<&str> = config.into_iter().map(|(chain, _)| chain.label()).collect();
         assert_eq!(written_keys, labels);
     }
 
