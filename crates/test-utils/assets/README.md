@@ -89,6 +89,9 @@ All files will be written into the specified output directory.
    event, none of which the compose files affect; `rtmr0` depends on the CVM's vCPU and memory
    configuration.
 
+   TODO(#5069): it still holds the 0.5.8 release set; switch it to 0.6.5 together with the
+   operator docs.
+
 8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
    contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test
    hardcodes (`mr_config_id`, `rt_mr3`, `report_data` change with every new node):

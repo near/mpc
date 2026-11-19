@@ -7,7 +7,9 @@ use mpc_attestation::attestation::{Attestation, VerificationError};
 use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use rstest::rstest;
-use test_utils::attestation::{AttestationFixture, DSTACK_0_5_8, account_key, p2p_tls_key};
+use test_utils::attestation::{
+    AttestationFixture, DSTACK_0_5_8, DSTACK_0_6_5, account_key, p2p_tls_key,
+};
 
 fn make_static_web_data(fixture: &AttestationFixture) -> StaticWebData {
     StaticWebData {
@@ -35,7 +37,7 @@ fn make_args(
 
 #[rstest]
 fn full_verification_succeeds_with_valid_attestation(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     let static_data = make_static_web_data(fixture);
 
@@ -66,7 +68,9 @@ fn full_verification_succeeds_with_valid_attestation(
 }
 
 #[rstest]
-fn verification_fails_with_wrong_image_hash(#[values(&DSTACK_0_5_8)] fixture: &AttestationFixture) {
+fn verification_fails_with_wrong_image_hash(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     let static_data = make_static_web_data(fixture);
 
     let dir = tempfile::tempdir().unwrap();
@@ -92,7 +96,7 @@ fn verification_fails_with_wrong_image_hash(#[values(&DSTACK_0_5_8)] fixture: &A
 
 #[rstest]
 fn verification_fails_with_wrong_compose_file(
-    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     let static_data = make_static_web_data(fixture);
 
