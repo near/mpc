@@ -172,7 +172,7 @@ The set of MPC participants can be changed, subject to following restrictions:
 - The prospective threshold must be at least 60% of the number of participants (rounded upwards).
 - The set of participants must have at least two participants.
 
-In order for a change to be accepted by the contract, all prospective participants must vote for it using the `vote_new_parameters` endpoint. Note that any new participants vote will only be accepted after at least `threshold` (the current threshold) old participants voted for the same participant set.
+A change is accepted by the contract once at least `threshold` (the current threshold) current participants voted for it using the `vote_new_parameters` endpoint. Only current participants can vote, including those the change removes; participants the change adds cannot.
 
 #### Example
 
@@ -180,28 +180,31 @@ In order for a change to be accepted by the contract, all prospective participan
 {
   "prospective_epoch_id":1,
   "proposal":{
-    "threshold":3,
-    "participants":{
-      "next_id":2,
-      "participants":[
-        [
-          "mpc-participant0.near",
-          0,
-          {
-            "tls_public_key":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
-            "url":"http://mpc-service0.com"
-          }
-        ],
-        [
-          "mpc-participant1.near",
-          1,
-          {
-            "tls_public_key":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
-            "url":"http://mpc-service1.com"
-          }
+    "parameters":{
+      "participants":{
+        "next_id":2,
+        "participants":[
+          [
+            "mpc-participant0.near",
+            0,
+            {
+              "tls_public_key":"ed25519:2XPuwqhg71RXRiTUMKGapd8FYWgXnxVvydYBK9tS1ex2",
+              "url":"http://mpc-service0.com"
+            }
+          ],
+          [
+            "mpc-participant1.near",
+            1,
+            {
+              "tls_public_key":"ed25519:2GyNS9xuHTcypMvSP3TVArmarrp72YrE4tqeekfoQjsv",
+              "url":"http://mpc-service1.com"
+            }
+          ]
         ]
-      ]
-    }
+      },
+      "threshold":2
+    },
+    "per_domain_thresholds":{}
   }
 }
 ```
@@ -309,7 +312,7 @@ These functions require the caller to be a participant or candidate.
 | `respond_ckd(request: CKDRequest, response: CKDResponse)`                           | Processes a response to a ckd request, ensuring proper state cleanup.                                                                                                                                                                   | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `respond_verify_foreign_tx(request: VerifyForeignTransactionRequest, response: VerifyForeignTransactionResponse)` | Processes a response to a foreign-chain transaction verification request, ensuring proper state cleanup.                                                                                              | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous, and each domain must specify a `reconstruction_threshold` with `2 <= t <= n`.                       | `Result<(), Error>`       | TBD             | TBD                |
-| `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current)                                                                                                     | `Result<(), Error>`       | TBD             | TBD                |
+| `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current.) Requires threshold votes from current participants.                                                | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_mpc_node_manifest_digest(mpc_node_manifest_digest: NodeImageHash)`            | Votes to add new whitelisted TEE Docker image code hashes.                                                                                                                                                                              | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_add_launcher_hash(launcher_hash: LauncherImageHash)`                          | Votes to add a launcher image hash to the allowed set. Requires threshold votes.                                                                                                                                                        | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_remove_launcher_hash(launcher_hash: LauncherImageHash)`                       | Votes to remove a launcher image hash. Requires ALL participants to vote.                                                                                                                                                               | `Result<(), Error>`       | TBD             | TBD                |

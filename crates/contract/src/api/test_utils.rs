@@ -14,7 +14,9 @@ use crate::primitives::thresholds::{
     GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
 use crate::state::ProtocolContractState;
-use crate::state::test_utils::{gen_initializing_state, gen_resharing_state, gen_running_state};
+use crate::state::test_utils::{
+    gen_initializing_state, gen_resharing_state, gen_running_state, threshold_voters,
+};
 use crate::storage_keys::StorageKey;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
@@ -224,14 +226,15 @@ pub(crate) fn vote_params(
     contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
 }
 
-/// Moves `contract` into Resharing towards `proposal`: every proposed participant votes for
-/// it, in proposal order.
+/// Moves `contract` into Resharing towards `proposal`: the first governance threshold of
+/// current participants vote for it, in participant order.
 pub(crate) fn vote_into_resharing(
     contract: &mut MpcContract,
     proposal: &ProposedGovernanceThresholdParameters,
 ) {
-    for (account_id, _, _) in proposal.participants().participants() {
-        vote_params(contract, account_id, proposal).unwrap();
+    let current = contract.protocol_state.threshold_parameters_or_panic();
+    for account_id in threshold_voters(current) {
+        vote_params(contract, &account_id, proposal).unwrap();
     }
     assert_matches!(contract.protocol_state, ProtocolContractState::Resharing(_));
 }

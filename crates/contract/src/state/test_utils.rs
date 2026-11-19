@@ -17,6 +17,7 @@ use crate::primitives::{
         governance_threshold_lower_relative_bound,
     },
 };
+use near_account_id::AccountId;
 use rand::Rng;
 use std::collections::BTreeMap;
 
@@ -72,6 +73,19 @@ pub fn gen_valid_params_proposal(
     ProposedGovernanceThresholdParameters::new(parameters, BTreeMap::new())
 }
 
+/// The first [`GovernanceThreshold`] participants of `parameters`: the fewest voters whose
+/// votes for a proposal make `vote_new_parameters` accept it.
+pub fn threshold_voters(parameters: &GovernanceThresholdParameters) -> Vec<AccountId> {
+    let threshold = usize::try_from(parameters.threshold().value()).unwrap();
+    parameters
+        .participants()
+        .participants()
+        .iter()
+        .take(threshold)
+        .map(|(account_id, _, _)| account_id.clone())
+        .collect()
+}
+
 /// Generates a resharing state with the given number of domains.
 /// We do this by starting from the Running state and calling vote_new_parameters to have it
 /// transition into Resharing. (This also tests the transitioning code path.)
@@ -81,8 +95,8 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
     let proposal = gen_valid_params_proposal(&running.parameters);
     let mut votes = GovernanceThresholdParametersVotes::default();
     let mut resharing_state = None;
-    for (account, _, _) in proposal.participants().participants() {
-        env.set_signer(account);
+    for account in threshold_voters(&running.parameters) {
+        env.set_signer(&account);
         assert!(resharing_state.is_none());
         resharing_state = running
             .vote_new_parameters(running.keyset.epoch_id.next(), &proposal, &mut votes)

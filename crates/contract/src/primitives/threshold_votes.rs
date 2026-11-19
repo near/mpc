@@ -1,10 +1,11 @@
+use crate::primitives::key_state::AuthenticatedAccountId;
+#[cfg(test)]
+use crate::primitives::participants::{ParticipantCount, Participants};
 use crate::primitives::proposal_hash::{Borsh, ProposalHash, Sha256, ToProposalHash};
-use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
-use crate::primitives::votes::Votes;
-use crate::primitives::{
-    key_state::AuthenticatedAccountId,
-    participants::{ParticipantCount, Participants},
+use crate::primitives::thresholds::{
+    GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
+use crate::primitives::votes::Votes;
 use crate::storage_keys::StorageKey;
 use near_sdk::near;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,6 +31,7 @@ impl Default for GovernanceThresholdParametersVotes {
 
 impl GovernanceThresholdParametersVotes {
     /// return the number of votes for `proposal` cast by members of `participants`
+    #[cfg(test)]
     pub fn n_votes(
         &self,
         proposal: &ProposedGovernanceThresholdParameters,
@@ -43,18 +45,19 @@ impl GovernanceThresholdParametersVotes {
     }
 
     /// Registers a vote by `participant` for `proposal`, replacing any existing vote by
-    /// `participant`. Returns `true` once every proposed participant voted for `proposal`.
+    /// `participant`. Returns `true` once the participants of `current` who voted for
+    /// `proposal` meet its governance threshold.
     pub fn vote(
         &mut self,
         proposal: &ProposedGovernanceThresholdParameters,
         participant: AuthenticatedAccountId,
+        current: &GovernanceThresholdParameters,
     ) -> bool {
-        let proposed_participants = proposal.participants();
         let n_votes = self
             .0
             .vote(participant, proposal.to_proposal_hash())
-            .count_participants(proposed_participants);
-        n_votes == proposed_participants.count()
+            .count_participants(current.participants());
+        current.threshold().is_met_by(n_votes)
     }
 
     pub fn clear(&mut self) {
@@ -81,14 +84,23 @@ mod tests {
             authenticate_account_as, gen_participant, gen_participants,
             gen_proposed_threshold_params,
         },
-        thresholds::{
-            GovernanceThreshold, GovernanceThresholdParameters,
-            ProposedGovernanceThresholdParameters,
-        },
+        thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     };
+    use crate::state::test_utils::threshold_voters;
     use near_mpc_contract_interface::types::{DomainId, ReconstructionThreshold};
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use std::collections::BTreeMap;
+
+    /// Above the number of votes any test in this module casts against `never_accepting`.
+    const UNREACHED_GOVERNANCE_THRESHOLD: u64 = 3;
+
+    /// `participants` under `UNREACHED_GOVERNANCE_THRESHOLD`, so no proposal is accepted.
+    fn never_accepting(participants: &Participants) -> GovernanceThresholdParameters {
+        GovernanceThresholdParameters::new_unvalidated(
+            participants.clone(),
+            GovernanceThreshold::new(UNREACHED_GOVERNANCE_THRESHOLD),
+        )
+    }
 
     #[test]
     fn test_voting_and_removal() {
@@ -102,13 +114,17 @@ mod tests {
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
         let params = gen_proposed_threshold_params(30);
         let mut votes = GovernanceThresholdParametersVotes::default();
-        assert!(!votes.vote(&params, participant.clone()));
+        votes.vote(
+            &params,
+            participant.clone(),
+            &never_accepting(&participants),
+        );
         assert_eq!(
             votes.n_votes(&params, &participants),
             ParticipantCount::new(1)
         );
         let params2 = gen_proposed_threshold_params(30);
-        assert!(!votes.vote(&params2, participant));
+        votes.vote(&params2, participant, &never_accepting(&participants));
         assert_eq!(
             votes.n_votes(&params2, &participants),
             ParticipantCount::new(1)
@@ -125,12 +141,16 @@ mod tests {
         testing_env!(ctx.build());
         let participant =
             AuthenticatedAccountId::new(&participants).expect("expected authentication");
-        assert!(!votes.vote(&params, participant.clone()));
+        votes.vote(
+            &params,
+            participant.clone(),
+            &never_accepting(&participants),
+        );
         assert_eq!(
             votes.n_votes(&params2, &participants),
             ParticipantCount::new(1)
         );
-        assert!(!votes.vote(&params2, participant));
+        votes.vote(&params2, participant, &never_accepting(&participants));
         assert_eq!(
             votes.n_votes(&params2, &participants),
             ParticipantCount::new(2)
@@ -176,8 +196,8 @@ mod tests {
 
         // When each voter casts a different proposal
         let mut votes = GovernanceThresholdParametersVotes::default();
-        votes.vote(&proposal_a, auth_p0);
-        votes.vote(&proposal_b, auth_p1);
+        votes.vote(&proposal_a, auth_p0, &never_accepting(&participants));
+        votes.vote(&proposal_b, auth_p1, &never_accepting(&participants));
 
         // Then the two proposals are tallied independently
         assert_eq!(
@@ -212,8 +232,8 @@ mod tests {
 
         let params = gen_proposed_threshold_params(30);
         let mut votes = GovernanceThresholdParametersVotes::default();
-        votes.vote(&params, auth_p0);
-        votes.vote(&params, auth_p1);
+        votes.vote(&params, auth_p0, &never_accepting(&old_participants));
+        votes.vote(&params, auth_p1, &never_accepting(&old_participants));
         assert_eq!(
             votes.n_votes(&params, &old_participants),
             ParticipantCount::new(2)
@@ -233,7 +253,7 @@ mod tests {
         ctx.signer_account_id(p2.0);
         testing_env!(ctx.build());
         let auth_p2 = AuthenticatedAccountId::new(&new_participants).unwrap();
-        votes.vote(&params, auth_p2);
+        votes.vote(&params, auth_p2, &never_accepting(&new_participants));
         assert_eq!(
             votes.n_votes(&params, &new_participants),
             ParticipantCount::new(1)
@@ -242,31 +262,50 @@ mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn vote__should_accept_once_all_proposed_participants_voted() {
+    fn vote__should_accept_once_current_participants_meet_the_governance_threshold() {
         // Given
-        let participants = gen_participants(3);
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
-                .unwrap(),
-            BTreeMap::new(),
-        );
-        let voters: Vec<AuthenticatedAccountId> = participants
-            .participants()
+        let current =
+            GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
+                .unwrap();
+        let proposal = gen_proposed_threshold_params(30);
+        let voters: Vec<AuthenticatedAccountId> = threshold_voters(&current)
             .iter()
-            .map(|(account_id, _, _)| authenticate_account_as(account_id, &participants))
+            .map(|account_id| authenticate_account_as(account_id, current.participants()))
             .collect();
         let mut votes = GovernanceThresholdParametersVotes::default();
-        assert!(!votes.vote(&proposal, voters[0].clone()));
-        assert!(!votes.vote(&proposal, voters[1].clone()));
 
         // When
-        let accepted = votes.vote(&proposal, voters[2].clone());
+        let accepted: Vec<bool> = voters
+            .into_iter()
+            .map(|voter| votes.vote(&proposal, voter, &current))
+            .collect();
 
         // Then
-        assert!(accepted);
-        assert_eq!(
-            votes.n_votes(&proposal, &participants),
-            ParticipantCount::new(3)
-        );
+        assert_eq!(accepted, [false, false, true]);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn vote__should_not_count_votes_from_outside_the_current_participants() {
+        // Given
+        let current =
+            GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
+                .unwrap();
+        let outsiders = gen_participants(current.participants().len());
+        let proposal = gen_proposed_threshold_params(30);
+        let mut votes = GovernanceThresholdParametersVotes::default();
+
+        // When
+        let accepted: Vec<bool> = outsiders
+            .participants()
+            .iter()
+            .map(|(account_id, _, _)| {
+                let voter = authenticate_account_as(account_id, &outsiders);
+                votes.vote(&proposal, voter, &current)
+            })
+            .collect();
+
+        // Then
+        assert!(accepted.iter().all(|accepted| !accepted));
     }
 }
