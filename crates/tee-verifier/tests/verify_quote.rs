@@ -4,7 +4,7 @@
 #![expect(non_snake_case)]
 
 use mpc_attestation::attestation::{
-    AcceptedAttestation, Attestation, DstackAttestation, VerifiedAttestation, dev_measurements,
+    AcceptedAttestation, Attestation, DstackAttestation, VerifiedAttestation,
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
@@ -16,8 +16,7 @@ use tee_verifier_interface::{
     VerificationResult, VerificationResultWithCollateralDates, VerifiedReport, VerifierError,
 };
 use test_utils::attestation::{
-    VALID_ATTESTATION_TIMESTAMP, account_key, collateral, image_digest, launcher_compose_digest,
-    mock_tcb_info, p2p_tls_key, quote,
+    AttestationFixture, DSTACK_0_5_8, VALID_ATTESTATION_TIMESTAMP, collateral, quote,
 };
 
 fn make_quote_bytes() -> QuoteBytes {
@@ -107,6 +106,25 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
     assert_eq!(result, VerificationResult::Verified(expected_report));
 }
 
+#[rstest]
+fn verify_quote__should_verify_the_fixture_at_its_valid_timestamp(
+    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+) {
+    // Given
+    set_timestamp_context(Duration::from_secs(fixture.valid_timestamp));
+    let contract = TeeVerifier::default();
+
+    // When
+    let result =
+        contract.verify_quote(QuoteBytes(Vec::from(fixture.quote())), fixture.collateral());
+
+    // Then
+    assert!(
+        matches!(result, VerificationResult::Verified(_)),
+        "expected Verified(_), got {result:?}"
+    );
+}
+
 #[test]
 fn verify_quote__should_reject_valid_fixture_when_block_time_is_past_collateral_validity() {
     // Given: block time far past the fixture collateral's validity window
@@ -192,27 +210,32 @@ fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fix
     );
 }
 
-#[test]
-fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_locally() {
+#[rstest]
+fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_locally(
+    #[values(&DSTACK_0_5_8)] fixture: &AttestationFixture,
+) {
     // Given
-    set_valid_timestamp_context();
+    set_timestamp_context(Duration::from_secs(fixture.valid_timestamp));
     let contract = TeeVerifier::default();
-    let (quote, collateral) = (quote(), collateral());
-    let report_data = ReportData::V1(ReportDataV1::new(p2p_tls_key(), account_key()));
+    let (quote, collateral) = (fixture.quote(), fixture.collateral());
+    let report_data = ReportData::V1(ReportDataV1::new(
+        fixture.p2p_tls_key(),
+        fixture.account_key(),
+    ));
     let AcceptedAttestation {
         attestation: VerifiedAttestation::Dstack(locally_verified),
         ..
     } = Attestation::Dstack(DstackAttestation::new(
         quote.clone(),
         collateral.clone(),
-        mock_tcb_info(),
+        fixture.tcb_info(),
     ))
     .verify_locally(
         report_data.into(),
-        VALID_ATTESTATION_TIMESTAMP,
-        &[image_digest()],
-        &[launcher_compose_digest()],
-        &[dev_measurements()],
+        fixture.valid_timestamp,
+        &[fixture.image_digest()],
+        &[fixture.launcher_compose_digest()],
+        &[fixture.measurements],
     )
     .expect("the fixture verifies locally")
     else {
