@@ -31,14 +31,14 @@ use near_sdk::near;
 #[derive(Debug)]
 #[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct ResharingContractState {
-    pub previous_running_state: RunningContractState,
-    pub reshared_keys: Vec<KeyForDomain>,
-    pub resharing_key: KeyEvent,
-    pub cancellation_requests: BTreeSet<AuthenticatedAccountId>,
+    pub(super) previous_running_state: RunningContractState,
+    pub(super) reshared_keys: Vec<KeyForDomain>,
+    pub(super) resharing_key: KeyEvent,
+    pub(super) cancellation_requests: BTreeSet<AuthenticatedAccountId>,
     /// Per-domain [`ReconstructionThreshold`] updates carried from the accepted
     /// proposal. Applied to the [`DomainRegistry`](crate::primitives::domain::DomainRegistry)
     /// when resharing completes; empty means "keep current per-domain thresholds".
-    pub per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    pub(super) per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
 }
 
 impl ResharingContractState {

@@ -30,20 +30,28 @@ use std::collections::BTreeSet;
 #[cfg_attr(feature = "dev-utils", derive(Clone, PartialEq))]
 pub struct InitializingContractState {
     /// All domains, including the already existing ones and the ones we're generating a new key for
-    pub domains: DomainRegistry,
+    pub(super) domains: DomainRegistry,
     /// The epoch ID; this is the same as the Epoch ID of the Running state we transitioned from.
-    pub epoch_id: EpochId,
+    pub(super) epoch_id: EpochId,
     /// The key for each domain we have already generated a key for; this is in the same order as
     /// the domains in the DomainRegistry, except that it only has a prefix of the domains.
-    pub generated_keys: Vec<KeyForDomain>,
+    pub(super) generated_keys: Vec<KeyForDomain>,
     /// The key generation state for the currently generating domain (the next domain after
     /// `generated_keys`).
-    pub generating_key: KeyEvent,
+    pub(super) generating_key: KeyEvent,
     /// Votes that have been cast to cancel the key generation.
-    pub cancel_votes: BTreeSet<AuthenticatedParticipantId>,
+    pub(super) cancel_votes: BTreeSet<AuthenticatedParticipantId>,
 }
 
 impl InitializingContractState {
+    pub fn generating_key(&self) -> &KeyEvent {
+        &self.generating_key
+    }
+
+    pub fn generated_keys(&self) -> &[KeyForDomain] {
+        &self.generated_keys
+    }
+
     /// Starts a new attempt to generate a key for the current domain.
     /// Returns an Error if the signer is not the leader (the participant with the lowest ID).
     pub fn start(

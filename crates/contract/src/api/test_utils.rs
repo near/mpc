@@ -396,9 +396,7 @@ pub(crate) fn destination_of(node: &dtos::NodeInfo) -> dtos::DestinationNodeInfo
 /// [`FORWARDER_ACCOUNT_ID`] as predecessor.
 pub(crate) fn running_contract_called_by_participant_via_forwarder() -> MpcContract {
     let running_state = gen_running_state(1);
-    let participant = running_state.parameters.participants().participants()[0]
-        .0
-        .clone();
+    let participant = running_state.participants().participants()[0].0.clone();
     let contract =
         MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
 

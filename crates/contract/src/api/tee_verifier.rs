@@ -240,11 +240,13 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            state.parameters = GovernanceThresholdParameters::new(
-                participants.subset(1..3),
-                GovernanceThreshold::new(2),
-            )
-            .unwrap();
+            state.set_parameters(
+                GovernanceThresholdParameters::new(
+                    participants.subset(1..3),
+                    GovernanceThreshold::new(2),
+                )
+                .unwrap(),
+            );
         }
         Environment::new(None, Some(env::current_account_id()), None);
         contract

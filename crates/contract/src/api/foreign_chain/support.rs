@@ -325,12 +325,14 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            state.parameters = GovernanceThresholdParameters::new(
-                state.parameters.participants().clone(),
-                GovernanceThreshold::new(4),
-            )
-            .unwrap();
-            for domain in state.domains.domains_mut() {
+            state.set_parameters(
+                GovernanceThresholdParameters::new(
+                    state.participants().clone(),
+                    GovernanceThreshold::new(4),
+                )
+                .unwrap(),
+            );
+            for domain in state.domains_mut().domains_mut() {
                 if domain.purpose == dtos::DomainPurpose::ForeignTx {
                     domain.reconstruction_threshold = ReconstructionThreshold::new(4);
                 }
@@ -384,15 +386,17 @@ mod tests {
                 panic!("expected Running");
             };
             // Reconstruct GovernanceThresholdParameters with the updated participants.
-            let mut updated_participants = state.parameters.participants().clone();
+            let mut updated_participants = state.participants().clone();
             updated_participants
                 .update_info(operator4.clone(), new_info)
                 .unwrap();
-            state.parameters = GovernanceThresholdParameters::new(
-                updated_participants,
-                GovernanceThreshold::new(4),
-            )
-            .unwrap();
+            state.set_parameters(
+                GovernanceThresholdParameters::new(
+                    updated_participants,
+                    GovernanceThreshold::new(4),
+                )
+                .unwrap(),
+            );
         }
         contract.recompute_available_foreign_chains();
 
@@ -426,12 +430,14 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            state.parameters = GovernanceThresholdParameters::new(
-                state.parameters.participants().clone(),
-                GovernanceThreshold::new(4),
-            )
-            .unwrap();
-            for domain in state.domains.domains_mut() {
+            state.set_parameters(
+                GovernanceThresholdParameters::new(
+                    state.participants().clone(),
+                    GovernanceThreshold::new(4),
+                )
+                .unwrap(),
+            );
+            for domain in state.domains_mut().domains_mut() {
                 if domain.purpose == dtos::DomainPurpose::ForeignTx {
                     domain.reconstruction_threshold = ReconstructionThreshold::new(4);
                 }
@@ -468,7 +474,7 @@ mod tests {
             .expect("new node should be able to register");
 
         let keyset = match &contract.protocol_state {
-            ProtocolContractState::Running(s) => s.keyset.clone(),
+            ProtocolContractState::Running(s) => s.keyset().clone(),
             _ => panic!("expected Running"),
         };
         let mut env = Environment::new(None, Some(operator4.clone()), None);
@@ -674,13 +680,13 @@ mod tests {
             let ProtocolContractState::Running(ref state) = contract.protocol_state else {
                 panic!("expected Running state");
             };
-            (state.domains.clone(), state.keyset.clone())
+            (state.domains().clone(), state.keyset().clone())
         };
         let mut new_participants = {
             let ProtocolContractState::Running(ref state) = contract.protocol_state else {
                 panic!("expected Running state");
             };
-            state.parameters.participants().clone()
+            state.participants().clone()
         };
         new_participants.remove(&participants[2]);
         // New Running: participants {0, 1, 3}, threshold 3.  Only 0 and 1 cover Bitcoin → 2 < 3.
@@ -733,7 +739,7 @@ mod tests {
             panic!("expected Running state");
         };
         let proposal =
-            ProposedGovernanceThresholdParameters::new(state.parameters.clone(), BTreeMap::new());
+            ProposedGovernanceThresholdParameters::new(state.parameters().clone(), BTreeMap::new());
         vote_into_resharing(&mut contract, &proposal);
 
         // When: the 3rd participant (from the old running set) registers during Resharing.
@@ -1003,7 +1009,7 @@ mod tests {
         let ProtocolContractState::Running(state) = &contract.protocol_state else {
             panic!("expected Running");
         };
-        let keyset = state.keyset.clone();
+        let keyset = state.keyset().clone();
         let mut env = Environment::new(None, Some(operator.clone()), None);
         env.set_pk(near_sdk::PublicKey::from(
             destination.account_public_key.clone(),
