@@ -236,7 +236,13 @@ impl FakeMpcContractState {
         );
         self.state
             .accept_new_parameters_skipping_votes(&proposal)
-            .expect("Cannot start resharing from non-running state");
+            .expect("Cannot start resharing outside the running or resharing state");
+        // A running state without keys adopts the proposal without resharing.
+        assert_matches!(
+            self.state,
+            ProtocolContractState::Resharing(_),
+            "Cannot start resharing before any domain has a key"
+        );
     }
 
     pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, dto_pk: dtos::PublicKey) {

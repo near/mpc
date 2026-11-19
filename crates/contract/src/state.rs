@@ -295,7 +295,7 @@ impl ProtocolContractState {
 
 #[cfg(any(test, feature = "test-utils"))]
 impl ProtocolContractState {
-    /// Starts key generation for `domains` as if every participant had voted to add them.
+    /// Starts key generation for `domains` as if they had been voted in, without validating them.
     pub fn add_domains_skipping_votes(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
         let ProtocolContractState::Running(state) = self else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
