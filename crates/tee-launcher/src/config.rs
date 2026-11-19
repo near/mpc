@@ -5,15 +5,15 @@ use near_account_id::AccountId;
 use crate::{constants::MPC_HOME_DIR, error::LauncherError};
 
 /// Inject the launcher-controlled keys into the user-provided MPC node config: the `tee`
-/// section, the contract id and, if the contract has one set, its chain's genesis hash measured
-/// into the launcher compose, and the home directory, so that the node always starts from the
-/// chain data already on the disk. Fails if the user config sets any of them to a different value.
-/// Equal values are accepted so that a user config written for an older launcher keeps working.
+/// section, the contract id and its chain's genesis hash measured into the launcher compose, and
+/// the home directory, so that the node always starts from the chain data already on the disk.
+/// Fails if the user config sets any of them to a different value. Equal values are accepted so
+/// that a user config written for an older launcher keeps working.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
     mpc_contract_id: &AccountId,
-    genesis_hash: Option<&GenesisHash>,
+    genesis_hash: &GenesisHash,
 ) -> Result<toml::Table, LauncherError> {
     insert_reserved(
         &mut node_config,
@@ -28,14 +28,12 @@ pub fn intercept_node_config(
         "mpc_contract_id",
         mpc_contract_id.as_str().into(),
     )?;
-    if let Some(genesis_hash) = genesis_hash {
-        insert_reserved(
-            &mut node_config,
-            &["node", "indexer"],
-            "genesis_hash",
-            genesis_hash.to_string().into(),
-        )?;
-    }
+    insert_reserved(
+        &mut node_config,
+        &["node", "indexer"],
+        "genesis_hash",
+        genesis_hash.to_string().into(),
+    )?;
 
     Ok(node_config)
 }
@@ -131,10 +129,6 @@ mod tests {
         }
     }
 
-    fn contract_id() -> AccountId {
-        "v1.signer".parse().unwrap()
-    }
-
     fn intercept(
         config: toml::Table,
         tee_config: &TeeConfig,
@@ -142,8 +136,8 @@ mod tests {
         intercept_node_config(
             config,
             tee_config,
-            &contract_id(),
-            Some(&GenesisHash::MAINNET),
+            &"v1.signer".parse().unwrap(),
+            &GenesisHash::MAINNET,
         )
     }
 
@@ -177,24 +171,6 @@ mod tests {
             "tee".into(),
             toml::Value::try_from(sample_tee_config()).unwrap(),
         );
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn intercept_node_config__should_not_pin_the_chain_without_a_genesis_hash() {
-        // Given
-        let tee_config = sample_tee_config();
-
-        // When
-        let result =
-            intercept_node_config(toml::Table::new(), &tee_config, &contract_id(), None).unwrap();
-
-        // Then
-        let mut expected = intercept(toml::Table::new(), &tee_config).unwrap();
-        expected["node"]["indexer"]
-            .as_table_mut()
-            .unwrap()
-            .remove("genesis_hash");
         assert_eq!(result, expected);
     }
 

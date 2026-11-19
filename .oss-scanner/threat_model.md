@@ -68,10 +68,9 @@ Trusted: the NEAR blockchain's consensus, Intel TDX hardware and its attestation
 roots, and, on non-TEE nodes, the operator's own local configuration and secrets
 files. On TEE nodes, everything the host passes through the launcher, including
 the `[mpc_node_config]` table it passes to the node, is attacker input. The
-launcher injects `tee`, `home_dir`, `node.indexer.mpc_contract_id` and, unless
-the measured `NEAR_GENESIS_HASH` is empty, `node.indexer.genesis_hash` itself
-and rejects host configs that set them to other values; a bypass of that check
-is in scope.
+launcher injects `tee`, `home_dir`, `node.indexer.mpc_contract_id` and
+`node.indexer.genesis_hash` itself and rejects host configs that set them to
+other values; a bypass of that check is in scope.
 
 ## What to look for
 

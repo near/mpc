@@ -363,6 +363,21 @@ async fn migrate__should_run_within_contract_update_gas_budget(
     );
 }
 
+#[tokio::test]
+async fn migrate__should_leave_the_genesis_hash_unset_outside_mainnet_and_testnet() {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
+    let contract = deploy_old(&worker, Network::Mainnet).await.unwrap();
+    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
+    upgrade_to_new(&contract).await.unwrap();
+
+    // When
+    migrate_and_assert_contract_code(&contract).await.unwrap();
+
+    // Then
+    assert_eq!(contract.genesis_hash().await.unwrap().value, None);
+}
+
 //// Verifies that upgrading the contract preserves state and functionality.
 ///
 /// This test:

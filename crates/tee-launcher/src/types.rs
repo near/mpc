@@ -1,7 +1,7 @@
 use std::num::NonZeroU16;
 
 use launcher_interface::types::DockerSha256Digest;
-use mpc_primitives::hash::{GenesisHash, HashParseError};
+use mpc_primitives::hash::GenesisHash;
 use near_account_id::AccountId;
 
 use clap::{Parser, ValueEnum};
@@ -27,18 +27,9 @@ pub struct CliArgs {
     #[arg(long, env = "MPC_CONTRACT_ID")]
     pub mpc_contract_id: AccountId,
 
-    /// Genesis hash of the chain the MPC contract runs on, empty if the contract has none set
-    // The full path keeps clap from making the argument optional: the variable stays required and
-    // its empty value reaches the parser
-    #[arg(long, env = "NEAR_GENESIS_HASH", value_parser = parse_genesis_hash)]
-    pub near_genesis_hash: std::option::Option<GenesisHash>,
-}
-
-fn parse_genesis_hash(value: &str) -> Result<Option<GenesisHash>, HashParseError> {
-    match value {
-        "" => Ok(None),
-        _ => value.parse().map(Some),
-    }
+    /// Genesis hash of the chain the MPC contract runs on
+    #[arg(long, env = "NEAR_GENESIS_HASH")]
+    pub near_genesis_hash: GenesisHash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -115,35 +106,10 @@ impl PortMapping {
 }
 
 #[cfg(test)]
-#[expect(non_snake_case)]
 mod tests {
     use std::{assert_matches, num::NonZeroU16};
 
-    use rstest::rstest;
-
     use super::*;
-
-    #[rstest]
-    #[case::genesis_hash(GenesisHash::MAINNET.to_string(), Some(GenesisHash::MAINNET))]
-    #[case::empty(String::new(), None)]
-    fn cli_args__should_take_an_empty_genesis_hash_as_none(
-        #[case] near_genesis_hash: String,
-        #[case] expected: Option<GenesisHash>,
-    ) {
-        // When
-        let args = CliArgs::try_parse_from([
-            "tee-launcher".to_string(),
-            "--platform=TEE".to_string(),
-            "--docker-content-trust=1".to_string(),
-            format!("--default-image-digest=sha256:{}", "a".repeat(64)),
-            "--mpc-contract-id=v1.signer".to_string(),
-            format!("--near-genesis-hash={near_genesis_hash}"),
-        ])
-        .unwrap();
-
-        // Then
-        assert_eq!(args.near_genesis_hash, expected);
-    }
 
     // --- PortMapping deserialization ---
 

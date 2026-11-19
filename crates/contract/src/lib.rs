@@ -72,8 +72,8 @@ pub struct MpcContract {
     parameters_votes: GovernanceThresholdParametersVotes,
     /// Genesis hash of the chain this contract runs on, which a contract cannot read from its
     /// environment. The launcher compose carries it, so that TEE nodes follow no other chain.
-    /// [`None`] if the contract was migrated on a chain other than mainnet or testnet; its TEE
-    /// nodes then follow any chain.
+    /// [`None`] if the contract was migrated on a chain other than mainnet or testnet; the
+    /// launcher then refuses to start its TEE nodes.
     // TODO(#5254): let participants vote in a genesis hash while it is unset
     genesis_hash: Option<GenesisHash>,
 }
