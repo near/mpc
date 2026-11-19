@@ -217,10 +217,9 @@ impl MpcContract {
         };
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        let validation = self.tee_state.reverify_participants(
-            running_state.parameters.participants(),
-            tee_upgrade_deadline_duration,
-        );
+        let validation = self
+            .tee_state
+            .reverify_participants(running_state.participants(), tee_upgrade_deadline_duration);
         if matches!(validation, TeeValidationResult::Full) {
             self.accept_requests = true;
             log!("All participants have an accepted Tee status");
@@ -290,7 +289,7 @@ impl MpcContract {
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
-        let participants = running_state.parameters.participants();
+        let participants = running_state.participants();
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
@@ -333,7 +332,7 @@ impl MpcContract {
         let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
-        let participants = running_state.parameters.participants();
+        let participants = running_state.participants();
         let is_in_use = |node: &Node| {
             let Some(participant) = participants.info(&node.owner) else {
                 return false;
