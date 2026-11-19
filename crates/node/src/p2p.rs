@@ -52,7 +52,7 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
-    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    sync::mpsc::{self, UnboundedReceiver},
     time::{Instant, MissedTickBehavior, interval_at, sleep_until, timeout},
 };
 use tokio_rustls::{TlsAcceptor, client::TlsStream};
@@ -2594,9 +2594,7 @@ mod tests {
                             nonce: Rfc1982SerialU8::new(1),
                         }))
                         .await;
-                    let reply = timeout(Duration::from_secs(5), &mut rx.recv())
-                        .await
-                        .unwrap();
+                    let reply = timeout(Duration::from_secs(5), rx.recv()).await.unwrap();
                     assert!(matches!(reply, Some(Packet::EchoAck(_))));
                 }
             })

@@ -104,7 +104,7 @@ impl EchoTracker {
     pub fn max_outstanding(&self) -> usize {
         self.max_outstanding
     }
-    
+
     #[cfg(test)]
     pub fn is_awaiting_ack(&self) -> bool {
         !self.outstanding.is_empty()
