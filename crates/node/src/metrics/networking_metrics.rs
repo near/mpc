@@ -50,7 +50,7 @@ const NETWORK_MESSAGE_SIZES_BYTES_BUCKETS: &[f64] = &[
     MTU_BYTES * 4096.0, // ~5.2MB
 ];
 
-const ECHO_RTT_SECONDS_BUCKETS: &[f64] = &[0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 5.0, 8.0, 10.0];
+const ECHO_RTT_SECONDS_BUCKETS: &[f64] = &[0.01, 0.1, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 5.0, 8.0, 10.0];
 
 pub(crate) static NETWORK_LIVE_CONNECTIONS: LazyLock<IntGaugeVec> = LazyLock::new(|| {
     register_int_gauge_vec!(

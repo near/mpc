@@ -26,7 +26,7 @@ impl Default for EchoTracker {
 
 impl EchoTracker {
     pub fn with_capacity(max_outstanding: usize) -> Self {
-        let max = max_outstanding.min(127);
+        let max = max_outstanding.clamp(1, 127);
         Self {
             next_nonce: Rfc1982SerialU8::default(),
             outstanding: Vec::with_capacity(max),
