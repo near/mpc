@@ -30,7 +30,7 @@ use crate::method_names::{
     ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
     ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS, AVAILABLE_ATTESTATION_GRANTS,
     CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS, CLEAN_TEE_STATUS, CONFIG,
-    CONTRACT_UPDATE_VOTES, CURRENT_KEYSET, DERIVED_PUBLIC_KEY, GET_ATTESTATION,
+    CONTRACT_UPDATE_VOTES, CURRENT_KEYSET, DERIVED_PUBLIC_KEY, GENESIS_HASH, GET_ATTESTATION,
     GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
     GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
     INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
@@ -667,6 +667,10 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(CONFIG))
     }
 
+    pub fn genesis_hash(&self) -> ViewCall<C, Option<GenesisHash>> {
+        self.view(ViewArgs::no_args(GENESIS_HASH))
+    }
+
     pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeInfo>> {
         self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
     }
@@ -1164,6 +1168,7 @@ mod tests {
         let _ = handle.state().await;
         let _ = handle.current_keyset().await;
         let _ = handle.config().await;
+        let _ = handle.genesis_hash().await;
         let _ = handle.get_tee_accounts().await;
         let _ = handle.migration_info().await;
         let _ = handle.get_available_foreign_chains().await;

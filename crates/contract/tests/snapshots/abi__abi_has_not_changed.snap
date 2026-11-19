@@ -332,6 +332,23 @@ expression: abi
         ]
       },
       {
+        "name": "genesis_hash",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/GenesisHash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "get_attestation",
         "kind": "view",
         "params": {

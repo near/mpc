@@ -200,6 +200,10 @@ impl MpcContract {
         dtos::Config::from(&self.config)
     }
 
+    pub fn genesis_hash(&self) -> Option<GenesisHash> {
+        self.genesis_hash
+    }
+
     // contract version
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
