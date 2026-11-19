@@ -6,7 +6,8 @@ Each attestation fixture lives in its own `dstack-<version>/` folder, named afte
 version it was captured on, and is exposed as an `AttestationFixture` constant in
 `crates/test-utils/src/attestation.rs`. `LATEST` is the fixture most tests use; tests that must
 pass on every fixture take it as an `rstest` `#[values(...)]` parameter. Keep a fixture for an
-older OS while nodes still run it.
+older OS while nodes still run it. `dstack-0.5.8/` is the one exception to the release-image rule
+below: it was captured on `dstack-dev-0.5.8`.
 
 To capture a new fixture, fetch `/public_data` from the MPC node’s public
 HTTP endpoint and save the response to a JSON file.
