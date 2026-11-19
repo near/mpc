@@ -75,10 +75,16 @@ cat > /usr/local/bin/mpc-tests <<'SCRIPT'
 # Runs the tests under the `oss-scanner` nextest profile, which leaves out the
 # E2E suite and the tests that need Internet access. Extra arguments are passed
 # to nextest and narrow the run.
+# We need to skip building the out-of-scope crates nothing else depends on
+# because the full build barely fits the scanner's 40-minute build limit.
 set -eu
 cd /src
 exec cargo nextest run --profile oss-scanner --cargo-profile=test-release \
-  --all-features --locked "$@"
+  --all-features --locked --workspace \
+  --exclude e2e-tests --exclude mpc-devnet --exclude proposal-generator \
+  --exclude foreign-chain-config-tester --exclude ckd-example-cli \
+  --exclude attestation-cli --exclude test-parallel-contract \
+  --exclude test-migration-contract "$@"
 SCRIPT
 chmod +x /usr/local/bin/mpc-tests
 SH

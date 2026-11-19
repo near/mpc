@@ -125,7 +125,7 @@ impl MpcContract {
         );
 
         let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants(),
+            ProtocolContractState::Running(state) => state.participants(),
             _ => {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
