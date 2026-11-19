@@ -66,6 +66,7 @@ mod onboarding;
 mod protocol_yielding;
 mod reconstruction_thresholds;
 mod resharing;
+mod slow_peer_link;
 mod update_participant_url;
 mod verify_foreign_tx_gating;
 
