@@ -277,7 +277,7 @@ impl TeeState {
     pub fn whitelist_tee_proposal(
         &mut self,
         tee_proposal: NodeImageHash,
-        genesis_hash: &GenesisHash,
+        genesis_hash: Option<&GenesisHash>,
         tee_upgrade_deadline_duration: Duration,
     ) {
         self.votes.clear();
@@ -326,7 +326,7 @@ impl TeeState {
     pub fn add_launcher_image(
         &mut self,
         launcher_hash: LauncherImageHash,
-        genesis_hash: &GenesisHash,
+        genesis_hash: Option<&GenesisHash>,
         tee_upgrade_deadline_duration: Duration,
         ttl: Duration,
     ) -> AllowedLauncherImageInsertion {
@@ -517,8 +517,8 @@ mod tests {
     use super::*;
     use crate::dto_mapping::IntoContractType;
     use crate::primitives::test_utils::{
-        authenticate_account_as, bogus_ed25519_public_key, bogus_genesis_hash, create_node,
-        gen_account_id, gen_participant, gen_participants, node_for,
+        authenticate_account_as, bogus_ed25519_public_key, create_node, gen_account_id,
+        gen_participant, gen_participants, node_for,
     };
     use crate::tee::{
         proposal::get_docker_compose_hash,
@@ -788,10 +788,9 @@ mod tests {
     }
 
     fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
-        let compose_hash = get_docker_compose_hash(launcher, mpc_hash, &bogus_genesis_hash());
         MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(compose_hash),
+            launcher_docker_compose_hash: Some(get_docker_compose_hash(launcher, mpc_hash, None)),
             expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
             expected_measurements: None,
         }

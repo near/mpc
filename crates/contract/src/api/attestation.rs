@@ -1052,9 +1052,7 @@ mod tests {
                 MpcMockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
                     launcher_docker_compose_hash: Some(get_docker_compose_hash(
-                        &adopted,
-                        &mpc_hash,
-                        &bogus_genesis_hash(),
+                        &adopted, &mpc_hash, None,
                     )),
                     expiry_timestamp_seconds: None,
                     expected_measurements: None,

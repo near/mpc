@@ -42,7 +42,7 @@ impl MpcContract {
         if self.threshold()?.is_met_by(votes) {
             self.tee_state.whitelist_tee_proposal(
                 mpc_node_manifest_digest,
-                &self.genesis_hash,
+                self.genesis_hash.as_ref(),
                 tee_upgrade_deadline_duration,
             );
         }
@@ -82,7 +82,7 @@ impl MpcContract {
         if self.threshold()?.is_met_by(votes) {
             let outcome = self.tee_state.add_launcher_image(
                 launcher_hash,
-                &self.genesis_hash,
+                self.genesis_hash.as_ref(),
                 tee_upgrade_deadline_duration,
                 launcher_unused_ttl,
             );
@@ -846,7 +846,7 @@ mod tests {
 
         let compose_hashes = contract.allowed_launcher_compose_hashes();
         let compose_hash = |launcher, mpc_hash| {
-            get_docker_compose_hash(launcher, mpc_hash, &contract.genesis_hash)
+            get_docker_compose_hash(launcher, mpc_hash, contract.genesis_hash.as_ref())
         };
         assert!(compose_hashes.contains(&compose_hash(&l1, &m1)));
         assert!(compose_hashes.contains(&compose_hash(&l1, &m2)));

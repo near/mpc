@@ -628,7 +628,7 @@ BorshSchemaContainer {
                     ),
                     (
                         "genesis_hash",
-                        "GenesisHash",
+                        "Option<GenesisHash>",
                     ),
                 ],
             ),
@@ -666,6 +666,21 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "EpochId",
+                ),
+            ],
+        },
+        "Option<GenesisHash>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "GenesisHash",
                 ),
             ],
         },

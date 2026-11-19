@@ -70,19 +70,18 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: old.parameters_votes,
-            genesis_hash: known_genesis_hash(),
+            genesis_hash: genesis_hash_of(&env::chain_id()),
         }
     }
 }
 
-/// The `3.19.0` contract does not store the genesis hash of its chain, which is known only for the
-/// production contracts. Any other contract gets a hash no chain has, so TEE nodes refuse to serve
-/// it until it is redeployed.
-fn known_genesis_hash() -> GenesisHash {
-    match env::current_account_id().as_str() {
-        "v1.signer" => GenesisHash::MAINNET,
-        "v1.signer-prod.testnet" => GenesisHash::TESTNET,
-        _ => GenesisHash::from([0; 32]),
+/// The `3.19.0` contract does not store the genesis hash of its chain. Its chain id tells the
+/// genesis hash only for mainnet and testnet, so a contract on any other chain gets none.
+fn genesis_hash_of(chain_id: &str) -> Option<GenesisHash> {
+    match chain_id {
+        "mainnet" => Some(GenesisHash::MAINNET),
+        "testnet" => Some(GenesisHash::TESTNET),
+        _ => None,
     }
 }
 
@@ -90,28 +89,20 @@ fn known_genesis_hash() -> GenesisHash {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rstest::rstest;
 
     #[rstest]
-    #[case::mainnet("v1.signer", GenesisHash::MAINNET)]
-    #[case::testnet("v1.signer-prod.testnet", GenesisHash::TESTNET)]
-    #[case::other_contract("mpc.sandbox", GenesisHash::from([0; 32]))]
-    fn known_genesis_hash__should_return_the_genesis_hash_of_the_production_contract_s_chain(
-        #[case] contract_id: &str,
-        #[case] genesis_hash: GenesisHash,
+    #[case::mainnet("mainnet", Some(GenesisHash::MAINNET))]
+    #[case::testnet("testnet", Some(GenesisHash::TESTNET))]
+    #[case::other_chain("localnet", None)]
+    fn genesis_hash_of__should_return_the_genesis_hash_of_mainnet_and_testnet_only(
+        #[case] chain_id: &str,
+        #[case] expected: Option<GenesisHash>,
     ) {
-        // Given
-        testing_env!(
-            VMContextBuilder::new()
-                .current_account_id(contract_id.parse().unwrap())
-                .build()
-        );
-
         // When
-        let known = known_genesis_hash();
+        let genesis_hash = genesis_hash_of(chain_id);
 
         // Then
-        assert_eq!(known, genesis_hash);
+        assert_eq!(genesis_hash, expected);
     }
 }

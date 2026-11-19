@@ -35,7 +35,7 @@ pub async fn run() -> Result<(), LauncherError> {
     tracing::info!(
         platform = ?args.platform,
         mpc_contract_id = %args.mpc_contract_id,
-        near_genesis_hash = %args.near_genesis_hash,
+        near_genesis_hash = ?args.near_genesis_hash.map(|hash| hash.to_string()),
         "starting launcher"
     );
 
@@ -69,7 +69,7 @@ pub async fn run() -> Result<(), LauncherError> {
         config.mpc_node_config,
         &tee_config,
         &args.mpc_contract_id,
-        &args.near_genesis_hash,
+        args.near_genesis_hash.as_ref(),
     )?;
 
     write_config_atomically(&mpc_node_config)?;

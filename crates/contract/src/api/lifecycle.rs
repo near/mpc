@@ -80,7 +80,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
-            genesis_hash,
+            genesis_hash: Some(genesis_hash),
         })
     }
 
@@ -161,7 +161,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
-            genesis_hash,
+            genesis_hash: Some(genesis_hash),
         })
     }
 

@@ -437,7 +437,7 @@ impl MpcContract {
             tee_verifier_votes: Default::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: Default::default(),
-            genesis_hash: bogus_genesis_hash(),
+            genesis_hash: Some(bogus_genesis_hash()),
         }
     }
 }
