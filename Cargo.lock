@@ -1431,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "blaire"
-version = "3.18.0"
+version = "3.19.0"
 dependencies = [
  "blaire-interface",
  "near-account-id",
@@ -1441,11 +1441,11 @@ dependencies = [
 
 [[package]]
 name = "blaire-interface"
-version = "3.18.0"
+version = "3.19.0"
 dependencies = [
  "insta",
+ "schemars 0.8.22",
  "serde",
- "serde_json",
 ]
 
 [[package]]
