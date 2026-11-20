@@ -17,13 +17,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-fuse-ld=lld" \
     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=-fuse-ld=lld" \
     CARGO_PROFILE_TEST_RELEASE_DEBUG=line-tables-only \
+    OPENSSL_NO_VENDOR=1 \
     NEAR_SANDBOX_BIN_PATH=/opt/near-sandbox/near-sandbox
 
 # The x86-64 rustflags above are joined with the `target-cpu=x86-64-v3` flags in
 # .cargo/config.toml, not substituted for them. lld keeps linking, which pulls in
 # nearcore and RocksDB, within the scanner's memory budget.
-# We need clang for C and C++ because RocksDB's C++ build is the critical path
-# of the image build: it compiles about 30% faster with clang than with gcc.
+# The image build is CPU-bound and barely fits the PR check's 40-minute limit.
+# We need clang for C and C++ because it compiles RocksDB's C++ about 30% faster
+# than gcc, and OPENSSL_NO_VENDOR because `reqwest`'s `native-tls-vendored`
+# would otherwise compile OpenSSL from source instead of using libssl-dev.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential clang llvm libclang-dev lld cmake pkg-config libssl-dev \
       libudev-dev libdbus-1-dev protobuf-compiler zlib1g-dev git python3 curl \
