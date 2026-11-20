@@ -80,6 +80,12 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
 
     match pprof_report {
         Ok(report) => {
+            if report.data.is_empty() {
+                // No CPU samples were captured during the sampling window
+                // (all threads were sleeping in blocked libraries such as libc/pthread).
+                return StatusCode::NO_CONTENT.into_response();
+            }
+
             let mut svg_buffer = Vec::new();
             if let Err(error) = write_flamegraph(&report, &mut svg_buffer) {
                 return (
@@ -87,12 +93,6 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
                     format!("Error generating flamegraph: {:#?}", error),
                 )
                     .into_response();
-            }
-
-            if svg_buffer.is_empty() {
-                // No CPU samples were captured during the sampling window
-                // (all threads were sleeping in blocked libraries such as libc/pthread).
-                return StatusCode::NO_CONTENT.into_response();
             }
 
             (
