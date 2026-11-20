@@ -1,4 +1,4 @@
-//! Fixtures shared by the probe's test modules.
+//! Fixtures for the probe's tests.
 
 use super::*;
 use foreign_chain_inspector::mock::{MockInspector, MockReply};
@@ -89,6 +89,10 @@ pub(crate) struct EvmMainnet {
 }
 
 impl EvmMainnet {
+    const fn new(chain: ForeignChain, chain_id: u64) -> Self {
+        Self { chain, chain_id }
+    }
+
     /// The form an operator configures.
     pub(crate) fn expected(&self) -> String {
         self.chain_id.to_string()
@@ -102,42 +106,15 @@ impl EvmMainnet {
 
 /// Every EVM chain the probe covers, with its mainnet chain id.
 pub(crate) const EVM_MAINNETS: [EvmMainnet; 9] = [
-    EvmMainnet {
-        chain: ForeignChain::Abstract,
-        chain_id: abstract_chain::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::Adi,
-        chain_id: adi::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::Arbitrum,
-        chain_id: arbitrum::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::Avalanche,
-        chain_id: avalanche::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::Base,
-        chain_id: base::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::Bnb,
-        chain_id: bnb::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::Ethereum,
-        chain_id: ethereum::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::HyperEvm,
-        chain_id: hyperevm::MAINNET_CHAIN_ID,
-    },
-    EvmMainnet {
-        chain: ForeignChain::Polygon,
-        chain_id: polygon::MAINNET_CHAIN_ID,
-    },
+    EvmMainnet::new(ForeignChain::Abstract, abstract_chain::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::Adi, adi::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::Arbitrum, arbitrum::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::Avalanche, avalanche::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::Base, base::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::Bnb, bnb::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::Ethereum, ethereum::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::HyperEvm, hyperevm::MAINNET_CHAIN_ID),
+    EvmMainnet::new(ForeignChain::Polygon, polygon::MAINNET_CHAIN_ID),
 ];
 
 pub(crate) fn provider(rpc_url: &str) -> ForeignChainProviderConfig {
@@ -159,13 +136,6 @@ pub(crate) fn chain_config(
         max_retries: NonZeroU64::new(1).unwrap(),
         expected_network_fingerprint: expected.map(str::to_string),
         providers,
-    }
-}
-
-pub(crate) fn with_retries(config: ForeignChainConfig, max_retries: u64) -> ForeignChainConfig {
-    ForeignChainConfig {
-        max_retries: NonZeroU64::new(max_retries).unwrap(),
-        ..config
     }
 }
 
@@ -209,47 +179,32 @@ pub(crate) fn put_chain(
     *slot = Some(config);
 }
 
-pub(crate) async fn mock_fingerprint<'a>(
+/// What an httpmock server answers to every JSON-RPC request.
+pub(crate) enum JsonRpcAnswer<'a> {
+    Fingerprint(&'a str),
+    UnsupportedMethod,
+    NotJsonRpc,
+}
+
+pub(crate) async fn mock_jsonrpc<'a>(
     server: &'a httpmock::MockServer,
-    fingerprint: &str,
+    answer: JsonRpcAnswer<'_>,
 ) -> httpmock::Mock<'a> {
-    let body = serde_json::json!({"jsonrpc": "2.0", "result": fingerprint, "id": 0});
     server
         .mock_async(|when, then| {
             when.method(httpmock::Method::POST);
-            then.status(200).json_body(body);
-        })
-        .await
-}
-
-pub(crate) async fn mock_error_object<'a>(
-    server: &'a httpmock::MockServer,
-    status: u16,
-    code: i32,
-    message: &str,
-) -> httpmock::Mock<'a> {
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 0,
-        "error": {"code": code, "message": message},
-    });
-    server
-        .mock_async(|when, then| {
-            when.method(httpmock::Method::POST);
-            then.status(status).json_body(body);
-        })
-        .await
-}
-
-pub(crate) async fn mock_unsupported_method(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
-    mock_error_object(server, 200, -32601, "Method not found").await
-}
-
-pub(crate) async fn mock_non_jsonrpc_body(server: &httpmock::MockServer) -> httpmock::Mock<'_> {
-    server
-        .mock_async(|when, then| {
-            when.method(httpmock::Method::POST);
-            then.status(200).body("<html>gateway</html>");
+            let then = then.status(200);
+            match answer {
+                JsonRpcAnswer::Fingerprint(fingerprint) => then.json_body(
+                    serde_json::json!({"jsonrpc": "2.0", "result": fingerprint, "id": 0}),
+                ),
+                JsonRpcAnswer::UnsupportedMethod => then.json_body(serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 0,
+                    "error": {"code": -32601, "message": "Method not found"},
+                })),
+                JsonRpcAnswer::NotJsonRpc => then.body("<html>gateway</html>"),
+            };
         })
         .await
 }
