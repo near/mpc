@@ -223,49 +223,63 @@ mod tests {
     /// The contract always sends hashes oldest → newest, and the watcher
     /// must pass the entire vector untouched to the storage backend.
     #[rstest]
+    #[case::first_image_is_current(
+        image_hash_1(),
+        vec![image_hash_1(), image_hash_2(), image_hash_3()]
+    )]
+    #[case::second_image_is_current(
+        image_hash_2(),
+        vec![image_hash_1(), image_hash_2(), image_hash_3()]
+    )]
+    #[case::current_image_not_allowed(image_hash_1(), vec![image_hash_2()])]
     #[tokio::test]
-    async fn test_allowed_image_hash_list_is_written() {
-        let allowed_images: NonEmptyVec<_> =
-            NonEmptyVec::from_vec(vec![image_hash_1(), image_hash_2(), image_hash_3()]).unwrap();
+    async fn test_allowed_image_hash_list_is_written(
+        #[case] current_image: NodeImageHash,
+        #[case] allowed_images: Vec<NodeImageHash>,
+    ) {
+        // Given
+        let expected_storage_write = NonEmptyVec::from_vec(allowed_images.clone()).unwrap();
+        let cancellation_token = CancellationToken::new();
+        let (sender, receiver) = watch::channel(entries(allowed_images));
+        let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
-        for current_hash in allowed_images.iter().take(2) {
-            let cancellation_token = CancellationToken::new();
-            let (sender, receiver) = watch::channel(entries(allowed_images.clone().to_vec()));
-            let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
+        let write_is_called = Arc::new(Notify::new());
 
-            let write_is_called = Arc::new(Notify::new());
-
-            let mut storage_mock = MockAllowedImageHashesStorage::new();
-            {
-                let write_is_called = write_is_called.clone();
-                storage_mock
-                    .expect_set()
-                    .once()
-                    .with(predicate::eq(allowed_images.clone()))
-                    .returning(move |_| {
-                        write_is_called.notify_one();
-                        Box::pin(async { Ok(()) })
-                    });
-            }
-
-            let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
-                cancellation_token.child_token(),
-                *current_hash,
-                receiver,
-                storage_mock,
-                sender_shutdown,
-            ));
-
-            write_is_called.notified().await;
-
-            assert_matches!(
-                receiver_shutdown.try_recv(),
-                Err(TryRecvError::Empty),
-                "Shutdown signal was sent unexpectedly."
-            );
-
-            assert!(!sender.is_closed(), "Event loop should be running.");
+        let mut storage_mock = MockAllowedImageHashesStorage::new();
+        {
+            let write_is_called = write_is_called.clone();
+            storage_mock
+                .expect_set()
+                .once()
+                .with(predicate::eq(expected_storage_write))
+                .returning(move |_| {
+                    write_is_called.notify_one();
+                    Box::pin(async { Ok(()) })
+                });
         }
+
+        // When
+        let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
+            cancellation_token.child_token(),
+            current_image,
+            receiver,
+            storage_mock,
+            sender_shutdown,
+        ));
+
+        write_is_called.notified().await;
+
+        // Then
+        assert_matches!(
+            receiver_shutdown.try_recv(),
+            Err(TryRecvError::Empty),
+            "Shutdown signal was sent unexpectedly."
+        );
+        assert!(!sender.is_closed(), "Event loop should be running.");
+        assert!(
+            !receiver_shutdown.is_closed(),
+            "Event loop should be running."
+        );
     }
 
     /// Verifies that if writing the allowed image hashes to the storage
@@ -307,60 +321,6 @@ mod tests {
 
         let result = join_handle.await.unwrap();
         assert_matches!(result, Err(ExitError::StorageProviderError(_)));
-    }
-
-    /// Ensures that when the allowed image hash list changes and the
-    /// current running MPC node image is *not* included in the updated
-    /// allowed list, the MPC node still:
-    ///
-    /// - writes the full allowed list to storage
-    /// - does *not* send a shutdown signal immediately
-    /// - keeps the event loop alive
-    #[tokio::test]
-    async fn test_current_image_not_allowed() {
-        let current_image = image_hash_1();
-        let allowed_image = image_hash_2();
-
-        let allowed_list = vec![allowed_image];
-        let expected_non_empty = NonEmptyVec::from_vec(allowed_list.clone()).unwrap();
-
-        let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(entries(allowed_list.clone()));
-        let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
-
-        let write_is_called = Arc::new(Notify::new());
-
-        let mut storage_mock = MockAllowedImageHashesStorage::new();
-        {
-            let write_is_called = write_is_called.clone();
-            storage_mock
-                .expect_set()
-                .once()
-                .with(predicate::eq(expected_non_empty.clone()))
-                .returning(move |_| {
-                    write_is_called.notify_one();
-                    Box::pin(async { Ok(()) })
-                });
-        }
-
-        let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
-            cancellation_token,
-            current_image,
-            receiver,
-            storage_mock,
-            sender_shutdown,
-        ));
-
-        write_is_called.notified().await;
-
-        assert_matches!(
-            receiver_shutdown.try_recv(),
-            Err(TryRecvError::Empty),
-            "Shutdown signal was sent unexpectedly."
-        );
-
-        let event_loop_is_alive = !receiver_shutdown.is_closed();
-        assert!(event_loop_is_alive, "Event loop should be running.");
     }
 
     /// Validates behavior when the [`watch::Receiver`] for allowed image
@@ -415,59 +375,6 @@ mod tests {
             receiver_shutdown.try_recv(),
             Ok(()),
             "Shutdown signal should be sent when running image is disallowed."
-        );
-    }
-
-    /// Ensures the watcher writes the full list of allowed image hashes to storage
-    /// when the contract provides multiple hashes, preserving order and making only
-    /// a single storage [`set()`] call.
-    #[tokio::test]
-    async fn test_full_hash_list_is_written_to_storage() {
-        // Contract sends a list of three hashes
-        let allowed_images = vec![image_hash_1(), image_hash_2(), image_hash_3()];
-        let full_list = allowed_images.clone();
-
-        // Current running image (could be any)
-        let current_image = image_hash_1();
-
-        let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(entries(allowed_images.clone()));
-        let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
-
-        let write_is_called = Arc::new(Notify::new());
-
-        // Mock storage expecting exactly the full list
-        let mut storage_mock = MockAllowedImageHashesStorage::new();
-        {
-            let expected = NonEmptyVec::from_vec(full_list.clone()).unwrap();
-            let write_is_called = write_is_called.clone();
-
-            storage_mock
-                .expect_set()
-                .once()
-                .with(predicate::eq(expected))
-                .returning(move |_| {
-                    write_is_called.notify_one();
-                    Box::pin(async { Ok(()) })
-                });
-        }
-
-        let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
-            cancellation_token,
-            current_image,
-            receiver,
-            storage_mock,
-            sender_shutdown,
-        ));
-
-        // Wait for the write
-        write_is_called.notified().await;
-
-        // No shutdown expected
-        assert_matches!(
-            receiver_shutdown.try_recv(),
-            Err(TryRecvError::Empty),
-            "Shutdown signal should not be sent"
         );
     }
 

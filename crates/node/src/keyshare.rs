@@ -500,10 +500,12 @@ pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
     clippy::cloned_ref_to_slice_refs,
     reason = "tests build single-element keyshare slices; clarity beats `slice::from_ref` here."
 )]
+#[expect(non_snake_case)]
 pub mod tests {
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use rand::SeedableRng as _;
+    use rstest::rstest;
 
     use super::{KeyshareStorage, generate_key_storage};
     use crate::keyshare::{
@@ -987,81 +989,53 @@ pub mod tests {
         assert_eq!(&loaded, &empty_keyset.keyshares());
     }
 
-    /// Ensure import fails if there is a mismatch between the proposed keyset and keyshares
-    /// case: same key id, different public keys
-    #[tokio::test]
-    async fn test_import_backup_failure_inconsistent_backup_public_keys() {
-        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let epoch_id = 1;
-        let key = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
-        let keyset = KeysetBuilder::from_keyshares(epoch_id, &[key]);
-
-        let dummy_key = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
-        let dummy_keyset = KeysetBuilder::from_keyshares(epoch_id, &[dummy_key]);
-
-        let (mut storage, _tempdir) = generate_key_storage().await;
-        let _ = storage
-            .import_backup(keyset.keyshares().to_vec(), &dummy_keyset.keyset())
-            .await
-            .expect_err("Backup import should fail with inconsistent public keys");
-        let _ = storage
-            .update_permanent_keyshares(&keyset.keyset())
-            .await
-            .expect_err("Permanent update should fail after inconsistent backup");
-
-        assert_no_keyshares_for_epoch(epoch_id, &storage).await;
+    enum TestKey {
+        Key1,
+        Key2,
+        Key1OtherPublicKey,
     }
 
     /// Ensure import fails if there is a mismatch between the proposed keyset and keyshares
-    /// case: backup is missing a keyshare
+    #[rstest]
+    #[case::different_public_keys(&[TestKey::Key1], &[TestKey::Key1OtherPublicKey])]
+    #[case::missing_keyshare(&[TestKey::Key1], &[TestKey::Key1, TestKey::Key2])]
+    #[case::extra_keyshare(&[TestKey::Key1, TestKey::Key2], &[TestKey::Key1])]
     #[tokio::test]
-    async fn test_import_backup_failure_inconsistent_backup_missing_keyshare() {
+    async fn import_backup__should_fail_for_an_inconsistent_backup(
+        #[case] backup_keys: &[TestKey],
+        #[case] proposed_keys: &[TestKey],
+    ) {
+        // Given
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let epoch_id = 1;
-        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
-        let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1.clone()]);
-
-        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
-        let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1, key_2_epoch_1]);
-
+        let key_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
+        let key_2 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
+        let key_1_other_public_key = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
+        let keyset_of = |keys: &[TestKey]| {
+            let keyshares: Vec<_> = keys
+                .iter()
+                .map(|key| match key {
+                    TestKey::Key1 => key_1.clone(),
+                    TestKey::Key2 => key_2.clone(),
+                    TestKey::Key1OtherPublicKey => key_1_other_public_key.clone(),
+                })
+                .collect();
+            KeysetBuilder::from_keyshares(epoch_id, &keyshares)
+        };
+        let backup = keyset_of(backup_keys);
+        let proposed = keyset_of(proposed_keys);
+        let probed = keyset_of(&[TestKey::Key1]);
         let (mut storage, _tempdir) = generate_key_storage().await;
 
-        let _ = storage
-            .import_backup(partial_keyset.keyshares().to_vec(), &full_keyset.keyset())
-            .await
-            .expect_err("Backup import should fail when a keyshare is missing");
+        // When
+        let import_result = storage
+            .import_backup(backup.keyshares().to_vec(), &proposed.keyset())
+            .await;
+        let update_result = storage.update_permanent_keyshares(&probed.keyset()).await;
 
-        let _ = storage
-            .update_permanent_keyshares(&partial_keyset.keyset())
-            .await
-            .expect_err("Permanent update should fail after missing-keyshare backup");
-
-        assert_no_keyshares_for_epoch(epoch_id, &storage).await;
-    }
-
-    /// Ensure import fails if there is a mismatch between the proposed keyset and keyshares
-    /// case: backup has an extra keyshare
-    #[tokio::test]
-    async fn test_import_backup_failure_inconsistent_backup_extra_keyshare() {
-        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let epoch_id = 1;
-
-        let key_1_epoch_1 = generate_dummy_keyshare(epoch_id, 1, 0, &mut rng);
-        let partial_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1.clone()]);
-
-        let key_2_epoch_1 = generate_dummy_keyshare(epoch_id, 2, 3, &mut rng);
-        let full_keyset = KeysetBuilder::from_keyshares(epoch_id, &[key_1_epoch_1, key_2_epoch_1]);
-
-        let (mut storage, _tempdir) = generate_key_storage().await;
-        let _ = storage
-            .import_backup(full_keyset.keyshares().to_vec(), &partial_keyset.keyset())
-            .await
-            .expect_err("Backup import should fail when an extra keyshare is present");
-
-        let _ = storage
-            .update_permanent_keyshares(&partial_keyset.keyset())
-            .await
-            .expect_err("Permanent update should fail after extra-keyshare backup");
+        // Then
+        import_result.expect_err("Backup import should fail for an inconsistent backup");
+        update_result.expect_err("Permanent update should fail after inconsistent backup");
         assert_no_keyshares_for_epoch(epoch_id, &storage).await;
     }
 
