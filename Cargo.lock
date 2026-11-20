@@ -3873,6 +3873,7 @@ dependencies = [
  "near-mpc-contract-interface",
  "rstest",
  "url",
+ "zeroize",
 ]
 
 [[package]]

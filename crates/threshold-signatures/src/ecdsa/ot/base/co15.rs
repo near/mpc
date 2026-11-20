@@ -121,12 +121,10 @@ pub fn batch_random_ot_receiver_random_helper(
     (random_delta, random_x)
 }
 
-// Fixing this one breaks a test
-#[allow(clippy::large_types_passed_by_value)]
 pub async fn batch_random_ot_receiver(
     mut chan: PrivateChannel,
-    delta: BitVector,
-    x: [Scalar; SEC_PARAM_64 * 64],
+    delta: &BitVector,
+    x: &[Scalar; SEC_PARAM_64 * 64],
 ) -> Result<BatchRandomOTOutputReceiver, ProtocolError> {
     // Step 3
     let wait0 = chan.next_waitpoint();
@@ -161,7 +159,7 @@ pub async fn batch_random_ot_receiver(
     let big_k = big_k
         .try_into()
         .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
-    Ok((delta, big_k))
+    Ok((*delta, big_k))
 }
 
 #[cfg(test)]

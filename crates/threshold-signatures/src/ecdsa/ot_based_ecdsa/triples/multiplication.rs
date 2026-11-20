@@ -59,8 +59,12 @@ async fn multiplication_sender(
     precomputed_values: MultiplicationSenderRandomPackage,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, x) = (precomputed_values.delta, precomputed_values.x);
-    let (delta, k) = batch_random_ot_receiver(chan.child(0), delta, x).await?;
+    let (delta, k) = batch_random_ot_receiver(
+        chan.child(0),
+        &precomputed_values.delta,
+        &precomputed_values.x,
+    )
+    .await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1

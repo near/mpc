@@ -5,6 +5,7 @@ use mpc_primitives::{EpochId, domain::DomainId};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use zeroize::Zeroizing;
 
 /// The single object we persist to permanent key storage.
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
@@ -124,7 +125,7 @@ impl PermanentKeyStorage {
         let ret = Self { backend };
 
         // Migrate legacy data if necessary.
-        let existing_data = ret.backend.load().await?;
+        let existing_data = ret.backend.load().await?.map(Zeroizing::new);
         if let Some(data) = existing_data
             && serde_json::from_slice::<PermanentKeyshareData>(&data).is_err()
         {
@@ -139,7 +140,7 @@ impl PermanentKeyStorage {
     }
 
     pub async fn load(&self) -> anyhow::Result<Option<PermanentKeyshareData>> {
-        let data = self.backend.load().await?;
+        let data = self.backend.load().await?.map(Zeroizing::new);
         Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
     }
 
@@ -229,7 +230,7 @@ impl PermanentKeyStorage {
     }
 
     async fn store_unchecked(&self, keyshare_data: &PermanentKeyshareData) -> anyhow::Result<()> {
-        let data_json = serde_json::to_vec(keyshare_data)?;
+        let data_json = Zeroizing::new(serde_json::to_vec(keyshare_data)?);
         let identifier = format!(
             "epoch_{}_with_{}_domains",
             keyshare_data.epoch_id().get(),

@@ -9,6 +9,7 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
+use zeroize::Zeroizing;
 
 pub(crate) mod start;
 
@@ -177,8 +178,9 @@ pub struct SecretsConfig {
 }
 
 pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N]> {
-    let decoded_key =
-        hex::decode(hex_key).context(format!("Encryption key must be {} hex characters", N * 2))?;
+    let decoded_key = Zeroizing::new(
+        hex::decode(hex_key).context(format!("Encryption key must be {} hex characters", N * 2))?,
+    );
     decoded_key.as_slice().try_into().context(format!(
         "Encryption key must be {} bytes ({} hex characters)",
         N,
@@ -193,12 +195,14 @@ fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
         .with_context(|| format!("failed to write secret file {}", path.display()))
 }
 
-pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
+pub fn generate_and_write_backup_encryption_key_to_disk(
+    home_dir: &Path,
+) -> anyhow::Result<Zeroizing<String>> {
     tracing::info!("generating encryption key");
-    let mut key = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut key);
+    let mut key = Zeroizing::new([0u8; 32]);
+    rand::thread_rng().fill_bytes(key.as_mut_slice());
     let key_path = backup_encryption_key_file(home_dir);
-    let key_hex = hex::encode(key);
+    let key_hex = Zeroizing::new(hex::encode(key.as_slice()));
     write_secret_file(&key_path, key_hex.as_bytes())?;
     tracing::info!("wrote encryption key to disk {:?}", key_path);
     Ok(key_hex)

@@ -127,7 +127,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
-        Some(key) => key.clone(),
+        Some(key) => zeroize::Zeroizing::new(key.clone()),
         None => generate_and_write_backup_encryption_key_to_disk(&config.home_dir)?,
     };
 
