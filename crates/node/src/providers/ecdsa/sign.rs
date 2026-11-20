@@ -32,7 +32,7 @@ impl EcdsaSignatureProvider {
         let (paired_triple_id, triples) = self
             .triple_store_for_t(keyshare.reconstruction_threshold)?
             .take_owned()
-            .await;
+            .await?;
         let channel = self.new_channel_for_task(
             EcdsaTaskId::OnlinePresignSignature {
                 id,
