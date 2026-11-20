@@ -16,7 +16,7 @@ The inputs to this protocol are:
 
 **Common Reference String:**
 
-1. Each party derives the four points from four distinct inputs:
+Each party derives the four points from four distinct inputs:
 
 $$
 (G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathsf{sid}, \mathcal{S}, \mathcal{R}, j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
@@ -29,36 +29,43 @@ The hash takes the identities of the two parties as the ordered pair $(\mathcal{
 
 **Round 1 (Receiver):**
 
-1. For $i \in [l]$, $\mathcal{R}$ samples $r_ i \overset{R}{\longleftarrow} \mathbb{F}_ q$.
-2. For $i \in [l]$, $\mathcal{R}$ computes:
+1.1 For $i \in [l]$, $\mathcal{R}$ samples $r_ i \overset{R}{\longleftarrow} \mathbb{F}_ q$.
+
+1.2 For $i \in [l]$, $\mathcal{R}$ computes:
 
 $$
 P_ i \gets r_ i \cdot G_ {b_ i} \qquad
 Q_ i \gets r_ i \cdot H_ {b_ i}
 $$
 
-3. $\star$ $\mathcal{R}$ sends $(P_ i, Q_ i)_ {i \in [l]}$ to $\mathcal{S}$.
+1.3 $\star$ $\mathcal{R}$ sends $(P_ i, Q_ i)_ {i \in [l]}$ to $\mathcal{S}$.
 
 **Round 1 (Sender):**
 
-1. $\bullet$ $\mathcal{S}$ waits to receive $(P_ i, Q_ i)_ {i \in [l]}$ from $\mathcal{R}$.
-2. $\blacktriangle$ $\mathcal{S}$ *asserts* that it holds $l$ pairs.
-3. $\blacktriangle$ $\mathcal{S}$ *asserts* that $\forall i \in [l],\quad P_ i \neq Identity$ and $Q_ i \neq Identity$.
-4. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples fresh $s, t \overset{R}{\longleftarrow} \mathbb{F}_ q$ and computes:
+1.4 $\bullet$ $\mathcal{S}$ waits to receive $(P_ i, Q_ i)_ {i \in [l]}$ from $\mathcal{R}$.
+
+1.5 $\blacktriangle$ $\mathcal{S}$ *asserts* that it holds $l$ pairs.
+
+1.6 $\blacktriangle$ $\mathcal{S}$ *asserts* that $\forall i \in [l],\quad P_ i \neq Identity$ and $Q_ i \neq Identity$.
+
+1.7 For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples fresh $s, t \overset{R}{\longleftarrow} \mathbb{F}_ q$ and computes:
 
 $$
 U_ i^b \gets s \cdot G_ b + t \cdot H_ b \qquad
 V_ i^b \gets s \cdot P_ i + t \cdot Q_ i
 $$
 
-5. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ computes $W_ i^b \gets V_ i^b + M_ i^b$.
-6. $\star$ $\mathcal{S}$ sends $(U_ i^0, W_ i^0, U_ i^1, W_ i^1)_ {i \in [l]}$ to $\mathcal{R}$.
+1.8 For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ computes $W_ i^b \gets V_ i^b + M_ i^b$.
+
+1.9 $\star$ $\mathcal{S}$ sends $(U_ i^0, W_ i^0, U_ i^1, W_ i^1)_ {i \in [l]}$ to $\mathcal{R}$.
 
 **Round 2 (Receiver):**
 
-1. $\bullet$ $\mathcal{R}$ waits to receive $(U_ i^0, W_ i^0, U_ i^1, W_ i^1)_ {i \in [l]}$ from $\mathcal{S}$.
-2. $\blacktriangle$ $\mathcal{R}$ *asserts* that it holds $l$ quadruples.
-3. For $i \in [l]$, $\mathcal{R}$ computes $M_ i^{b_ i} \gets W_ i^{b_ i} - r_ i \cdot U_ i^{b_ i}$.
+2.1 $\bullet$ $\mathcal{R}$ waits to receive $(U_ i^0, W_ i^0, U_ i^1, W_ i^1)_ {i \in [l]}$ from $\mathcal{S}$.
+
+2.2 $\blacktriangle$ $\mathcal{R}$ *asserts* that it holds $l$ quadruples.
+
+2.3 For $i \in [l]$, $\mathcal{R}$ computes $M_ i^{b_ i} \gets W_ i^{b_ i} - r_ i \cdot U_ i^{b_ i}$.
 
 **Output:** $\mathcal{R}$ outputs the messages $(M_ i^{b_ i})_ {i \in [l]}$.
 
