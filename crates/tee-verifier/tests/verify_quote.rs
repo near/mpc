@@ -9,7 +9,7 @@ use mpc_attestation::attestation::{
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
 use rstest::rstest;
-use std::time::Duration;
+use std::{assert_matches, time::Duration};
 use tee_verifier::TeeVerifier;
 use tee_verifier_interface::{
     Collateral, CollateralDates, QuoteBytes, Report, TDReport10, TcbStatus, TcbStatusWithAdvisory,
@@ -107,64 +107,34 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
     assert_eq!(result, VerificationResult::Verified(expected_report));
 }
 
-#[test]
-fn verify_quote__should_reject_valid_fixture_when_block_time_is_past_collateral_validity() {
-    // Given: block time far past the fixture collateral's validity window
-    set_timestamp_context(ten_years_after_fixture());
+#[rstest]
+#[case::expired_collateral(ten_years_after_fixture(), make_quote_bytes(), collateral())]
+#[case::invalid_quote(
+    Duration::from_secs(VALID_ATTESTATION_TIMESTAMP),
+    invalid_quote(),
+    collateral()
+)]
+#[case::mismatched_collateral(
+    Duration::from_secs(VALID_ATTESTATION_TIMESTAMP),
+    make_quote_bytes(),
+    mismatched_collateral()
+)]
+fn verify_quote__should_reject_with_dcap_verification_error(
+    #[case] now: Duration,
+    #[case] quote: QuoteBytes,
+    #[case] collateral: Collateral,
+) {
+    // Given
+    set_timestamp_context(now);
     let contract = TeeVerifier::default();
-    let quote = make_quote_bytes();
-    let collateral = collateral();
 
     // When
     let result = contract.verify_quote(quote, collateral);
 
     // Then
-    assert!(
-        matches!(
-            result,
-            VerificationResult::Rejected(VerifierError::DcapVerification(_))
-        ),
-        "expected Rejected(DcapVerification(_)), got {result:?}"
-    );
-}
-
-#[test]
-fn verify_quote__should_reject_without_panicking_for_invalid_quote() {
-    // Given: a structurally broken quote against otherwise-valid collateral.
-    set_valid_timestamp_context();
-    let contract = TeeVerifier::default();
-    let collateral = collateral();
-
-    // When
-    let result = contract.verify_quote(invalid_quote(), collateral);
-
-    // Then: a Rejected value, not a panic, and it carries a reason.
-    assert!(
-        matches!(
-            result,
-            VerificationResult::Rejected(VerifierError::DcapVerification(_))
-        ),
-        "expected Rejected(DcapVerification(_)), got {result:?}"
-    );
-}
-
-#[test]
-fn verify_quote__should_reject_valid_quote_with_mismatched_collateral() {
-    // Given
-    set_valid_timestamp_context();
-    let contract = TeeVerifier::default();
-    let quote = make_quote_bytes();
-
-    // When
-    let result = contract.verify_quote(quote, mismatched_collateral());
-
-    // Then
-    assert!(
-        matches!(
-            result,
-            VerificationResult::Rejected(VerifierError::DcapVerification(_))
-        ),
-        "expected Rejected(DcapVerification(_)), got {result:?}"
+    assert_matches!(
+        result,
+        VerificationResult::Rejected(VerifierError::DcapVerification(_))
     );
 }
 

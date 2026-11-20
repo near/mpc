@@ -36,6 +36,7 @@ attestation = { path = ".", features = [
     "dstack-conversions",
 ] }
 dstack-sdk-types = { workspace = true }
+rstest = { workspace = true }
 test-utils = { workspace = true }
 
 [[test]]

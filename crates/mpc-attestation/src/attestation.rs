@@ -541,6 +541,8 @@ mod tests {
     use alloc::vec;
     use core::assert_matches;
 
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -585,49 +587,32 @@ mod tests {
         );
     }
 
-    #[test]
-    fn with_expiry_capped_at__should_cap_existing_expiry_at_the_provided_value() {
-        // Given: a mock whose expiry is longer than the contract cap.
+    #[rstest]
+    #[case::cap_existing_expiry_at_the_provided_value(100, 42)]
+    #[case::keep_a_shorter_existing_expiry(20, 20)]
+    fn with_expiry_capped_at__should_never_raise_the_existing_expiry(
+        #[case] existing_expiry: u64,
+        #[case] expected_expiry: u64,
+    ) {
+        // Given
+        let cap = 42;
         let mock = MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(100),
+            expiry_timestamp_seconds: Some(existing_expiry),
             expected_measurements: None,
         };
 
         // When
-        let stamped = mock.with_expiry_capped_at(42);
+        let stamped = mock.with_expiry_capped_at(cap);
 
-        // Then: it is capped at the contract-provided value (a caller cannot extend it).
+        // Then
         assert_matches!(
             stamped,
             MockAttestation::WithConstraints {
-                expiry_timestamp_seconds: Some(42),
+                expiry_timestamp_seconds: Some(expiry),
                 ..
-            }
-        );
-    }
-
-    #[test]
-    fn with_expiry_capped_at__should_keep_a_shorter_existing_expiry() {
-        // Given: a mock whose expiry is already shorter than the cap.
-        let mock = MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(20),
-            expected_measurements: None,
-        };
-
-        // When
-        let stamped = mock.with_expiry_capped_at(42);
-
-        // Then: the shorter expiry is left as-is (capping only lowers, never raises).
-        assert_matches!(
-            stamped,
-            MockAttestation::WithConstraints {
-                expiry_timestamp_seconds: Some(20),
-                ..
-            }
+            } if expiry == expected_expiry
         );
     }
 
@@ -813,59 +798,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn measurements_constraint_passes_if_in_allowed_list() {
-        // given
-        let measurements = make_measurements(42);
+    #[rstest]
+    #[case::in_allowed_list(&[1, 42], Ok(()))]
+    #[case::not_in_allowed_list(&[1], Err(VerificationError::MeasurementsNotAllowed))]
+    #[case::allowed_list_is_empty(&[], Err(VerificationError::EmptyMeasurementsList))]
+    fn measurements_constraint__should_require_membership_in_allowed_list(
+        #[case] allowed_bytes: &[u8],
+        #[case] expected: Result<(), VerificationError>,
+    ) {
+        // Given
         let attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
             launcher_docker_compose_hash: None,
             expiry_timestamp_seconds: None,
-            expected_measurements: Some(measurements),
+            expected_measurements: Some(make_measurements(42)),
         });
-        let allowed = vec![make_measurements(1), measurements];
+        let allowed: Vec<ExpectedMeasurements> = allowed_bytes
+            .iter()
+            .copied()
+            .map(make_measurements)
+            .collect();
 
-        // when/then
-        attestation
-            .re_verify(0, &[], &[], &allowed)
-            .expect("measurements are in the allowed list and should pass");
-    }
-
-    #[test]
-    fn measurements_constraint_fails_if_not_in_allowed_list() {
-        // given
-        let measurements = make_measurements(42);
-        let attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: None,
-            expected_measurements: Some(measurements),
-        });
-        let allowed = vec![make_measurements(1)];
-
-        // when
+        // When
         let result = attestation.re_verify(0, &[], &[], &allowed);
 
-        // then
-        assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
-    }
-
-    #[test]
-    fn measurements_constraint_fails_if_allowed_list_is_empty() {
-        // given
-        let measurements = make_measurements(42);
-        let attestation = VerifiedAttestation::Mock(MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: None,
-            expected_measurements: Some(measurements),
-        });
-
-        // when
-        let result = attestation.re_verify(0, &[], &[], &[]);
-
-        // then
-        assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
+        // Then
+        assert_eq!(result, expected);
     }
 
     #[test]
