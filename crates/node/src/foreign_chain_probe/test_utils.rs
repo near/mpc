@@ -106,6 +106,11 @@ pub(crate) fn whitelist_of(
     BTreeMap::from([(chain, chain_entry(&providers, quorum))])
 }
 
+pub(crate) struct ProbedChainProvider<'a> {
+    pub(crate) chain: dtos::ForeignChain,
+    pub(crate) provider: ProbedProvider<'a>,
+}
+
 /// A provider without auth, and the status its probe reports.
 #[derive(Clone)]
 pub(crate) struct ProbedProvider<'a> {
@@ -120,11 +125,9 @@ pub(crate) struct ProbedConfig {
     pub(crate) report: ProbeReport,
 }
 
-pub(crate) fn config_with_report(
-    providers: &[(dtos::ForeignChain, ProbedProvider)],
-) -> ProbedConfig {
+pub(crate) fn config_with_report(providers: &[ProbedChainProvider]) -> ProbedConfig {
     let mut providers_per_chain: BTreeMap<_, Vec<_>> = BTreeMap::new();
-    for (chain, provider) in providers {
+    for ProbedChainProvider { chain, provider } in providers {
         let config = ForeignChainProviderConfig {
             rpc_url: provider.rpc_url.to_string(),
             auth: AuthConfig::None,
@@ -141,7 +144,9 @@ pub(crate) fn config_with_report(
     );
     let rows: Vec<ProviderHealth> = providers
         .iter()
-        .map(|(chain, provider)| row(*chain, provider.name, provider.status.clone()))
+        .map(|ProbedChainProvider { chain, provider }| {
+            row(*chain, provider.name, provider.status.clone())
+        })
         .collect();
     ProbedConfig {
         local,
@@ -152,7 +157,10 @@ pub(crate) fn config_with_report(
 pub(crate) fn polygon_with_report(providers: &[ProbedProvider]) -> ProbedConfig {
     let providers: Vec<_> = providers
         .iter()
-        .map(|provider| (dtos::ForeignChain::Polygon, provider.clone()))
+        .map(|provider| ProbedChainProvider {
+            chain: dtos::ForeignChain::Polygon,
+            provider: provider.clone(),
+        })
         .collect();
     config_with_report(&providers)
 }
