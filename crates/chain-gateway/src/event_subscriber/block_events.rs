@@ -37,14 +37,14 @@ pub struct MatchedEvent {
 #[derive(Debug, Deref, From, Clone, Copy, PartialEq, Eq)]
 pub struct BlockEventId(pub u64);
 
-/// Event data, matching a filter [`super::subscriber::BlockEventSubscription`]
+/// Event data matching a block subscription filter.
 #[derive(Debug, PartialEq)]
 pub enum EventData {
     ExecutorFunctionCallSuccessWithPromise(ExecutorFunctionCallSuccessWithPromiseData),
     ReceiverFunctionCall(ReceiverFunctionCallData),
 }
 
-/// Event data for a receipt matching a [`super::subscriber::BlockEventSubscription::ExecutorFunctionCallSuccessWithPromise`]
+/// Event data for a successful function call that returns a promise.
 #[derive(Debug, PartialEq)]
 pub struct ExecutorFunctionCallSuccessWithPromiseData {
     /// the receipt_id of the receipt this event came from
@@ -57,7 +57,7 @@ pub struct ExecutorFunctionCallSuccessWithPromiseData {
     pub args_raw: Vec<u8>,
 }
 
-/// Event data for a receipt matching a [`super::subscriber::BlockEventSubscription::ReceiverFunctionCall`]
+/// Event data for a function call received by an account.
 #[derive(Debug, PartialEq)]
 pub struct ReceiverFunctionCallData {
     /// the receipt id for the matched transaction
