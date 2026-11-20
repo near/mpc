@@ -1,4 +1,5 @@
 use inferno::flamegraph;
+use itertools::Itertools;
 use pprof::{ProfilerGuardBuilder, Report};
 use regex::Regex;
 use std::{io, iter, sync::LazyLock, time::Duration};
@@ -86,15 +87,11 @@ fn collapsed_stacks(report: &Report) -> Vec<String> {
         .data
         .iter()
         .map(|(frames, count)| {
-            let symbols = frames
-                .frames
-                .iter()
-                .rev()
-                .flat_map(|frame| frame.iter().rev().map(ToString::to_string));
-            let stack: Vec<String> = iter::once(frames.thread_name_or_id())
-                .chain(symbols)
-                .collect();
-            format!("{} {count}", stack.join(";"))
+            let symbols = frames.frames.iter().flatten().rev();
+            let stack = iter::once(frames.thread_name_or_id())
+                .chain(symbols.map(ToString::to_string))
+                .join(";");
+            format!("{stack} {count}")
         })
         .collect()
 }
@@ -130,11 +127,12 @@ fn normalized_thread_name(thread_name: &str) -> String {
 mod tests {
     use super::*;
     use pprof::{Frames, Symbol};
+    use rstest::rstest;
     use std::{collections::HashMap, time::SystemTime};
 
     fn symbol(name: &str) -> Symbol {
         Symbol {
-            name: Some(name.as_bytes().to_vec()),
+            name: Some(name.into()),
             addr: None,
             lineno: None,
             filename: None,
@@ -171,33 +169,21 @@ mod tests {
         assert_eq!(collapsed_stacks, vec!["worker;outer;inner;inlined 3"]);
     }
 
-    #[test]
-    fn write_flamegraph__should_write_an_svg_for_a_report_with_samples() {
+    #[rstest]
+    #[case::with_samples(report_with_one_stack(), true)]
+    #[case::without_samples(Report { data: HashMap::new(), timing: Default::default() }, false)]
+    fn write_flamegraph__should_write_an_svg_only_for_a_report_with_samples(
+        #[case] report: Report,
+        #[case] writes_svg: bool,
+    ) {
         // Given
-        let report = report_with_one_stack();
         let mut svg = Vec::new();
 
         // When
         write_flamegraph(&report, &mut svg).unwrap();
 
         // Then
-        assert!(!svg.is_empty());
-    }
-
-    #[test]
-    fn write_flamegraph__should_write_nothing_for_a_report_without_samples() {
-        // Given
-        let report = Report {
-            data: HashMap::new(),
-            timing: Default::default(),
-        };
-        let mut svg = Vec::new();
-
-        // When
-        write_flamegraph(&report, &mut svg).unwrap();
-
-        // Then
-        assert!(svg.is_empty());
+        assert_eq!(!svg.is_empty(), writes_svg);
     }
 
     #[test]
