@@ -19,7 +19,7 @@ The inputs to this protocol are:
 1. Each party derives the four points from four distinct inputs:
 
 $$
-(G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathsf{sid} \,\|\, j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
+(G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathsf{sid} \mathbin{\Vert} j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
 $$
 
 Here $\mathsf{HashToCurve}$ is a hash to $\mathbb{G}$ whose outputs have unknown
@@ -28,7 +28,7 @@ this protocol uses.
 
 **Round 1 (Receiver):**
 
-1. For $i \in [l]$, $\mathcal{R}$ samples $r_ i \xleftarrow{R} \mathbb{F}_ q$.
+1. For $i \in [l]$, $\mathcal{R}$ samples $r_ i \overset{R}{\longleftarrow} \mathbb{F}_ q$.
 2. For $i \in [l]$, $\mathcal{R}$ computes:
 
 $$
@@ -43,7 +43,7 @@ $$
 1. $\bullet$ $\mathcal{S}$ waits to receive $(P_ i, Q_ i)_ {i \in [l]}$ from $\mathcal{R}$.
 2. $\blacktriangle$ $\mathcal{S}$ *asserts* that it holds $l$ pairs.
 3. $\blacktriangle$ $\mathcal{S}$ *asserts* that $\forall i \in [l],\quad P_ i \neq Identity$ and $Q_ i \neq Identity$.
-4. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples fresh $s, t \xleftarrow{R} \mathbb{F}_ q$ and computes:
+4. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples fresh $s, t \overset{R}{\longleftarrow} \mathbb{F}_ q$ and computes:
 
 $$
 U_ i^b \gets s \cdot G_ b + t \cdot H_ b \qquad
@@ -90,9 +90,6 @@ each is encrypted with $V_ i^b$.
 Hashing $V_ i^b$ straight into a key would halve what the sender sends in
 round 1, as it would no longer send $W_ i^b$, but the paper's proof does not
 cover it.
-An OT extension needs $\lambda$-bit keys instead of group elements:
-[Seeding an OT extension](#seeding-an-ot-extension) derives them from random
-messages.
 
 **One string per batch, fresh randomness per transfer.** The whole batch shares
 the string and takes one message in each direction.
@@ -105,24 +102,3 @@ Reusing it across $i$ makes the hidden values $V_ i^b$ linearly related.
 
 **Identity check.** The pair $(0, 0)$ is consistent with both branches and
 gives $V_ i^0 = V_ i^1 = 0$, which sends both messages in the clear, so the sender must reject it in round 1.
-
-# Seeding an OT extension
-
-An OT extension consumes a batch of random OTs on $\lambda$-bit keys: for each
-$i \in [l]$ the sender gets two keys $K_ i^0, K_ i^1 \in \\\{0, 1\\\}^\lambda$ and
-the receiver gets $K_ i^{b_ i}$.
-This is the output of `Batch-Random-OT` in
-[triples](./ot_based_ecdsa/triples.md#simplest-ot-protocol), which this wrapper
-reproduces on top of the protocol above.
-
-Protocol `PVW08-Batch-Random-OT`:
-
-1. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples $M_ i^b \xleftarrow{R} \mathbb{G}$.
-2. $\mathcal{R}$ and $\mathcal{S}$ run the protocol above, with the messages $M_ i^b$ as the input of $\mathcal{S}$.
-3. For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ computes $K_ i^b \gets \mathsf{KDF}_ {(\mathsf{sid}, i, b)}(M_ i^b)$.
-4. For $i \in [l]$, $\mathcal{R}$ computes $K_ i^{b_ i} \gets \mathsf{KDF}_ {(\mathsf{sid}, i, b_ i)}(M_ i^{b_ i})$.
-
-Here $\mathsf{KDF}$ is a hash function providing a key derivation function
-$\mathbb{G} \to \mathbb{F}_ 2^\lambda$, under a domain separation tag of its own,
-distinct from the one of $\mathsf{HashToCurve}$ and from the one of the hash of
-`Batch-Random-OT`.
