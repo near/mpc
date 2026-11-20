@@ -438,8 +438,8 @@ async fn extract__should_return_the_expected_verdict(
     assert_eq!(response.unwrap(), expected);
 }
 
-#[rstest]
 // Transient, so the fan-out drops the provider instead of signing an absence or a stale answer
+#[rstest]
 #[case::null_inner_instructions_means_not_recorded_unlike_the_empty_list(
     vec![patched(confirmed_tx(), "/meta/innerInstructions", serde_json::Value::Null)],
     vec![inner_instruction_extractor()],
