@@ -571,11 +571,62 @@ pub async fn call_contract_key_generation<const N: usize>(
                 state.domains.domains.len(),
                 domains_to_add.len() + existing_domains
             );
+            for domain_key in &domain_keys {
+                assert_domain_key_in_running_state(&state, domain_key);
+            }
         }
         state => panic!("should be in running state. Actual state: {state:#?}"),
     };
 
     domain_keys.try_into().unwrap()
+}
+
+/// Checks that a running contract state records `domain_key` under the same domain id,
+/// with the domain configuration it was generated for, and with the public key whose
+/// curve matches the domain's protocol.
+fn assert_domain_key_in_running_state(state: &dtos::RunningContractState, domain_key: &DomainKey) {
+    let expected_config = &domain_key.domain_config;
+
+    let registered_config = state
+        .domains
+        .domains
+        .iter()
+        .find(|config| config.id == expected_config.id)
+        .unwrap_or_else(|| {
+            panic!(
+                "domain {:?} is missing from the running domains",
+                expected_config.id
+            )
+        });
+    assert_eq!(registered_config, expected_config);
+
+    let registered_key = state
+        .keyset
+        .domains
+        .iter()
+        .find(|key| key.domain_id == expected_config.id)
+        .unwrap_or_else(|| panic!("no key is registered for domain {:?}", expected_config.id));
+    let registered_public_key = dtos::PublicKey::try_from(&registered_key.key)
+        .expect("registered key converts to a public key");
+    let expected_public_key = dtos::PublicKey::from(domain_key.domain_public_key.clone());
+    assert_eq!(
+        registered_public_key, expected_public_key,
+        "registered key for domain {:?} does not match the generated public key",
+        expected_config.id
+    );
+
+    let key_curve = match &registered_public_key {
+        dtos::PublicKey::Secp256k1(_) => Curve::Secp256k1,
+        dtos::PublicKey::Ed25519(_) => Curve::Edwards25519,
+        dtos::PublicKey::Bls12381(_) => Curve::Bls12381,
+    };
+    assert_eq!(
+        key_curve,
+        Curve::from(expected_config.protocol),
+        "key scheme for domain {:?} does not match its protocol {:?}",
+        expected_config.id,
+        expected_config.protocol
+    );
 }
 
 pub struct InjectedContractState {
