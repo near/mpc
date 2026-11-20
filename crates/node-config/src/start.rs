@@ -137,7 +137,7 @@ pub struct NearInitConfig {
 }
 
 /// Encryption keys needed at startup.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, zeroize::ZeroizeOnDrop)]
 pub struct SecretsStartConfig {
     /// Hex-encoded 16 byte AES key for local storage encryption.
     pub secret_store_key_hex: String,
@@ -525,5 +525,15 @@ timeout_sec = 60
             "your-mpc-account.testnet"
         );
         assert_eq!(config.node.indexer.genesis_hash, Some(genesis_hash));
+    }
+
+    #[test]
+    fn secret_types__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<SecretsStartConfig>();
+        assert_zeroize_on_drop::<crate::foreign_chains::TokenConfig>();
     }
 }

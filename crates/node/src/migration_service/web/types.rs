@@ -10,13 +10,17 @@ use crate::{
     migration_service::types::MigrationInfo,
 };
 
+#[derive(zeroize::ZeroizeOnDrop)]
 pub(crate) struct WebServerState {
+    #[zeroize(skip)]
     pub import_keyshares_sender: watch::Sender<Vec<Keyshare>>,
+    #[zeroize(skip)]
     pub keyshare_storage: Arc<RwLock<KeyshareStorage>>,
     pub backup_encryption_key: AesKey256,
     /// `true` once the contract has confirmed this node as the configured account's node. Until
     /// then no keyshares are exported, so an account id changed in the host-supplied config cannot
     /// redirect them to another participant's backup service.
+    #[zeroize(skip)]
     pub onboarded: watch::Receiver<bool>,
 }
 

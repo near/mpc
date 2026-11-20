@@ -70,7 +70,7 @@ pub fn random_ot_extension_sender_helper(rng: &mut impl CryptoRngCore) -> [u8; 3
 pub async fn random_ot_extension_sender(
     mut chan: PrivateChannel,
     params: RandomOtExtensionParams<'_>,
-    delta: BitVector,
+    delta: &BitVector,
     k: &SquareBitMatrix,
     transcript_seed: [u8; 32],
 ) -> Result<RandomOTExtensionSenderOut, ProtocolError> {
@@ -138,7 +138,7 @@ pub async fn random_ot_extension_sender(
 
     for (i, q_i) in q.rows().take(params.batch_size).enumerate() {
         let v0_i = hash_to_scalar(i, q_i);
-        let v1_i = hash_to_scalar(i, &q_i.xor(&delta));
+        let v1_i = hash_to_scalar(i, &q_i.xor(delta));
         out.push((v0_i, v1_i));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
@@ -165,7 +165,7 @@ pub async fn random_ot_extension_receiver(
     params: RandomOtExtensionParams<'_>,
     k0: &SquareBitMatrix,
     k1: &SquareBitMatrix,
-    b: ChoiceVector,
+    b: &ChoiceVector,
 ) -> Result<RandomOTExtensionReceiverOut, ProtocolError> {
     let adjusted_size = adjust_size(params.batch_size);
 
@@ -274,8 +274,14 @@ mod test {
                     sid: &sid_s,
                     batch_size,
                 };
-                random_ot_extension_sender(comms_s.private_channel(s, r), params, delta, &k, seed_s)
-                    .await
+                random_ot_extension_sender(
+                    comms_s.private_channel(s, r),
+                    params,
+                    &delta,
+                    &k,
+                    seed_s,
+                )
+                .await
             }),
             &mut make_protocol(comms_r.clone(), async move {
                 let params = RandomOtExtensionParams {
@@ -287,7 +293,7 @@ mod test {
                     params,
                     &k0,
                     &k1,
-                    seed_r,
+                    &seed_r,
                 )
                 .await
             }),

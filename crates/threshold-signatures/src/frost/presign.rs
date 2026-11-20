@@ -21,10 +21,12 @@ use crate::{
 };
 
 /// The necessary inputs for the creation of a presignature.
+#[derive(ZeroizeOnDrop)]
 pub struct PresignArguments<C: Ciphersuite> {
     /// The output of key generation, i.e. our share of the secret key.
     pub private_share: SigningShare<C>,
     /// The threshold for the scheme
+    #[zeroize(skip)]
     pub threshold: ReconstructionThreshold,
 }
 

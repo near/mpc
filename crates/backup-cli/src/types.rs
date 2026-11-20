@@ -2,7 +2,7 @@ use ed25519_dalek::SigningKey;
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, zeroize::ZeroizeOnDrop)]
 pub struct PersistentSecrets {
     /// Ed25519 private key used for encrypting P2P communication with MPC nodes
     pub p2p_private_key: SigningKey,

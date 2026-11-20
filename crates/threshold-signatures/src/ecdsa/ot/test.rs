@@ -27,7 +27,8 @@ pub fn run_batch_random_ot()
         }),
         &mut make_protocol(comms_r.clone(), {
             let (delta, x) = super::base::co15::batch_random_ot_receiver_random_helper(&mut rng);
-            super::base::co15::batch_random_ot_receiver(comms_r.private_channel(r, s), delta, x)
+            let chan = comms_r.private_channel(r, s);
+            async move { super::base::co15::batch_random_ot_receiver(chan, &delta, &x).await }
         }),
     )
 }

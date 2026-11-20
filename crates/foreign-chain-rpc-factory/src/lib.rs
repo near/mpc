@@ -3,6 +3,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use mpc_node_config::foreign_chains;
 use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
+use zeroize::Zeroizing;
 
 pub mod inspectors;
 
@@ -34,7 +35,7 @@ fn auth_config_to_rpc_auth(
         } => {
             let token_value = token.resolve()?;
             let header_value_str = match scheme {
-                Some(scheme) => format!("{scheme} {token_value}"),
+                Some(scheme) => Zeroizing::new(format!("{scheme} {}", *token_value)),
                 None => token_value,
             };
             let mut header_value = HeaderValue::from_str(&header_value_str)

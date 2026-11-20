@@ -453,7 +453,9 @@ impl KeyshareStorage {
 }
 
 /// Config for how to construct a KeyshareStorage.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct KeyStorageConfig {
+    #[zeroize(skip)]
     pub home_dir: std::path::PathBuf,
     pub local_encryption_key: [u8; 16],
 }
@@ -1266,5 +1268,27 @@ pub mod tests {
             .await
             .unwrap();
         assert_eq!(loaded, vec![key_1, key_2]);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn secret_types__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<crate::config::AesKey128>();
+        assert_zeroize_on_drop::<crate::config::AesKey256>();
+        assert_zeroize_on_drop::<crate::config::SecretsConfig>();
+        assert_zeroize_on_drop::<crate::config::PersistentSecrets>();
+        assert_zeroize_on_drop::<crate::migration_service::MigrationSecrets>();
+        assert_zeroize_on_drop::<crate::migration_service::web::types::WebServerState>();
+        assert_zeroize_on_drop::<super::KeyStorageConfig>();
+        assert_zeroize_on_drop::<super::TemporaryKeyStorage>();
+        assert_zeroize_on_drop::<super::PendingKeyshareStorageHandle>();
+        assert_zeroize_on_drop::<super::local::LocalPermanentKeyStorageBackend>();
+        assert_zeroize_on_drop::<super::permanent::LegacyRootKeyshareData>();
+        assert_zeroize_on_drop::<aes_gcm::Aes128Gcm>();
+        assert_zeroize_on_drop::<aes_gcm::Aes256Gcm>();
     }
 }

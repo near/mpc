@@ -9,11 +9,46 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 pub(crate) mod start;
 
-pub type AesKey256 = [u8; 32];
-pub type AesKey128 = [u8; 16];
+/// AES key that is zeroized on drop.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+pub struct AesKey<const N: usize>([u8; N]);
+
+pub type AesKey256 = AesKey<32>;
+pub type AesKey128 = AesKey<16>;
+
+impl<const N: usize> AesKey<N> {
+    pub fn from_hex(hex_key: &str) -> anyhow::Result<Self> {
+        let decoded_key = Zeroizing::new(
+            hex::decode(hex_key)
+                .context(format!("Encryption key must be {} hex characters", N * 2))?,
+        );
+        decoded_key.as_slice().try_into().map(Self).context(format!(
+            "Encryption key must be {} bytes ({} hex characters)",
+            N,
+            N * 2
+        ))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; N] {
+        &self.0
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for AesKey<N> {
+    fn from(key: [u8; N]) -> Self {
+        Self(key)
+    }
+}
+
+impl<const N: usize> std::fmt::Debug for AesKey<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AesKey(<redacted>)")
+    }
+}
 
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
@@ -167,23 +202,13 @@ pub struct ParticipantInfo {
     pub near_account_id: AccountId,
 }
 
-#[derive(Clone)]
+#[derive(Clone, zeroize::ZeroizeOnDrop)]
 pub struct SecretsConfig {
     // Ed25519 keys. `near_crypto` API too rigid to store this exact enum type.
     // e.g. you can not call `public_key` on the `ED25519SecretKey` type.
     pub persistent_secrets: PersistentSecrets,
     pub local_storage_aes_key: AesKey128,
     pub backup_encryption_key: AesKey256,
-}
-
-pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N]> {
-    let decoded_key =
-        hex::decode(hex_key).context(format!("Encryption key must be {} hex characters", N * 2))?;
-    decoded_key.as_slice().try_into().context(format!(
-        "Encryption key must be {} bytes ({} hex characters)",
-        N,
-        N * 2
-    ))
 }
 
 /// Writes data to a file with owner-only permissions (0o600), even if the file
@@ -193,12 +218,14 @@ fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
         .with_context(|| format!("failed to write secret file {}", path.display()))
 }
 
-pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
+pub fn generate_and_write_backup_encryption_key_to_disk(
+    home_dir: &Path,
+) -> anyhow::Result<Zeroizing<String>> {
     tracing::info!("generating encryption key");
-    let mut key = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut key);
+    let mut key = Zeroizing::new([0u8; 32]);
+    rand::thread_rng().fill_bytes(key.as_mut_slice());
     let key_path = backup_encryption_key_file(home_dir);
-    let key_hex = hex::encode(key);
+    let key_hex = Zeroizing::new(hex::encode(key.as_slice()));
     write_secret_file(&key_path, key_hex.as_bytes())?;
     tracing::info!("wrote encryption key to disk {:?}", key_path);
     Ok(key_hex)
@@ -210,9 +237,9 @@ impl SecretsConfig {
         persistent_secrets: PersistentSecrets,
         backup_encryption_key_hex: &str,
     ) -> anyhow::Result<Self> {
-        let local_storage_aes_key = hex_to_binary_key(local_storage_aes_key_hex)
+        let local_storage_aes_key = AesKey::from_hex(local_storage_aes_key_hex)
             .context("invalid local storage aes key hex")?;
-        let backup_encryption_key = hex_to_binary_key(backup_encryption_key_hex)
+        let backup_encryption_key = AesKey::from_hex(backup_encryption_key_hex)
             .context("invalid backup symmetric key hex")?;
         Ok(Self {
             persistent_secrets,
@@ -225,7 +252,7 @@ impl SecretsConfig {
 /// Secrets that are stored on disk. They are generated on the first run.
 /// The idea is when using a TEE, it's safer to generate them inside enclave, rather than provide it
 /// from outside.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, zeroize::ZeroizeOnDrop)]
 pub struct PersistentSecrets {
     #[serde(
         serialize_with = "serialize_signing_key",
@@ -761,5 +788,41 @@ cores: 4
         assert!(!dir.path().join("config.yaml.tmp").exists());
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
+    }
+
+    #[test]
+    fn aes_key__should_redact_debug_output() {
+        // Given
+        let key = AesKey128::from([0xAB; 16]);
+
+        // When
+        let debug = format!("{key:?}");
+
+        // Then
+        assert_eq!(debug, "AesKey(<redacted>)");
+    }
+
+    #[test]
+    fn aes_key_from_hex__should_decode_key_of_expected_length() {
+        // Given
+        let hex_key = "ab".repeat(16);
+
+        // When
+        let key = AesKey128::from_hex(&hex_key).unwrap();
+
+        // Then
+        assert_eq!(key.as_bytes(), &[0xAB; 16]);
+    }
+
+    #[test]
+    fn aes_key_from_hex__should_reject_key_of_wrong_length() {
+        // Given
+        let hex_key = "ab".repeat(16);
+
+        // When
+        let result = AesKey256::from_hex(&hex_key);
+
+        // Then
+        assert_matches!(result, Err(_));
     }
 }

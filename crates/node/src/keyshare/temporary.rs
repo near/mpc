@@ -6,13 +6,16 @@ use anyhow::Context;
 use mpc_primitives::{EpochId, KeyEventId};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
+use zeroize::Zeroizing;
 
 /// Stores keyshares that we generated (from keygen or resharing) but which have not yet been
 /// definitively included in a Running state by the contract. Each locally successful keygen
 /// or resharing attempt is stored here before voting for its success on the contract; that way
 /// if the contract then tells us that we should be using the keyshare from a specific attempt,
 /// we are sure to have persisted them in temporary key storage.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct TemporaryKeyStorage {
+    #[zeroize(skip)]
     storage_dir: PathBuf,
     local_encryption_key: [u8; 16],
 }
@@ -77,7 +80,7 @@ impl TemporaryKeyStorage {
 
         let data = tokio::fs::read(&path).await?;
         let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
-        let decrypted = decrypt(&cipher, &data)?;
+        let decrypted = Zeroizing::new(decrypt(&cipher, &data)?);
         let keyshare: Keyshare = serde_json::from_slice(&decrypted)?;
         if keyshare.key_id != key_id {
             anyhow::bail!(
@@ -123,8 +126,11 @@ impl TemporaryKeyStorage {
 }
 
 /// Handle to write a completed Keyshare to temporary key storage.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct PendingKeyshareStorageHandle {
+    #[zeroize(skip)]
     pub path: PathBuf,
+    #[zeroize(skip)]
     key_id: KeyEventId,
     local_encryption_key: [u8; 16],
 }
@@ -139,14 +145,14 @@ impl PendingKeyshareStorageHandle {
             "Keyshare has unexpected key ID {:?}",
             keyshare.key_id
         );
-        let data = serde_json::to_vec(&keyshare)?;
+        let data = Zeroizing::new(serde_json::to_vec(&keyshare)?);
         let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
         let encrypted = encrypt(&cipher, &data);
 
         let mut file = tokio::fs::File::create_new(&self.path).await?;
         file.write_all(&encrypted).await?;
         file.sync_all().await?;
-        sync_parent_dir_async(self.path).await?;
+        sync_parent_dir_async(self.path.clone()).await?;
         Ok(())
     }
 }

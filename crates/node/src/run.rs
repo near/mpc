@@ -127,7 +127,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
     let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
-        Some(key) => key.clone(),
+        Some(key) => zeroize::Zeroizing::new(key.clone()),
         None => generate_and_write_backup_encryption_key_to_disk(&config.home_dir)?,
     };
 
@@ -357,11 +357,14 @@ where
     let account_public_key =
         Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
-    let secret_db = SecretDB::new(&assets_dir(&home_dir), secrets.local_storage_aes_key)?;
+    let secret_db = SecretDB::new(
+        &assets_dir(&home_dir),
+        *secrets.local_storage_aes_key.as_bytes(),
+    )?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
-        local_encryption_key: secrets.local_storage_aes_key,
+        local_encryption_key: *secrets.local_storage_aes_key.as_bytes(),
     };
 
     let submitter = AttestationSubmitter {

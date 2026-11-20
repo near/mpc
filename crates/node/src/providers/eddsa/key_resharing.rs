@@ -48,11 +48,16 @@ impl EddsaSignatureProvider {
 ///     - the number of participants common between old and new is smaller than
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct KeyResharingComputation {
+    #[zeroize(skip)]
     reconstruction_threshold: ReconstructionThreshold,
+    #[zeroize(skip)]
     old_participants: Vec<ParticipantId>,
+    #[zeroize(skip)]
     old_reconstruction_threshold: ReconstructionThreshold,
     my_share: Option<SigningShare>,
+    #[zeroize(skip)]
     public_key: VerifyingKey,
 }
 
@@ -73,7 +78,8 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
 
         let old_participants = self
             .old_participants
-            .into_iter()
+            .iter()
+            .copied()
             .map(Participant::from)
             .collect::<Vec<_>>();
 
@@ -176,5 +182,15 @@ mod tests {
             println!("{:?}", results);
         })
         .await;
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn key_resharing_computation__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<KeyResharingComputation>();
     }
 }

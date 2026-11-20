@@ -36,9 +36,9 @@ pub(super) fn mta_sender_random_helper(size: usize, rng: &mut impl CryptoRngCore
 /// The sender for multiplicative to additive conversion.
 pub async fn mta_sender(
     mut chan: PrivateChannel,
-    v: Vec<(Scalar, Scalar)>,
+    v: &[(Scalar, Scalar)],
     a: Scalar,
-    delta: Vec<Scalar>,
+    delta: &[Scalar],
 ) -> Result<Scalar, ProtocolError> {
     // Step 1
     // `delta` is computed in `mta_sender_random_helper`
@@ -174,7 +174,8 @@ mod test {
             r,
             &mut make_protocol(ctx_s.clone(), {
                 let delta = mta_sender_random_helper(v.len(), &mut rng);
-                mta_sender(ctx_s.private_channel(s, r), v, a, delta)
+                let chan = ctx_s.private_channel(s, r);
+                async move { mta_sender(chan, &v, a, &delta).await }
             }),
             &mut make_protocol(ctx_r.clone(), {
                 let seed = mta_receiver_random_helper(&mut rng);

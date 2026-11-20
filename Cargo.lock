@@ -55,6 +55,7 @@ dependencies = [
  "cipher",
  "cpubits",
  "cpufeatures 0.3.1",
+ "zeroize",
 ]
 
 [[package]]
@@ -69,6 +70,7 @@ dependencies = [
  "ctr",
  "ctutils",
  "ghash",
+ "zeroize",
 ]
 
 [[package]]
@@ -1297,6 +1299,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]
@@ -3870,6 +3873,7 @@ dependencies = [
  "near-mpc-contract-interface",
  "rstest",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -4177,6 +4181,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eecf2d5dc9b66b732b97707a0210906b1d30523eb773193ab777c0c84b3e8d5"
 dependencies = [
  "polyval",
+ "zeroize",
 ]
 
 [[package]]
@@ -6149,6 +6154,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -6172,6 +6178,7 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 1.1.6+spec-1.1.0",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -8660,6 +8667,7 @@ dependencies = [
  "cpubits",
  "cpufeatures 0.3.1",
  "universal-hash",
+ "zeroize",
 ]
 
 [[package]]

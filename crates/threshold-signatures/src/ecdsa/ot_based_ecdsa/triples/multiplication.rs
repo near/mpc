@@ -25,11 +25,12 @@ use futures::Future;
 use rand_core::CryptoRngCore;
 use std::pin::Pin;
 use std::sync::Arc;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use super::mta::{mta_receiver, mta_sender};
 use std::collections::VecDeque;
 
-#[derive(derive_more::Constructor)]
+#[derive(derive_more::Constructor, ZeroizeOnDrop)]
 struct MultiplicationSenderRandomPackage {
     delta: BitVector,
     x: [Scalar; SEC_PARAM_64 * 64],
@@ -58,30 +59,34 @@ async fn multiplication_sender(
     precomputed_values: MultiplicationSenderRandomPackage,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, x) = (precomputed_values.delta, precomputed_values.x);
-    let (delta, k) = batch_random_ot_receiver(chan.child(0), delta, x).await?;
+    let (delta, k) = batch_random_ot_receiver(
+        chan.child(0),
+        &precomputed_values.delta,
+        &precomputed_values.x,
+    )
+    .await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
     let seed = precomputed_values.seed;
-    let mut res0 = random_ot_extension_sender(
-        chan.child(1),
-        RandomOtExtensionParams {
-            sid,
-            batch_size: 2 * batch_size,
-        },
-        delta,
-        &k,
-        seed,
-    )
-    .await?;
-    let res1 = res0.split_off(batch_size);
+    let mut res0 = Zeroizing::new(
+        random_ot_extension_sender(
+            chan.child(1),
+            RandomOtExtensionParams {
+                sid,
+                batch_size: 2 * batch_size,
+            },
+            &delta,
+            &k,
+            seed,
+        )
+        .await?,
+    );
+    let res1 = Zeroizing::new(res0.split_off(batch_size));
 
     // Step 2
-    let delta0 = precomputed_values.delta0;
-    let task0 = mta_sender(chan.child(2), res0, *a_i, delta0);
-    let delta1 = precomputed_values.delta1;
-    let task1 = mta_sender(chan.child(3), res1, *b_i, delta1);
+    let task0 = mta_sender(chan.child(2), &res0, *a_i, &precomputed_values.delta0);
+    let task1 = mta_sender(chan.child(3), &res1, *b_i, &precomputed_values.delta1);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;
@@ -89,7 +94,7 @@ async fn multiplication_sender(
     Ok(gamma0? + gamma1?)
 }
 
-#[derive(derive_more::Constructor)]
+#[derive(derive_more::Constructor, ZeroizeOnDrop)]
 struct MultiplicationReceiverRandomPackage {
     y: Scalar,
     b: ChoiceVector,
@@ -122,7 +127,6 @@ async fn multiplication_receiver(
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
-    let b = precomputed_package.b;
     let mut res0 = random_ot_extension_receiver(
         chan.child(1),
         RandomOtExtensionParams {
@@ -131,7 +135,7 @@ async fn multiplication_receiver(
         },
         &k0,
         &k1,
-        b,
+        &precomputed_package.b,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
@@ -361,5 +365,19 @@ mod test {
         for i in 0..N {
             assert_eq!(a_v[i] * b_v[i], c_v[i]);
         }
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn secret_types__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<super::MultiplicationSenderRandomPackage>();
+        assert_zeroize_on_drop::<super::MultiplicationReceiverRandomPackage>();
+        assert_zeroize_on_drop::<crate::ecdsa::ot::bits::BitMatrix>();
+        assert_zeroize_on_drop::<crate::ecdsa::ot::bits::ChoiceVector>();
+        assert_zeroize_on_drop::<crate::frost::PresignArguments<crate::ecdsa::Secp256K1Sha256>>();
     }
 }
