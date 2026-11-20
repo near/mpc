@@ -100,7 +100,6 @@ impl MpcContract {
         (&self.parameters_votes).into_dto_type()
     }
 
-    /// Returns the pending `vote_add_domains` votes, keyed by proposal hash.
     pub fn add_domains_votes(&self) -> dtos::AddDomainsVotes {
         match &self.protocol_state {
             ProtocolContractState::Running(state) => (&state.add_domains_votes).into_dto_type(),
