@@ -96,7 +96,7 @@ async fn test_changing_participant_set_test_keyshare_import() {
         let mpc_contract::state::ProtocolContractState::Running(running) = &contract.state else {
             panic!("done");
         };
-        let keyset: Keyset = (&running.keyset).into();
+        let keyset: Keyset = running.keyset().into();
         let keyshares = get_keyshares(home_dir_first, local_encryption_key_first, &keyset)
             .await
             .unwrap();

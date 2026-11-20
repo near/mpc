@@ -101,7 +101,7 @@ mod tests {
     fn current_keyset__should_return_the_running_keyset() {
         // Given
         let running = gen_running_state(2);
-        let expected = (&running.keyset).into_dto_type();
+        let expected = running.keyset().into_dto_type();
         let contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running));
 

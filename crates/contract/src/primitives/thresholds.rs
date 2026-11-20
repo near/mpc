@@ -228,7 +228,7 @@ impl GovernanceThresholdParameters {
 
     /// Returns mutable reference to Participants for benchmarking.
     #[cfg(feature = "bench-contract-methods")]
-    pub fn participants_mut(&mut self) -> &mut Participants {
+    pub(crate) fn participants_mut(&mut self) -> &mut Participants {
         &mut self.participants
     }
 }

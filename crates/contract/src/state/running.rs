@@ -29,18 +29,18 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunningContractState {
     /// The domains for which we have a key ready for signature processing.
-    pub domains: DomainRegistry,
+    pub(super) domains: DomainRegistry,
     /// The keys that are currently in use; for each domain provides an unique identifier for a
     /// distributed key, so that the nodes can identify which local keyshare to use.
-    pub keyset: Keyset,
+    pub(super) keyset: Keyset,
     /// The current participants and threshold.
-    pub parameters: GovernanceThresholdParameters,
+    pub(super) parameters: GovernanceThresholdParameters,
     /// Votes for proposals to add new domains.
-    pub add_domains_votes: AddDomainsVotes,
+    pub(super) add_domains_votes: AddDomainsVotes,
     /// The previous epoch id for a resharing state that was cancelled.
     /// This epoch id is tracked, as the next time the state transitions to resharing,
     /// we can't reuse a previously cancelled epoch id.
-    pub previously_cancelled_resharing_epoch_id: Option<EpochId>,
+    pub(super) previously_cancelled_resharing_epoch_id: Option<EpochId>,
 }
 
 impl RunningContractState {
@@ -131,6 +131,14 @@ impl RunningContractState {
             cancellation_requests: BTreeSet::new(),
             per_domain_thresholds: proposal.per_domain_thresholds().clone(),
         })
+    }
+
+    pub fn domains(&self) -> &DomainRegistry {
+        &self.domains
+    }
+
+    pub fn parameters(&self) -> &GovernanceThresholdParameters {
+        &self.parameters
     }
 
     pub fn participants(&self) -> &Participants {

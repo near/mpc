@@ -148,7 +148,7 @@ async fn test_onboarding() {
         else {
             panic!("expect running")
         };
-        let found_init_partcipants = running.parameters.participants();
+        let found_init_partcipants = running.participants();
         let init_participant_info = found_init_partcipants
             .info(&onboarding_node.participant_info.near_account_id)
             .unwrap();
@@ -200,7 +200,7 @@ async fn test_onboarding() {
         else {
             panic!("expect running");
         };
-        (&running.keyset).into()
+        running.keyset().into()
     };
     let received_keyshares = {
         tracing::info!("Fetching keyshares from parting node.");
@@ -296,7 +296,7 @@ async fn test_onboarding() {
     };
 
     tracing::info!("checking participant info is correct");
-    let found_partcipants = running.parameters.participants();
+    let found_partcipants = running.participants();
     let current_participant_info = found_partcipants
         .info(&onboarding_node.participant_info.near_account_id)
         .unwrap();

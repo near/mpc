@@ -407,7 +407,7 @@ mod tests {
         // Submit valid attestations for all participants (so contract is in Running state)
         // 2. Extract participants list (we have 4 by default)
         let participants = match &contract.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants().clone(),
+            ProtocolContractState::Running(state) => state.participants().clone(),
             _ => panic!("Contract should be in Running state"),
         };
 

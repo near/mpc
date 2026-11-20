@@ -516,7 +516,7 @@ pub mod tests {
 
         (
             ContractCase::new(contract, onboarding_node_p2p_public_key),
-            Keyset::from(&running_state.keyset),
+            Keyset::from(running_state.keyset()),
         )
     }
     pub(crate) fn make_initializing_contract_case(
