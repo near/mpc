@@ -63,13 +63,15 @@ fn assert_keyshare_inputs<C: Ciphersuite>(
 fn generate_coefficient_commitment<C: Ciphersuite>(
     secret_coefficients: &Polynomial<C>,
 ) -> Result<PolynomialCommitment<C>, ProtocolError> {
+    let mut secret_coefficients = secret_coefficients.get_coefficients();
     // we skip the zero share as neither zero scalar
     // nor identity group element are serializable.
     // As in `assert_keyshare_inputs`, the secret compare only reveals whether this
     // is a new joiner in resharing, which is public.
-    secret_coefficients
-        .skip_zero_constant()?
-        .commit_polynomial()
+    if secret_coefficients.first() == Some(&<C::Group as Group>::Field::zero()) {
+        secret_coefficients.remove(0);
+    }
+    Polynomial::new(&secret_coefficients)?.commit_polynomial()
 }
 
 /// Generates the challenge for the proof of knowledge

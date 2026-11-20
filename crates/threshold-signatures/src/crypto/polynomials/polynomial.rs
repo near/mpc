@@ -3,7 +3,6 @@ use frost_core::{
 };
 use rand_core::CryptoRngCore;
 use subtle::ConstantTimeEq;
-use zeroize::ZeroizeOnDrop;
 
 use crate::crypto::ciphersuite::Ciphersuite;
 use crate::errors::ProtocolError;
@@ -13,12 +12,11 @@ use super::{PolynomialCommitment, batch_compute_lagrange_coefficients};
 
 /// Polynomial structure of non-empty or non-zero coefficients
 /// Represents a polynomial with coefficients in the scalar field of the curve.
-/// Zeroization is best-effort: `SerializableScalar` is cleared with a plain write.
-#[derive(ZeroizeOnDrop)]
+///  TODO(#2582): Derive [`ZeroizeOnDrop`](zeroize::ZeroizeOnDrop) for [`Polynomial`] structure in threshold-signatures
 pub struct Polynomial<C: Ciphersuite> {
     /// The coefficients of our polynomial,
     /// The 0 term being the constant term of the polynomial
-    coefficients: Vec<SerializableScalar<C>>,
+    coefficients: Vec<Scalar<C>>,
 }
 
 impl<C: Ciphersuite> Polynomial<C> {
@@ -26,49 +24,37 @@ impl<C: Ciphersuite> Polynomial<C> {
     /// The first scalar (`coefficients[0]`) is the constant term
     /// The highest degree null coefficients are dropped
     pub fn new(coefficients: &[Scalar<C>]) -> Result<Self, ProtocolError> {
-        Self::from_vec(
-            coefficients
-                .iter()
-                .copied()
-                .map(SerializableScalar)
-                .collect(),
-        )
-    }
-
-    /// Same as [`Self::new`], but takes ownership of the coefficients.
-    fn from_vec(coefficients: Vec<SerializableScalar<C>>) -> Result<Self, ProtocolError> {
-        let mut poly = Self { coefficients };
+        if coefficients.is_empty() {
+            return Err(ProtocolError::EmptyOrZeroCoefficients);
+        }
         // Comparing secret coefficients to zero is intentional: the scan stops at the
         // highest non-zero coefficient, so its timing reveals only the degree, which
         // the commitment to the polynomial publishes anyway.
-        let count = poly
-            .coefficients
+        let count = coefficients
             .iter()
             .rev()
-            .take_while(|x| x.0 == <C::Group as Group>::Field::zero())
+            .take_while(|x| *x == &<C::Group as Group>::Field::zero())
             .count();
 
         // get the degree + 1 of the polynomial
-        let last_non_null = poly.coefficients.len() - count;
-        poly.coefficients.truncate(last_non_null);
+        let last_non_null = coefficients.len() - count;
 
-        if poly.coefficients.is_empty() {
+        let new_coefficients = coefficients
+            .get(..last_non_null)
+            .ok_or(ProtocolError::EmptyOrZeroCoefficients)?
+            .to_vec();
+        if new_coefficients.is_empty() {
             Err(ProtocolError::EmptyOrZeroCoefficients)
         } else {
-            Ok(poly)
+            Ok(Self {
+                coefficients: new_coefficients,
+            })
         }
     }
 
     /// Returns the coefficients of the polynomial
     pub fn get_coefficients(&self) -> Vec<Scalar<C>> {
-        self.coefficients.iter().map(|c| c.0).collect()
-    }
-
-    /// Returns the same polynomial without its constant term if that term is zero.
-    pub(crate) fn skip_zero_constant(&self) -> Result<Self, ProtocolError> {
-        let zero = <C::Group as Group>::Field::zero();
-        let skip = usize::from(self.coefficients.first().is_some_and(|c| c.0 == zero));
-        Self::from_vec(self.coefficients.iter().skip(skip).copied().collect())
+        self.coefficients.clone()
     }
 
     /// Creates a random polynomial p of the given degree
@@ -96,23 +82,25 @@ impl<C: Ciphersuite> Polynomial<C> {
         // insert the secret share if exists
         let secret = secret.unwrap_or_else(|| <C::Group as Group>::Field::random(rng));
 
-        coefficients.push(SerializableScalar(secret));
+        coefficients.push(secret);
         for _ in 1..poly_size {
-            coefficients.push(SerializableScalar(<C::Group as Group>::Field::random(rng)));
+            coefficients.push(<C::Group as Group>::Field::random(rng));
         }
         // fails only if:
         // * polynomial is of degree 0 and the constant term is 0
         // * polynomial degree is the max of usize, and so degree + 1 is 0
         // such cases never happen in a classic (non-malicious) implementations
-        Self::from_vec(coefficients)
+        Self::new(&coefficients)
     }
 
     /// Returns the constant term or error in case the polynomial is empty
     pub fn eval_at_zero(&self) -> Result<SerializableScalar<C>, ProtocolError> {
-        self.coefficients
+        let result = self
+            .coefficients
             .first()
             .copied()
-            .ok_or(ProtocolError::EmptyOrZeroCoefficients)
+            .ok_or(ProtocolError::EmptyOrZeroCoefficients)?;
+        Ok(SerializableScalar(result))
     }
 
     /// Evaluates a polynomial at a certain scalar
@@ -130,7 +118,7 @@ impl<C: Ciphersuite> Polynomial<C> {
         } else {
             let mut value = <C::Group as Group>::Field::zero();
             for coeff in self.coefficients.iter().rev() {
-                value = value * point + coeff.0;
+                value = value * point + *coeff;
             }
             Ok(SerializableScalar(value))
         }
@@ -185,7 +173,7 @@ impl<C: Ciphersuite> Polynomial<C> {
         let coef_commitment = self
             .coefficients
             .iter()
-            .map(|c| CoefficientCommitment::new(C::Group::generator() * c.0))
+            .map(|c| CoefficientCommitment::new(C::Group::generator() * *c))
             .collect::<Vec<_>>();
         // self cannot be the zero polynomial because there is no way
         // to create such a polynomial using this library. This implies the panic never occurs.
@@ -204,7 +192,7 @@ impl<C: Ciphersuite> Polynomial<C> {
                 if coefficients_len == 1 && v == <C::Group as Group>::Field::zero() {
                     Err(ProtocolError::EmptyOrZeroCoefficients)
                 } else {
-                    *first = SerializableScalar(v);
+                    *first = v;
                     Ok(())
                 }
             })
@@ -214,9 +202,9 @@ impl<C: Ciphersuite> Polynomial<C> {
     /// Used usually after sending a smaller polynomial to prevent serialization from
     /// failing if the constant term is the identity
     pub fn extend_with_zero(&self) -> Result<Self, ProtocolError> {
-        let mut coeffcommitment = vec![SerializableScalar(<C::Group as Group>::Field::zero())];
-        coeffcommitment.extend_from_slice(&self.coefficients);
-        Self::from_vec(coeffcommitment)
+        let mut coeffcommitment = vec![<C::Group as Group>::Field::zero()];
+        coeffcommitment.extend(self.get_coefficients());
+        Self::new(&coeffcommitment)
     }
 
     fn coefficient_size() -> usize {

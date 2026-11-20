@@ -378,7 +378,6 @@ mod test {
         assert_zeroize_on_drop::<super::MultiplicationReceiverRandomPackage>();
         assert_zeroize_on_drop::<crate::ecdsa::ot::bits::BitMatrix>();
         assert_zeroize_on_drop::<crate::ecdsa::ot::bits::ChoiceVector>();
-        assert_zeroize_on_drop::<crate::ecdsa::Polynomial>();
         assert_zeroize_on_drop::<crate::frost::PresignArguments<crate::ecdsa::Secp256K1Sha256>>();
     }
 }
