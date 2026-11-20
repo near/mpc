@@ -10,6 +10,7 @@ use bench_utils::{TriplePair, ot_run_triples, split_even_odd};
 use threshold_signatures::{
     MaxMalicious, ReconstructionThreshold,
     ecdsa::{self, ot_based_ecdsa, robust_ecdsa},
+    errors::InitializationError,
     participants::Participant,
     protocol::Protocol,
     test_utils::{
@@ -99,6 +100,25 @@ fn bench_cait_sith(
         &|| {
             let mut rng = MockCryptoRng::seed_from_u64(77);
             ot_run_sign(
+                ot_based_ecdsa::sign,
+                participants,
+                &triples,
+                key_packages,
+                threshold,
+                coordinator,
+                pk,
+                &config.latency,
+                &mut rng,
+            )
+        },
+        config.samples,
+    );
+    bench_simulation(
+        "Cait-Sith: sign (two rounds)",
+        &|| {
+            let mut rng = MockCryptoRng::seed_from_u64(77);
+            ot_run_sign(
+                ot_based_ecdsa::sign_two_rounds,
                 participants,
                 &triples,
                 key_packages,
@@ -140,7 +160,15 @@ fn bench_robust_ecdsa(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn ot_run_sign(
+fn ot_run_sign<P: Protocol<Output = ecdsa::SignatureOption> + 'static>(
+    sign: impl Fn(
+        &[Participant],
+        Participant,
+        Participant,
+        ot_based_ecdsa::SignArguments,
+        ecdsa::Tweak,
+        ecdsa::Scalar,
+    ) -> Result<P, InitializationError>,
     participants: &[Participant],
     two_triples: &[(Participant, Vec<TriplePair>)],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
@@ -167,7 +195,7 @@ fn ot_run_sign(
         Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
     )> = Vec::with_capacity(participants.len());
     for (((p, keygen_out), share0), share1) in key_packages.iter().zip(shares0).zip(shares1) {
-        let protocol = ot_based_ecdsa::sign(
+        let protocol = sign(
             participants,
             coordinator,
             *p,
