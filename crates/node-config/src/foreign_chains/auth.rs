@@ -42,7 +42,7 @@ impl<'a> From<&'a AuthConfig> for ConfiguredAuth<'a> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, zeroize::ZeroizeOnDrop)]
 #[serde(untagged)]
 pub enum TokenConfig {
     Env { env: String },

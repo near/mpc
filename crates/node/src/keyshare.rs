@@ -453,7 +453,9 @@ impl KeyshareStorage {
 }
 
 /// Config for how to construct a KeyshareStorage.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct KeyStorageConfig {
+    #[zeroize(skip)]
     pub home_dir: std::path::PathBuf,
     pub local_encryption_key: [u8; 16],
 }

@@ -156,7 +156,7 @@ async fn open_node_client_and_storage(
     let mpc_p2p_client = adapters::p2p_client::MpcP2PClient::new(
         args.mpc_node_address.clone(),
         verifying_key_from_str(&args.mpc_node_p2p_key),
-        secrets.p2p_private_key,
+        secrets.p2p_private_key.clone(),
         mpc_node::config::hex_to_binary_key(&args.backup_encryption_key_hex)
             .expect("require valid hex key"),
         Duration::from_secs(args.request_timeout_seconds),

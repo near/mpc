@@ -16,6 +16,7 @@ pub mod onboarding;
 pub mod types;
 pub mod web;
 
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct MigrationSecrets {
     pub backup_encryption_key: AesKey256,
     pub p2p_private_key: SigningKey,

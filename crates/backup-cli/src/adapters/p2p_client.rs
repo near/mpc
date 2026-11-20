@@ -24,11 +24,15 @@ pub enum Error {
     Timeout(Duration),
 }
 
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct MpcP2PClient {
+    #[zeroize(skip)]
     mpc_node_address: NodeAddress,
+    #[zeroize(skip)]
     mpc_node_p2p_key: VerifyingKey,
     p2p_private_key: SigningKey,
     backup_encryption_key: AesKey256,
+    #[zeroize(skip)]
     request_timeout: Duration,
 }
 

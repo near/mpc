@@ -165,7 +165,7 @@ pub async fn random_ot_extension_receiver(
     params: RandomOtExtensionParams<'_>,
     k0: &SquareBitMatrix,
     k1: &SquareBitMatrix,
-    b: ChoiceVector,
+    b: &ChoiceVector,
 ) -> Result<RandomOTExtensionReceiverOut, ProtocolError> {
     let adjusted_size = adjust_size(params.batch_size);
 
@@ -287,7 +287,7 @@ mod test {
                     params,
                     &k0,
                     &k1,
-                    seed_r,
+                    &seed_r,
                 )
                 .await
             }),

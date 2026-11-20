@@ -12,7 +12,9 @@ use tokio::io::AsyncWriteExt;
 /// or resharing attempt is stored here before voting for its success on the contract; that way
 /// if the contract then tells us that we should be using the keyshare from a specific attempt,
 /// we are sure to have persisted them in temporary key storage.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct TemporaryKeyStorage {
+    #[zeroize(skip)]
     storage_dir: PathBuf,
     local_encryption_key: [u8; 16],
 }

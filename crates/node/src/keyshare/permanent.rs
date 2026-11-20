@@ -240,10 +240,12 @@ impl PermanentKeyStorage {
 }
 
 /// Old version of the permanent keyshare data, for migration only.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, zeroize::ZeroizeOnDrop)]
 pub struct LegacyRootKeyshareData {
+    #[zeroize(skip)]
     pub epoch: u64,
     pub private_share: Scalar,
+    #[zeroize(skip)]
     pub public_key: AffinePoint,
 }
 

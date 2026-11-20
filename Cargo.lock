@@ -1297,6 +1297,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]
@@ -6149,6 +6150,7 @@ dependencies = [
  "tracing-subscriber",
  "tracing-test",
  "url",
+ "zeroize",
 ]
 
 [[package]]
@@ -6172,6 +6174,7 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 1.1.6+spec-1.1.0",
  "url",
+ "zeroize",
 ]
 
 [[package]]
