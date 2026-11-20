@@ -528,21 +528,23 @@ mod tests {
     }
 
     const PROPOSAL: ProposalHash = ProposalHash::new([0xCD; 32]);
+    const VOTER_ACCOUNT: &str = "alice.near";
+    const VOTER_PARTICIPANT_ID: u32 = 3;
 
     #[rstest]
     #[case::parameters_votes(
         GovernanceThresholdParametersVotes(BTreeMap::from([(
             PROPOSAL,
-            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
+            BTreeSet::from([AuthenticatedAccountId(VOTER_ACCOUNT.parse().unwrap())]),
         )])),
-        json!("alice.near"),
+        json!(VOTER_ACCOUNT),
     )]
     #[case::add_domains_votes(
         AddDomainsVotes(BTreeMap::from([(
             PROPOSAL,
-            BTreeSet::from([AuthenticatedParticipantId(ParticipantId(3))]),
+            BTreeSet::from([AuthenticatedParticipantId(ParticipantId(VOTER_PARTICIPANT_ID))]),
         )])),
-        json!(3),
+        json!(VOTER_PARTICIPANT_ID),
     )]
     fn votes__should_serialize_as_a_transparent_map_keyed_by_proposal_hash(
         #[case] votes: impl Serialize,

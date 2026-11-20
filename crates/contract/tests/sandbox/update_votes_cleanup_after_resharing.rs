@@ -1,18 +1,13 @@
 use crate::sandbox::{
     common::SandboxTestSetup,
     utils::{
-        interface::IntoContractType,
-        mpc_contract::{
-            assert_running_return_participants, assert_running_return_threshold, get_state,
-        },
-        resharing_utils::do_resharing,
-        transactions::execute_async_handle_calls,
+        interface::IntoContractType, mpc_contract::get_state, resharing_utils::do_resharing,
+        sandbox_mpc_contract::SandboxMpcContract, transactions::execute_async_handle_calls,
     },
 };
 use anyhow::Result;
 use mpc_contract::primitives::{
-    participants::Participants,
-    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
+    participants::Participants, thresholds::GovernanceThresholdParameters,
 };
 use mpc_primitives::hash::ProposalHash;
 use near_account_id::AccountId;
@@ -25,74 +20,34 @@ use near_workspaces::Account;
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 
+const NUM_VOTERS: usize = 2;
+
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_participants() -> Result<()>
 {
     // Given
-    let SandboxTestSetup {
-        worker: _worker,
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
+    let setup = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
-
-    let initial_participants: Participants =
-        (&assert_running_return_participants(&contract).await?).into_contract_type();
-    let threshold = assert_running_return_threshold(&contract).await;
-
+    let (contract, accounts) = (&setup.contract, &setup.mpc_signer_accounts);
+    let voters = &accounts[..NUM_VOTERS];
     let update_hash = hash(&Update::Code(vec![1u8; 1000]));
-    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| {
+    execute_async_handle_calls(voters, contract, |handle| {
         let update_hash = update_hash.clone();
         async move { handle.vote_contract_update(update_hash).await }
     })
     .await?;
 
-    let votes_before: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract.contract_update_votes().await?.value;
-
-    assert_eq!(
-        votes_before,
-        expected_contract_update_votes(&update_hash, &mpc_signer_accounts[0..2])
-    );
-
     // When
-    let new_participants = initial_participants.subset(1..threshold.0 as usize + 1);
-
-    let new_threshold_parameters =
-        GovernanceThresholdParameters::new(new_participants, GovernanceThreshold::new(threshold.0))
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let prospective_epoch_id = dtos::EpochId(6);
-
-    do_resharing(
-        &mpc_signer_accounts[1..threshold.0 as usize + 1],
-        &contract,
-        new_threshold_parameters,
-        prospective_epoch_id,
-    )
-    .await?;
+    reshare_without_first_participant(contract, accounts).await?;
 
     // Then
-    let final_participants = assert_running_return_participants(&contract).await?;
-    let votes_after: BTreeMap<ProposalHash, BTreeSet<AccountId>> =
-        contract.contract_update_votes().await?.value;
-
+    let (_, remaining_voters) = voters.split_first().unwrap();
     assert_eq!(
-        votes_after,
-        expected_contract_update_votes(&update_hash, &mpc_signer_accounts[1..2])
-    );
-
-    let remaining_voters: Vec<&AccountId> = votes_after.values().flatten().collect();
-    assert_eq!(remaining_voters.len(), 1);
-    let voter_id: &AccountId = remaining_voters[0];
-    assert!(
-        final_participants
-            .participants
-            .iter()
-            .any(|(a, _, _)| a == voter_id)
+        contract.contract_update_votes().await?.value,
+        expected_contract_update_votes(&update_hash, remaining_voters)
     );
 
     Ok(())
@@ -103,69 +58,71 @@ async fn vote_reshared__should_sweep_contract_update_votes_of_kicked_out_partici
 #[tokio::test]
 async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_resharing() -> Result<()> {
     // Given
-    let SandboxTestSetup {
-        worker: _worker,
-        contract,
-        mpc_signer_accounts,
-        ..
-    } = SandboxTestSetup::builder()
+    let setup = SandboxTestSetup::builder()
         .with_protocols(&[Protocol::CaitSith])
         .build()
         .await;
-
-    let initial_participants: Participants =
-        (&assert_running_return_participants(&contract).await?).into_contract_type();
-    let threshold = assert_running_return_threshold(&contract).await;
-
-    let next_domain_id = {
-        let state: dtos::ProtocolContractState = get_state(&contract).await;
-        let dtos::ProtocolContractState::Running(running) = &state else {
-            panic!("Expected running state");
-        };
-        running.domains.next_domain_id
+    let (contract, accounts) = (&setup.contract, &setup.mpc_signer_accounts);
+    let dtos::ProtocolContractState::Running(running) = get_state(contract).await else {
+        panic!("expected running state");
     };
     let domains_to_add = vec![DomainConfig {
-        id: next_domain_id,
+        id: running.domains.next_domain_id,
         protocol: Protocol::Frost,
         reconstruction_threshold: ReconstructionThreshold::new(6),
         purpose: DomainPurpose::Sign,
     }];
-    execute_async_handle_calls(&mpc_signer_accounts[0..2], &contract, |handle| {
+    execute_async_handle_calls(&accounts[..NUM_VOTERS], contract, |handle| {
         let domains_to_add = domains_to_add.clone();
         async move { handle.vote_add_domains(domains_to_add).await }
     })
     .await?;
 
     // When
-    let new_participants = initial_participants.subset(1..threshold.0 as usize + 1);
-
-    let new_threshold_parameters =
-        GovernanceThresholdParameters::new(new_participants, GovernanceThreshold::new(threshold.0))
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
-    let prospective_epoch_id = dtos::EpochId(6);
-
-    do_resharing(
-        &mpc_signer_accounts[1..threshold.0 as usize + 1],
-        &contract,
-        new_threshold_parameters,
-        prospective_epoch_id,
-    )
-    .await?;
+    reshare_without_first_participant(contract, accounts).await?;
 
     // Then
+    let (_, remaining_voters) = running.parameters.participants.participants[..NUM_VOTERS]
+        .split_first()
+        .unwrap();
     let proposal =
         ProposalHash::new(sha2::Sha256::digest(borsh::to_vec(&domains_to_add).unwrap()).into());
-    let remaining_voter =
-        dtos::AuthenticatedParticipantId(initial_participants.participants()[1].1);
     assert_eq!(
         contract.add_domains_votes().await?.value,
         dtos::AddDomainsVotes(BTreeMap::from([(
             proposal,
-            BTreeSet::from([remaining_voter])
+            remaining_voters
+                .iter()
+                .map(|(_, id, _)| dtos::AuthenticatedParticipantId(*id))
+                .collect()
         )]))
     );
 
     Ok(())
+}
+
+/// Reshares away the first participant: the threshold of participants after it vote for
+/// themselves, keeping the threshold.
+async fn reshare_without_first_participant(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+) -> Result<()> {
+    let dtos::ProtocolContractState::Running(running) = get_state(contract).await else {
+        panic!("expected running state");
+    };
+    let threshold = running.parameters.threshold;
+    let remaining = 1..usize::try_from(threshold.value())? + 1;
+    let participants: Participants = (&running.parameters.participants).into_contract_type();
+    let parameters =
+        GovernanceThresholdParameters::new(participants.subset(remaining.clone()), threshold)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+    do_resharing(
+        &accounts[remaining],
+        contract,
+        parameters,
+        running.keyset.epoch_id.next(),
+    )
+    .await
 }
 
 fn expected_contract_update_votes(
