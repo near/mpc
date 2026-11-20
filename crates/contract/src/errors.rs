@@ -184,6 +184,8 @@ pub enum InvalidState {
     ParticipantIndexOutOfRange,
     #[error("Not a participant: {account_id}")]
     NotParticipant { account_id: AccountId },
+    #[error("The genesis hash is already set.")]
+    GenesisHashAlreadySet,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

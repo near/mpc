@@ -84,6 +84,11 @@ pub struct VoteTeeVerifierChangeArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteGenesisHashArgs {
+    pub genesis_hash: GenesisHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct UpdateParticipantUrlArgs {
     pub url: ParticipantUrl,
 }

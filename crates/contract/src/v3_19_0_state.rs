@@ -71,6 +71,7 @@ impl From<MpcContract> for crate::MpcContract {
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: old.parameters_votes,
             genesis_hash: genesis_hash_of(&env::chain_id()),
+            genesis_hash_votes: Default::default(),
         }
     }
 }

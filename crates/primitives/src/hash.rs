@@ -257,6 +257,7 @@ define_hash!(
     PartialEq,
     Eq,
     derive_more::From,
+    derive_more::AsRef,
     derive_more::Display,
     BorshSerialize,
     BorshDeserialize,
