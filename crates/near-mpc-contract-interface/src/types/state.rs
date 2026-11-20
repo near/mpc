@@ -440,9 +440,12 @@ pub fn protocol_state_to_string(contract_state: &ProtocolContractState) -> Strin
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use crate::types::participants::{ParticipantId, ParticipantInfo};
+    use rstest::rstest;
+    use serde_json::json;
 
     #[test]
     fn test_protocol_state_serialization() {
@@ -524,22 +527,32 @@ mod tests {
         assert_eq!(parsed.per_domain_thresholds.len(), 0);
     }
 
-    #[test]
-    #[expect(non_snake_case)]
-    fn governance_threshold_parameters_votes__should_serialize_as_a_transparent_map_keyed_by_proposal_hash()
-     {
-        // Given
-        let proposal = ProposalHash::new([0xCD; 32]);
-        let votes = GovernanceThresholdParametersVotes(BTreeMap::from([(
-            proposal,
-            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
-        )]));
+    const PROPOSAL: ProposalHash = ProposalHash::new([0xCD; 32]);
 
+    #[rstest]
+    #[case::parameters_votes(
+        GovernanceThresholdParametersVotes(BTreeMap::from([(
+            PROPOSAL,
+            BTreeSet::from([AuthenticatedAccountId("alice.near".parse().unwrap())]),
+        )])),
+        json!("alice.near"),
+    )]
+    #[case::add_domains_votes(
+        AddDomainsVotes(BTreeMap::from([(
+            PROPOSAL,
+            BTreeSet::from([AuthenticatedParticipantId(ParticipantId(3))]),
+        )])),
+        json!(3),
+    )]
+    fn votes__should_serialize_as_a_transparent_map_keyed_by_proposal_hash(
+        #[case] votes: impl Serialize,
+        #[case] voter: serde_json::Value,
+    ) {
         // When
         let json = serde_json::to_value(&votes).unwrap();
 
         // Then
-        assert_eq!(json[proposal.as_hex()][0], "alice.near");
+        assert_eq!(json, json!({ PROPOSAL.as_hex(): [voter] }));
     }
 
     // TODO(#5277): drop once no deployed contract reports add-domains votes in `state()`.
@@ -574,22 +587,5 @@ mod tests {
 
         // Then
         assert_eq!(parsed, state);
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn add_domains_votes__should_serialize_as_a_transparent_map_keyed_by_proposal_hash() {
-        // Given
-        let proposal = ProposalHash::new([0xCD; 32]);
-        let votes = AddDomainsVotes(BTreeMap::from([(
-            proposal,
-            BTreeSet::from([AuthenticatedParticipantId(ParticipantId(3))]),
-        )]));
-
-        // When
-        let json = serde_json::to_value(&votes).unwrap();
-
-        // Then
-        assert_eq!(json[proposal.as_hex()][0], 3);
     }
 }

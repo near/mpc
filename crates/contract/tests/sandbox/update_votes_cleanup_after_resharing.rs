@@ -136,10 +136,6 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     })
     .await?;
 
-    let tally = contract.add_domains_votes().await?.value;
-    assert_eq!(tally.len(), 1);
-    assert_eq!(tally.values().next().unwrap().len(), 2);
-
     // When
     let new_participants = initial_participants.subset(1..threshold.0 as usize + 1);
 
@@ -157,11 +153,17 @@ async fn add_domain_votes_from_kicked_out_participants_are_cleared_after_reshari
     .await?;
 
     // Then
-    let final_tally = contract.add_domains_votes().await?.value;
-    let remaining_voters: Vec<_> = final_tally.values().flatten().collect();
-    let expected_remaining_voter_id = &initial_participants.participants()[1].1;
-    assert_eq!(remaining_voters.len(), 1);
-    assert_eq!(&remaining_voters[0].0, expected_remaining_voter_id);
+    let proposal =
+        ProposalHash::new(sha2::Sha256::digest(borsh::to_vec(&domains_to_add).unwrap()).into());
+    let remaining_voter =
+        dtos::AuthenticatedParticipantId(initial_participants.participants()[1].1);
+    assert_eq!(
+        contract.add_domains_votes().await?.value,
+        dtos::AddDomainsVotes(BTreeMap::from([(
+            proposal,
+            BTreeSet::from([remaining_voter])
+        )]))
+    );
 
     Ok(())
 }

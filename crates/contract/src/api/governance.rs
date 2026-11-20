@@ -134,7 +134,9 @@ mod tests {
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use crate::primitives::participants::Participants;
     use crate::primitives::proposal_hash::ToProposalHash;
-    use crate::primitives::test_utils::{authenticate_account_as, gen_participants};
+    use crate::primitives::test_utils::{
+        authenticate_account_as, gen_domains_to_add, gen_participants,
+    };
     use crate::primitives::thresholds::GovernanceThresholdParameters;
     use crate::state::key_event::tests::find_leader;
     use crate::tee::tee_state::TeeState;
@@ -144,7 +146,10 @@ mod tests {
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
     use rstest::rstest;
-    use std::{assert_matches, collections::BTreeMap};
+    use std::{
+        assert_matches,
+        collections::{BTreeMap, BTreeSet},
+    };
 
     /// Sets up the voting context and calls [`MpcContract::vote_new_parameters`] with the
     /// given parameters.
@@ -602,87 +607,64 @@ mod tests {
         );
     }
 
-    #[test]
-    fn add_domains_votes__should_report_pending_votes_by_proposal_hash() {
-        // Given: two participants propose the same domain and a third a different one
-        let (mut contract, participants, _, domain_id) = setup_running_contract_with_domain(
+    /// Moves `contract` into Resharing towards its current parameters, a key refresh.
+    fn reshare_keeping_parameters(contract: &mut MpcContract) {
+        let parameters = contract
+            .protocol_state
+            .threshold_parameters_or_panic()
+            .clone();
+        vote_into_resharing(
+            contract,
+            &ProposedGovernanceThresholdParameters::new(parameters, BTreeMap::new()),
+        );
+    }
+
+    #[rstest]
+    #[case::running(|_: &mut MpcContract| {})]
+    #[case::resharing(reshare_keeping_parameters)]
+    fn add_domains_votes__should_report_pending_votes_by_proposal_hash(
+        #[case] enter_state: fn(&mut MpcContract),
+    ) {
+        // Given: two participants propose one domain and a third proposes two
+        let (mut contract, participants, _, _) = setup_running_contract_with_domain(
             3,
             GovernanceThreshold::new(2),
             ReconstructionThreshold::new(2),
         );
-        let domain = |protocol| {
-            vec![dtos::DomainConfig {
-                id: DomainId(domain_id.0 + 1),
-                protocol,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::Sign,
-            }]
-        };
-        let (caitsith, frost) = (domain(Protocol::CaitSith), domain(Protocol::Frost));
-        let voters: Vec<_> = participants
-            .participants()
-            .iter()
-            .map(|(account_id, id, _)| (account_id.clone(), *id))
-            .collect();
-
-        // When
+        let registry = contract.protocol_state.domain_registry().unwrap();
+        let (one_domain, two_domains) = (
+            gen_domains_to_add(registry, 1),
+            gen_domains_to_add(registry, 2),
+        );
         let mut env = Environment::new(Some(0), None, None);
-        for (account_id, domains) in [
-            (&voters[0].0, &caitsith),
-            (&voters[1].0, &caitsith),
-            (&voters[2].0, &frost),
-        ] {
+        for ((account_id, _, _), domains) in
+            participants
+                .participants()
+                .iter()
+                .zip([&one_domain, &one_domain, &two_domains])
+        {
             env.set_signer(account_id);
             contract.vote_add_domains(domains.clone()).unwrap();
         }
-
-        // Then
-        let expected = dtos::AddDomainsVotes(BTreeMap::from([
-            (
-                caitsith.to_proposal_hash(),
-                [voters[0].1, voters[1].1]
-                    .map(dtos::AuthenticatedParticipantId)
-                    .into(),
-            ),
-            (
-                frost.to_proposal_hash(),
-                [voters[2].1].map(dtos::AuthenticatedParticipantId).into(),
-            ),
-        ]));
-        assert_eq!(contract.add_domains_votes(), expected);
-    }
-
-    #[test]
-    fn add_domains_votes__should_report_pending_votes_while_resharing() {
-        // Given: an add-domains vote is pending in the Running state
-        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
-            3,
-            GovernanceThreshold::new(2),
-            ReconstructionThreshold::new(2),
-        );
-        let domains = vec![dtos::DomainConfig {
-            id: DomainId(domain_id.0 + 1),
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: DomainPurpose::Sign,
-        }];
-        let voter_id = participants.participants()[0].1;
-        Environment::new(Some(0), Some(signer), None);
-        contract.vote_add_domains(domains.clone()).unwrap();
-        let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
-            BTreeMap::new(),
-        );
+        enter_state(&mut contract);
 
         // When
-        vote_into_resharing(&mut contract, &proposal);
+        let votes = contract.add_domains_votes();
 
         // Then
-        let expected = dtos::AddDomainsVotes(BTreeMap::from([(
-            domains.to_proposal_hash(),
-            [dtos::AuthenticatedParticipantId(voter_id)].into(),
-        )]));
-        assert_eq!(contract.add_domains_votes(), expected);
+        let ids: Vec<_> = participants
+            .participants()
+            .iter()
+            .map(|(_, id, _)| dtos::AuthenticatedParticipantId(*id))
+            .collect();
+        let expected = dtos::AddDomainsVotes(BTreeMap::from([
+            (
+                one_domain.to_proposal_hash(),
+                BTreeSet::from([ids[0], ids[1]]),
+            ),
+            (two_domains.to_proposal_hash(), BTreeSet::from([ids[2]])),
+        ]));
+        assert_eq!(votes, expected);
     }
 
     #[test]
