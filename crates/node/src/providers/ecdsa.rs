@@ -15,7 +15,6 @@ use crate::db::SecretDB;
 use crate::metrics::tokio_task_metrics::ECDSA_TASK_MONITORS;
 use crate::network::{MeshNetworkClient, NetworkTaskChannel};
 use crate::primitives::ParticipantId;
-use crate::protocol_version::NetworkProtocolVersion;
 use crate::providers::{DomainKeyshare, SignatureProvider};
 use crate::storage::SignRequestStorage;
 use crate::tracking;
@@ -45,12 +44,6 @@ pub struct EcdsaSignatureProvider {
 }
 
 pub(super) type EcdsaKeyshare = DomainKeyshare<Secp256K1Sha256>;
-
-/// Handshake protocol version from which a follower honours the batch size in
-/// [`EcdsaTaskId::ManyTriples`] rather than requiring
-/// [`TripleBatchSize::LEGACY`](mpc_node_config::TripleBatchSize::LEGACY).
-pub const CONFIGURABLE_TRIPLE_BATCH_SIZE_MIN_PROTOCOL_VERSION: NetworkProtocolVersion =
-    NetworkProtocolVersion::Oct2026;
 
 impl EcdsaSignatureProvider {
     pub fn new(

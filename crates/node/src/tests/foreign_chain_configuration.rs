@@ -40,10 +40,8 @@ async fn foreign_chain_configuration_auto_registered_to_contract_on_startup__sho
         config.config.foreign_chains = foreign_chains.clone();
     }
 
-    let expected_foreign_chains: BTreeSet<ForeignChain> = foreign_chains
-        .iter_chains()
-        .map(|(chain, _)| chain)
-        .collect();
+    let expected_foreign_chains: BTreeSet<ForeignChain> =
+        foreign_chains.into_iter().map(|(chain, _)| chain).collect();
 
     {
         let mut contract = setup.indexer.contract_mut().await;

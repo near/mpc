@@ -109,7 +109,7 @@ mod tests {
 
         // Then
         let raw_keys: BTreeSet<&str> = raw.keys().map(String::as_str).collect();
-        let chains: BTreeSet<&str> = config.iter_chains().map(|(c, _)| c.label()).collect();
+        let chains: BTreeSet<&str> = config.into_iter().map(|(c, _)| c.label()).collect();
         assert_eq!(raw_keys, chains);
     }
 
@@ -122,7 +122,7 @@ mod tests {
 
         // When
         let tokens: Vec<_> = config
-            .iter_chains()
+            .into_iter()
             .flat_map(|(_, chain)| chain.providers.values())
             .filter_map(|provider| match &provider.auth {
                 AuthConfig::None => None,
@@ -150,7 +150,7 @@ mod tests {
         // Given
         let embedded = embedded(rpc_preset);
         let provider_names: BTreeSet<_> = embedded
-            .iter_chains()
+            .into_iter()
             .flat_map(|(_, chain)| chain.providers.keys().cloned())
             .collect();
         let node_config = ForeignChainsConfig {
@@ -175,12 +175,12 @@ mod tests {
 
         // Then
         assert_eq!(
-            resolved.config.iter_chains().count(),
-            embedded.iter_chains().count()
+            resolved.config.into_iter().count(),
+            embedded.into_iter().count()
         );
-        for (chain, resolved_chain) in resolved.config.iter_chains() {
+        for (chain, resolved_chain) in resolved.config.into_iter() {
             let embedded_chain = embedded
-                .iter_chains()
+                .into_iter()
                 .find_map(|(c, config)| (c == chain).then_some(config))
                 .expect("resolved chain should be embedded");
             assert_eq!(

@@ -357,6 +357,13 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "GenesisHash": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
+                ],
+            ),
+        },
         "GovernanceThreshold": Struct {
             fields: UnnamedFields(
                 [
@@ -619,6 +626,10 @@ BorshSchemaContainer {
                         "parameters_votes",
                         "GovernanceThresholdParametersVotes",
                     ),
+                    (
+                        "genesis_hash",
+                        "Option<GenesisHash>",
+                    ),
                 ],
             ),
         },
@@ -655,6 +666,21 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "EpochId",
+                ),
+            ],
+        },
+        "Option<GenesisHash>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "GenesisHash",
                 ),
             ],
         },

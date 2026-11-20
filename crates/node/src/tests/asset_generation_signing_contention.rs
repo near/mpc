@@ -20,10 +20,10 @@
 //!     empty and so triple generation runs flat out.
 //!
 //! The generation knobs are the literal mainnet values (triple concurrency 2,
-//! the 2^14 triple buffer). What recreates the saturation cheaply is capping each
-//! node's MPC runtime at a few threads (`CORES_PER_NODE`), so that the
-//! post-resharing triple refill contends with signing. The steady scenario uses a
-//! tiny triple buffer so generation idles instead.
+//! batch size 64, the 2^14 triple buffer). What recreates the saturation cheaply
+//! is capping each node's MPC runtime at a few threads (`CORES_PER_NODE`), so
+//! that the post-resharing triple refill contends with signing. The steady
+//! scenario uses a tiny triple buffer so generation idles instead.
 //!
 //! The fix runs asset generation on a separate, lower-OS-priority tokio runtime
 //! ([`ConfigFile::separate_asset_generation_runtime`], on by default) so the OS
@@ -84,6 +84,8 @@ const REFILL_TRIPLES_TO_BUFFER: usize = 16_384;
 const STEADY_TRIPLES_TO_BUFFER: usize = 128;
 /// Mainnet triple concurrency.
 const REFILL_TRIPLE_CONCURRENCY: usize = 2;
+/// Mainnet triple batch size when #1175 was observed, pinned so a new default doesn't change the load.
+const TRIPLE_BATCH_SIZE: usize = 64;
 /// Steady state only tops off as signing consumes triples; one triple batch at a
 /// time keeps the small buffer full without itself loading the runtime.
 const STEADY_TRIPLE_CONCURRENCY: usize = 1;
@@ -218,7 +220,7 @@ async fn measure_signing_latency(
             },
             parallel_triple_generation_stagger_time_sec: TRIPLE_STAGGER_SEC,
             timeout_sec: 120,
-            batch_size: TripleBatchSize::default(),
+            batch_size: TripleBatchSize::new(TRIPLE_BATCH_SIZE).unwrap(),
         };
     }
 

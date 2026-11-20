@@ -15,7 +15,7 @@ pub mod update;
 #[cfg(feature = "dev-utils")]
 pub mod utils;
 
-pub mod v3_18_0_state;
+pub mod v3_19_0_state;
 
 #[cfg(feature = "bench-contract-methods")]
 mod bench;
@@ -35,6 +35,7 @@ use crate::{
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
 use config::Config;
+use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
     CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
@@ -69,6 +70,12 @@ pub struct MpcContract {
     available_attestation_grants: IterableMap<AccountId, u32>,
     /// Pending votes for new parameters; storage-backed, so kept outside [`ProtocolContractState`].
     parameters_votes: GovernanceThresholdParametersVotes,
+    /// Genesis hash of the chain this contract runs on, which a contract cannot read from its
+    /// environment. The launcher compose carries it, so that TEE nodes follow no other chain.
+    /// [`None`] if the contract was migrated on a chain other than mainnet or testnet; the
+    /// launcher then refuses to start its TEE nodes.
+    // TODO(#5254): let participants vote in a genesis hash while it is unset
+    genesis_hash: Option<GenesisHash>,
 }
 
 impl Default for MpcContract {

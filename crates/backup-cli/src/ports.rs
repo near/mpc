@@ -1,7 +1,7 @@
 use std::future::Future;
 
 use mpc_node::keyshare::Keyshare;
-use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState};
+use near_mpc_contract_interface::types::{EpochId, Keyset};
 
 use crate::types;
 
@@ -53,18 +53,15 @@ pub trait P2PClient {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
-pub trait ReadContractState {
+/// Reads the output of the contract's `current_keyset` view.
+pub trait ReadCurrentKeyset {
     type Error: std::fmt::Debug;
 
-    fn get_contract_state(
-        &self,
-    ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
+    fn current_keyset(&self) -> impl Future<Output = Result<Option<Keyset>, Self::Error>> + Send;
 }
 
-pub trait WatchContractState:
-    near_contract_transport::WatchContractState<
-        Value = ProtocolContractState,
-        ViewError: std::fmt::Debug,
-    >
+/// Watches the output of the contract's `current_keyset` view.
+pub trait WatchCurrentKeyset:
+    near_contract_transport::WatchContractState<Value = Option<Keyset>, ViewError: std::fmt::Debug>
 {
 }

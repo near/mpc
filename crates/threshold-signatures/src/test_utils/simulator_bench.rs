@@ -4,6 +4,8 @@ use std::env;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
+use average::{Max, Mean, Min};
+
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
 
@@ -12,8 +14,8 @@ use crate::protocol::{Action, Protocol};
 // All participants share a single global timeline starting at t=0.
 // Each participant tracks its position on this timeline via a clock (in ns).
 // The clock advances in two ways:
-//   - Computation: wall-clock time of each productive poke() call is added
-//     (Send/Return actions only, not Wait).
+//   - Computation: wall-clock time of each poke() call is added, including
+//     pokes that end in Wait, which may have processed received messages.
 //   - Waiting: on message receipt, clock = max(clock, arrival_time).
 // Messages are delivered via a priority queue ordered by arrival_time,
 // where arrival_time = sender_clock + latency at the time of sending.
@@ -47,6 +49,12 @@ pub fn run_simulation<T>(
         total_messages_received: 0,
         bytes_sent_per_participant: all_participants.iter().map(|p| (*p, 0)).collect(),
         bytes_received_per_participant: all_participants.iter().map(|p| (*p, 0)).collect(),
+        compute_time_per_participant: all_participants
+            .iter()
+            .map(|p| (*p, Duration::ZERO))
+            .collect(),
+        max_burst_time: Duration::ZERO,
+        max_message_bytes: 0,
         virtual_time_elapsed: 0,
     };
 
@@ -80,14 +88,7 @@ pub fn run_simulation<T>(
             state.clock = msg.arrival_time;
         }
 
-        let data_len = msg.data.len() as u64;
-        metrics.total_bytes_received += data_len;
-        metrics.total_messages_received += 1;
-        *metrics
-            .bytes_received_per_participant
-            .entry(msg.to)
-            .or_insert(0) += data_len;
-
+        metrics.record_received(msg.to, &msg.data);
         protocols[receiver_idx]
             .1
             .message(msg.from, msg.data)
@@ -112,40 +113,57 @@ pub fn run_simulation<T>(
     (outputs, metrics)
 }
 
-#[allow(clippy::cast_precision_loss)]
 pub fn bench_simulation(name: &str, run: &dyn Fn() -> SimulationMetrics, samples: usize) {
     let bar_width = 20;
     eprint!("{name}: ");
-    let mut times = Vec::with_capacity(samples);
-    let mut first_metrics: Option<SimulationMetrics> = None;
-    for i in 0..samples {
-        let metrics = run();
-        times.push(metrics.virtual_time_ms());
-        if let Some(first) = &first_metrics {
-            metrics.assert_deterministic(first, name);
-        } else {
-            first_metrics = Some(metrics);
-        }
-        let done = (i + 1) * bar_width / samples;
-        eprint!(
-            "\r{name}: [{}{}] {}/{}",
-            "#".repeat(done),
-            ".".repeat(bar_width - done),
-            i + 1,
-            samples
-        );
-        let _ = std::io::stderr().flush();
-    }
+    let metrics: Vec<SimulationMetrics> = (0..samples)
+        .map(|i| {
+            let sample = run();
+            let done = (i + 1) * bar_width / samples;
+            eprint!(
+                "\r{name}: [{}{}] {}/{}",
+                "#".repeat(done),
+                ".".repeat(bar_width - done),
+                i + 1,
+                samples
+            );
+            let _ = std::io::stderr().flush();
+            sample
+        })
+        .collect();
     eprintln!();
-    let first_metrics = first_metrics.expect("samples > 0");
-
-    let avg = times.iter().sum::<f64>() / samples as f64;
-    let min = times.iter().copied().reduce(f64::min).expect("samples > 0");
-    let max = times.iter().copied().reduce(f64::max).expect("samples > 0");
+    let first = metrics.first().expect("samples > 0");
+    for sample in &metrics[1..] {
+        sample.assert_deterministic(first, name);
+    }
 
     println!("=== {name} ===");
-    print!("{first_metrics}");
-    println!("Virtual time: avg {avg:.3} ms, min {min:.3} ms, max {max:.3} ms");
+    print!("{first}");
+    print_spread(
+        "Virtual time",
+        metrics.iter().map(SimulationMetrics::virtual_time_ms),
+    );
+    print_spread(
+        "Avg compute/participant",
+        metrics.iter().map(SimulationMetrics::avg_compute_ms),
+    );
+    print_spread(
+        "Max burst",
+        metrics.iter().map(|m| m.max_burst_time.as_secs_f64() * 1e3),
+    );
+}
+
+fn print_spread(label: &str, values_ms: impl Iterator<Item = f64>) {
+    let values_ms: Vec<f64> = values_ms.collect();
+    let mean: Mean = values_ms.iter().collect();
+    let min: Min = values_ms.iter().collect();
+    let max: Max = values_ms.iter().collect();
+    println!(
+        "{label}: avg {:.3} ms, min {:.3} ms, max {:.3} ms",
+        mean.mean(),
+        min.min(),
+        max.max()
+    );
 }
 
 /// Extensible to statistical distributions (normal, log-normal, etc.).
@@ -170,6 +188,15 @@ pub struct SimulationMetrics {
     pub total_messages_received: u64,
     pub bytes_sent_per_participant: HashMap<Participant, u64>,
     pub bytes_received_per_participant: HashMap<Participant, u64>,
+    /// Wall-clock time each participant spent in [`Protocol::poke`], including pokes that return
+    /// [`Action::Wait`].
+    pub compute_time_per_participant: HashMap<Participant, Duration>,
+    /// How long the node's protocol runner holds a runtime thread without yielding to other
+    /// tasks, estimated from below by the longest run of consecutive [`Protocol::poke`] calls up
+    /// to an [`Action::Wait`], [`Action::Yield`] or [`Action::Return`].
+    pub max_burst_time: Duration,
+    /// Largest single protocol message, in bytes.
+    pub max_message_bytes: u64,
     /// max(all participant clocks) in ns, includes network latency + computation time.
     pub virtual_time_elapsed: u64,
 }
@@ -178,6 +205,32 @@ impl SimulationMetrics {
     #[allow(clippy::cast_precision_loss)]
     pub fn virtual_time_ms(&self) -> f64 {
         self.virtual_time_elapsed as f64 / 1_000_000.0
+    }
+
+    fn avg_compute_ms(&self) -> f64 {
+        self.compute_time_per_participant
+            .values()
+            .map(|time| time.as_secs_f64() * 1e3)
+            .collect::<Mean>()
+            .mean()
+    }
+
+    fn record_sent(&mut self, sender: Participant, data: &[u8]) {
+        let data_len = u64::try_from(data.len()).expect("message length fits in u64");
+        self.total_bytes_sent += data_len;
+        self.total_messages_sent += 1;
+        self.max_message_bytes = self.max_message_bytes.max(data_len);
+        *self.bytes_sent_per_participant.entry(sender).or_insert(0) += data_len;
+    }
+
+    fn record_received(&mut self, receiver: Participant, data: &[u8]) {
+        let data_len = u64::try_from(data.len()).expect("message length fits in u64");
+        self.total_bytes_received += data_len;
+        self.total_messages_received += 1;
+        *self
+            .bytes_received_per_participant
+            .entry(receiver)
+            .or_insert(0) += data_len;
     }
 
     /// Assert that sent counts match between runs. Received counts are not
@@ -221,6 +274,7 @@ impl std::fmt::Display for SimulationMetrics {
             self.total_bytes_sent as f64 / n,
             self.total_bytes_received as f64 / n
         )?;
+        writeln!(f, "Max message: {} bytes", self.max_message_bytes)?;
         Ok(())
     }
 }
@@ -313,35 +367,37 @@ fn drain_poke<T>(
     }
 
     let sender = protocols[idx].0;
+    let mut burst = Duration::ZERO;
 
     loop {
         let poke_start = Instant::now();
         let action = protocols[idx].1.poke().expect("Protocol poke failed");
-        let poke_elapsed_ns = poke_start.elapsed().as_nanos() as u64;
+        let poke_elapsed = poke_start.elapsed();
+        states[idx].clock +=
+            u64::try_from(poke_elapsed.as_nanos()).expect("a poke takes less than 584 years");
+        *metrics
+            .compute_time_per_participant
+            .entry(sender)
+            .or_default() += poke_elapsed;
+
+        burst += poke_elapsed;
+        if matches!(action, Action::Wait | Action::Yield | Action::Return(_)) {
+            metrics.max_burst_time = metrics.max_burst_time.max(burst);
+            burst = Duration::ZERO;
+        }
 
         match action {
             Action::Wait => break,
-            // Keep poking; yields still count toward the participant's clock.
-            Action::Yield => {
-                states[idx].clock += poke_elapsed_ns;
-            }
+            // Keep poking.
+            Action::Yield => {}
             Action::SendMany(data) => {
-                states[idx].clock += poke_elapsed_ns;
                 for &recipient in all_participants {
                     if recipient == sender {
                         continue;
                     }
-                    let data_len = data.len() as u64;
-                    metrics.total_bytes_sent += data_len;
-                    metrics.total_messages_sent += 1;
-                    *metrics
-                        .bytes_sent_per_participant
-                        .entry(sender)
-                        .or_insert(0) += data_len;
-
-                    let latency = latency_model.sample();
+                    metrics.record_sent(sender, &data);
                     queue.push(Reverse(PendingMessage {
-                        arrival_time: states[idx].clock + latency,
+                        arrival_time: states[idx].clock + latency_model.sample(),
                         from: sender,
                         to: recipient,
                         data: data.clone(),
@@ -349,19 +405,10 @@ fn drain_poke<T>(
                 }
             }
             Action::SendPrivate(recipient, data) => {
-                states[idx].clock += poke_elapsed_ns;
                 if indices.contains_key(&recipient) {
-                    let data_len = data.len() as u64;
-                    metrics.total_bytes_sent += data_len;
-                    metrics.total_messages_sent += 1;
-                    *metrics
-                        .bytes_sent_per_participant
-                        .entry(sender)
-                        .or_insert(0) += data_len;
-
-                    let latency = latency_model.sample();
+                    metrics.record_sent(sender, &data);
                     queue.push(Reverse(PendingMessage {
-                        arrival_time: states[idx].clock + latency,
+                        arrival_time: states[idx].clock + latency_model.sample(),
                         from: sender,
                         to: recipient,
                         data,
@@ -369,11 +416,142 @@ fn drain_poke<T>(
                 }
             }
             Action::Return(result) => {
-                states[idx].clock += poke_elapsed_ns;
                 states[idx].finished = true;
                 outputs.push((sender, result));
                 break;
             }
         }
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::thread;
+    use std::time::Duration;
+
+    use rstest::rstest;
+
+    use super::{LatencyModel, run_simulation};
+    use crate::errors::{MessageError, ProtocolError};
+    use crate::participants::Participant;
+    use crate::protocol::{Action, MessageData, Protocol};
+
+    const POKE_WORK: Duration = Duration::from_millis(5);
+
+    struct BusyPokes {
+        script: VecDeque<Action<()>>,
+    }
+
+    impl Protocol for BusyPokes {
+        type Output = ();
+
+        fn poke(&mut self) -> Result<Action<()>, ProtocolError> {
+            let Some(action) = self.script.pop_front() else {
+                return Ok(Action::Wait);
+            };
+            thread::sleep(POKE_WORK);
+            Ok(action)
+        }
+
+        fn message(&mut self, _from: Participant, _data: MessageData) -> Result<(), MessageError> {
+            Ok(())
+        }
+    }
+
+    #[rstest]
+    #[case::wait(Action::Wait)]
+    #[case::yield_(Action::Yield)]
+    #[case::send_many(Action::SendMany(vec![0]))]
+    #[case::send_private(Action::SendPrivate(Participant::from(1_u32), vec![0]))]
+    #[case::return_(Action::Return(()))]
+    fn run_simulation__should_count_poke_time_whatever_the_action(#[case] action: Action<()>) {
+        // Given
+        let me = Participant::from(0_u32);
+        let protocols = vec![(
+            me,
+            BusyPokes {
+                script: [action].into(),
+            },
+        )];
+
+        // When
+        let (_, metrics) = run_simulation(protocols, &LatencyModel::Fixed(0));
+
+        // Then
+        assert!(Duration::from_nanos(metrics.virtual_time_elapsed) >= POKE_WORK);
+        assert!(metrics.compute_time_per_participant[&me] >= POKE_WORK);
+    }
+
+    #[rstest]
+    #[case::wait(Action::Wait)]
+    #[case::yield_(Action::Yield)]
+    #[case::return_(Action::Return(()))]
+    fn run_simulation__should_extend_a_burst_over_sends_until_the_protocol_stops(
+        #[case] stop: Action<()>,
+    ) {
+        // Given
+        let protocols = vec![(
+            Participant::from(0_u32),
+            BusyPokes {
+                script: [Action::SendMany(vec![0]), Action::SendMany(vec![0]), stop].into(),
+            },
+        )];
+
+        // When
+        let (_, metrics) = run_simulation(protocols, &LatencyModel::Fixed(0));
+
+        // Then
+        assert!(metrics.max_burst_time >= 3 * POKE_WORK);
+    }
+
+    #[test]
+    fn run_simulation__should_end_a_burst_at_yield() {
+        // Given
+        let me = Participant::from(0_u32);
+        let protocols = vec![(
+            me,
+            BusyPokes {
+                script: [Action::Yield, Action::Return(())].into(),
+            },
+        )];
+
+        // When
+        let (_, metrics) = run_simulation(protocols, &LatencyModel::Fixed(0));
+
+        // Then
+        assert!(metrics.max_burst_time < metrics.compute_time_per_participant[&me]);
+    }
+
+    #[test]
+    fn run_simulation__should_record_the_largest_message() {
+        // Given
+        let receiver = Participant::from(1_u32);
+        let protocols = vec![
+            (
+                Participant::from(0_u32),
+                BusyPokes {
+                    script: [
+                        Action::SendPrivate(receiver, vec![0; 3]),
+                        Action::SendMany(vec![0; 10]),
+                        Action::SendPrivate(receiver, vec![0; 5]),
+                    ]
+                    .into(),
+                },
+            ),
+            (
+                receiver,
+                BusyPokes {
+                    script: VecDeque::new(),
+                },
+            ),
+        ];
+
+        // When
+        let (_, metrics) = run_simulation(protocols, &LatencyModel::Fixed(0));
+
+        // Then
+        assert_eq!(metrics.max_message_bytes, 10);
     }
 }

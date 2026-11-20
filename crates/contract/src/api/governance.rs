@@ -16,8 +16,9 @@ impl MpcContract {
     /// threshold, and optional per-domain
     /// [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates
     /// (empty map keeps the current ones), applied on resharing completion.
-    /// If a threshold number of votes are reached on the exact same proposal, this will transition
-    /// the contract into the Resharing state.
+    /// Only current participants vote, including those the proposal would remove; accounts it
+    /// would add cannot. Once the governance threshold of current participants voted for the exact
+    /// same proposal, this will transition the contract into the Resharing state.
     ///
     /// The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch
     /// ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from
@@ -44,12 +45,10 @@ impl MpcContract {
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        let validation_result = self.tee_state.reverify_and_cleanup_participants(
-            proposal.participants(),
-            tee_upgrade_deadline_duration,
-        );
+        let validation_result = self
+            .tee_state
+            .reverify_participants(proposal.participants(), tee_upgrade_deadline_duration);
 
-        let proposed_participants = proposal.participants();
         match validation_result {
             TeeValidationResult::Full => {
                 if let Some(new_state) = self.protocol_state.vote_new_parameters(
@@ -62,24 +61,14 @@ impl MpcContract {
                 Ok(())
             }
             TeeValidationResult::Partial {
-                participants_with_valid_attestation,
-            } => {
-                let invalid_participants: Vec<_> = proposed_participants
-                    .participants()
-                    .iter()
-                    .filter(|(account_id, _, _)| {
-                        !participants_with_valid_attestation.is_participant(account_id)
-                    })
-                    .collect();
-
-                Err(InvalidParameters::InvalidTeeRemoteAttestation {
-                    reason: format!(
-                        "The following participants have invalid TEE status: {:?}",
-                        invalid_participants
-                    ),
-                }
-                .into())
+                participants_with_invalid_attestation,
+            } => Err(InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: format!(
+                    "The following participants have invalid TEE status: {:?}",
+                    participants_with_invalid_attestation
+                ),
             }
+            .into()),
         }
     }
 
@@ -127,6 +116,7 @@ mod tests {
         prepay_and_attest_all_participants, resharing_state,
         running_contract_called_by_participant_via_forwarder, running_state,
         setup_tee_test_contract, submit_attestation, submit_valid_attestations,
+        vote_into_resharing, vote_params,
     };
     use crate::errors::{DomainError, InvalidCandidateSet, InvalidState, InvalidThreshold};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
@@ -295,22 +285,6 @@ mod tests {
         (contract, participants, first_participant_id, domain_id)
     }
 
-    /// Installs a voting context for `signer` and casts `proposal`.
-    fn vote_params(
-        contract: &mut MpcContract,
-        signer: &AccountId,
-        proposal: &ProposedGovernanceThresholdParameters,
-    ) -> Result<(), Error> {
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(signer.clone())
-                .predecessor_account_id(signer.clone())
-                .attached_deposit(NearToken::ZERO)
-                .build()
-        );
-        contract.vote_new_parameters(dtos::EpochId::new(1), proposal.into_dto_type())
-    }
-
     #[test]
     fn vote_new_parameters__should_reject_when_per_domain_threshold_exceeds_participants() {
         // Given: a Running contract with 3 participants and one domain.
@@ -469,7 +443,7 @@ mod tests {
             BTreeMap::new(),
         );
         assert_matches!(
-            contract.tee_state.reverify_and_cleanup_participants(
+            contract.tee_state.reverify_participants(
                 proposal.participants(),
                 Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
             ),
@@ -539,8 +513,8 @@ mod tests {
             .set_pk(must_get_attested_signer_key(contract, &info.tls_public_key));
     }
 
-    /// Drives a 3-participant Running contract with one domain into Resharing: every
-    /// participant votes `proposal`, a key refresh keeping participants and threshold.
+    /// Drives a 3-participant Running contract with one domain into Resharing: a threshold of
+    /// participants votes `proposal`, a key refresh keeping participants and threshold.
     fn resharing_contract_with_domain() -> (
         MpcContract,
         Participants,
@@ -557,13 +531,7 @@ mod tests {
                 .unwrap(),
             BTreeMap::new(),
         );
-        for (account_id, _, _) in participants.participants() {
-            vote_params(&mut contract, account_id, &proposal).unwrap();
-        }
-        assert_matches!(
-            &contract.protocol_state,
-            ProtocolContractState::Resharing(_)
-        );
+        vote_into_resharing(&mut contract, &proposal);
         (contract, participants, domain_id, proposal)
     }
 
@@ -648,7 +616,11 @@ mod tests {
         // Given: a Resharing contract holding a pending re-proposal vote
         let (mut contract, participants, domain_id, proposal) = resharing_contract_with_domain();
         let voter = authenticate_account_as(&participants.participants()[0].0, &participants);
-        contract.parameters_votes.vote(&proposal, voter);
+        contract.parameters_votes.vote(
+            &proposal,
+            voter,
+            contract.protocol_state.threshold_parameters_or_panic(),
+        );
         assert!(!contract.parameters_votes.is_empty());
 
         // When: the resharing completes

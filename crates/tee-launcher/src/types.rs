@@ -1,6 +1,8 @@
 use std::num::NonZeroU16;
 
 use launcher_interface::types::DockerSha256Digest;
+use mpc_primitives::hash::GenesisHash;
+use near_account_id::AccountId;
 
 use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,14 @@ pub struct CliArgs {
     /// Fallback image digest when the approved-hashes file is absent
     #[arg(long, env = "DEFAULT_IMAGE_DIGEST")]
     pub default_image_digest: DockerSha256Digest,
+
+    /// Account id of the MPC contract the node serves
+    #[arg(long, env = "MPC_CONTRACT_ID")]
+    pub mpc_contract_id: AccountId,
+
+    /// Genesis hash of the chain the MPC contract runs on
+    #[arg(long, env = "NEAR_GENESIS_HASH")]
+    pub near_genesis_hash: GenesisHash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -40,10 +50,8 @@ pub enum Platform {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub launcher_config: LauncherConfig,
-    /// Opaque MPC node configuration table.
-    /// The launcher does not interpret these fields — they are re-serialized
-    /// to a TOML string, written to a file on disk, and mounted into the
-    /// container for the MPC binary to consume via `start-with-config-file`.
+    /// MPC node configuration table. The launcher adds its reserved keys, serializes the
+    /// result to TOML and mounts it into the container for the MPC node to read on startup.
     pub mpc_node_config: toml::Table,
 }
 
@@ -169,7 +177,6 @@ image_reference = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
-home_dir = "/data"
 some_opaque_field = true
 "#;
 
@@ -179,7 +186,6 @@ some_opaque_field = true
         // then
         let config = result.unwrap();
         assert_eq!(config.launcher_config.image_reference, "nearone/mpc-node");
-        assert_eq!(config.mpc_node_config["home_dir"].as_str(), Some("/data"));
         assert_eq!(
             config.mpc_node_config["some_opaque_field"].as_bool(),
             Some(true)
@@ -195,7 +201,6 @@ image_reference = "ghcr.io/nearone/mpc-node"
 port_mappings = []
 
 [mpc_node_config]
-home_dir = "/data"
 "#;
 
         // when
@@ -217,7 +222,6 @@ image_reference = "nearone/mpc-node"
 port_mappings = [{ host = 11780, container = 11780 }]
 
 [mpc_node_config]
-home_dir = "/data"
 arbitrary_key = "arbitrary_value"
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
@@ -226,7 +230,6 @@ arbitrary_key = "arbitrary_value"
         let serialized = toml::to_string(&config.mpc_node_config).unwrap();
 
         // then
-        assert!(serialized.contains("home_dir"));
         assert!(serialized.contains("arbitrary_key"));
     }
 

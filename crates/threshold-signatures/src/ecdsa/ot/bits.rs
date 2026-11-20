@@ -59,8 +59,8 @@ impl BitVector {
 
     pub fn bytes(&self) -> [u8; SEC_PARAM_8] {
         let mut out = [0u8; SEC_PARAM_8];
-        for (chunk, x_i) in out.chunks_exact_mut(8).zip(self.0.iter()) {
-            chunk.copy_from_slice(&x_i.to_le_bytes());
+        for (chunk, x_i) in out.as_chunks_mut::<8>().0.iter_mut().zip(self.0.iter()) {
+            *chunk = x_i.to_le_bytes();
         }
         out
     }
@@ -222,15 +222,19 @@ impl BitMatrix {
 
     /// Iterate over a given column in chunks.
     pub fn column_chunks(&self, j: usize) -> impl Iterator<Item = BitVector> + '_ {
-        self.0.chunks_exact(SECURITY_PARAMETER).map(move |chunk| {
-            let mut out = BitVector::zero();
-            for (word, word_chunk) in out.0.iter_mut().zip(chunk.chunks(64)) {
-                for (bit_idx, c_i) in word_chunk.iter().enumerate() {
-                    *word |= u64::from(c_i.bit(j)) << bit_idx;
+        self.0
+            .as_chunks::<SECURITY_PARAMETER>()
+            .0
+            .iter()
+            .map(move |chunk| {
+                let mut out = BitVector::zero();
+                for (word, word_chunk) in out.0.iter_mut().zip(chunk.chunks(64)) {
+                    for (bit_idx, c_i) in word_chunk.iter().enumerate() {
+                        *word |= u64::from(c_i.bit(j)) << bit_idx;
+                    }
                 }
-            }
-            out
-        })
+                out
+            })
     }
 
     /// Modify this matrix by xoring it with another.
