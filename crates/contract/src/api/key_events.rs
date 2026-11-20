@@ -31,7 +31,8 @@ impl MpcContract {
     ///  - Returns Ok(()), with one of the following changes:
     ///    - A vote has been collected but we don't have enough votes yet.
     ///    - This vote is for a public key that disagrees from an earlier voted public key, causing
-    ///      the attempt to abort; another call to `start` is then necessary.
+    ///      the attempt to abort; another call to [`Self::start_keygen_instance`] is then
+    ///      necessary.
     ///    - Everyone has now voted for the same public key; the state transitions into generating a
     ///      key for the next domain.
     ///    - Same as the last case, except that all domains have a generated key now, and the state
@@ -107,6 +108,7 @@ impl MpcContract {
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
+            self.parameters_votes.clear();
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.
@@ -193,7 +195,7 @@ impl MpcContract {
     /// A next_domain_id that matches that in the state's domains struct must be passed in. This is
     /// to prevent stale requests from accidentally cancelling a future key generation state.
     #[handle_result]
-    pub fn vote_cancel_keygen(&mut self, next_domain_id: u64) -> Result<(), Error> {
+    pub fn vote_cancel_keygen(&mut self, next_domain_id: dtos::DomainId) -> Result<(), Error> {
         Self::assert_caller_is_signer();
         log!("vote_cancel_keygen: signer={}", env::signer_account_id());
 
@@ -234,12 +236,13 @@ const RESHARE_CLEAN_INVALID_ATTESTATIONS_MAX_SCAN: u32 = 30;
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::api::test_utils::forwarded_participant_call_contract;
+    use crate::api::test_utils::running_contract_called_by_participant_via_forwarder;
+    use near_mpc_contract_interface::types::DomainId;
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn vote_cancel_resharing__should_panic_when_predecessor_differs_from_signer() {
-        let mut contract = forwarded_participant_call_contract();
+        let mut contract = running_contract_called_by_participant_via_forwarder();
         contract
             .vote_cancel_resharing()
             .expect("expected panic when predecessor != signer");
@@ -248,9 +251,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn vote_cancel_keygen__should_panic_when_predecessor_differs_from_signer() {
-        let mut contract = forwarded_participant_call_contract();
+        let mut contract = running_contract_called_by_participant_via_forwarder();
         contract
-            .vote_cancel_keygen(0)
+            .vote_cancel_keygen(DomainId(0))
             .expect("expected panic when predecessor != signer");
     }
 }

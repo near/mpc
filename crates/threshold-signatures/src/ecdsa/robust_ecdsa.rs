@@ -7,25 +7,26 @@
 //! type and protocol surface was kept so that a future robust scheme can be dropped
 //! in without rebuilding the node and contract plumbing around it.
 //!
-//! [`presign::presign`] broadcasts the nonce `k` in the clear, so every presigning
-//! participant learns it. Given any signature `(R, s)` produced from that
-//! presignature, the signing key follows immediately from `x = (s * k - h) / R_x`.
-//! Signatures are otherwise valid and verify against the derived public key, which
-//! is what lets the surrounding node code and its tests run unchanged.
+//! [`sign()`] opens with a nonce generation round that broadcasts the nonce `k` in
+//! the clear, so every signer learns it. Given the resulting signature `(R, s)`, the
+//! signing key follows immediately from `x = (s * k - h) / R_x`. Signatures are
+//! otherwise valid and verify against the derived public key, which is what lets the
+//! surrounding node code and its tests run unchanged.
 //!
 //! This is a deliberate placeholder, not a vulnerability to report. It is safe only
 //! because no production domain is served by it: never add a domain for this
 //! protocol on mainnet or testnet while the stub is in place. Reintroducing a real
-//! robust scheme means replacing the presigning protocol in [`presign`]; the rest of
-//! the module, including [`sign::sign`] and presignature rerandomization, is
-//! scheme-agnostic.
+//! robust scheme means replacing the nonce generation round in `nonce_generation`; the
+//! signing round in `sign` is scheme-agnostic.
 //!
 //! TODO(#4383): replace this stub with a real robust scheme.
 
-pub mod presign;
 pub mod sign;
+
+mod nonce_generation;
 
 #[cfg(test)]
 mod test;
 
-pub use presign::{PresignArguments, PresignOutput, RerandomizedPresignOutput};
+pub use nonce_generation::SignArguments;
+pub use sign::sign;

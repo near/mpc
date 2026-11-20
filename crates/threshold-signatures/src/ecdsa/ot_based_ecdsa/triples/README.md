@@ -2,25 +2,25 @@
 
 This module implements the full Beaver triple generation pipeline via Oblivious Transfer. A triple consists of threshold-shared values `(a, b, c)` satisfying `a * b = c`, along with public commitments `(A, B, C) = (g^a, g^b, g^c)`.
 
-Triples are the foundational building block for OT-based ECDSA presigning -- each presignature requires two triples.
+Triples are the foundational building block for OT-based ECDSA signing -- each signature requires two triples.
 
 ## Public API
 
 - **`generate_triple(participants, me, threshold, rng)`** -- generates a single triple
-- **`generate_triple_many<N>(participants, me, threshold, rng)`** -- generates N triples at once
+- **`generate_triple_many(participants, me, threshold, batch_size, rng)`** -- generates `batch_size` triples at once
 - **`TripleShare`** -- secret share `(a, b, c)`
 - **`TriplePub`** -- public commitments `(A, B, C)` plus participant/threshold metadata
 
 ## Internal Pipeline
 
-The triple generation protocol builds on several layers of OT primitives:
+The triple generation protocol builds on the OT primitives in [`src/ecdsa/ot/`](../../ot/README.md):
 
 ```
-Batch Random OT          (batch_random_ot.rs)        -- [CO15]
+Batch Random OT          (ot/base/co15.rs)              -- [CO15]
        |
-Random OT Extension      (random_ot_extension.rs)    -- [KOS15] / SoftspokenOT variant
+Correlated OT Extension  (ot/extension/kos15_roy22/correlated.rs)
        |
-Correlated OT Extension  (correlated_ot_extension.rs)
+Random OT Extension      (ot/extension/kos15_roy22/random.rs) -- [KOS15] / SoftspokenOT variant
        |
 MTA (Multiplicative-to-Additive)  (mta.rs)           -- [HMRT21]
        |
@@ -28,18 +28,6 @@ Multiplication            (multiplication.rs)        -- n-party shared multiplic
        |
 Triple Generation          (generation.rs)           -- final stage
 ```
-
-### `batch_random_ot.rs`
-
-Implements the "Simplest" OT Protocol \[[CO15](https://eprint.iacr.org/2015/267)\]. The sender obtains two random keys; the receiver selects one based on a choice bit. This is the base OT layer that bootstraps all subsequent extensions.
-
-### `random_ot_extension.rs`
-
-Extends a small number of base OTs into many via the \[[KOS15](https://eprint.iacr.org/2015/546)\] SoftspokenOT scheme, producing random OT correlations efficiently.
-
-### `correlated_ot_extension.rs`
-
-Builds correlated OT from random OT extension, producing correlated pairs for use in MTA.
 
 ### `mta.rs`
 
@@ -52,10 +40,6 @@ N-party multiplication protocol. For each pair of parties, runs MTA (with one as
 ### `generation.rs`
 
 The full 5-round triple generation protocol that ties together all the layers above. See the [triple generation specification](../../../../docs/ecdsa/ot_based_ecdsa/triples.md) for the round-by-round description.
-
-### `bits.rs`
-
-Bit manipulation utilities (`BitVector`, `BitMatrix`, `ChoiceVector`) used throughout the OT protocols.
 
 ## Further Reading
 

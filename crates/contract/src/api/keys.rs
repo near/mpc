@@ -1,9 +1,9 @@
-//! Public-key views: the domain public key, per-account derived keys, and the
-//! latest key version.
+//! Key views: the current keyset, the domain public key and per-account derived keys.
 
 use crate::crypto_shared::derive_key_secp256k1;
 use crate::crypto_shared::kdf::derive_public_key_edwards_point_ed25519;
 use crate::crypto_shared::types::PublicKeyExtended;
+use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::{Error, PublicKeyError};
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::kdf::derive_tweak;
@@ -12,6 +12,17 @@ use near_sdk::{AccountId, env, near};
 
 #[near]
 impl MpcContract {
+    /// The keyset of the running state, or of the previous running state while resharing;
+    /// `None` otherwise.
+    ///
+    /// The backup-cli, which operators upgrade independently of the contract, depends on this
+    /// view's JSON output staying stable across contract versions.
+    pub fn current_keyset(&self) -> Option<dtos::Keyset> {
+        self.protocol_state
+            .current_keyset()
+            .map(IntoInterfaceType::into_dto_type)
+    }
+
     /// This is the root public key combined from all the public keys of the participants.
     /// The domain parameter specifies which domain we're querying the public key for;
     /// the default is the first domain.
@@ -58,19 +69,6 @@ impl MpcContract {
 
         Ok(derived_public_key)
     }
-
-    /// Key versions refer new versions of the root key that we may choose to generate on cohort
-    /// changes. Older key versions will always work but newer key versions were never held by
-    /// older signers. Newer key versions may also add new security features, like only existing
-    /// within a secure enclave. The signature_scheme parameter specifies which protocol
-    /// we're querying the latest version for. The default is Secp256k1. The default is **NOT**
-    /// to query across all protocols.
-    pub fn latest_key_version(&self, signature_scheme: Option<dtos::Curve>) -> u32 {
-        self.protocol_state
-            .most_recent_domain_for_curve(signature_scheme.unwrap_or_default())
-            .unwrap()
-            .0 as u32
-    }
 }
 
 impl MpcContract {
@@ -79,5 +77,104 @@ impl MpcContract {
         domain_id: dtos::DomainId,
     ) -> Result<PublicKeyExtended, Error> {
         self.protocol_state.public_key(domain_id)
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use crate::MpcContract;
+    use crate::api::test_utils::{initializing_state, make_public_key_for_curve};
+    use crate::dto_mapping::IntoInterfaceType;
+    use crate::primitives::domain::AddDomainsVotes;
+    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
+    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_domain_registry, gen_threshold_params};
+    use crate::state::ProtocolContractState;
+    use crate::state::running::RunningContractState;
+    use crate::state::test_utils::{gen_resharing_state, gen_running_state};
+    use near_mpc_contract_interface::types::Curve;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+    use rstest::rstest;
+
+    #[test]
+    fn current_keyset__should_return_the_running_keyset() {
+        // Given
+        let running = gen_running_state(2);
+        let expected = (&running.keyset).into_dto_type();
+        let contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running));
+
+        // When
+        let keyset = contract.current_keyset();
+
+        // Then
+        assert_eq!(keyset, Some(expected));
+    }
+
+    #[test]
+    fn current_keyset__should_return_the_previous_keyset_while_resharing() {
+        // Given
+        let (_env, resharing) = gen_resharing_state(2);
+        let expected = resharing.previous_keyset().into_dto_type();
+        let contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Resharing(resharing));
+
+        // When
+        let keyset = contract.current_keyset();
+
+        // Then
+        assert_eq!(keyset, Some(expected));
+    }
+
+    #[rstest]
+    #[case::not_initialized(ProtocolContractState::NotInitialized)]
+    #[case::initializing(initializing_state())]
+    fn current_keyset__should_return_none_without_a_concluded_keyset(
+        #[case] state: ProtocolContractState,
+    ) {
+        // Given
+        let contract = MpcContract::new_from_protocol_state(state);
+
+        // When
+        let keyset = contract.current_keyset();
+
+        // Then
+        assert_eq!(keyset, None);
+    }
+
+    /// Updating this snapshot is a breaking change for the backup-cli: released binaries parse
+    /// this output, and operators upgrade them independently of the contract.
+    #[test]
+    fn current_keyset__should_keep_its_json_format() {
+        // Given
+        let mut rng = StdRng::from_seed([42u8; 32]);
+        let domains = gen_domain_registry(NUM_PROTOCOLS);
+        let keys = domains
+            .domains()
+            .iter()
+            .map(|domain| {
+                let (key, _) = make_public_key_for_curve(Curve::from(domain.protocol), &mut rng);
+                KeyForDomain {
+                    domain_id: domain.id,
+                    key: key.try_into().unwrap(),
+                    attempt: AttemptId::new().next(),
+                }
+            })
+            .collect();
+        let running = RunningContractState::new(
+            domains,
+            Keyset::new(EpochId::new(5), keys),
+            gen_threshold_params(30),
+            AddDomainsVotes::default(),
+        );
+        let contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running));
+
+        // When
+        let keyset = contract.current_keyset();
+
+        // Then
+        insta::assert_json_snapshot!(keyset);
     }
 }

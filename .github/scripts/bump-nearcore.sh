@@ -48,8 +48,18 @@ sed -i "s|tag = \"$CURRENT_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
 sed -i "/DEFAULT_SANDBOX_VERSION/s|\"$CURRENT_TAG\"|\"$NEW_TAG\"|g" crates/test-utils/src/lib.rs
 cargo update nearcore
 
+# Keep the localnet genesis at the new nearcore's protocol version.
+MANIFEST=$(cargo metadata --format-version 1 \
+  | jq -r --arg tag "$NEW_TAG" '.packages[] | select(.name == "near-primitives-core" and (.source // "" | contains("tag=" + $tag + "#"))) | .manifest_path')
+PROTOCOL_VERSION=$(sed -n 's/^const STABLE_PROTOCOL_VERSION: ProtocolVersion = \([0-9]*\);/\1/p' "$(dirname "$MANIFEST")/src/version.rs" 2>/dev/null || true)
+if [[ -z "$PROTOCOL_VERSION" ]]; then
+  echo "ERROR: could not parse STABLE_PROTOCOL_VERSION for nearcore $NEW_TAG"
+  exit 1
+fi
+sed -i "s|^  \"protocol_version\": [0-9]*,|  \"protocol_version\": $PROTOCOL_VERSION,|" deployment/localnet/genesis.json
+
 git checkout -b "$BRANCH"
-git add Cargo.toml Cargo.lock crates/test-utils/src/lib.rs
+git add Cargo.toml Cargo.lock crates/test-utils/src/lib.rs deployment/localnet/genesis.json
 git commit -m "chore: bump to nearcore $NEW_TAG"
 git push origin "$BRANCH"
 

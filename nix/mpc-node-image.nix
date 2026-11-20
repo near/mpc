@@ -6,12 +6,10 @@
   coreutils,
   gnused,
   python3Minimal,
-  google-cloud-sdk,
-  withGcloud ? false,
 }:
 
 dockerTools.buildLayeredImage {
-  name = if withGcloud then "mpc-node-gcp" else "mpc-node";
+  name = "mpc-node";
   compressor = "none";
 
   contents = [
@@ -22,8 +20,7 @@ dockerTools.buildLayeredImage {
     python3Minimal
     dockerTools.caCertificates
     dockerTools.fakeNss
-  ]
-  ++ lib.optional withGcloud google-cloud-sdk;
+  ];
 
   extraCommands = ''
     mkdir -p app root

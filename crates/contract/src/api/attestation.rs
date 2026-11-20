@@ -2,14 +2,8 @@
 
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
-use crate::primitives::domain::validate_domains_against_governance;
-use crate::primitives::thresholds::{
-    GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
-};
 use crate::state::ProtocolContractState;
-use crate::tee::tee_state::{
-    AttestationSubmissionError, NodeId, ParticipantInsertion, TeeValidationResult,
-};
+use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::{Attestation, DstackAttestation};
@@ -17,18 +11,19 @@ use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{
     AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, ext_contract, log, near,
 };
-use std::collections::BTreeMap;
 use std::time::Duration;
-use tee_verifier_interface::{Collateral, QuoteBytes, VerificationResult, VerifiedReport};
+use tee_verifier_interface::{
+    Collateral, CollateralDates, QuoteBytes, VerificationResultWithCollateralDates, VerifiedReport,
+};
 
 #[ext_contract(ext_tee_verifier)]
 pub trait TeeVerifier {
     #[result_serializer(borsh)]
-    fn verify_quote(
+    fn verify_quote_with_collateral_dates(
         &self,
         #[serializer(borsh)] quote: QuoteBytes,
         #[serializer(borsh)] collateral: Collateral,
-    ) -> VerificationResult;
+    ) -> VerificationResultWithCollateralDates;
 }
 
 #[near]
@@ -92,12 +87,19 @@ impl MpcContract {
     ///
     /// - [`Attestation::Mock`] is verified synchronously.
     /// - [`Attestation::Dstack`] is verified asynchronously via a cross-contract
-    ///   `verify_quote` call, with [`Self::resolve_verification`] chained as its
-    ///   callback to run the post-DCAP checks and store the attestation.
+    ///   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]
+    ///   chained as its callback to run the post-DCAP checks and store the attestation.
     ///
     /// A node submits with no deposit via its function-call access key. Storing a *new* entry
     /// consumes one attestation-storage grant, prepaid for the node's account by whoever
     /// onboards it; a re-attestation under a key the account already owns consumes none.
+    ///
+    /// A contract that is not accepting requests resumes once a stored attestation leaves every
+    /// participant with an accepted TEE state.
+    ///
+    /// Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`]
+    /// if the node stored under the TLS key belongs to another account, or another participant
+    /// uses the TLS key.
     #[handle_result]
     pub fn submit_participant_info(
         &mut self,
@@ -120,42 +122,40 @@ impl MpcContract {
         // The node always signs submissions with an Ed25519 key
         // (`near_signer_key`), so the signer key here is Ed25519 in practice.
         // Reject non-Ed25519 signer keys rather than silently storing a value
-        // we could never match against in `is_caller_an_attested_participant`.
+        // the node's later transactions could never match.
         let account_public_key = dtos::Ed25519PublicKey::try_from(&account_key).map_err(|_| {
             InvalidParameters::InvalidTeeRemoteAttestation {
                 reason: "signer account key must be Ed25519".to_string(),
             }
         })?;
 
-        let node_id = NodeId {
+        let node = dtos::NodeInfo {
             account_id: account_id.clone(),
             tls_public_key,
             account_public_key,
         };
 
         // Before any verification: an ungranted or unauthorised submission stops here.
-        self.assert_attestation_storage_grant_available(
-            &node_id.account_id,
-            &node_id.tls_public_key,
-        )?;
+        self.assert_attestation_submission_allowed(&node.account_id, &node.tls_public_key)?;
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-                let insertion = self.tee_state.verify_and_store_mock(
-                    node_id.clone(),
+                let is_new_node = self.tee_state.verify_and_store_mock(
+                    node,
                     mock,
                     tee_upgrade_deadline_duration,
                 )?;
-                if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
-                    self.consume_attestation_storage_grant(&node_id.account_id);
+                if is_new_node {
+                    self.consume_attestation_storage_grant(&account_id);
                 }
+                self.resume_if_all_participants_attested();
 
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node_id, attestation),
+                self.submit_dstack_attestation(node, attestation),
             )),
         }
     }
@@ -165,26 +165,25 @@ impl MpcContract {
         NearToken::from_millinear(u128::from(self.config.attestation_storage_fee_millinear))
     }
 
-    fn attestation_submission_needs_grant(
-        &self,
-        account_id: &AccountId,
-        tls_public_key: &dtos::Ed25519PublicKey,
-    ) -> Result<bool, Error> {
-        match self.tee_state.attestation_owner(tls_public_key) {
-            Some(owner) if &owner == account_id => Ok(false),
-            Some(_) => Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into()),
-            None => Ok(true),
-        }
-    }
-
-    fn assert_attestation_storage_grant_available(
+    fn assert_attestation_submission_allowed(
         &self,
         account_id: &AccountId,
         tls_public_key: &dtos::Ed25519PublicKey,
     ) -> Result<(), Error> {
-        if self.attestation_submission_needs_grant(account_id, tls_public_key)?
-            && self.grants_for(account_id) == 0
+        self.tee_state
+            .assert_tls_key_claimable(account_id, tls_public_key)?;
+        // TODO(#823): remove once mock attestations are gone. An initial participant has no node
+        // until its first attestation, so until then only the participant set reserves its TLS key.
+        if self
+            .protocol_state
+            .active_participants()
+            .account_with_tls_key(tls_public_key)
+            .is_some_and(|owner| owner != account_id)
         {
+            return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
+        }
+        let is_reattestation = self.tee_state.node_of(account_id, tls_public_key).is_some();
+        if !is_reattestation && self.grants_for(account_id) == 0 {
             return Err(InvalidParameters::NoAttestationStorageGrant {
                 account_id: account_id.to_string(),
             }
@@ -207,6 +206,26 @@ impl MpcContract {
         }
     }
 
+    /// Starts accepting requests if the contract is Running and every participant has a valid
+    /// attestation.
+    fn resume_if_all_participants_attested(&mut self) {
+        if self.accept_requests {
+            return;
+        }
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
+            return;
+        };
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        let validation = self
+            .tee_state
+            .reverify_participants(running_state.participants(), tee_upgrade_deadline_duration);
+        if matches!(validation, TeeValidationResult::Full) {
+            self.accept_requests = true;
+            log!("All participants have an accepted Tee status");
+        }
+    }
+
     fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let available = self.grants_for(account_id);
         // Checked, not saturating: at `u32::MAX` a returned grant would be dropped silently.
@@ -219,53 +238,47 @@ impl MpcContract {
     }
 
     /// Async [`Attestation::Dstack`] submission: spawns a promise calling
-    /// `verify_quote` on the trusted verifier contract, with
+    /// `verify_quote_with_collateral_dates` on the trusted verifier contract, with
     /// [`Self::resolve_verification`] chained as its callback.
     fn submit_dstack_attestation(
         &mut self,
-        node_id: NodeId,
+        node: dtos::NodeInfo,
         attestation: DstackAttestation,
     ) -> Promise {
         ext_tee_verifier::ext(self.tee_verifier_account_id.clone())
             .with_static_gas(Gas::from_tgas(self.config.verifier_tera_gas))
             .with_unused_gas_weight(0)
-            .verify_quote(attestation.quote, attestation.collateral)
+            .verify_quote_with_collateral_dates(attestation.quote, attestation.collateral)
             .then(
                 Self::ext_self()
                     .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
                     .resolve_verification(VerificationContext {
-                        node_id,
+                        node,
                         tcb_info: attestation.tcb_info,
                     }),
             )
     }
 
-    #[handle_result]
     pub fn get_attestation(
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
-    ) -> Result<Option<dtos::StoredAttestation>, Error> {
-        Ok(self
-            .tee_state
-            .stored_attestations
+    ) -> Option<dtos::StoredAttestation> {
+        self.tee_state
+            .nodes
             .get(&tls_public_key)
-            .map(IntoInterfaceType::into_dto_type))
+            .map(IntoInterfaceType::into_dto_type)
     }
 
-    /// Returns all accounts that have TEE attestations stored in the contract.
-    /// Note: This includes both current protocol participants and accounts that may have
-    /// submitted TEE information but are not currently part of the active participant set.
-    pub fn get_tee_accounts(&self) -> Vec<dtos::NodeId> {
+    /// Returns every stored node, including nodes of accounts that are not participants.
+    pub fn get_tee_accounts(&self) -> Vec<dtos::NodeInfo> {
         log!("get_tee_accounts");
         self.tee_state.get_tee_accounts()
     }
 
-    /// Verifies if all current participants have an accepted TEE state.
-    /// Automatically enters a resharing, in case one or more participants do not have an accepted
-    /// TEE state.
-    /// Returns `false` and stops the contract from accepting new signature requests or responses,
-    /// in case the participants running in an accepted TEE State are too few for the
-    /// GovernanceThreshold or for any domain's signing protocol.
+    /// Verifies whether every current participant has an accepted TEE state and returns the
+    /// result. While one does not, the contract stops accepting new signature requests or
+    /// responses. No participant is removed: requests resume once every participant has an
+    /// accepted TEE state again, or once a vote replaces the participant set.
     /// Also retires launcher hashes that no current participant uses (see
     /// [`dtos::Config::launcher_hash_unused_ttl_seconds`]).
     #[handle_result]
@@ -273,90 +286,40 @@ impl MpcContract {
         log!("verify_tee: signer={}", env::signer_account_id());
         // Caller must be a participant (node or operator).
         self.voter_or_panic();
-        let ProtocolContractState::Running(running_state) = &mut self.protocol_state else {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
-        let current_params = running_state.parameters.clone();
+        let participants = running_state.participants();
 
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
         self.tee_state
-            .remove_unused_launchers(current_params.participants(), launcher_unused_ttl);
+            .remove_unused_launchers(participants, launcher_unused_ttl);
 
-        match self.tee_state.reverify_and_cleanup_participants(
-            current_params.participants(),
-            tee_upgrade_deadline_duration,
-        ) {
+        match self
+            .tee_state
+            .reverify_participants(participants, tee_upgrade_deadline_duration)
+        {
             TeeValidationResult::Full => {
                 self.accept_requests = true;
                 log!("All participants have an accepted Tee status");
                 Ok(true)
             }
-            TeeValidationResult::Partial {
-                participants_with_valid_attestation,
-            } => {
-                let remaining = participants_with_valid_attestation.len();
-                // Defense in depth: the surviving participant set must keep the full
-                // threshold relation intact — the GovernanceThreshold must still sit
-                // within its bounds for the smaller set (in particular it must not
-                // exceed the remaining participant count or the upper cap) and must
-                // remain at least every domain's ReconstructionThreshold (the kickout
-                // keeps the existing per-domain thresholds). Each domain must also keep
-                // the participants its protocol needs to sign. Otherwise we refuse and
-                // wait for manual intervention.
-                if let Err(err) = validate_domains_against_governance(
-                    running_state.domains.domains(),
-                    u64::try_from(remaining).expect("participant count fits in u64"),
-                    current_params.threshold(),
-                ) {
-                    log!(
-                        "Kicking out participants with an invalid TEE status would leave too few participants for the GovernanceThreshold or a domain's signing protocol ({:?}); {} participants remain with a valid TEE status. This requires manual intervention. We will not accept new signature requests as a safety precaution.",
-                        err,
-                        remaining,
-                    );
-                    self.accept_requests = false;
-                    return Ok(false);
-                }
-
-                // here, we set it to true, because at this point, we have at least `threshold`
-                // number of participants with an accepted Tee status.
-                self.accept_requests = true;
-
-                // do we want to adjust the threshold?
-                //let n_participants_new = new_participants.len();
-                //let new_threshold = (3 * n_participants_new + 4) / 5; // minimum 60%
-                //let new_threshold = new_threshold.max(2); // but also minimum 2
-                let new_threshold = usize::try_from(current_params.threshold().value())
-                    .expect("threshold value fits in usize");
-
-                let threshold_parameters = GovernanceThresholdParameters::new(
-                    participants_with_valid_attestation,
-                    GovernanceThreshold::new(new_threshold as u64),
-                )
-                .expect("Require valid threshold parameters"); // this should never happen.
-                current_params.validate_incoming_proposal(&threshold_parameters)?;
-                // This resharing only changes the participant set, so the
-                // per-domain reconstruction-threshold updates map is empty.
-                let proposed_parameters = ProposedGovernanceThresholdParameters::new(
-                    threshold_parameters,
-                    BTreeMap::new(),
-                );
-                let res = running_state.transition_to_resharing_no_checks(&proposed_parameters);
-                if let Some(resharing) = res {
-                    self.protocol_state = ProtocolContractState::Resharing(resharing);
-                }
-
-                Ok(true)
+            TeeValidationResult::Partial { .. } => {
+                self.accept_requests = false;
+                log!("Not accepting requests until all participants have an accepted Tee status");
+                Ok(false)
             }
         }
     }
 
-    /// Prunes up to `max_scan` stored attestations that fail re-verification (expired or
-    /// referencing stale whitelists), returning one attestation-storage grant to the owner of
-    /// each entry removed. Returns the number of entries removed. Callable by anyone while the
-    /// protocol is in [`Running`](ProtocolContractState::Running).
+    /// Scans up to the given number of stored nodes and removes those whose attestation fails
+    /// re-verification (expired or referencing stale whitelists), except the nodes in use: each
+    /// participant's current node and the node it is migrating to. Gives one attestation-storage
+    /// grant back to the owner of each node removed and returns the number of nodes removed.
+    /// Callable by anyone while the protocol is in [`Running`](ProtocolContractState::Running).
     #[handle_result]
     pub fn clean_invalid_attestations(&mut self, max_scan: u32) -> Result<u32, Error> {
         log!(
@@ -366,14 +329,30 @@ impl MpcContract {
         );
         // Running-only: keygen / resharing may reference attestations that have not yet
         // been activated, so cleanup is off-limits during those phases.
-        if !matches!(self.protocol_state, ProtocolContractState::Running(_)) {
+        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
             return Err(InvalidState::ProtocolStateNotRunning.into());
-        }
+        };
+        let participants = running_state.participants();
+        let is_in_use = |node: &Node| {
+            let Some(participant) = participants.info(&node.owner) else {
+                return false;
+            };
+            let is_current_node = node.tls_public_key == participant.tls_public_key;
+            let is_migration_destination = self
+                .node_migrations
+                .ongoing_migration(&node.owner)
+                .is_some_and(|migration| {
+                    migration.destination_node_info.tls_public_key == node.tls_public_key
+                });
+            is_current_node || is_migration_destination
+        };
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        let removed_entry_owners = self
-            .tee_state
-            .clean_invalid_attestations(tee_upgrade_deadline_duration, max_scan as usize);
+        let removed_entry_owners = self.tee_state.clean_invalid_attestations(
+            tee_upgrade_deadline_duration,
+            usize::try_from(max_scan).expect("u32 should fit in a usize on wasm32 targets"),
+            is_in_use,
+        );
         for account_id in &removed_entry_owners {
             self.return_attestation_storage_grant(account_id);
         }
@@ -390,16 +369,17 @@ impl MpcContract {
         #[serializer(borsh)] context: VerificationContext,
         #[serializer(borsh)]
         #[callback_result]
-        result: Result<VerificationResult, PromiseError>,
+        result: Result<VerificationResultWithCollateralDates, PromiseError>,
     ) -> PromiseOrValue<()> {
-        let account_id = context.node_id.account_id.clone();
+        let account_id = context.node.account_id.clone();
         log!("resolve_verification: account_id={account_id}");
 
         let attestation_result = match result {
-            Ok(VerificationResult::Verified(report)) => {
-                self.verify_post_dcap_and_store(&context, &report)
-            }
-            Ok(VerificationResult::Rejected(reason)) => {
+            Ok(VerificationResultWithCollateralDates::Verified {
+                report,
+                collateral_dates,
+            }) => self.verify_post_dcap_and_store(context, &report, &collateral_dates),
+            Ok(VerificationResultWithCollateralDates::Rejected(reason)) => {
                 log!("verifier rejected quote for {account_id}: {reason}");
                 Err(TeeError::QuoteRejected {
                     reason: reason.to_string(),
@@ -429,37 +409,35 @@ impl MpcContract {
     }
 
     /// Runs the post-DCAP checks and stores the attestation for a
-    /// [`VerificationResult::Verified`] response. Re-checks that a grant is available before
-    /// storing, since this runs a receipt later than the submission that reserved it.
+    /// [`VerificationResultWithCollateralDates::Verified`] response. Re-checks the submission
+    /// before storing, since this runs a receipt later than the submission: meanwhile another
+    /// account may have claimed the TLS key, or the grant may have been spent.
     fn verify_post_dcap_and_store(
         &mut self,
-        context: &VerificationContext,
+        VerificationContext { node, tcb_info }: VerificationContext,
         report: &VerifiedReport,
+        collateral_dates: &CollateralDates,
     ) -> Result<(), Error> {
-        let account_id = context.node_id.account_id.clone();
+        let account_id = node.account_id.clone();
         let tee_upgrade_deadline_duration =
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
 
-        self.assert_attestation_storage_grant_available(
-            &account_id,
-            &context.node_id.tls_public_key,
-        )?;
+        self.assert_attestation_submission_allowed(&account_id, &node.tls_public_key)?;
 
-        let insertion = match self.tee_state.verify_and_store_dstack(
-            context.node_id.clone(),
-            &context.tcb_info,
-            report,
-            tee_upgrade_deadline_duration,
-        ) {
-            Ok(insertion) => insertion,
-            Err(err) => {
-                log!("post-DCAP check failed for {account_id}: {err}");
-                return Err(err.into());
-            }
-        };
-        if matches!(insertion, ParticipantInsertion::NewlyInsertedParticipant) {
+        let is_new_node = self
+            .tee_state
+            .verify_and_store_dstack(
+                node,
+                &tcb_info,
+                report,
+                collateral_dates,
+                tee_upgrade_deadline_duration,
+            )
+            .inspect_err(|err| log!("post-DCAP check failed for {account_id}: {err}"))?;
+        if is_new_node {
             self.consume_attestation_storage_grant(&account_id);
         }
+        self.resume_if_all_participants_attested();
 
         Ok(())
     }
@@ -477,70 +455,183 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, make_public_key_for_curve, setup_tee_test_contract, submit_valid_attestations,
+        basic_setup, destination_of, init_running_with_domain, initializing_state,
+        prepay_and_attest_all_participants, prepay_and_submit_mock_attestation, resharing_state,
+        running_contract_called_by_participant_via_forwarder, running_state,
     };
     use crate::config::Config;
-    use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-    use crate::primitives::participants::{ParticipantId, Participants};
+    use crate::dto_mapping::IntoContractType;
+    use crate::primitives::participants::{ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
-        create_node_id, gen_participants,
+        bogus_ed25519_public_key, bogus_genesis_hash, bogus_tee_verifier_account_id, create_node,
+        gen_account_id, gen_participant_url, gen_participants, node_for,
     };
-    use crate::state::key_event::KeyEvent;
-    use crate::state::resharing::ResharingContractState;
+    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
-    use crate::tee::tee_state::{NodeAttestation, TeeState};
-    use crate::tee::test_utils::{NANOS_PER_SECOND, set_block_secs, whitelist_dstack_measurements};
+    use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
+    use crate::tee::test_utils::{
+        NANOS_PER_SECOND, allow_launcher, dstack_fixture_node, set_block_secs,
+        whitelist_dstack_measurements,
+    };
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
         ReconstructionThreshold,
     };
     use mpc_attestation::attestation::{
-        MockAttestation as MpcMockAttestation, ValidatedDstackAttestation, VerifiedAttestation,
-        default_measurements,
+        MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation as MpcMockAttestation,
+        ValidatedDstackAttestation, VerifiedAttestation, default_measurements,
     };
     use mpc_primitives::hash::LauncherImageHash;
     use near_mpc_contract_interface::types::DomainPurpose;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
+    use rand::SeedableRng;
     use rand::rngs::OsRng;
     use rstest::rstest;
-    use std::panic;
-    use std::{assert_matches, collections::BTreeSet};
+    use std::assert_matches;
     use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, account_key, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_tcb_info, p2p_tls_key, verified_report,
+        VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
+        launcher_image_hash, mock_expiring_at, mock_tcb_info, verified_report,
     };
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
     fn test_submit_participant_info_panics_if_predecessor_differs() {
-        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+        // Given
+        let mut contract = running_contract_called_by_participant_via_forwarder();
 
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+        // When, Then
+        let _ = contract.submit_participant_info(
+            Attestation::Mock(MockAttestation::Valid),
+            bogus_ed25519_public_key(),
+        );
+    }
 
-        let (participant_id, _, participant_info) = participants
-            .participants()
-            .first()
-            .expect("at least one participant")
-            .clone();
+    fn verified_verdict() -> VerificationResultWithCollateralDates {
+        VerificationResultWithCollateralDates::Verified {
+            report: verified_report(),
+            collateral_dates: collateral_dates(),
+        }
+    }
 
-        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
+    fn must_store_expired_node(contract: &mut MpcContract, node: dtos::NodeInfo) {
+        set_block_secs(0);
+        contract
+            .tee_state
+            .verify_and_store_mock(node, MpcMockAttestation::Valid, Duration::MAX)
+            .unwrap();
+        set_block_secs(MOCK_EXPIRATION_DURATION_SECONDS + 1);
+    }
 
-        // Case: signer != predecessor — should panic
-        let ctx = VMContextBuilder::new()
-            .signer_account_id(participant_id.clone())
-            .predecessor_account_id("outsider.near".parse().unwrap())
-            .build();
-        testing_env!(ctx);
+    fn participant_setup() -> (MpcContract, AccountId, Ed25519PublicKey) {
+        let (_, contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let (participant, _, participant_info) =
+            contract.protocol_state.active_participants().participants()[0].clone();
+        (contract, participant, participant_info.tls_public_key)
+    }
 
-        let _ = contract
-            .submit_participant_info(valid_attestation, participant_info.tls_public_key.clone())
-            .expect("Expected panic if predecessor != signer");
+    #[test]
+    fn submit_participant_info__should_accept_an_expired_participant_node_only_from_its_owner() {
+        // Given
+        let (mut contract, participant, tls_public_key) = participant_setup();
+        must_store_expired_node(&mut contract, create_node(&participant, &tls_public_key));
+        contract.clean_invalid_attestations(u32::MAX).unwrap();
+
+        // When
+        let outsider_result = prepay_and_submit_mock_attestation(
+            &mut contract,
+            &gen_account_id(),
+            tls_public_key.clone(),
+        );
+        let owner_result =
+            prepay_and_submit_mock_attestation(&mut contract, &participant, tls_public_key);
+
+        // Then
+        assert_matches!(
+            outsider_result,
+            Err(Error::AttestationSubmission(
+                AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+            ))
+        );
+        assert_matches!(owner_result, Ok(()));
+    }
+
+    enum ExpiringNode {
+        CurrentNode,
+        MigrationDestination,
+        LeftoverNode,
+        OrphanMigrationDestination,
+        OtherAccountsNodeUnderParticipantTlsKey,
+    }
+
+    #[rstest]
+    #[case::current_node(ExpiringNode::CurrentNode, true)]
+    #[case::migration_destination(ExpiringNode::MigrationDestination, true)]
+    #[case::leftover_node(ExpiringNode::LeftoverNode, false)]
+    #[case::orphan_migration_destination(ExpiringNode::OrphanMigrationDestination, false)]
+    #[case::other_accounts_node_under_participant_tls_key(
+        ExpiringNode::OtherAccountsNodeUnderParticipantTlsKey,
+        false
+    )]
+    fn clean_invalid_attestations__should_keep_an_expired_node_only_while_a_participant_uses_it(
+        #[case] expiring_node: ExpiringNode,
+        #[case] is_kept: bool,
+    ) {
+        // Given
+        let (mut contract, participant, tls_public_key) = participant_setup();
+        let (node, migrating_account) = match expiring_node {
+            ExpiringNode::CurrentNode => (create_node(&participant, &tls_public_key), None),
+            ExpiringNode::MigrationDestination => (node_for(&participant), Some(participant)),
+            ExpiringNode::LeftoverNode => (node_for(&participant), None),
+            ExpiringNode::OrphanMigrationDestination => {
+                let non_participant = gen_account_id();
+                (node_for(&non_participant), Some(non_participant))
+            }
+            ExpiringNode::OtherAccountsNodeUnderParticipantTlsKey => {
+                contract.tee_state.nodes.remove(&tls_public_key);
+                (create_node(&gen_account_id(), &tls_public_key), None)
+            }
+        };
+        if let Some(account_id) = migrating_account {
+            contract
+                .node_migrations
+                .set_destination_node_info(account_id, destination_of(&node));
+        }
+        must_store_expired_node(&mut contract, node.clone());
+
+        // When
+        contract.clean_invalid_attestations(u32::MAX).unwrap();
+
+        // Then
+        assert_eq!(contract.get_tee_accounts().contains(&node), is_kept);
+    }
+
+    #[rstest]
+    fn clean_invalid_attestations__should_reject_when_not_running(
+        #[values(initializing_state(), resharing_state())] protocol_state: ProtocolContractState,
+    ) {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(protocol_state);
+
+        // When
+        let result = contract.clean_invalid_attestations(u32::MAX);
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::InvalidState(InvalidState::ProtocolStateNotRunning))
+        );
     }
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
-        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
+        let context = prepare_dstack_verification(&mut contract);
+        (contract, context)
+    }
+
+    /// Sets a block time at which the dstack fixture is valid, with the contract as caller, and
+    /// readies `contract` to store the fixture's node.
+    fn prepare_dstack_verification(contract: &mut MpcContract) -> VerificationContext {
         let contract_account_id = env::current_account_id();
         let context = VMContextBuilder::new()
             .current_account_id(contract_account_id.clone())
@@ -549,7 +640,6 @@ mod tests {
             .build();
         testing_env!(context);
 
-        contract.tee_state = TeeState::default();
         whitelist_dstack_measurements(
             &mut contract.tee_state,
             image_digest(),
@@ -557,23 +647,15 @@ mod tests {
             Some(launcher_compose_digest()),
         );
 
+        let node = dstack_fixture_node();
         // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
         contract
             .available_attestation_grants
-            .insert("alice.near".parse().unwrap(), 1);
-
-        let node_id = NodeId {
-            account_id: "alice.near".parse().unwrap(),
-            tls_public_key: Ed25519PublicKey(p2p_tls_key()),
-            account_public_key: Ed25519PublicKey(account_key()),
-        };
-        (
-            contract,
-            VerificationContext {
-                node_id,
-                tcb_info: mock_tcb_info(),
-            },
-        )
+            .insert(node.account_id.clone(), 1);
+        VerificationContext {
+            node,
+            tcb_info: mock_tcb_info(),
+        }
     }
 
     /// The deposit must be exactly `fee × grants`, which is what makes a remainder — and so a
@@ -641,12 +723,11 @@ mod tests {
     fn resolve_verification__should_consume_one_grant_when_the_entry_is_new() {
         // Given: the setup prepays one grant for alice.near.
         let (mut contract, context) = dstack_verification_setup();
-        let account_id = context.node_id.account_id.clone();
+        let account_id = context.node.account_id.clone();
         assert_eq!(contract.available_attestation_grants(account_id.clone()), 1);
 
         // When
-        let result = contract
-            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+        let result = contract.resolve_verification(context, Ok(verified_verdict()));
 
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
@@ -665,39 +746,31 @@ mod tests {
     fn resolve_verification__should_store_nothing_when_the_grant_was_spent_before_the_callback() {
         // Given: the grant reserved at submit time is gone by the time the callback runs.
         let (mut contract, context) = dstack_verification_setup();
-        let account_id = context.node_id.account_id.clone();
+        let account_id = context.node.account_id.clone();
         contract.available_attestation_grants.remove(&account_id);
 
         // When
-        let result = contract
-            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+        let result = contract.resolve_verification(context, Ok(verified_verdict()));
 
         // Then: the submitter's transaction is failed from its own receipt, and nothing is stored.
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Promise(_)));
-        assert!(contract.tee_state.stored_attestations.is_empty());
+        assert!(contract.tee_state.nodes.is_empty());
     }
 
     #[test]
     fn resolve_verification__should_store_on_verified_verdict() {
         // Given
         let (mut contract, context) = dstack_verification_setup();
-        let node_id = context.node_id.clone();
+        let node = context.node.clone();
 
         // When
-        let result = contract
-            .resolve_verification(context, Ok(VerificationResult::Verified(verified_report())));
+        let result = contract.resolve_verification(context, Ok(verified_verdict()));
 
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
-        assert_eq!(contract.tee_state.stored_attestations.len(), 1);
-        let stored = contract
-            .tee_state
-            .stored_attestations
-            .get(&node_id.tls_public_key)
-            .expect("attestation must be stored");
-        assert_eq!(stored.node_id, node_id);
+        assert_eq!(contract.get_tee_accounts(), vec![node]);
     }
 
     #[test]
@@ -712,262 +785,248 @@ mod tests {
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Promise(_)));
-        assert!(contract.tee_state.stored_attestations.is_empty());
+        assert!(contract.tee_state.nodes.is_empty());
     }
 
     #[test]
-    #[should_panic(expected = "Caller must be an attested participant")]
-    fn test_attested_but_not_participant_panics() {
-        let (mut contract, participants, _first_participant_id) = setup_tee_test_contract(3, 2);
+    fn resolve_verification__should_resume_requests_when_the_last_participant_attests() {
+        // Given
+        let fixture_node = dstack_fixture_node();
+        let attested_participants = gen_participants(2);
+        let mut participants = attested_participants.clone();
+        participants
+            .insert(
+                fixture_node.account_id,
+                ParticipantInfo {
+                    url: gen_participant_url(2),
+                    tls_public_key: fixture_node.tls_public_key,
+                },
+            )
+            .unwrap();
+        let mut contract = freshly_initialized_contract(&participants, 2);
+        contract.tee_state = TeeState::with_mocked_participant_attestations(&attested_participants);
+        let context = prepare_dstack_verification(&mut contract);
 
-        submit_valid_attestations(&mut contract, &participants, &[0, 1, 2]);
+        // When
+        let result = contract.resolve_verification(context, Ok(verified_verdict()));
 
-        let outsider_id: AccountId = "outsider.near".parse().unwrap();
-
-        let fake_tls_pk = bogus_ed25519_near_public_key(); // unique TLS key for outsider
-        let dto_public_key = dtos::Ed25519PublicKey::try_from(&fake_tls_pk).unwrap();
-
-        let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-
-        // A new entry consumes a grant; stand in for the operator's prepayment.
-        contract
-            .available_attestation_grants
-            .insert(outsider_id.clone(), 1);
-
-        // use outsider account to call submit_participant_info
-        let ctx = VMContextBuilder::new()
-            .signer_account_id(outsider_id.clone())
-            .predecessor_account_id(outsider_id.clone())
-            .build();
-        testing_env!(ctx);
-
-        let _ = contract
-            .submit_participant_info(valid_attestation, dto_public_key)
-            .expect("Outsider attestation submission should succeed");
-
-        contract.assert_caller_is_attested_participant_and_protocol_active();
+        // Then
+        // assert_matches! requires Debug, which PromiseOrValue doesn't implement
+        assert!(matches!(result, PromiseOrValue::Value(())));
+        assert!(contract.accept_requests);
     }
 
-    /// Tests that [`MpcContract::verify_tee`] triggers resharing and kicks out a participant
-    /// when their attestation is expired.
-    ///
-    /// Verifies the behavior when:
-    /// 1. [`MpcContract::verify_tee`] returns [`TeeValidationResult::Partial`] (some attestations
-    ///    expired/invalid)
-    /// 2. The remaining participants meet threshold requirements
-    /// 3. The contract transitions to [`ProtocolContractState::Resharing`] state
-    /// 4. The participant with expired attestation is excluded from the new parameters
-    #[test]
-    fn test_verify_tee_triggers_resharing_and_kickout_on_expired_attestation() {
-        const PARTICIPANT_COUNT: usize = 3;
-        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
-
-        let participants = gen_participants(PARTICIPANT_COUNT);
-        let parameters =
-            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
-                .unwrap();
-
-        // Set up contract in Running state
-        let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
-            id: domain_id,
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: DomainPurpose::Sign,
-        }];
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let key_for_domain = KeyForDomain {
-            domain_id,
-            key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
-        };
-        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain.clone()]);
-
-        let mut contract = MpcContract::init_running(
-            domains.clone(),
-            1,
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
-
-        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
-
-        // Get participant info for the target (last participant)
-        let participant_list: Vec<_> = participants.participants().to_vec();
-        let (target_account_id, _, target_participant_info) = &participant_list[2];
-
-        // Replace the target's attestation with an expired one
-        let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
-        let expiring_attestation = MpcMockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
-        contract
-            .tee_state
-            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
-            .expect("mock attestation is not yet expired and valid");
-
-        // Capture the running state before verify_tee for comparison
-        let ProtocolContractState::Running(running_state_before) = &contract.protocol_state else {
-            panic!("expected Running state");
-        };
-        let running_state_before = running_state_before.clone();
-
-        // Set time to the second after expiry
-        let (first_account_id, _, _) = &participant_list[0];
-        testing_env!(
-            VMContextBuilder::new()
-                .signer_account_id(first_account_id.clone())
-                .predecessor_account_id(first_account_id.clone())
-                .block_timestamp((ATTESTATION_EXPIRY_SECONDS + 1) * 1_000_000_000) // nanoseconds
-                .build()
-        );
-
-        // Call verify_tee - should trigger resharing
-        let result = contract.verify_tee();
-        assert_matches!(
-            result,
-            Ok(true),
-            "verify_tee should return Ok(true) when threshold is met"
-        );
-
-        // Verify contract transitioned to Resharing state
-        let ProtocolContractState::Resharing(resharing_state) = &contract.protocol_state else {
-            panic!(
-                "expected Resharing state, got {:?}",
-                contract.protocol_state
-            );
-        };
-
-        // Build expected participants: exclude the target (participant 2) who has expired attestation
-        let expected_participants = Participants::init(
-            ParticipantId(PARTICIPANT_COUNT as u32),
-            participant_list[0..2]
-                .iter()
-                .map(|(acc, id, info)| (acc.clone(), *id, info.clone()))
-                .collect(),
-        );
-        let expected_params =
-            GovernanceThresholdParameters::new(expected_participants, parameters.threshold())
-                .unwrap();
-
-        let expected_resharing_state = ResharingContractState {
-            previous_running_state: running_state_before,
-            reshared_keys: Vec::new(),
-            resharing_key: KeyEvent::new(
-                keyset.epoch_id.next(),
-                domains[0].clone(),
-                expected_params,
-            ),
-            cancellation_requests: BTreeSet::new(),
-            per_domain_thresholds: BTreeMap::new(),
-        };
-
-        assert_eq!(*resharing_state, expected_resharing_state);
-    }
-
-    /// A Running contract with `participant_count` participants and a single `domain`, where
-    /// the last participant's attestation has expired at the block time of a `verify_tee`
-    /// call by the first participant.
-    fn running_contract_with_expired_last_attestation(
-        participant_count: usize,
+    /// A contract fresh from [`MpcContract::init`]: no participant has attested yet.
+    fn freshly_initialized_contract(
+        participants: &Participants,
         governance_threshold: u64,
-        domain: DomainConfig,
     ) -> MpcContract {
-        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
-        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
-
-        let participants = gen_participants(participant_count);
         let parameters = GovernanceThresholdParameters::new(
             participants.clone(),
             GovernanceThreshold::new(governance_threshold),
         )
         .unwrap();
-        let (pk, _) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let keyset = Keyset::new(
-            EpochId::new(0),
-            vec![KeyForDomain {
-                domain_id: domain.id,
-                key: pk.try_into().unwrap(),
-                attempt: AttemptId::new(),
-            }],
-        );
-        let next_domain_id = domain.id.0 + 1;
-        let mut contract = MpcContract::init_running(
-            vec![domain],
-            next_domain_id,
-            (&keyset).into_dto_type(),
+        MpcContract::init(
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
-        .unwrap();
+        .unwrap()
+    }
 
-        // Expire the last participant's attestation so a kickout drops the set to
-        // `participant_count - 1`.
-        let participant_list: Vec<_> = participants.participants().to_vec();
-        let (target_account_id, _, target_participant_info) =
-            &participant_list[participant_count - 1];
-        let node_id = create_node_id(target_account_id, &target_participant_info.tls_public_key);
-        let expiring_attestation = MpcMockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: None,
-            expiry_timestamp_seconds: Some(ATTESTATION_EXPIRY_SECONDS),
-            expected_measurements: None,
-        };
-        contract
-            .tee_state
-            .verify_and_store_mock(node_id, expiring_attestation, TEE_UPGRADE_DURATION)
-            .expect("mock attestation is not yet expired and valid");
+    #[rstest]
+    #[case::last_participant_attests(3, true)]
+    #[case::one_participant_unattested(2, false)]
+    fn submit_participant_info__should_resume_requests_only_once_every_participant_attested(
+        #[case] num_attesting: usize,
+        #[case] expected_accept_requests: bool,
+    ) {
+        // Given
+        let participants = gen_participants(3);
+        let mut contract = freshly_initialized_contract(&participants, 2);
 
-        let (first_account_id, _, _) = &participant_list[0];
+        // When
+        for (account_id, _, info) in participants.participants().iter().take(num_attesting) {
+            prepay_and_submit_mock_attestation(
+                &mut contract,
+                account_id,
+                info.tls_public_key.clone(),
+            )
+            .unwrap();
+        }
+
+        // Then
+        assert_eq!(contract.accept_requests, expected_accept_requests);
+    }
+
+    #[test]
+    fn submit_participant_info__should_reject_an_unattested_participants_tls_key_from_another_account()
+     {
+        // Given
+        let participants = gen_participants(3);
+        let mut contract = freshly_initialized_contract(&participants, 2);
+        let (_, _, participant_info) = &participants.participants()[0];
+
+        // When
+        let result = prepay_and_submit_mock_attestation(
+            &mut contract,
+            &gen_account_id(),
+            participant_info.tls_public_key.clone(),
+        );
+
+        // Then
+        assert_matches!(
+            result,
+            Err(Error::AttestationSubmission(
+                AttestationSubmissionError::TlsKeyOwnedByOtherAccount
+            ))
+        );
+    }
+
+    #[test]
+    fn verify_tee__should_resume_requests_once_every_participant_attested() {
+        // Given
+        let participants = gen_participants(3);
+        let mut contract = freshly_initialized_contract(&participants, 2);
+        contract.tee_state = TeeState::with_mocked_participant_attestations(&participants);
+        let (first_account_id, _, _) = &participants.participants()[0];
         testing_env!(
             VMContextBuilder::new()
                 .signer_account_id(first_account_id.clone())
                 .predecessor_account_id(first_account_id.clone())
-                .block_timestamp((ATTESTATION_EXPIRY_SECONDS + 1) * 1_000_000_000) // nanoseconds
                 .build()
-        );
-        contract
-    }
-
-    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE
-    /// kickout would leave fewer participants than the threshold relation requires.
-    /// The contract stays Running and stops accepting requests.
-    #[test]
-    fn verify_tee__should_refuse_kickout_when_remaining_breaks_threshold_relation() {
-        // Given
-        // 5 participants, GovernanceThreshold 5, and one domain whose
-        // reconstruction threshold is 5 (every participant is needed to sign). Dropping
-        // to 4 participants would leave the GovernanceThreshold above the participant
-        // count, breaking the threshold relation.
-        let mut contract = running_contract_with_expired_last_attestation(
-            5,
-            5,
-            DomainConfig {
-                id: DomainId::default(),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(5),
-                purpose: DomainPurpose::Sign,
-            },
         );
 
         // When
         let result = contract.verify_tee();
 
         // Then
-        // With only 4 surviving participants the GovernanceThreshold of 5 would
-        // exceed the participant count, breaking the threshold relation, so verify_tee
-        // refuses to reshare, stays Running, and stops accepting requests.
+        assert_matches!(result, Ok(true));
+        assert!(contract.accept_requests);
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be an attested participant")]
+    fn test_attested_but_not_participant_panics() {
+        // Given
+        let (mut contract, _, _) = participant_setup();
+        let outsider = gen_account_id();
+        prepay_and_submit_mock_attestation(&mut contract, &outsider, bogus_ed25519_public_key())
+            .unwrap();
+
+        // When, Then
+        contract.assert_caller_is_attested_participant_and_protocol_active();
+    }
+
+    #[rstest]
+    #[case::node_under_another_tls_key(|node| dtos::NodeInfo { tls_public_key: bogus_ed25519_public_key(), ..node })]
+    #[case::node_of_another_account(|node| dtos::NodeInfo { account_id: gen_account_id(), ..node })]
+    #[case::node_with_another_signer_key(|node| dtos::NodeInfo { account_public_key: bogus_ed25519_public_key(), ..node })]
+    #[should_panic(expected = "Caller must be an attested participant")]
+    fn assert_caller_is_attested_participant_and_protocol_active__should_reject_a_participant_not_signing_as_its_node(
+        #[case] stored_node: fn(dtos::NodeInfo) -> dtos::NodeInfo,
+    ) {
+        // Given
+        let (mut contract, account_id, tls_public_key) = participant_setup();
+        let signers_node = create_node(&account_id, &tls_public_key);
+        contract.tee_state.nodes.remove(&tls_public_key);
+        contract
+            .tee_state
+            .verify_and_store_mock(
+                stored_node(signers_node.clone()),
+                MpcMockAttestation::Valid,
+                Duration::MAX,
+            )
+            .unwrap();
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id)
+                .signer_account_pk(signers_node.account_public_key.into())
+                .build()
+        );
+
+        // When, Then
+        contract.assert_caller_is_attested_participant_and_protocol_active();
+    }
+
+    #[test]
+    fn verify_tee__should_stop_requests_without_kicking_out_when_an_attestation_expired() {
+        // Given
+        let mut contract = running_contract_with_expired_last_attestation();
+        let state_before = contract.state();
+
+        // When
+        let result = contract.verify_tee();
+
+        // Then
         assert_matches!(result, Ok(false));
-        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
+        assert_eq!(contract.state(), state_before);
         assert!(!contract.accept_requests);
+    }
+
+    #[test]
+    fn submit_participant_info__should_resume_requests_once_the_expired_participant_attests_again()
+    {
+        // Given
+        let mut contract = running_contract_with_expired_last_attestation();
+        assert_matches!(contract.verify_tee(), Ok(false));
+        let (account_id, _, participant_info) =
+            contract.protocol_state.active_participants().participants()[2].clone();
+
+        // When
+        prepay_and_submit_mock_attestation(
+            &mut contract,
+            &account_id,
+            participant_info.tls_public_key,
+        )
+        .unwrap();
+
+        // Then
+        assert!(contract.accept_requests);
+    }
+
+    /// A Running contract with three participants, where the last participant's attestation has
+    /// expired at the block time of a `verify_tee` call by the first participant.
+    fn running_contract_with_expired_last_attestation() -> MpcContract {
+        const ATTESTATION_EXPIRY_SECONDS: u64 = 5;
+        const TEE_UPGRADE_DURATION: Duration = Duration::MAX;
+
+        let participants = gen_participants(3);
+        let parameters =
+            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
+                .unwrap();
+        let domain = DomainConfig {
+            id: DomainId::default(),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        };
+        let mut contract = init_running_with_domain(&parameters, domain);
+        prepay_and_attest_all_participants(&mut contract);
+
+        let participant_list: Vec<_> = participants.participants().to_vec();
+        let (target_account_id, _, target_participant_info) = &participant_list[2];
+        let node = create_node(target_account_id, &target_participant_info.tls_public_key);
+        contract
+            .tee_state
+            .verify_and_store_mock(
+                node,
+                mock_expiring_at(ATTESTATION_EXPIRY_SECONDS).into_contract_type(),
+                TEE_UPGRADE_DURATION,
+            )
+            .expect("mock attestation is not yet expired and valid");
+
+        let (first_account_id, _, _) = &participant_list[0];
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(first_account_id.clone())
+                .predecessor_account_id(first_account_id.clone())
+                .block_timestamp((ATTESTATION_EXPIRY_SECONDS + 1) * 1_000_000_000) // nanoseconds
+                .build()
+        );
+        contract
     }
 
     #[test]
@@ -976,33 +1035,23 @@ mod tests {
         const LAUNCHER_TTL_SECONDS: u64 = 100;
         const ADOPTED_ADDED_AT_SECS: u64 = 1;
         const NEVER_ADOPTED_ADDED_AT_SECS: u64 = ADOPTED_ADDED_AT_SECS + 1;
-        let (_, mut contract, _) = basic_setup(Curve::Secp256k1, &mut OsRng);
+        let (mut contract, account_id, tls_public_key) = participant_setup();
         contract.config.launcher_hash_unused_ttl_seconds = LAUNCHER_TTL_SECONDS;
         let ttl = Duration::from_secs(LAUNCHER_TTL_SECONDS);
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
         let never_adopted = LauncherImageHash::from([2u8; 32]);
-        let (account_id, _, participant_info) = contract
-            .protocol_state
-            .threshold_parameters()
-            .unwrap()
-            .participants()
-            .participants()[0]
-            .clone();
 
         set_block_secs(ADOPTED_ADDED_AT_SECS);
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(adopted, &[mpc_hash], ttl);
+        allow_launcher(&mut contract.tee_state, adopted, mpc_hash, ttl);
         contract
             .tee_state
             .verify_and_store_mock(
-                create_node_id(&account_id, &participant_info.tls_public_key),
+                create_node(&account_id, &tls_public_key),
                 MpcMockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
                     launcher_docker_compose_hash: Some(get_docker_compose_hash(
-                        &adopted, &mpc_hash,
+                        &adopted, &mpc_hash, None,
                     )),
                     expiry_timestamp_seconds: None,
                     expected_measurements: None,
@@ -1011,10 +1060,7 @@ mod tests {
             )
             .unwrap();
         set_block_secs(NEVER_ADOPTED_ADDED_AT_SECS);
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(never_adopted, &[mpc_hash], ttl);
+        allow_launcher(&mut contract.tee_state, never_adopted, mpc_hash, ttl);
 
         testing_env!(
             VMContextBuilder::new()
@@ -1038,40 +1084,13 @@ mod tests {
         );
     }
 
-    /// Tests that [`MpcContract::verify_tee`] refuses to reshare when a TEE kickout would
-    /// leave a RobustEcdsa domain short of its `2t - 1` signers. With 5 participants,
-    /// GovernanceThreshold 3 and `t = 3`, the 4 survivors still satisfy the
-    /// GovernanceThreshold relation, so only the per-domain bound can refuse the kickout.
-    #[test]
-    fn verify_tee__should_refuse_kickout_when_remaining_cannot_run_robust_ecdsa_domain() {
-        // Given
-        let mut contract = running_contract_with_expired_last_attestation(
-            5,
-            3,
-            DomainConfig {
-                id: DomainId::default(),
-                protocol: Protocol::RobustEcdsa,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-        );
-
-        // When
-        let result = contract.verify_tee();
-
-        // Then
-        assert_matches!(result, Ok(false));
-        assert_matches!(contract.protocol_state, ProtocolContractState::Running(_));
-        assert!(!contract.accept_requests);
-    }
-
     const MAX_HASH: [u8; 32] = [0xff; 32];
 
     /// Charged storage of the largest attestation entry the contract can store, in bytes:
     /// a 64-byte account id (NEAR's cap) plus fixed-width keys and the largest
     /// [`VerifiedAttestation`] variant, including the
     /// [`IterableMap`](near_sdk::store::IterableMap) record overhead.
-    const WORST_CASE_ENTRY_BYTES: u64 = 613;
+    const WORST_CASE_ENTRY_BYTES: u64 = 612;
 
     /// Ceiling on one entry's storage cost at today's price, with headroom over
     /// [`WORST_CASE_ENTRY_BYTES`] for storage-price changes.
@@ -1082,7 +1101,7 @@ mod tests {
             mpc_image_hash: MAX_HASH.into(),
             launcher_compose_hash: MAX_HASH.into(),
             expiry_timestamp_seconds: u64::MAX,
-            measurements: default_measurements()[0],
+            measurements: default_measurements(),
         })
     }
 
@@ -1091,37 +1110,37 @@ mod tests {
             mpc_docker_image_hash: Some(MAX_HASH.into()),
             launcher_docker_compose_hash: Some(MAX_HASH.into()),
             expiry_timestamp_seconds: Some(u64::MAX),
-            expected_measurements: Some(default_measurements()[0]),
+            expected_measurements: Some(default_measurements()),
         })
     }
 
     /// Storage the contract pays for one stored attestation entry, measured the way the runtime
-    /// charges it. NEAR caps an account id at 64 bytes; every other [`NodeId`] field is fixed-size,
+    /// charges it. NEAR caps an account id at 64 bytes; both of a node's keys are fixed-size,
     /// so this is the worst case for the given attestation variant.
     fn measure_stored_entry_bytes(verified_attestation: VerifiedAttestation) -> u64 {
         testing_env!(VMContextBuilder::new().build());
-        let node_id = create_node_id(
-            &"a".repeat(64).parse().unwrap(),
-            &bogus_ed25519_public_key(),
-        );
+        let tls_public_key = bogus_ed25519_public_key();
 
         let mut tee_state = TeeState::default();
         let before = env::storage_usage();
-        tee_state.stored_attestations.insert(
-            node_id.tls_public_key.clone(),
-            NodeAttestation {
-                node_id,
-                verified_attestation,
-                accepted_at_seconds: Some(u64::MAX),
+        tee_state.nodes.insert(
+            tls_public_key.clone(),
+            Node {
+                owner: "a".repeat(64).parse().unwrap(),
+                tls_public_key,
+                signer_public_key: bogus_ed25519_public_key(),
+                attestation: verified_attestation,
+                attestation_accepted_at_seconds: u64::MAX,
             },
         );
-        tee_state.stored_attestations.flush();
+        tee_state.nodes.flush();
 
         env::storage_usage() - before
     }
 
     fn measure_grant_row_bytes() -> u64 {
-        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut OsRng);
+        let mut rng = rand::rngs::StdRng::from_seed([42u8; 32]);
+        let (_, mut contract, _) = basic_setup(Curve::Edwards25519, &mut rng);
         testing_env!(VMContextBuilder::new().build());
         let account: AccountId = "a".repeat(64).parse().unwrap();
 
@@ -1141,8 +1160,8 @@ mod tests {
     ///
     /// The prepaid-storage fee is sized from these numbers.
     #[rstest]
-    #[case::dstack(608, worst_case_dstack_attestation())]
-    #[case::mock(613, worst_case_mock_attestation())]
+    #[case::dstack(607, worst_case_dstack_attestation())]
+    #[case::mock(612, worst_case_mock_attestation())]
     fn stored_attestation_entry__should_have_the_pinned_size(
         #[case] expected_bytes: u64,
         #[case] verified_attestation: VerifiedAttestation,

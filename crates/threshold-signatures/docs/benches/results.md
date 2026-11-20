@@ -13,6 +13,8 @@ If interested only in the advanced benchmarking technique, please skip to sectio
 
 *Note: the triple generation for OT based ECDSA generates two triples, enough for the secure computation of one single presignature and thus one single signature.*
 
+*Note: the OT based ECDSA Presign and Sign numbers below were measured with the separate presigning and signing protocols, which have since been replaced by `sign` (see [Signing without presignatures](#signing-without-presignatures)). The current benches measure triple generation and `sign`.*
+
 ## Naive Technique
 
 A quick solution to benchmark our schemes is to run the entire protocol for all the participants (side-by-side) and analyze the results.
@@ -209,8 +211,8 @@ MAX_MALICIOUS=7 SAMPLE_SIZE=10 cargo bench -p threshold-signatures --features te
 
 ## Signing without presignatures
 
-`presign_and_sign` folds the two presigning rounds into the online phase, consuming a triple pair
-directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md#presigning-and-signing-in-one-protocol)).
+`sign` folds the two nonce generation rounds into the online phase, consuming a triple pair
+directly once the message is known (see [signing](../ecdsa/ot_based_ecdsa/signing.md)).
 The numbers below were measured in September 2026 on a different machine than the tables above,
 so they are comparable with each other but not with the other tables.
 
@@ -221,16 +223,19 @@ participant:
 |:-------:|:---------:|:--------:|:------:|-------------:|------------------:|
 | 7 | 4 | Presign | 2 | 200.18 ms | 1403 |
 | 7 | 4 | Sign | 1 | 100.09 ms | 79 |
-| 7 | 4 | Presign+sign online | 3 | 300.31 ms | 1480 |
+| 7 | 4 | `sign` (nonce generation + signing) | 3 | 300.31 ms | 1480 |
 | 15 | 8 | Presign | 2 | 200.17 ms | 3284 |
 | 15 | 8 | Sign | 1 | 100.09 ms | 86 |
-| 15 | 8 | Presign+sign online | 3 | 300.31 ms | 3369 |
+| 15 | 8 | `sign` (nonce generation + signing) | 3 | 300.31 ms | 3369 |
 
 Reading: the online cost of a signature without presignatures is the network latency of three
 rounds instead of one, with the presign computation (about a millisecond) on top; the bytes moved
 online are the presign bytes plus the signature shares. Nothing is precomputed per signature any
 more, so the offline phase reduces to triple generation and no presignature store has to be kept
 consistent across nodes. The trade is two extra round trips on the signing path.
+
+The Presign and Sign rows were measured with the separate presigning and signing protocols, which
+the benches no longer cover; the commands below reproduce only the `sign` rows.
 
 Reproduce with:
 

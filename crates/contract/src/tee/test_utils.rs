@@ -7,13 +7,18 @@ use crate::MpcContract;
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
 use crate::tee::tee_state::TeeState;
-use mpc_attestation::attestation::default_measurements;
+use mpc_attestation::attestation::dev_measurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 use near_account_id::AccountId;
 use near_sdk::borsh::{self, BorshDeserialize};
 use near_sdk::{BlockHeight, NearToken, PublicKey, test_utils::VMContextBuilder, testing_env};
 use rand::Rng;
 use std::time::Duration;
+
+#[cfg(test)]
+use near_mpc_contract_interface::types as dtos;
+#[cfg(test)]
+use test_utils::attestation::{account_key, p2p_tls_key};
 
 /// Test environment for managing VM context state.
 ///
@@ -129,11 +134,9 @@ pub fn whitelist_dstack_measurements(
     launcher: LauncherImageHash,
     compose_hash: Option<LauncherDockerComposeHash>,
 ) {
-    tee_state.whitelist_tee_proposal(image, Duration::MAX);
-    tee_state.add_launcher_image(launcher, Duration::MAX, Duration::MAX);
-    for &measurements in default_measurements() {
-        tee_state.add_measurement(measurements.into_dto_type());
-    }
+    tee_state.whitelist_tee_proposal(image, None, Duration::MAX);
+    tee_state.add_launcher_image(launcher, None, Duration::MAX, Duration::MAX);
+    tee_state.add_measurement(dev_measurements().into_dto_type());
     if let Some(compose_hash) = compose_hash {
         tee_state
             .allowed_launcher_images
@@ -150,4 +153,25 @@ pub fn whitelist_dstack_in_state(
     let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
     whitelist_dstack_measurements(&mut contract.tee_state, image, launcher, compose_hash);
     borsh::to_vec(&contract).expect("STATE serializes")
+}
+
+#[cfg(test)]
+pub(crate) fn allow_launcher(
+    tee_state: &mut TeeState,
+    launcher: LauncherImageHash,
+    mpc_hash: NodeImageHash,
+    ttl: Duration,
+) {
+    tee_state
+        .allowed_launcher_images
+        .add_or_refresh(launcher, &[mpc_hash], None, ttl);
+}
+
+#[cfg(test)]
+pub(crate) fn dstack_fixture_node() -> dtos::NodeInfo {
+    dtos::NodeInfo {
+        account_id: "alice.near".parse().unwrap(),
+        tls_public_key: p2p_tls_key().into(),
+        account_public_key: account_key().into(),
+    }
 }

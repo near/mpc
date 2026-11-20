@@ -1,3 +1,4 @@
+use crate::durable_fs::{write_file_durably, write_file_durably_with_permissions};
 use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
 use mpc_node_config::ConfigFile;
@@ -7,13 +8,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeSet,
-    fs,
-    io::Write,
-    os::unix::fs::{OpenOptionsExt, PermissionsExt},
-    path::Path,
-};
+use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
 
 pub(crate) mod start;
 
@@ -191,26 +186,11 @@ pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N
     ))
 }
 
-/// Writes data to a file with owner-only permissions (0o600).
-/// Permissions are set explicitly after writing to ensure correctness
-/// even if the file already exists with different permissions.
+/// Writes data to a file with owner-only permissions (0o600), even if the file
+/// already exists with different permissions.
 fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)
-        .with_context(|| format!("failed to create secret file {}", path.display()))?;
-    file.write_all(data)
-        .with_context(|| format!("failed to write secret file {}", path.display()))?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).with_context(|| {
-        format!(
-            "failed to set permissions on secret file {}",
-            path.display()
-        )
-    })?;
-    Ok(())
+    write_file_durably_with_permissions(path, data, fs::Permissions::from_mode(0o600))
+        .with_context(|| format!("failed to write secret file {}", path.display()))
 }
 
 pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
@@ -257,11 +237,6 @@ pub struct PersistentSecrets {
         deserialize_with = "deserialize_signing_key"
     )]
     pub near_signer_key: SigningKey,
-    #[serde(
-        serialize_with = "serialize_signing_key_vec",
-        deserialize_with = "deserialize_signing_key_vec"
-    )]
-    pub near_responder_keys: Vec<SigningKey>,
 }
 
 impl PersistentSecrets {
@@ -277,10 +252,7 @@ impl PersistentSecrets {
         Ok(secrets)
     }
 
-    fn gen_secrets_and_write_to_disk(
-        home_dir: &Path,
-        number_of_responder_keys: usize,
-    ) -> anyhow::Result<PersistentSecrets> {
+    fn gen_secrets_and_write_to_disk(home_dir: &Path) -> anyhow::Result<PersistentSecrets> {
         if !home_dir.exists() {
             std::fs::create_dir_all(home_dir)?;
         }
@@ -289,34 +261,25 @@ impl PersistentSecrets {
         let p2p_secret = SigningKey::generate(&mut os_rng);
         let near_signer_key = SigningKey::generate(&mut os_rng);
 
-        let near_responder_keys = (0..number_of_responder_keys)
-            .map(|_| SigningKey::generate(&mut os_rng))
-            .collect::<Vec<_>>();
-
         let secrets = PersistentSecrets {
             p2p_private_key: p2p_secret,
             near_signer_key,
-            near_responder_keys,
         };
+        let mut secrets_json = serde_json::to_value(&secrets)?;
+        // TODO(#4911): stop writing this once rollback to a version that requires the field is no longer supported.
+        secrets_json["near_responder_keys"] = serde_json::json!([]);
 
         let path = secrets_file(home_dir);
         if path.exists() {
             anyhow::bail!("secrets.json already exists. Refusing to overwrite.");
         }
-        write_secret_file(&path, &serde_json::to_vec(&secrets)?)?;
+        write_secret_file(&path, &serde_json::to_vec(&secrets_json)?)?;
         tracing::debug!("p2p and near account key generated in {}", path.display());
 
         Ok(secrets)
     }
 
-    pub fn generate_or_get_existing(
-        home_dir: &Path,
-        number_of_responder_keys: usize, // Number of responder keys to generate
-    ) -> anyhow::Result<PersistentSecrets> {
-        anyhow::ensure!(
-            number_of_responder_keys > 0,
-            "At least one access key must be provided"
-        );
+    pub fn generate_or_get_existing(home_dir: &Path) -> anyhow::Result<PersistentSecrets> {
         let secrets = match Self::maybe_get_existing(home_dir)? {
             Some(secrets) => {
                 tracing::debug!("p2p and near account secret key already exists. Using existing.");
@@ -324,15 +287,9 @@ impl PersistentSecrets {
             }
             _ => {
                 tracing::debug!("p2p and near account secret key not found. Generating...");
-                Self::gen_secrets_and_write_to_disk(home_dir, number_of_responder_keys)?
+                Self::gen_secrets_and_write_to_disk(home_dir)?
             }
         };
-
-        if secrets.near_responder_keys.len() != number_of_responder_keys {
-            tracing::warn!(
-                "Number of responder keys in secrets.json does not match number of responder keys specified."
-            )
-        }
 
         Ok(secrets)
     }
@@ -369,66 +326,21 @@ where
     SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
 }
 
-pub fn serialize_signing_key_vec<S>(keys: &[SigningKey], serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let bs58_strings: Vec<String> = keys
-        .iter()
-        .map(|key| {
-            format!(
-                "{ED25519_PREFIX}:{}",
-                bs58::encode(key.to_keypair_bytes()).into_string()
-            )
-        })
-        .collect();
-    bs58_strings.serialize(serializer)
-}
+pub(crate) fn load_config_file(home_dir: &Path) -> anyhow::Result<ConfigFile> {
+    let config_path = home_dir.join("config.yaml");
+    let original_config_string =
+        fs::read_to_string(&config_path).context("failed to read config.yaml")?;
+    let config =
+        ConfigFile::from_yaml(&original_config_string).context("failed to parse config.yaml")?;
 
-pub fn deserialize_signing_key_vec<'de, D>(deserializer: D) -> Result<Vec<SigningKey>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let bs58_strings: Vec<String> = Vec::deserialize(deserializer)?;
-    bs58_strings
-        .into_iter()
-        .map(|bs58_str| {
-            let Some((ED25519_PREFIX, encoded_key)) = &bs58_str.split_once(":") else {
-                return Err(serde::de::Error::custom(
-                    "Key must start with 'ed25519:' prefix",
-                ));
-            };
-
-            let bytes: [u8; 64] = bs58::decode(encoded_key)
-                .into_vec()
-                .map_err(serde::de::Error::custom)?
-                .try_into()
-                .map_err(|_| serde::de::Error::custom("Key pair bytes must be 64 bytes."))?;
-
-            SigningKey::from_keypair_bytes(&bytes).map_err(serde::de::Error::custom)
-        })
-        .collect()
-}
-
-/// Credentials of the near account used to submit signature responses.
-/// It is recommended to use a separate dedicated account for this purpose.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RespondConfig {
-    /// It can be an arbitrary id because respond calls are not authenticated.
-    /// The account should have sufficient NEAR to pay for the function calls.
-    pub account_id: AccountId,
-    /// In production it is recommended to provide 50+ distinct access keys
-    /// to minimize incidence of nonce conflicts under heavy load.
-    pub access_keys: Vec<SigningKey>,
-}
-
-impl RespondConfig {
-    pub fn from_parts(config: &ConfigFile, secrets: &PersistentSecrets) -> Self {
-        Self {
-            account_id: config.my_near_account_id.clone(),
-            access_keys: vec![secrets.near_signer_key.clone()],
-        }
+    let re_serialized = serde_yaml::to_string(&config)?;
+    let update_config_with_new_schema = re_serialized != original_config_string;
+    if update_config_with_new_schema {
+        write_file_durably(&config_path, re_serialized.as_bytes())
+            .context("failed to rewrite config.yaml")?;
     }
+
+    Ok(config)
 }
 
 #[cfg(feature = "network-hardship-simulation")]
@@ -449,12 +361,13 @@ pub fn load_listening_blocks_file(home_dir: &Path) -> anyhow::Result<bool> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use mpc_contract::primitives::test_utils::bogus_ed25519_near_public_key;
     use rand::{
-        Rng, RngCore,
+        Rng, RngCore, SeedableRng as _,
         distributions::{Alphanumeric, Uniform},
-        rngs::OsRng,
+        rngs::{OsRng, StdRng},
     };
     use std::{
         assert_matches,
@@ -474,13 +387,9 @@ pub mod tests {
 
         assert!(PersistentSecrets::maybe_get_existing(temp_dir_path)?.is_none());
 
-        let expected_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 1)?;
+        let expected_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path)?;
 
-        // check that the key will not be overwritten
-        let _ = PersistentSecrets::generate_or_get_existing(temp_dir_path, 4242)
-            .expect("Existing secrets should be reusable");
-
-        let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path, 424)?;
+        let actual_secrets = PersistentSecrets::generate_or_get_existing(temp_dir_path)?;
 
         assert_eq!(
             actual_secrets.p2p_private_key,
@@ -556,7 +465,6 @@ pub mod tests {
         let secrets = PersistentSecrets {
             p2p_private_key: SigningKey::generate(&mut OsRng),
             near_signer_key: SigningKey::generate(&mut OsRng),
-            near_responder_keys: vec![SigningKey::generate(&mut OsRng); 8],
         };
         let secrets_str = serde_json::to_string(&secrets).unwrap();
 
@@ -565,11 +473,65 @@ pub mod tests {
         assert_eq!(secrets, secrets_copy);
     }
 
+    #[test]
+    fn generate_or_get_existing__should_load_secrets_with_legacy_responder_keys() {
+        // Given
+        let temp_dir = TempDir::new().unwrap();
+        let mut rng = StdRng::from_seed([1u8; 32]);
+        let expected_secrets = PersistentSecrets {
+            p2p_private_key: SigningKey::generate(&mut rng),
+            near_signer_key: SigningKey::generate(&mut rng),
+        };
+        let mut legacy_secrets = serde_json::to_value(&expected_secrets).unwrap();
+        legacy_secrets["near_responder_keys"] =
+            serde_json::json!([legacy_secrets["near_signer_key"].clone()]);
+        std::fs::write(
+            secrets_file(temp_dir.path()),
+            serde_json::to_vec(&legacy_secrets).unwrap(),
+        )
+        .unwrap();
+
+        // When
+        let secrets = PersistentSecrets::generate_or_get_existing(temp_dir.path()).unwrap();
+
+        // Then
+        assert_eq!(secrets, expected_secrets);
+    }
+
+    #[test]
+    fn generate_or_get_existing__should_write_empty_responder_keys_for_rollback_compatibility() {
+        // Given
+        let temp_dir = TempDir::new().unwrap();
+
+        // When
+        PersistentSecrets::generate_or_get_existing(temp_dir.path()).unwrap();
+
+        // Then
+        let written: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(secrets_file(temp_dir.path())).unwrap()).unwrap();
+        assert_eq!(written["near_responder_keys"], serde_json::json!([]));
+    }
+
+    #[test]
+    fn config_file__should_ignore_legacy_responder_fields() {
+        // Given
+        let legacy_config = format!(
+            "near_responder_account_id: sam.test.near\nnumber_of_responder_keys: 50{CONFIG_EXAMPLE}"
+        );
+
+        // When
+        let config: Result<ConfigFile, _> = serde_yaml::from_str(&legacy_config);
+
+        // Then
+        assert_eq!(
+            config.unwrap(),
+            serde_yaml::from_str::<ConfigFile>(CONFIG_EXAMPLE).unwrap()
+        );
+    }
+
     /// A minimal valid ConfigFile YAML string using the current SocketAddr format.
     const CONFIG_EXAMPLE: &str = r#"
 my_near_account_id: sam.test.near
-near_responder_account_id: sam.test.near
-number_of_responder_keys: 1
 web_ui: 127.0.0.1:8082
 migration_web_ui: 127.0.0.1:8078
 pprof_bind_address: 127.0.0.1:34002
@@ -578,10 +540,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -612,8 +570,6 @@ cores: 4
         // given: config with old WebUIConfig format (host + port as separate fields)
         let old_format_config = r#"
 my_near_account_id: sam.test.near
-near_responder_account_id: sam.test.near
-number_of_responder_keys: 1
 web_ui:
   host: 127.0.0.1
   port: 8082
@@ -626,10 +582,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -733,8 +685,6 @@ cores: 4
         // given: web_ui in new format, migration_web_ui in old format
         let mixed_config = r#"
 my_near_account_id: sam.test.near
-near_responder_account_id: sam.test.near
-number_of_responder_keys: 1
 web_ui: 127.0.0.1:8082
 migration_web_ui:
   host: 0.0.0.0
@@ -745,10 +695,6 @@ triple:
   desired_triples_to_buffer: 128
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 4
-  desired_presignatures_to_buffer: 64
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 indexer:
@@ -774,8 +720,8 @@ cores: 4
     }
 
     #[test]
-    fn from_file_does_not_rewrite_when_already_current_format() {
-        // given: write a config that is already in the canonical serialized format
+    fn load_config_file__should_not_rewrite_when_already_current_format() {
+        // Given
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -783,17 +729,17 @@ cores: 4
         let canonical = serde_yaml::to_string(&config).unwrap();
         fs::write(&path, &canonical).unwrap();
 
-        // when
-        let _ = ConfigFile::from_file(&path).unwrap();
+        // When
+        let _ = load_config_file(dir.path()).unwrap();
 
-        // then: file content is byte-for-byte identical (no rewrite)
+        // Then
         let content_after = fs::read_to_string(&path).unwrap();
         assert_eq!(canonical, content_after);
     }
 
     #[test]
-    fn from_file_rewrites_old_format_atomically() {
-        // given: write a config using the old host+port WebUI format
+    fn load_config_file__should_rewrite_old_format_atomically() {
+        // Given
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("config.yaml");
 
@@ -803,18 +749,16 @@ cores: 4
         );
         fs::write(&path, &old_format).unwrap();
 
-        // when
-        let config = ConfigFile::from_file(&path).unwrap();
+        // When
+        let config = load_config_file(dir.path()).unwrap();
 
-        // then: file is rewritten in the new format
+        // Then
         let content_after = fs::read_to_string(&path).unwrap();
         assert!(
             content_after.contains("web_ui: 127.0.0.1:8082"),
             "Expected new SocketAddr format, got:\n{content_after}"
         );
-        // no temp file left behind
         assert!(!dir.path().join("config.yaml.tmp").exists());
-        // rewritten content round-trips correctly
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
     }

@@ -201,11 +201,9 @@ EOF
     node_name="mpc-node-$i.test.near"
 
     NODE_PUBKEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_signer_public_key")
-    NODE_RESPONDER_KEY=$(curl -s localhost:$((BASE_WEB_UI_PORT + i))/public_data | jq -r ".near_responder_public_keys[0]")
 
     # Function-call key scoped to the MPC contract; empty --function-names allows all methods.
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" && \
-    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_RESPONDER_KEY\" network-config mpc-localnet sign-with-keychain send" &
+    run_quiet_on_success "near account add-key $node_name grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key \"$NODE_PUBKEY\" network-config mpc-localnet sign-with-keychain send" &
     pids_adding_keys+=($!)
   done
 
@@ -213,9 +211,11 @@ EOF
     wait "$pid"
   done
 
-  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" '
+  genesis_hash=$(curl -s localhost:3030/status | jq -r .genesis_hash)
+  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" --arg genesis_hash "$genesis_hash" '
   {
     tee_verifier_account_id: $tee_verifier_account,
+    genesis_hash: $genesis_hash,
     parameters: {
       threshold: ($threshold | tonumber),
       participants: {
@@ -245,6 +245,15 @@ EOF
   echo "Initializing contract"
   run_quiet_on_success "$(mpc_tx init "file-args ${init_args}" '0 NEAR' mpc-contract.test.near)"
   run_quiet_on_success_with_retries "$(mpc_view state)"
+
+  echo "Prepaying attestation storage for the nodes"
+  for ((i = 1; i <= N; i++)); do
+    node_name="mpc-node-$i.test.near"
+    run_quiet_on_success "$(mpc_tx prepay_attestation_storage "json-args '{\"account_id\":\"${node_name}\",\"grants\":1}'" '0.02 NEAR' "${node_name}")"
+  done
+
+  echo "Waiting for every node to attest"
+  wait_for_success "[[ \$($(mpc_view get_tee_accounts) 2>/dev/null | jq length) -eq ${N} ]]"
 
   echo "Adding domains to contract"
 

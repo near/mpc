@@ -105,8 +105,8 @@ impl MpcContract {
         Ok(applied)
     }
 
-    /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at
-    /// startup to validate their local `foreign_chains.yaml`.
+    /// On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to
+    /// check their local config against it and to enforce each chain's RPC quorum.
     pub fn allowed_foreign_chain_providers(
         &self,
     ) -> std::collections::BTreeMap<dtos::ForeignChain, dtos::ChainEntry> {
@@ -125,7 +125,7 @@ impl MpcContract {
         );
 
         let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants(),
+            ProtocolContractState::Running(state) => state.participants(),
             _ => {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
@@ -173,14 +173,17 @@ mod tests {
     };
     use crate::api::node_migration::MINIMUM_NODE_MANAGEMENT_DEPOSIT;
     use crate::api::test_utils::{
-        basic_setup, basic_setup_with_protocol, make_public_key_for_curve, participant_account_ids,
+        basic_setup, basic_setup_with_protocol, destination_of, init_running_with_domain,
+        make_public_key_for_curve, must_attest_new_node, must_get_attested_signer_key,
+        participant_account_ids, prepay_and_attest_all_participants,
+        prepay_and_submit_mock_attestation, vote_into_resharing,
     };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_ed25519_public_key, bogus_tee_verifier_account_id,
+        bogus_ed25519_near_public_key, bogus_genesis_hash, bogus_tee_verifier_account_id,
         gen_account_id, gen_participant, gen_participants,
     };
     use crate::primitives::thresholds::{
@@ -188,11 +191,8 @@ mod tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::running::RunningContractState;
-    use crate::tee::tee_state::{NodeId, TeeState};
     use dtos::{Curve, DomainConfig, DomainId, Protocol, ReconstructionThreshold};
-    use mpc_attestation::attestation::MockAttestation as MpcMockAttestation;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
-    use near_mpc_contract_interface::types::DestinationNodeInfo;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::{AccountId, NearToken, testing_env};
     use rand::rngs::OsRng;
@@ -200,7 +200,6 @@ mod tests {
     use std::collections::BTreeMap;
     use std::panic;
     use std::str::FromStr;
-    use std::time::Duration;
 
     #[test]
     fn vote_update_foreign_chain_providers__should_apply_chain_and_return_it_when_threshold_reached()
@@ -730,19 +729,12 @@ mod tests {
         assert!(contract.get_available_foreign_chains().is_empty());
 
         // Transition to Resharing. Use the same participant set so mocked attestations remain valid.
-        let resharing = {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running state");
-            };
-            let proposal = ProposedGovernanceThresholdParameters::new(
-                state.parameters.clone(),
-                BTreeMap::new(),
-            );
-            state
-                .transition_to_resharing_no_checks(&proposal)
-                .expect("contract has at least one domain")
+        let ProtocolContractState::Running(ref state) = contract.protocol_state else {
+            panic!("expected Running state");
         };
-        contract.protocol_state = ProtocolContractState::Resharing(resharing);
+        let proposal =
+            ProposedGovernanceThresholdParameters::new(state.parameters.clone(), BTreeMap::new());
+        vote_into_resharing(&mut contract, &proposal);
 
         // When: the 3rd participant (from the old running set) registers during Resharing.
         register_foreign_chains_config_for(
@@ -763,40 +755,19 @@ mod tests {
     fn recompute_available_foreign_chains__should_use_domain_threshold_not_governance_threshold() {
         // Given: 4 participants, governance threshold=3, ForeignTx domain reconstruction_threshold=2.
         // Only 2 supporters will register — below governance threshold but meets domain threshold.
-        let contract_account_id = AccountId::from_str("contract_account.near").unwrap();
-        testing_env!(
-            VMContextBuilder::new()
-                .attached_deposit(NearToken::from_yoctonear(1))
-                .predecessor_account_id(contract_account_id.clone())
-                .current_account_id(contract_account_id)
-                .build()
-        );
-        let domain_id = DomainId::default();
-        let domains = vec![DomainConfig {
-            id: domain_id,
-            protocol: Protocol::CaitSith,
-            reconstruction_threshold: ReconstructionThreshold::new(2),
-            purpose: dtos::DomainPurpose::ForeignTx,
-        }];
-        let (pk, _sk) = make_public_key_for_curve(Curve::Secp256k1, &mut OsRng);
-        let key_for_domain = KeyForDomain {
-            domain_id,
-            key: pk.try_into().unwrap(),
-            attempt: AttemptId::new(),
-        };
-        let keyset = Keyset::new(EpochId::new(0), vec![key_for_domain]);
         let parameters =
             GovernanceThresholdParameters::new(gen_participants(4), GovernanceThreshold::new(3))
                 .unwrap();
-        let mut contract = MpcContract::init_running(
-            domains,
-            1,
-            (&keyset).into_dto_type(),
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .unwrap();
+        let mut contract = init_running_with_domain(
+            &parameters,
+            DomainConfig {
+                id: DomainId::default(),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: dtos::DomainPurpose::ForeignTx,
+            },
+        );
+        prepay_and_attest_all_participants(&mut contract);
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -858,13 +829,15 @@ mod tests {
                 .unwrap();
         let mut contract = MpcContract::init_running(
             domains,
-            2,
+            DomainId(2),
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .unwrap();
+        prepay_and_attest_all_participants(&mut contract);
         let participants = participant_account_ids(&contract);
         whitelist_chain(&mut contract, dtos::ForeignChain::Bitcoin);
 
@@ -924,63 +897,25 @@ mod tests {
         )
         .unwrap();
         let proposal = ProposedGovernanceThresholdParameters::new(proposed, BTreeMap::new());
-        let resharing = {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running state");
-            };
-            state
-                .transition_to_resharing_no_checks(&proposal)
-                .expect("contract has at least one domain")
-        };
-        contract.protocol_state = ProtocolContractState::Resharing(resharing);
-        // The mocked attestations record each TLS key as the account public key.
-        contract.tee_state = TeeState::with_mocked_participant_attestations(&all_participants);
-
-        // When
-        let joining_result = register_bitcoin_as(
+        prepay_and_submit_mock_attestation(
             &mut contract,
             &joining,
-            near_sdk::PublicKey::from(joining_info.tls_public_key.clone()),
-        );
-        let departing_result = register_bitcoin_as(
-            &mut contract,
-            &departing,
-            near_sdk::PublicKey::from(departing_info.tls_public_key.clone()),
-        );
+            joining_info.tls_public_key.clone(),
+        )
+        .expect("the joining participant's attestation should be accepted");
+        vote_into_resharing(&mut contract, &proposal);
+        let joining_pk = must_get_attested_signer_key(&contract, &joining_info.tls_public_key);
+        let departing_pk = must_get_attested_signer_key(&contract, &departing_info.tls_public_key);
+
+        // When
+        let joining_result = register_bitcoin_as(&mut contract, &joining, joining_pk);
+        let departing_result = register_bitcoin_as(&mut contract, &departing, departing_pk);
 
         // Then
         assert_eq!(joining_result, Ok(()));
         assert!(has_config(&contract, &joining_info.tls_public_key));
         assert_eq!(departing_result, not_participant(&departing));
         assert!(!has_config(&contract, &departing_info.tls_public_key));
-    }
-
-    /// Stores a valid attestation for a new node of `account_id` under fresh keys.
-    fn must_attest_new_node(contract: &mut MpcContract, account_id: &AccountId) -> NodeId {
-        let node_id = NodeId {
-            account_id: account_id.clone(),
-            tls_public_key: bogus_ed25519_public_key(),
-            account_public_key: bogus_ed25519_public_key(),
-        };
-        contract
-            .tee_state
-            .verify_and_store_mock(
-                node_id.clone(),
-                MpcMockAttestation::Valid,
-                Duration::from_secs(contract.config.tee_upgrade_deadline_duration_seconds),
-            )
-            .expect("attestation insertion should succeed");
-        node_id
-    }
-
-    fn destination_of(node_id: &NodeId) -> DestinationNodeInfo {
-        DestinationNodeInfo {
-            signer_account_pk: node_id.account_public_key.clone(),
-            destination_node_info: dtos::ParticipantInfo {
-                url: "https://new-node.example.com".to_string(),
-                tls_public_key: node_id.tls_public_key.clone(),
-            },
-        }
     }
 
     fn register_bitcoin_as(
@@ -1059,6 +994,7 @@ mod tests {
             .unwrap()
             .tls_public_key
             .clone();
+        let previous_node_pk = must_get_attested_signer_key(&contract, &previous_tls_key);
         let destination = must_attest_new_node(&mut contract, &operator);
         let mut env = Environment::new(None, Some(operator.clone()), None);
         env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
@@ -1078,11 +1014,7 @@ mod tests {
             .expect("migration should conclude");
 
         // When
-        let result = register_bitcoin_as(
-            &mut contract,
-            &operator,
-            near_sdk::PublicKey::from(previous_tls_key.clone()),
-        );
+        let result = register_bitcoin_as(&mut contract, &operator, previous_node_pk);
 
         // Then
         assert_eq!(result, not_participant(&operator));

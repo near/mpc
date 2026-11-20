@@ -27,6 +27,10 @@ method:   launcher_hash_votes
 args:     {}
 
 contract: mpc.near
+method:   parameters_votes
+args:     {}
+
+contract: mpc.near
 method:   os_measurement_votes
 args:     {}
 
@@ -39,7 +43,15 @@ method:   state
 args:     {}
 
 contract: mpc.near
+method:   current_keyset
+args:     {}
+
+contract: mpc.near
 method:   config
+args:     {}
+
+contract: mpc.near
+method:   genesis_hash
 args:     {}
 
 contract: mpc.near
@@ -81,10 +93,6 @@ args:     {"domain_id":0}
 contract: mpc.near
 method:   derived_public_key
 args:     {"path":"test","predecessor":"alice.near","domain_id":0}
-
-contract: mpc.near
-method:   latest_key_version
-args:     {"signature_scheme":"Secp256k1"}
 
 contract: mpc.near
 method:   available_attestation_grants

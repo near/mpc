@@ -10,6 +10,7 @@ pub(crate) const OUTGOING_CONNECTION: &str = "outgoing";
 
 pub(crate) const PING_MESSAGE: &str = "ping";
 pub(crate) const INDEXER_HEIGHT_MESSAGE: &str = "indexer_height";
+pub(crate) const CONNECTED_PEERS_MESSAGE: &str = "connected_peers";
 pub(crate) const MPC_START_MESSAGE: &str = "mpc_start";
 pub(crate) const MPC_COMPUTATION_MESSAGE: &str = "mpc_computation";
 pub(crate) const MPC_ABORT_MESSAGE: &str = "mpc_abort";

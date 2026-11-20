@@ -28,7 +28,6 @@ foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-factory = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
-gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
@@ -48,13 +47,14 @@ near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
-near-contract-transport = { workspace = true }
+near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "call-args",
+    "client",
     "k256",
     "ed25519-dalek",
     "blstrs",
@@ -75,6 +75,7 @@ rocksdb = { workspace = true }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
 tee-authority = { workspace = true }
@@ -120,8 +121,8 @@ insta = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
+near-contract-transport = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
-serde_yaml = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
 test-log = { workspace = true }

@@ -7,11 +7,11 @@ use ed25519_dalek::SigningKey;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{
     BlockArgs, CKDConfig, ChainId, ConfigFile, IndexerConfig, KeygenConfig, LogConfig, LogFormat,
-    NearInitConfig, PresignatureConfig, SecretsStartConfig, SignatureConfig, StartConfig, SyncMode,
-    TripleConfig,
+    NearInitConfig, SecretsStartConfig, SignatureConfig, StartConfig, SyncMode, TripleConfig,
 };
-use near_indexer_primitives::types::Finality;
+use near_indexer_primitives::{CryptoHash, types::Finality};
 use near_kit::AccountId;
+use near_mpc_contract_interface::types::ParticipantUrl;
 use near_mpc_crypto_types::Ed25519PublicKey;
 use serde_json::json;
 
@@ -192,13 +192,13 @@ pub struct MpcNodeSetup {
     // NEAR chain info (from sandbox)
     chain_id: String,
     near_genesis_path: PathBuf,
+    near_genesis_hash: CryptoHash,
     near_boot_nodes: String,
 
     // Derived config values
     secret_store_key_hex: String,
     backup_encryption_key_hex: String,
     triples_to_buffer: usize,
-    presignatures_to_buffer: usize,
 
     // Foreign chains configuration
     foreign_chains_config: mpc_node_config::ForeignChainsConfig,
@@ -239,11 +239,11 @@ impl MpcNodeSetup {
             mpc_contract_id: args.mpc_contract_id,
             chain_id: args.chain_id,
             near_genesis_path: args.near_genesis_path,
+            near_genesis_hash: args.near_genesis_hash,
             near_boot_nodes: args.near_boot_nodes,
             secret_store_key_hex,
             backup_encryption_key_hex,
             triples_to_buffer: args.triples_to_buffer,
-            presignatures_to_buffer: args.presignatures_to_buffer,
             foreign_chains_config: args.foreign_chains_config,
             tls_trust_roots: args.tls_trust_roots,
             config_path,
@@ -260,8 +260,8 @@ impl MpcNodeSetup {
     }
 
     /// The P2P URL for this node.
-    pub fn p2p_url(&self) -> String {
-        format!("http://127.0.0.1:{}", self.ports.p2p)
+    pub fn p2p_url(&self) -> ParticipantUrl {
+        localhost_with_port(self.ports.p2p)
     }
 
     /// The NEAR account ID for this node.
@@ -419,7 +419,6 @@ impl MpcNodeSetup {
         let secrets = json!({
             "p2p_private_key": format_key(&self.p2p_signing_key),
             "near_signer_key": format_key(&self.near_signer_key),
-            "near_responder_keys": [format_key(&self.near_signer_key)],
         });
 
         std::fs::write(&secrets_path, serde_json::to_vec_pretty(&secrets)?)
@@ -445,7 +444,6 @@ impl MpcNodeSetup {
                 latest_allowed_hash_file_path: "latest_allowed_hash.txt".into(),
                 authority: TeeAuthorityConfig::Local,
             },
-            gcp: None,
             log: LogConfig {
                 format: LogFormat::Plain,
                 filter: Some("debug".to_string()),
@@ -464,9 +462,7 @@ impl MpcNodeSetup {
                 tier3_public_addr: None,
             }),
             node: ConfigFile {
-                my_near_account_id: signer.clone(),
-                near_responder_account_id: signer,
-                number_of_responder_keys: 1,
+                my_near_account_id: signer,
                 web_ui: format!("127.0.0.1:{}", self.ports.web_ui).parse()?,
                 migration_web_ui: format!("127.0.0.1:{}", self.ports.migration_web_ui).parse()?,
                 pprof_bind_address: format!("127.0.0.1:{}", self.ports.pprof).parse()?,
@@ -476,6 +472,7 @@ impl MpcNodeSetup {
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),
                     mpc_contract_id: mpc_contract,
+                    genesis_hash: Some(self.near_genesis_hash),
                     finality: Finality::None,
                     sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                     port_override: None,
@@ -486,16 +483,9 @@ impl MpcNodeSetup {
                     desired_triples_to_buffer: self.triples_to_buffer,
                     timeout_sec: 120,
                     parallel_triple_generation_stagger_time_sec: 1,
+                    batch_size: mpc_node_config::TripleBatchSize::default(),
                 },
-                presignature: PresignatureConfig {
-                    concurrency: 2,
-                    desired_presignatures_to_buffer: self.presignatures_to_buffer,
-                    timeout_sec: 60,
-                },
-                signature: SignatureConfig {
-                    timeout_sec: 60,
-                    online_presign: true,
-                },
+                signature: SignatureConfig { timeout_sec: 60 },
                 ckd: CKDConfig { timeout_sec: 60 },
                 keygen: KeygenConfig { timeout_sec: 60 },
                 foreign_chains: self.foreign_chains_config.clone(),
@@ -524,11 +514,11 @@ pub struct MpcNodeSetupArgs {
     pub ports: NodePorts,
     pub mpc_contract_id: AccountId,
     pub triples_to_buffer: usize,
-    pub presignatures_to_buffer: usize,
     /// Chain ID from the sandbox's genesis.json.
     pub chain_id: String,
     /// Path to genesis.json on the host (copied from sandbox container).
     pub near_genesis_path: PathBuf,
+    pub near_genesis_hash: CryptoHash,
     /// Boot nodes string: `"ed25519:<pubkey>@127.0.0.1:<port>"`.
     pub near_boot_nodes: String,
     /// Foreign chains configuration for this node.
@@ -558,4 +548,8 @@ impl NodePorts {
             near_network: ports.near_network_port(index),
         }
     }
+}
+
+pub(crate) fn localhost_with_port(port: u16) -> ParticipantUrl {
+    format!("http://127.0.0.1:{port}").try_into().unwrap()
 }

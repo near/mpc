@@ -41,11 +41,11 @@ if $USE_RUST_LAUNCHER; then
   fi
   CONTAINER_ID=$(docker ps -aqf "name=^mpc-node$")
 else
-  touch /tmp/image-digest.bin
   # Test container startup - fail if container can't start
-  # Start container in background and check status after 60 seconds
+  # Start container in background and check status after 60 seconds.
+  # The data dir is a volume of its own, so checks of several images can run at once
   CONTAINER_ID=$(docker run -d \
-    -v /tmp/:/data \
+    -v /data \
     -e MPC_HOME_DIR="/data" \
     -e MPC_ACCOUNT_ID=test_image.near \
     -e RUST_BACKTRACE="full" \
@@ -80,11 +80,9 @@ fi
 
 echo "✅ Container started successfully"
 
-docker rm -f "$CONTAINER_ID"
+docker rm -f -v "$CONTAINER_ID"
 
 if $USE_RUST_LAUNCHER; then
   docker compose -f launcher_docker_compose_nontee_local.yaml down -v --rmi local
   rm -f launcher_docker_compose_nontee_local.yaml
-else
-  rm /tmp/image-digest.bin
 fi

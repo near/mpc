@@ -43,7 +43,7 @@ impl<S> TeeContext<S> {
     ) -> Result<(), TeeContextError>;
 
     /// Calls verify_tee() on the governance contract, triggering on-chain
-    /// re-validation of all stored attestations. The caller is responsible
+    /// re-validation of the participants' attestations. The caller is responsible
     /// for scheduling (e.g., every 2 days).
     pub async fn verify_tee(&self) -> Result<(), TeeContextError>;
 }

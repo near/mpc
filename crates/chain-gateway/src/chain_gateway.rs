@@ -8,8 +8,10 @@ use near_async::ActorSystem;
 use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
-use nearcore::NearConfig;
+use near_store::db::RocksDB;
+use nearcore::{NearConfig, NearNode};
 use tokio::sync::mpsc::Receiver;
+use tokio_util::sync::CancellationToken;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
 use crate::event_subscriber;
@@ -18,6 +20,7 @@ use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
+use crate::node_config::NodeConfig;
 use crate::primitives::{
     FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction, view_when_synced,
 };
@@ -100,7 +103,7 @@ impl HasPollInterval for ChainGateway {
 /// shutdown via [`send_shutdown`](Self::send_shutdown).
 pub struct NodeHandle {
     thread_handle: std::thread::JoinHandle<()>,
-    shutdown_sender: Option<tokio::sync::oneshot::Sender<()>>,
+    shutdown: CancellationToken,
 }
 
 impl NodeHandle {
@@ -112,21 +115,47 @@ impl NodeHandle {
     /// Sends the shutdown signal to the nearcore node.
     /// Returns `true` if the signal was sent, `false` if already sent or node already dead.
     pub fn send_shutdown(&mut self) -> bool {
-        self.shutdown_sender
-            .take()
-            .map(|tx| tx.send(()).is_ok())
-            .unwrap_or(false)
+        let sent = self.is_node_alive() && !self.shutdown.is_cancelled();
+        self.shutdown.cancel();
+        sent
+    }
+}
+
+/// Tells the node to stop, then blocks until every [`RocksDB`] instance in the process is closed,
+/// not just this node's databases. So if two handles are dropped one by one on the same thread,
+/// for example as fields of one struct, the first drop also waits for the second node. If nothing
+/// else stops that node, only its own handle's drop would tell it to, and that drop can't start
+/// while the first one is waiting, so the first drop waits forever. To avoid this, call
+/// [`NodeHandle::send_shutdown`] on every handle before dropping any of them
+impl Drop for NodeHandle {
+    fn drop(&mut self) {
+        self.send_shutdown();
+        RocksDB::block_until_all_instances_are_dropped();
     }
 }
 
 impl ChainGateway {
-    /// Spawns a near node with `indexer_config`.
+    pub fn from_near_node(near_node: &NearNode, near_config: &NearConfig) -> Self {
+        Self::new(near_node, expected_block_time(near_config))
+    }
+
+    fn new(near_node: &NearNode, expected_block_time: Duration) -> Self {
+        Self {
+            view_client: NearViewClientActorHandle::new(near_node.view_client.clone()),
+            client: NearClientActorHandle::new(near_node.client.clone()),
+            rpc_handler: NearRpcActorHandle::new(near_node.rpc_handler.clone()),
+            expected_block_time,
+        }
+    }
+
+    /// Spawns a NEAR node with [`NodeConfig`].
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
     /// Returns a stream for BlockUpdates if BlockEventSubscriptions is not None.
     pub async fn start(
-        indexer_config: near_indexer::IndexerConfig,
+        node_config: NodeConfig,
         subscriber: Option<BlockEventSubscriptions>,
+        shutdown: CancellationToken,
     ) -> Result<
         (
             ChainGateway,
@@ -135,6 +164,7 @@ impl ChainGateway {
         ),
         ChainGatewayError,
     > {
+        let NodeConfig(indexer_config) = node_config;
         let near_config: NearConfig = indexer_config.load_near_config().map_err(|err| {
             ChainGatewayError::FailureLoadingConfig {
                 msg: err.to_string(),
@@ -149,14 +179,15 @@ impl ChainGateway {
         });
 
         let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
-        let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+        let shutdown = shutdown.child_token();
+        let stop_unless_started = shutdown.clone().drop_guard();
 
         let thread_handle = std::thread::spawn(move || {
             run_node(
                 ready_sender,
                 near_config,
                 &home_dir,
-                shutdown_receiver,
+                shutdown,
                 streamer_setup,
             )
         });
@@ -164,7 +195,7 @@ impl ChainGateway {
         let (chain_gateway, stream) = ready_receiver.await.expect("startup thread died")?;
         let node_handle = NodeHandle {
             thread_handle,
-            shutdown_sender: Some(shutdown_sender),
+            shutdown: stop_unless_started.disarm(),
         };
         Ok((chain_gateway, node_handle, stream))
     }
@@ -172,19 +203,23 @@ impl ChainGateway {
 
 type RunNodeResult = Result<(ChainGateway, Option<Receiver<BlockUpdate>>), ChainGatewayError>;
 
-fn run_node(
-    ready_sender: tokio::sync::oneshot::Sender<RunNodeResult>,
-    near_config: nearcore::NearConfig,
-    home_dir: &Path,
-    mut shutdown_receiver: tokio::sync::oneshot::Receiver<()>,
-    streamer_setup: Option<StreamerSetup>,
-) {
-    let expected_block_time: std::time::Duration = near_config
+fn expected_block_time(near_config: &NearConfig) -> Duration {
+    near_config
         .config
         .consensus
         .min_block_production_delay
         .try_into()
-        .expect("block time must be non-negative");
+        .expect("block time must be non-negative")
+}
+
+fn run_node(
+    ready_sender: tokio::sync::oneshot::Sender<RunNodeResult>,
+    near_config: nearcore::NearConfig,
+    home_dir: &Path,
+    shutdown: CancellationToken,
+    streamer_setup: Option<StreamerSetup>,
+) {
+    let block_time = expected_block_time(&near_config);
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -192,6 +227,7 @@ fn run_node(
 
     rt.block_on(async move {
         let actor_system = ActorSystem::new();
+        let _stop_actors = StopActorSystemOnDrop(actor_system.clone());
         let near_node =
             match nearcore::start_with_config(home_dir, near_config, actor_system.clone()).await {
                 Ok(node) => node,
@@ -209,9 +245,7 @@ fn run_node(
             (indexer, s.subscriber)
         });
 
-        let view_client = NearViewClientActorHandle::new(near_node.view_client);
-        let client = NearClientActorHandle::new(near_node.client);
-        let rpc_handler = NearRpcActorHandle::new(near_node.rpc_handler);
+        let chain_gateway = ChainGateway::new(&near_node, block_time);
 
         let stream = if let Some((indexer, streamer_config)) = indexer_and_params {
             // Don't start the streamer until synced, or its `LatestSynced`
@@ -219,16 +253,14 @@ fn run_node(
             tracing::info!(
                 "chain-gateway waiting for node to finish syncing before streaming blocks."
             );
-            let synced = await_sync_or_shutdown(client.wait_for_full_sync(), async {
-                let _ = (&mut shutdown_receiver).await;
-            })
-            .await;
+            let synced =
+                await_sync_or_shutdown(chain_gateway.wait_for_full_sync(), shutdown.cancelled())
+                    .await;
             if !synced {
                 tracing::info!("shutdown requested before sync completed; exiting startup.");
                 let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {
                     msg: "shutdown requested before node finished syncing".to_string(),
                 }));
-                actor_system.stop();
                 return;
             }
 
@@ -236,7 +268,7 @@ fn run_node(
             match event_subscriber::streamer::start(
                 streamer_config,
                 raw_stream,
-                view_client.clone(),
+                chain_gateway.view_client.clone(),
             )
             .await
             {
@@ -250,26 +282,9 @@ fn run_node(
             None
         };
 
-        let _ = ready_sender.send(Ok((
-            ChainGateway {
-                view_client,
-                client,
-                rpc_handler,
-                expected_block_time,
-            },
-            stream,
-        )));
+        let _ = ready_sender.send(Ok((chain_gateway, stream)));
 
-        match shutdown_receiver.await {
-            Ok(()) => {
-                tracing::info!("node gracefully shutting down actor system");
-            }
-            _ => {
-                tracing::info!("shutdown sender was dropped, shutting down actor system");
-            }
-        }
-
-        actor_system.stop();
+        shutdown.cancelled().await;
     });
 }
 
@@ -279,6 +294,14 @@ struct StreamerSetup {
     subscriber: BlockEventSubscriptions,
     indexer_config: near_indexer::IndexerConfig,
     near_config: NearConfig,
+}
+
+struct StopActorSystemOnDrop(ActorSystem);
+
+impl Drop for StopActorSystemOnDrop {
+    fn drop(&mut self) {
+        self.0.stop();
+    }
 }
 
 async fn await_sync_or_shutdown(

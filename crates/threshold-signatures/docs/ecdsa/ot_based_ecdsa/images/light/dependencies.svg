@@ -158,24 +158,13 @@
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.76111px;line-height:1.25;font-family:'IBM Plex Mono';-inkscape-font-specification:'IBM Plex Mono, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#ff0000;fill-opacity:1;stroke-width:0.264583"
-       x="125.68153"
-       y="81.207253"
-       id="text3057"><tspan
-         sodipodi:role="line"
-         id="tspan3055"
-         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.76111px;font-family:'IBM Plex Mono';-inkscape-font-specification:'IBM Plex Mono, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#ff0000;fill-opacity:1;stroke-width:0.264583"
-         x="125.68153"
-         y="81.207253">Presign</tspan></text>
-    <text
-       xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.76111px;line-height:1.25;font-family:'IBM Plex Mono';-inkscape-font-specification:'IBM Plex Mono, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#ff0000;fill-opacity:1;stroke-width:0.264583"
-       x="182.53421"
+       x="150.25533"
        y="81.276436"
        id="text3061"><tspan
          sodipodi:role="line"
          id="tspan3059"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:7.76111px;font-family:'IBM Plex Mono';-inkscape-font-specification:'IBM Plex Mono, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal;text-align:center;text-anchor:middle;fill:#ff0000;fill-opacity:1;stroke-width:0.264583"
-         x="182.53421"
+         x="150.25533"
          y="81.276436">Sign</tspan></text>
     <text
        xml:space="preserve"
@@ -211,13 +200,6 @@
        y="73.858093" />
     <rect
        style="fill:none;fill-opacity:1;stroke:#ff0000;stroke-width:0.750001;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;paint-order:stroke fill markers"
-       id="rect4031"
-       width="39.190773"
-       height="10.802629"
-       x="106.27194"
-       y="72.986511" />
-    <rect
-       style="fill:none;fill-opacity:1;stroke:#ff0000;stroke-width:0.750001;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;paint-order:stroke fill markers"
        id="rect4033"
        width="38.297577"
        height="11.880927"
@@ -226,17 +208,17 @@
     <rect
        style="fill:none;fill-opacity:1;stroke:#ff0000;stroke-width:0.750001;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;paint-order:stroke fill markers"
        id="rect4035"
-       width="24.137455"
-       height="12.508303"
-       x="170.10126"
-       y="72.319923" />
+       width="87.966775"
+       height="10.802629"
+       x="106.27194"
+       y="72.986511" />
     <path
        style="fill:none;fill-opacity:1;stroke:currentColor;stroke-width:0.735839;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;marker-end:url(#marker4744);paint-order:stroke fill markers"
        d="M 82.289588,124.77354 102.54923,124.5876"
        id="path4714" />
     <path
        style="fill:none;fill-opacity:1;stroke:currentColor;stroke-width:0.744306;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;marker-end:url(#TriangleStart);paint-order:stroke fill markers"
-       d="m 181.99382,120.36277 0.0891,-32.836366"
+       d="m 181.99382,120.36277 0.0891,-34.252367"
        id="path4788" />
     <path
        style="fill:none;fill-opacity:1;stroke:currentColor;stroke-width:0.737433;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;marker-end:url(#marker6354);paint-order:stroke fill markers"
@@ -246,12 +228,5 @@
        style="fill:none;fill-opacity:1;stroke:currentColor;stroke-width:0.742777;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;marker-end:url(#marker6354);paint-order:stroke fill markers"
        d="m 123.87669,117.36858 -0.0951,-31.258177"
        id="path7954" />
-    <path
-       style="fill:none;fill-opacity:1;stroke:currentColor;stroke-width:0.715692;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:0.960374;marker-end:url(#marker6354);paint-order:stroke fill markers"
-       d="m 146.30254,78.062007 h 21.32107"
-       id="path8000"
-       inkscape:export-filename="path8000.svg"
-       inkscape:export-xdpi="83.677223"
-       inkscape:export-ydpi="83.677223" />
   </g>
 </svg>

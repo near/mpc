@@ -1,11 +1,12 @@
 use std::future::Future;
 
 use mpc_node::keyshare::Keyshare;
-use near_mpc_contract_interface::types::{EpochId, Keyset, ProtocolContractState};
+use near_mpc_contract_interface::types::{EpochId, Keyset};
 
 use crate::types;
 
 pub trait ReportBackupStatus {
+    /// Reported for a new backup and for a fetch that confirms the stored one.
     /// `timestamp_seconds` is `None` when the backup time is unknown, e.g. for a backup
     /// found already on disk.
     fn keyset_backed_up(&self, epoch_id: EpochId, timestamp_seconds: Option<u64>);
@@ -52,10 +53,15 @@ pub trait P2PClient {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
-pub trait ReadContractState {
+/// Reads the output of the contract's `current_keyset` view.
+pub trait ReadCurrentKeyset {
     type Error: std::fmt::Debug;
 
-    fn get_contract_state(
-        &self,
-    ) -> impl Future<Output = Result<ProtocolContractState, Self::Error>> + Send;
+    fn current_keyset(&self) -> impl Future<Output = Result<Option<Keyset>, Self::Error>> + Send;
+}
+
+/// Watches the output of the contract's `current_keyset` view.
+pub trait WatchCurrentKeyset:
+    near_contract_transport::WatchContractState<Value = Option<Keyset>, ViewError: std::fmt::Debug>
+{
 }

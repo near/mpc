@@ -1,20 +1,18 @@
 use crate::sandbox::utils::{
-    consts::GAS_FOR_VOTE_RESHARED,
     mpc_contract::get_state,
-    transactions::{execute_async_handle_calls, execute_async_transactions},
+    sandbox_mpc_contract::SandboxMpcContract,
+    transactions::{CallMpcContract, all_receipts_successful, execute_async_handle_calls},
 };
 use dtos::{AttemptId, EpochId, KeyEventId};
 use mpc_contract::primitives::thresholds::{
     GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
-use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos, ProtocolContractState};
-use near_workspaces::{Account, Contract};
-use serde_json::json;
+use near_workspaces::Account;
 use std::collections::BTreeMap;
 
 pub async fn conclude_resharing(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     all_participants: &[Account],
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
@@ -46,25 +44,36 @@ pub async fn conclude_resharing(
     Ok(())
 }
 
-pub async fn vote_cancel_reshaing(contract: &Contract, accounts: &[Account]) -> anyhow::Result<()> {
+pub async fn vote_cancel_reshaing(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+) -> anyhow::Result<()> {
     execute_async_handle_calls(accounts, contract, |handle| async move {
         handle.vote_cancel_resharing().await
     })
     .await
 }
 
+/// Votes for `proposal` from the first governance threshold of `current_participants`, the
+/// votes that make the contract accept it. A vote past the threshold would fail with
+/// `EpochMismatch`, as acceptance moves the contract past `prospective_epoch_id`.
 pub async fn vote_new_parameters(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     prospective_epoch_id: u64,
     proposal: &GovernanceThresholdParameters,
-    persistent_participants: &[Account],
-    new_participants: &[Account],
+    current_participants: &[Account],
 ) -> anyhow::Result<()> {
+    let threshold = match get_state(contract).await {
+        ProtocolContractState::Running(state) => state.parameters.threshold,
+        ProtocolContractState::Resharing(state) => {
+            state.previous_running_state.parameters.threshold
+        }
+        state => anyhow::bail!("cannot vote for new parameters in state {state:?}"),
+    };
+    let voters = &current_participants[..usize::try_from(threshold.0)?];
     let proposal: dtos::ProposedGovernanceThresholdParameters =
         ProposedGovernanceThresholdParameters::new(proposal.clone(), BTreeMap::new()).into();
-    // At least threshold old participants need to vote first,
-    // here we are just using all of them
-    execute_async_handle_calls(persistent_participants, contract, |handle| {
+    execute_async_handle_calls(voters, contract, |handle| {
         let proposal = proposal.clone();
         async move {
             handle
@@ -72,23 +81,11 @@ pub async fn vote_new_parameters(
                 .await
         }
     })
-    .await?;
-
-    // then new participant can vote
-    execute_async_handle_calls(new_participants, contract, |handle| {
-        let proposal = proposal.clone();
-        async move {
-            handle
-                .vote_new_parameters(EpochId::new(prospective_epoch_id), proposal)
-                .await
-        }
-    })
-    .await?;
-    Ok(())
+    .await
 }
 
 pub async fn start_reshare_instance(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
@@ -116,28 +113,21 @@ pub async fn start_reshare_instance(
         })
         .unwrap();
     let result = leader
-        .call(contract.id(), method_names::START_RESHARE_INSTANCE)
-        .args_json(json!({"key_event_id": key_event_id}))
-        .transact()
+        .call_mpc(contract.id())
+        .start_reshare_instance(key_event_id)
         .await?;
-    if !result.is_success() {
-        anyhow::bail!("{result:#?}");
-    }
+    all_receipts_successful(result)?;
     Ok(())
 }
 
 pub async fn vote_reshared(
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     accounts: &[Account],
     key_event_id: KeyEventId,
 ) -> anyhow::Result<()> {
-    execute_async_transactions(
-        accounts,
-        contract,
-        method_names::VOTE_RESHARED,
-        &json!({"key_event_id": key_event_id}),
-        GAS_FOR_VOTE_RESHARED,
-    )
+    execute_async_handle_calls(accounts, contract, |handle| async move {
+        handle.vote_reshared(key_event_id).await
+    })
     .await
 }
 
@@ -146,7 +136,7 @@ pub async fn vote_reshared(
 /// and voting reshared to complete the transition.
 pub async fn do_resharing(
     remaining_accounts: &[Account],
-    contract: &Contract,
+    contract: &SandboxMpcContract,
     new_threshold_parameters: GovernanceThresholdParameters,
     prospective_epoch_id: EpochId,
 ) -> anyhow::Result<()> {
@@ -155,7 +145,6 @@ pub async fn do_resharing(
         prospective_epoch_id.0,
         &new_threshold_parameters,
         remaining_accounts,
-        &[],
     )
     .await?;
     conclude_resharing(contract, remaining_accounts, prospective_epoch_id).await?;

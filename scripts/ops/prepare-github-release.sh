@@ -2,8 +2,8 @@
 #
 # prepare-github-release.sh — Apply the local file changes for a release.
 #
-# Run this on a working branch off the release-source branch (e.g. off
-# `main` for a minor release, off `release/vX.Y` for a patch). The script
+# Run this on a working branch off the prep target (`main` for a major/minor
+# release, `release/vX.Y` for a patch); see RELEASES.md. The script
 # only touches files and commits — branch creation, push, and PR opening
 # are the operator's responsibility.
 #
@@ -39,6 +39,14 @@ VERSION="$1"
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "Error: '$VERSION' is not valid semver (expected MAJOR.MINOR.PATCH)."
     exit 1
+fi
+
+IFS=. read -r MAJOR MINOR PATCH <<< "$VERSION"
+RELEASE_BRANCH="release/v${MAJOR}.${MINOR}"
+if [[ "$PATCH" == "0" ]]; then
+    PR_BASE="main"
+else
+    PR_BASE="$RELEASE_BRANCH"
 fi
 
 # --- Helper functions ---
@@ -83,6 +91,25 @@ cd "$REPO_ROOT"
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
     die "Working tree has uncommitted changes. Please commit or stash them first."
+fi
+
+# --- Check the release branch ---
+
+# A release branch cut from main HEAD is the same commit as main, so only the
+# branch's existence shows that an X.Y.0 prep is about to target it.
+if [[ "$PATCH" == "0" ]]; then
+    branch_status=0
+    git ls-remote --exit-code --heads https://github.com/near/mpc.git "refs/heads/${RELEASE_BRANCH}" >/dev/null \
+        || branch_status=$?
+    case "$branch_status" in
+        0)
+            echo "WARNING: ${RELEASE_BRANCH} already exists on near/mpc."
+            echo "         An X.Y.0 prep PR targets main, and ${RELEASE_BRANCH} is cut from the merged prep commit."
+            echo "         See the Branch model section of RELEASES.md."
+            ;;
+        2) ;;
+        *) echo "WARNING: Could not check whether ${RELEASE_BRANCH} exists on near/mpc." ;;
+    esac
 fi
 
 # --- Generate changelog ---
@@ -138,5 +165,5 @@ cd "$REPO_ROOT"
 # --- Commit release changes ---
 
 git add -A
-git commit -m "release: v${VERSION}"
-echo "==> Done. Review the commit, push your branch, and open a PR against the release-source branch."
+git commit -m "chore: release v${VERSION}"
+echo "==> Done. Review the commit, push your branch, and open a PR against ${PR_BASE} (see RELEASES.md)."

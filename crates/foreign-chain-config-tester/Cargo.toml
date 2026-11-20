@@ -18,6 +18,9 @@ serde_yaml = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 
+[build-dependencies]
+built = { workspace = true }
+
 [dev-dependencies]
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true }

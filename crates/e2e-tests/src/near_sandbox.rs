@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
 use anyhow::Context;
+use mpc_node_config::ChainId;
 use near_sandbox::{Sandbox, SandboxConfig};
 
 use test_port_allocator::{E2eTestPorts, TestPorts};
 
+const CONFIG_FILE: &str = "config.json";
 const GENESIS_FILE: &str = "genesis.json";
 const NODE_KEY_FILE: &str = "node_key.json";
 
@@ -21,7 +23,12 @@ pub struct NearSandbox {
 }
 
 impl NearSandbox {
-    pub async fn start(ports: &TestPorts, version: &str) -> anyhow::Result<Self> {
+    /// Starts at `protocol_version` if given, else at the binary's latest protocol.
+    pub async fn start(
+        ports: &TestPorts,
+        version: &str,
+        protocol_version: Option<u32>,
+    ) -> anyhow::Result<Self> {
         let rpc_port = ports.near_node_rpc_port();
         let network_port = ports.near_node_network_port();
 
@@ -53,13 +60,17 @@ impl NearSandbox {
             }
         });
 
-        // Set chain_id to "sandbox" so MPC nodes recognize this as a local
+        let mut additional_genesis = protocol_version
+            .map(test_utils::pinned_protocol_genesis)
+            .unwrap_or_else(|| serde_json::json!({}));
+        // Use the sandbox chain_id so MPC nodes recognize this as a local
         // network (is_localnet() returns true). Without this, `near-sandbox
         // init` generates a random chain_id like "test-chain-XXXXX".
+        additional_genesis["chain_id"] = ChainId::Sandbox.to_string().into();
         let config = SandboxConfig {
             rpc_port: Some(rpc_port),
             net_port: Some(network_port),
-            additional_genesis: Some(serde_json::json!({"chain_id": "sandbox"})),
+            additional_genesis: Some(additional_genesis),
             additional_config: Some(additional_config),
             ..Default::default()
         };
@@ -82,6 +93,10 @@ impl NearSandbox {
 
     pub fn rpc_url(&self) -> String {
         self.sandbox.rpc_addr.clone()
+    }
+
+    pub fn config_path(&self) -> PathBuf {
+        self.sandbox.home_dir.path().join(CONFIG_FILE)
     }
 
     pub fn genesis_path(&self) -> PathBuf {

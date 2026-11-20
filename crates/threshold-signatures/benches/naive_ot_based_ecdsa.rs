@@ -3,8 +3,7 @@
 use criterion::{Criterion, criterion_group};
 mod bench_utils;
 use crate::bench_utils::{
-    MAX_MALICIOUS, SAMPLE_SIZE, ot_ecdsa_prepare_presign, ot_ecdsa_prepare_sign,
-    ot_ecdsa_prepare_triples,
+    MAX_MALICIOUS, SAMPLE_SIZE, ot_ecdsa_prepare_sign, ot_ecdsa_prepare_triples,
 };
 use rand_core::SeedableRng;
 use threshold_signatures::{
@@ -41,8 +40,8 @@ fn bench_triples(c: &mut Criterion) {
     );
 }
 
-/// Benches the presigning protocol
-fn bench_presign(c: &mut Criterion) {
+/// Benches the signing protocol
+fn bench_sign(c: &mut Criterion) {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let num = participants_num();
     let max_malicious = *MAX_MALICIOUS;
@@ -52,43 +51,13 @@ fn bench_presign(c: &mut Criterion) {
     let two_triples =
         run_protocol(preps.protocols).expect("Running triple preparations should succeed");
 
-    let mut group = c.benchmark_group("presign");
-    group.sample_size(*SAMPLE_SIZE);
-    group.bench_function(
-        format!("ot_ecdsa_presign_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
-        |b| {
-            b.iter_batched(
-                || ot_ecdsa_prepare_presign(&two_triples, threshold, &mut rng),
-                |preps| run_protocol(preps.protocols).expect("protocol should complete"),
-                criterion::BatchSize::SmallInput,
-            );
-        },
-    );
-}
-
-/// Benches the signing protocol
-fn bench_sign(c: &mut Criterion) {
-    let mut rng = MockCryptoRng::seed_from_u64(42);
-    let num = participants_num();
-    let max_malicious = *MAX_MALICIOUS;
-
-    let threshold = threshold();
-
-    let preps = ot_ecdsa_prepare_triples(participants_num(), threshold, &mut rng);
-    let two_triples =
-        run_protocol(preps.protocols).expect("Running triples preparation should succeed");
-
-    let preps = ot_ecdsa_prepare_presign(&two_triples, threshold, &mut rng);
-    let pk = preps.key_packages[0].1.public_key;
-    let result = run_protocol(preps.protocols).expect("Running presign preparation should succeed");
-
     let mut group = c.benchmark_group("sign");
     group.sample_size(*SAMPLE_SIZE);
     group.bench_function(
         format!("ot_ecdsa_sign_naive_MAX_MALICIOUS_{max_malicious}_PARTICIPANTS_{num}"),
         |b| {
             b.iter_batched(
-                || ot_ecdsa_prepare_sign(&result, threshold, pk, &mut rng),
+                || ot_ecdsa_prepare_sign(&two_triples, threshold, &mut rng),
                 |preps| run_protocol(preps.protocols).expect("protocol should complete"),
                 criterion::BatchSize::SmallInput,
             );
@@ -96,5 +65,5 @@ fn bench_sign(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, bench_triples, bench_presign, bench_sign);
+criterion_group!(benches, bench_triples, bench_sign);
 criterion::criterion_main!(benches);

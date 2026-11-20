@@ -10,17 +10,18 @@ use crate::sandbox::{
     utils::{
         consts::ALL_PROTOCOLS,
         contract_build::parallel_contract,
+        sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::SharedSecretKey,
         sign_utils::{
-            CKDResponseArgs, create_response_ckd, create_response_ed25519,
-            create_response_secp256k1, submit_ckd_response, submit_signature_response,
+            create_response_ckd, create_response_ed25519, create_response_secp256k1,
+            submit_ckd_response, submit_signature_response,
         },
     },
 };
 use elliptic_curve::Group;
 use mpc_contract::MAX_PENDING_REQUEST_FAN_OUT;
 use near_account_id::AccountId;
-use near_mpc_contract_interface::call_args::SignatureRespondArgs;
+use near_mpc_contract_interface::call_args::{CKDRespondArgs, SignatureRespondArgs};
 use near_mpc_contract_interface::types::{
     Bls12381G1PublicKey, CKDAppPublicKey, CKDRequest, CKDRequestArgs, Protocol, SignRequestArgs,
 };
@@ -121,7 +122,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
                 let app_pk = make_app_public_key(domain_id.0 + 1);
                 let (request, response) =
                     create_response_ckd(&parallel_id, &app_pk, &domain_id, sk, &scheme_tag);
-                let response_args = CKDResponseArgs { request, response };
+                let response_args = CKDRespondArgs { request, response };
                 let ckd_args = CKDRequestArgs {
                     derivation_path: scheme_tag,
                     domain_id,
@@ -156,7 +157,7 @@ async fn respond__should_drain_saturated_fan_out_queue() -> anyhow::Result<()> {
 /// handles for the caller to await as the Then phase.
 async fn run_sign_fan_out(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     parallel: &near_workspaces::Contract,
     attested: &near_workspaces::Account,
     response_args: &SignatureRespondArgs,
@@ -186,7 +187,7 @@ async fn run_sign_fan_out(
 /// reserves ~15 TGas of the parent receipt's 300 TGas budget.
 async fn submit_duplicate_sign_batches(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     parallel: &near_workspaces::Contract,
     sign_args: &SignRequestArgs,
     total_calls: u64,
@@ -228,14 +229,15 @@ struct MakeDuplicateSignCallsArgs<'a> {
 /// built with `--features sandbox-test-methods` (see
 /// [`crate::sandbox::common::SandboxTestSetupBuilder::with_sandbox_test_methods`]).
 async fn wait_for_pending_signature_queue(
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     request: &near_mpc_contract_interface::types::SignatureRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
         let len: u32 = contract
-            .view("pending_signature_queue_len")
+            .as_account()
+            .view(contract.id(), "pending_signature_queue_len")
             .args_json(serde_json::json!({ "request": request }))
             .await?
             .json()?;
@@ -254,10 +256,10 @@ async fn wait_for_pending_signature_queue(
 /// CKD counterpart to [`run_sign_fan_out`].
 async fn run_ckd_fan_out(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     parallel: &near_workspaces::Contract,
     attested: &near_workspaces::Account,
-    response_args: &CKDResponseArgs,
+    response_args: &CKDRespondArgs,
     ckd_args: &CKDRequestArgs,
 ) -> anyhow::Result<Vec<(TransactionStatus, u64)>> {
     let statuses = submit_duplicate_ckd_batches(
@@ -282,7 +284,7 @@ async fn run_ckd_fan_out(
 /// reflects CKD's ~30 TGas per child call.
 async fn submit_duplicate_ckd_batches(
     worker: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     parallel: &near_workspaces::Contract,
     ckd_args: &CKDRequestArgs,
     total_calls: u64,
@@ -318,14 +320,15 @@ struct MakeDuplicateCkdCallsArgs<'a> {
 
 /// CKD counterpart to [`wait_for_pending_signature_queue`]; same rationale.
 async fn wait_for_pending_ckd_queue(
-    contract: &near_workspaces::Contract,
+    contract: &SandboxMpcContract,
     request: &CKDRequest,
     expected_len: u32,
 ) -> anyhow::Result<()> {
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
     loop {
         let len: u32 = contract
-            .view("pending_ckd_queue_len")
+            .as_account()
+            .view(contract.id(), "pending_ckd_queue_len")
             .args_json(serde_json::json!({ "request": request }))
             .await?
             .json()?;

@@ -1,3 +1,5 @@
+use near_block_primitives::BlockCount;
+
 /// The initial configuration parameters for when initializing the contract.
 /// All fields are optional, as the contract can fill in defaults for any
 /// missing fields.
@@ -22,7 +24,7 @@
 pub struct InitConfig {
     /// If a key event attempt has not successfully completed within this many blocks,
     /// it is considered failed.
-    pub key_event_timeout_blocks: Option<u64>,
+    pub key_event_timeout_blocks: Option<BlockCount>,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: Option<u64>,
     /// Prepaid gas for applying contract and config updates.
@@ -51,7 +53,7 @@ pub struct InitConfig {
     pub clean_foreign_chain_data_tera_gas: Option<u64>,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub remove_non_participant_tee_verifier_votes_tera_gas: Option<u64>,
-    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub verifier_tera_gas: Option<u64>,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: Option<u64>,
@@ -83,7 +85,7 @@ pub struct InitConfig {
 pub struct Config {
     /// If a key event attempt has not successfully completed within this many blocks,
     /// it is considered failed.
-    pub key_event_timeout_blocks: u64,
+    pub key_event_timeout_blocks: BlockCount,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub tee_upgrade_deadline_duration_seconds: u64,
     /// Prepaid gas for applying contract and config updates.
@@ -112,7 +114,7 @@ pub struct Config {
     pub clean_foreign_chain_data_tera_gas: u64,
     /// Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.
     pub remove_non_participant_tee_verifier_votes_tera_gas: u64,
-    /// Gas attached to the cross-contract `verify_quote` call on the verifier.
+    /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,
@@ -132,7 +134,7 @@ mod tests {
     #[test]
     fn test_config_round_trip_serialization() {
         let original_config = InitConfig {
-            key_event_timeout_blocks: Some(2000),
+            key_event_timeout_blocks: Some(BlockCount::from(2000)),
             tee_upgrade_deadline_duration_seconds: Some(3333),
             apply_contract_update_tera_gas: Some(120),
             sign_call_gas_attachment_requirement_tera_gas: Some(15),
@@ -175,12 +177,15 @@ mod tests {
         let deserialized: InitConfig = serde_json::from_str(json).unwrap();
 
         let expected = InitConfig {
-            key_event_timeout_blocks: Some(9999),
+            key_event_timeout_blocks: Some(BlockCount::from(9999)),
             ..Default::default()
         };
 
         assert_eq!(deserialized, expected);
-        assert_eq!(deserialized.key_event_timeout_blocks, Some(9999));
+        assert_eq!(
+            deserialized.key_event_timeout_blocks,
+            Some(BlockCount::from(9999))
+        );
     }
 
     #[test]
