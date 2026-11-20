@@ -40,6 +40,7 @@ use crate::{
 };
 
 /// Shadow of the `3.19.0` `AddDomainsVotes` layout.
+// TODO(#5277): drop once no deployed contract stores add-domains votes by account.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct OldAddDomainsVotes {
     proposal_by_account: BTreeMap<AuthenticatedParticipantId, Vec<dtos::DomainConfig>>,
