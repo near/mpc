@@ -31,7 +31,6 @@ impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
             domains: (&self.domains).into_dto_type(),
             keyset: (&self.keyset).into_dto_type(),
             parameters: (&self.parameters).into_dto_type(),
-            add_domains_votes: (&self.add_domains_votes).into_dto_type(),
             previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
         }
     }
