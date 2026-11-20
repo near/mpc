@@ -66,6 +66,7 @@ pub(super) async fn collect_pprof(
         .map_err(Into::into)
 }
 
+// TODO(#5275): switch back to pprof's own flamegraph rendering once it uses inferno 0.12
 pub(super) fn write_flamegraph(report: &Report, writer: impl io::Write) -> io::Result<()> {
     let stacks = collapsed_stacks(&report.data);
     flamegraph::from_reader(&mut Options::default(), stacks.as_bytes(), writer)
