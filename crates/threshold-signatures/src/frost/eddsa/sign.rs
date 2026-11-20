@@ -499,9 +499,9 @@ mod test {
     };
     use crate::{
         Protocol,
-        crypto::hash::hash,
+        crypto::hash::{HashOutput, hash},
         frost::eddsa::{
-            SignatureOption,
+            KeygenOutput, SignatureOption,
             sign::{sign_v1, sign_v2},
             test::{run_presign, run_sign_v1, run_sign_v2},
         },
@@ -656,8 +656,76 @@ mod test {
         insta::assert_json_snapshot!(signature);
     }
 
-    #[test]
-    fn dkg_refresh_sign_v1_test() {
+    type SignAndVerify = fn(
+        &[(Participant, KeygenOutput)],
+        usize,
+        Participant,
+        usize,
+        HashOutput,
+        &mut MockCryptoRng,
+    );
+
+    fn verify_externally(
+        key_packages: &[(Participant, KeygenOutput)],
+        data: Vec<(Participant, SignatureOption)>,
+        coordinator: Participant,
+        msg_hash: HashOutput,
+    ) {
+        let signature = check_one_coordinator_output(data, coordinator).unwrap();
+
+        assert!(
+            key_packages[0]
+                .1
+                .public_key
+                .verify(msg_hash.as_ref(), &signature)
+                .is_ok()
+        );
+    }
+
+    fn sign_v1_and_verify(
+        key_packages: &[(Participant, KeygenOutput)],
+        actual_signers: usize,
+        coordinator: Participant,
+        threshold: usize,
+        msg_hash: HashOutput,
+        rng: &mut MockCryptoRng,
+    ) {
+        let data = run_sign_v1(
+            key_packages,
+            actual_signers,
+            coordinator,
+            threshold,
+            msg_hash,
+            rng,
+        )
+        .unwrap();
+        verify_externally(key_packages, data, coordinator, msg_hash);
+    }
+
+    fn sign_v2_and_verify(
+        key_packages: &[(Participant, KeygenOutput)],
+        actual_signers: usize,
+        coordinator: Participant,
+        threshold: usize,
+        msg_hash: HashOutput,
+        rng: &mut MockCryptoRng,
+    ) {
+        let data = run_sign_v2(
+            key_packages,
+            actual_signers,
+            coordinator,
+            threshold,
+            msg_hash,
+            MockCryptoRng::seed_from_u64(rng.next_u64()),
+        )
+        .unwrap();
+        verify_externally(key_packages, data, coordinator, msg_hash);
+    }
+
+    #[rstest]
+    fn dkg_refresh_sign_test(
+        #[values(sign_v1_and_verify, sign_v2_and_verify)] sign_and_verify: SignAndVerify,
+    ) {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let participants = generate_participants_with_random_ids(4, &mut rng);
         let actual_signers = participants.len();
@@ -668,62 +736,13 @@ mod test {
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
             let coordinator = participants[0];
-            // This internally verifies with the public key
-            let data = run_sign_v1(
+            sign_and_verify(
                 &key_packages,
                 actual_signers,
                 coordinator,
                 threshold,
                 msg_hash,
                 &mut rng,
-            )
-            .unwrap();
-            let signature = check_one_coordinator_output(data, coordinator).unwrap();
-
-            // externally verify with the signature
-            assert!(
-                key_packages[0]
-                    .1
-                    .public_key
-                    .verify(msg_hash.as_ref(), &signature)
-                    .is_ok()
-            );
-            // test refresh
-            key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
-        }
-    }
-
-    #[test]
-    fn dkg_refresh_sign_v2_test() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let participants = generate_participants_with_random_ids(4, &mut rng);
-        let actual_signers = participants.len();
-        let threshold = 2;
-        let mut key_packages = run_keygen(&participants, threshold, &mut rng);
-        for i in 0..3 {
-            let msg = format!("hello_near_{i}");
-            let msg_hash = hash(&msg).unwrap();
-            assert_public_key_invariant(&key_packages);
-            let coordinator = participants[0];
-            // This internally verifies with the public key
-            let data = run_sign_v2(
-                &key_packages,
-                actual_signers,
-                coordinator,
-                threshold,
-                msg_hash,
-                MockCryptoRng::seed_from_u64(rng.next_u64()),
-            )
-            .unwrap();
-            let signature = check_one_coordinator_output(data, coordinator).unwrap();
-
-            // externally verify with the signature
-            assert!(
-                key_packages[0]
-                    .1
-                    .public_key
-                    .verify(msg_hash.as_ref(), &signature)
-                    .is_ok()
             );
             // test refresh
             key_packages = run_refresh(&participants, &key_packages, threshold, &mut rng);
@@ -743,8 +762,10 @@ mod test {
         assert_eq!(<Ed25519Group>::generator() * x, pub_key.to_element());
     }
 
-    #[test]
-    fn test_reshare_sign_v1_more_participants() {
+    #[rstest]
+    fn test_reshare_sign_more_participants(
+        #[values(sign_v1_and_verify, sign_v2_and_verify)] sign_and_verify: SignAndVerify,
+    ) {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let mut participants = generate_participants(4);
         let mut threshold = 3;
@@ -758,25 +779,13 @@ mod test {
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
             let coordinator = participants[0];
-            // This internally verifies with the public key
-            let data = run_sign_v1(
+            sign_and_verify(
                 &key_packages,
                 participants.len(),
                 coordinator,
                 threshold,
                 msg_hash,
                 &mut rng,
-            )
-            .unwrap();
-            let signature = check_one_coordinator_output(data, coordinator).unwrap();
-
-            // externally verify with the signature
-            assert!(
-                key_packages[0]
-                    .1
-                    .public_key
-                    .verify(msg_hash.as_ref(), &signature)
-                    .is_ok()
             );
             // test refresh
             new_participants.push(Participant::from(20u32 + i));
@@ -806,71 +815,10 @@ mod test {
         }
     }
 
-    #[test]
-    fn test_reshare_sign_v2_more_participants() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let mut participants = generate_participants(4);
-        let mut threshold = 3;
-
-        let mut new_participants = participants.clone();
-        let mut key_packages = run_keygen(&participants, threshold, &mut rng);
-        let pub_key = key_packages[2].1.public_key;
-        // test dkg
-        for i in 0..3 {
-            let msg = format!("hello_near_{i}");
-            let msg_hash = hash(&msg).unwrap();
-            assert_public_key_invariant(&key_packages);
-            let coordinator = participants[0];
-            // This internally verifies with the public key
-            let data = run_sign_v2(
-                &key_packages,
-                participants.len(),
-                coordinator,
-                threshold,
-                msg_hash,
-                MockCryptoRng::seed_from_u64(rng.next_u64()),
-            )
-            .unwrap();
-            let signature = check_one_coordinator_output(data, coordinator).unwrap();
-
-            // externally verify with the signature
-            assert!(
-                key_packages[0]
-                    .1
-                    .public_key
-                    .verify(msg_hash.as_ref(), &signature)
-                    .is_ok()
-            );
-            // test refresh
-            new_participants.push(Participant::from(20u32 + i));
-            let new_threshold = threshold + 1;
-
-            key_packages = run_reshare(
-                &participants,
-                &pub_key,
-                &key_packages,
-                threshold,
-                new_threshold,
-                &new_participants,
-                &mut rng,
-            );
-
-            let shares: Vec<_> = key_packages
-                .iter()
-                .map(|(_, keygen)| keygen.private_share.to_scalar())
-                .collect();
-
-            // update the old parameters
-            threshold = new_threshold;
-            participants = new_participants.clone();
-
-            // Test public key
-            test_public_key(&participants, pub_key, &shares);
-        }
-    }
-
-    #[test]
-    fn test_reshare_sign_v1_less_participants() {
+    #[rstest]
+    fn test_reshare_sign_less_participants(
+        #[values(sign_v1_and_verify, sign_v2_and_verify)] sign_and_verify: SignAndVerify,
+    ) {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let mut participants = generate_participants(6);
         let mut threshold = 5;
@@ -884,25 +832,13 @@ mod test {
             let msg_hash = hash(&msg).unwrap();
             assert_public_key_invariant(&key_packages);
             let coordinator = participants[0];
-            // This internally verifies with the public key
-            let data = run_sign_v1(
+            sign_and_verify(
                 &key_packages,
                 participants.len(),
                 coordinator,
                 threshold,
                 msg_hash,
                 &mut rng,
-            )
-            .unwrap();
-            let signature = check_one_coordinator_output(data, coordinator).unwrap();
-
-            // externally verify with the signature
-            assert!(
-                key_packages[0]
-                    .1
-                    .public_key
-                    .verify(msg_hash.as_ref(), &signature)
-                    .is_ok()
             );
             // test refresh
             new_participants.pop();
@@ -1020,68 +956,5 @@ mod test {
                 EDDSA_SIGN_V2_MAX_INCOMING_PARTICIPANT_ENTRIES,
             ),
         );
-    }
-
-    #[test]
-    fn test_reshare_sign_v2_less_participants() {
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let mut participants = generate_participants(6);
-        let mut threshold = 5;
-
-        let mut new_participants = participants.clone();
-        let mut key_packages = run_keygen(&participants, threshold, &mut rng);
-        let pub_key = key_packages[2].1.public_key;
-        // test dkg
-        for i in 0..3 {
-            let msg = format!("hello_near_{i}");
-            let msg_hash = hash(&msg).unwrap();
-            assert_public_key_invariant(&key_packages);
-            let coordinator = participants[0];
-            // This internally verifies with the public key
-            let data = run_sign_v2(
-                &key_packages,
-                participants.len(),
-                coordinator,
-                threshold,
-                msg_hash,
-                MockCryptoRng::seed_from_u64(rng.next_u64()),
-            )
-            .unwrap();
-            let signature = check_one_coordinator_output(data, coordinator).unwrap();
-
-            // externally verify with the signature
-            assert!(
-                key_packages[0]
-                    .1
-                    .public_key
-                    .verify(msg_hash.as_ref(), &signature)
-                    .is_ok()
-            );
-            // test refresh
-            new_participants.pop();
-            let new_threshold = threshold - 1;
-
-            key_packages = run_reshare(
-                &participants,
-                &pub_key,
-                &key_packages,
-                threshold,
-                new_threshold,
-                &new_participants,
-                &mut rng,
-            );
-
-            let shares: Vec<_> = key_packages
-                .iter()
-                .map(|(_, keygen)| keygen.private_share.to_scalar())
-                .collect();
-
-            // update the old parameters
-            threshold = new_threshold;
-            participants = new_participants.clone();
-
-            // Test public key
-            test_public_key(&participants, pub_key, &shares);
-        }
     }
 }
