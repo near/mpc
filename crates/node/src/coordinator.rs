@@ -1102,6 +1102,7 @@ mod tests {
         current_epoch_id, participants_change_requires_restart, peer_address_from_state,
         stop_running,
     };
+    use crate::config::ParticipantsConfig;
     use crate::indexer::participants::ContractState;
     use crate::indexer::participants::test_utils::{
         base_config, me, participant, resharing, running,
@@ -1114,71 +1115,52 @@ mod tests {
     use rstest::rstest;
     use tokio::sync::watch;
 
-    #[test]
-    fn participants_change_requires_restart__should_be_false_for_peer_address_change() {
+    #[rstest]
+    #[case::own_port_change(|new: &mut ParticipantsConfig| new.participants[0].port = 9090)]
+    #[case::tls_key_change(
+        |new: &mut ParticipantsConfig| {
+            new.participants[1].p2p_public_key =
+                SigningKey::generate(&mut StdRng::seed_from_u64(42)).verifying_key();
+        }
+    )]
+    #[case::membership_change(
+        |new: &mut ParticipantsConfig| new
+            .participants
+            .push(participant(2, "carol.near", "carol.example.com", 8080, 3))
+    )]
+    fn participants_change_requires_restart__should_be_true(
+        #[case] mutate: fn(&mut ParticipantsConfig),
+    ) {
         // Given
         let old = base_config();
         let mut new = base_config();
-        new.participants[1].address = "bob-new.example.com".to_string();
-        new.participants[1].port = 9090;
-
-        // When / Then
-        assert!(!participants_change_requires_restart(&old, &new, &me()));
-    }
-
-    #[test]
-    fn participants_change_requires_restart__should_be_true_for_own_port_change() {
-        // Given
-        let old = base_config();
-        let mut new = base_config();
-        new.participants[0].port = 9090;
-
-        // When / Then
-        assert!(participants_change_requires_restart(&old, &new, &me()));
-    }
-
-    /// Our own host is not dialed by us (we bind 0.0.0.0), so a change to it needs no restart.
-    #[test]
-    fn participants_change_requires_restart__should_be_false_for_own_address_change() {
-        // Given
-        let old = base_config();
-        let mut new = base_config();
-        new.participants[0].address = "alice-new.example.com".to_string();
-
-        // When / Then
-        assert!(!participants_change_requires_restart(&old, &new, &me()));
-    }
-
-    #[test]
-    fn participants_change_requires_restart__should_be_true_for_tls_key_change() {
-        // Given
-        let old = base_config();
-        let mut new = base_config();
-        new.participants[1].p2p_public_key =
-            SigningKey::generate(&mut StdRng::seed_from_u64(42)).verifying_key();
+        mutate(&mut new);
 
         // When / Then
         assert!(participants_change_requires_restart(&old, &new, &me()));
     }
 
-    #[test]
-    fn participants_change_requires_restart__should_be_true_for_membership_change() {
+    #[rstest]
+    #[case::peer_address_change(
+        |new: &mut ParticipantsConfig| {
+            new.participants[1].address = "bob-new.example.com".to_string();
+            new.participants[1].port = 9090;
+        }
+    )]
+    // Our own host is not dialed by us (we bind 0.0.0.0), so a change to it needs no restart.
+    #[case::own_address_change(
+        |new: &mut ParticipantsConfig| {
+            new.participants[0].address = "alice-new.example.com".to_string();
+        }
+    )]
+    #[case::governance_threshold_change(|new: &mut ParticipantsConfig| new.threshold = 1)]
+    fn participants_change_requires_restart__should_be_false(
+        #[case] mutate: fn(&mut ParticipantsConfig),
+    ) {
         // Given
         let old = base_config();
         let mut new = base_config();
-        new.participants
-            .push(participant(2, "carol.near", "carol.example.com", 8080, 3));
-
-        // When / Then
-        assert!(participants_change_requires_restart(&old, &new, &me()));
-    }
-
-    #[test]
-    fn participants_change_requires_restart__should_be_false_for_governance_threshold_change() {
-        // Given
-        let old = base_config();
-        let mut new = base_config();
-        new.threshold = 1;
+        mutate(&mut new);
 
         // When / Then
         assert!(!participants_change_requires_restart(&old, &new, &me()));
@@ -1200,32 +1182,15 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn stop_running__should_be_true_for_epoch_change() {
+    #[rstest]
+    #[case::epoch_change(running(base_config(), 6))]
+    #[case::no_longer_running(ContractState::Invalid)]
+    fn stop_running__should_be_true(#[case] new_state: ContractState) {
         // Given
         let current = base_config();
 
         // When / Then
-        assert!(stop_running(
-            &running(base_config(), 6),
-            EpochId::new(5),
-            &current,
-            &me()
-        ));
-    }
-
-    #[test]
-    fn stop_running__should_be_true_when_no_longer_running() {
-        // Given
-        let current = base_config();
-
-        // When / Then
-        assert!(stop_running(
-            &ContractState::Invalid,
-            EpochId::new(5),
-            &current,
-            &me()
-        ));
+        assert!(stop_running(&new_state, EpochId::new(5), &current, &me()));
     }
 
     #[rstest]

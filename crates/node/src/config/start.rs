@@ -350,8 +350,20 @@ mod tests {
         })
     }
 
-    #[test]
-    fn apply_near_config_patches__should_set_load_mem_tries() {
+    #[rstest]
+    #[case::load_mem_tries(
+        "/store/load_mem_tries_for_tracked_shards",
+        serde_json::json!(true)
+    )]
+    #[case::tracked_shards_to_contract_account(
+        "/tracked_shards_config",
+        serde_json::json!({ "Accounts": ["v1.signer-prod.testnet"] })
+    )]
+    #[case::sync_to_peers_for_non_localnet("/state_sync/sync", serde_json::json!("Peers"))]
+    fn apply_near_config_patches__should_set(
+        #[case] pointer: &str,
+        #[case] expected: serde_json::Value,
+    ) {
         // Given
         let mut config = empty_config_json();
         let init = near_init(ChainId::Testnet);
@@ -360,26 +372,7 @@ mod tests {
         apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
 
         // Then
-        assert_eq!(
-            config["store"]["load_mem_tries_for_tracked_shards"],
-            serde_json::json!(true)
-        );
-    }
-
-    #[test]
-    fn apply_near_config_patches__should_set_tracked_shards_to_contract_account() {
-        // Given
-        let mut config = empty_config_json();
-        let init = near_init(ChainId::Testnet);
-
-        // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
-
-        // Then
-        assert_eq!(
-            config["tracked_shards_config"],
-            serde_json::json!({ "Accounts": ["v1.signer-prod.testnet"] })
-        );
+        assert_eq!(config.pointer(pointer), Some(&expected));
     }
 
     #[test]
@@ -520,19 +513,6 @@ mod tests {
     }
 
     #[test]
-    fn apply_near_config_patches__should_set_sync_to_peers_for_non_localnet() {
-        // Given
-        let mut config = empty_config_json();
-        let init = near_init(ChainId::Testnet);
-
-        // When
-        apply_near_config_patches(&mut config, &init, "v1.signer-prod.testnet").unwrap();
-
-        // Then — non-localnet uses decentralized (peer-to-peer) state sync.
-        assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
-    }
-
-    #[test]
     fn apply_near_config_patches__should_replace_external_storage_block_with_peers() {
         // Given — a downloaded config that ships an ExternalStorage block.
         let mut config = empty_config_json();
@@ -619,31 +599,35 @@ mod tests {
         }
     }
 
-    #[test]
-    fn set_decentralized_state_sync__should_replace_external_storage_block() {
-        // Given
-        let mut config = serde_json::json!({
+    #[rstest]
+    #[case::when_external_storage_block(
+        serde_json::json!({
             "state_sync": { "sync": { "ExternalStorage": { "external_storage_fallback_threshold": 0 } } }
-        });
-
-        // When
-        let changed = set_decentralized_state_sync(&mut config).unwrap();
-
-        // Then
-        assert!(changed);
-        assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
-    }
-
-    #[test]
-    fn set_decentralized_state_sync__should_report_no_change_when_already_peers() {
+        }),
+        true
+    )]
+    #[case::when_already_peers(
+        serde_json::json!({ "state_sync": { "sync": "Peers" } }),
+        false
+    )]
+    #[case::when_state_sync_is_null(
+        serde_json::json!({ "state_sync": serde_json::Value::Null }),
+        true
+    )]
+    // (current downloaded-config default)
+    #[case::when_state_sync_is_absent(serde_json::json!({}), true)]
+    fn set_decentralized_state_sync__should_set_peers(
+        #[case] initial_config: serde_json::Value,
+        #[case] expected_changed: bool,
+    ) {
         // Given
-        let mut config = serde_json::json!({ "state_sync": { "sync": "Peers" } });
+        let mut config = initial_config;
 
         // When
         let changed = set_decentralized_state_sync(&mut config).unwrap();
 
         // Then
-        assert!(!changed);
+        assert_eq!(changed, expected_changed);
         assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
     }
 
@@ -672,32 +656,6 @@ mod tests {
             config["state_sync"]["parts_compression_lvl"],
             serde_json::json!(1)
         );
-    }
-
-    #[test]
-    fn set_decentralized_state_sync__should_set_peers_when_state_sync_is_null() {
-        // Given — state_sync present but null (defensive edge case).
-        let mut config = serde_json::json!({ "state_sync": serde_json::Value::Null });
-
-        // When
-        let changed = set_decentralized_state_sync(&mut config).unwrap();
-
-        // Then
-        assert!(changed);
-        assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
-    }
-
-    #[test]
-    fn set_decentralized_state_sync__should_set_peers_when_state_sync_absent() {
-        // Given — no state_sync block at all (current downloaded-config default).
-        let mut config = serde_json::json!({});
-
-        // When
-        let changed = set_decentralized_state_sync(&mut config).unwrap();
-
-        // Then
-        assert!(changed);
-        assert_eq!(config["state_sync"]["sync"], serde_json::json!("Peers"));
     }
 
     #[test]
