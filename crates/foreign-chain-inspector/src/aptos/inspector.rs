@@ -375,21 +375,26 @@ mod tests {
         array.into()
     }
 
+    async fn extract_from(
+        client: MockAptosClient,
+        extractors: Vec<AptosExtractor>,
+    ) -> Result<Verdict<AptosExtractedValue>, ForeignChainInspectionError> {
+        AptosInspector::new(client)
+            .extract(tx_id_from_hex(HASH), AptosFinality::Committed, extractors)
+            .await
+    }
+
     #[tokio::test]
     async fn extract__should_return_event_when_transaction_is_successful() {
         // Given
         let tx = sample_tx(HASH, true);
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
 
         // When
-        let result = inspector
-            .extract(
-                tx_id,
-                AptosFinality::Committed,
-                vec![AptosExtractor::Event { event_index: 0 }],
-            )
-            .await;
+        let result = extract_from(
+            MockAptosClient::success(tx),
+            vec![AptosExtractor::Event { event_index: 0 }],
+        )
+        .await;
 
         // Then
         let values = extracted(result);
@@ -403,40 +408,37 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case::transaction_failed(
+        MockAptosClient::success(sample_tx(HASH, false)),
+        vec![],
+        Verdict::TransactionFailed
+    )]
+    #[case::absent_event_index(
+        MockAptosClient::success(sample_tx(HASH, true)),
+        vec![AptosExtractor::Event { event_index: 99 }],
+        Verdict::LogIndexOutOfBounds
+    )]
+    #[case::committed_tx_has_no_events(
+        MockAptosClient::success(TransactionResponse {
+            events: vec![],
+            ..sample_tx(HASH, true)
+        }),
+        vec![AptosExtractor::Event { event_index: 0 }],
+        Verdict::LogIndexOutOfBounds
+    )]
+    #[case::not_found_on_404(MockAptosClient::api_error(404), vec![], Verdict::TransactionNotFound)]
     #[tokio::test]
-    async fn extract__should_return_the_transaction_failed_verdict() {
-        // Given
-        let tx = sample_tx(HASH, false);
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
-
+    async fn extract__should_return_the_expected_verdict(
+        #[case] client: MockAptosClient,
+        #[case] extractors: Vec<AptosExtractor>,
+        #[case] expected: Verdict<AptosExtractedValue>,
+    ) {
         // When
-        let result = inspector
-            .extract(tx_id, AptosFinality::Committed, vec![])
-            .await;
+        let result = extract_from(client, extractors).await;
 
         // Then
-        assert_matches!(result, Ok(Verdict::TransactionFailed));
-    }
-
-    #[tokio::test]
-    async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_event_index() {
-        // Given
-        let tx = sample_tx(HASH, true);
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
-
-        // When
-        let result = inspector
-            .extract(
-                tx_id,
-                AptosFinality::Committed,
-                vec![AptosExtractor::Event { event_index: 99 }],
-            )
-            .await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::LogIndexOutOfBounds));
+        assert_eq!(result.unwrap(), expected);
     }
 
     fn extracted(
@@ -472,21 +474,17 @@ mod tests {
                 event_response("0x2::bridge::B", serde_json::json!({ "n": "2" })),
             ],
         };
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
 
         // When — request both events out of order, exercising the extractor loop and indexing.
         let values = extracted(
-            inspector
-                .extract(
-                    tx_id,
-                    AptosFinality::Committed,
-                    vec![
-                        AptosExtractor::Event { event_index: 1 },
-                        AptosExtractor::Event { event_index: 0 },
-                    ],
-                )
-                .await,
+            extract_from(
+                MockAptosClient::success(tx),
+                vec![
+                    AptosExtractor::Event { event_index: 1 },
+                    AptosExtractor::Event { event_index: 0 },
+                ],
+            )
+            .await,
         );
 
         // Then
@@ -500,78 +498,60 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn extract__should_return_the_out_of_bounds_verdict_when_committed_tx_has_no_events() {
-        // Given a committed tx whose events array is empty.
-        let tx = TransactionResponse {
-            transaction_type: "user_transaction".to_string(),
-            hash: HASH.to_string(),
-            success: Some(true),
-            events: vec![],
-        };
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
-
-        // When
-        let result = inspector
-            .extract(
-                tx_id,
-                AptosFinality::Committed,
-                vec![AptosExtractor::Event { event_index: 0 }],
-            )
-            .await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::LogIndexOutOfBounds));
-    }
-
-    #[tokio::test]
     async fn extract__should_return_not_finalized_for_pending_transaction() {
         // Given — the tx exists but is still in the mempool (no execution result yet).
-        let inspector = AptosInspector::new(MockAptosClient::success(pending_tx()));
-        let tx_id = tx_id_from_hex(HASH);
+        let client = MockAptosClient::success(pending_tx());
 
         // When
-        let result = inspector
-            .extract(tx_id, AptosFinality::Committed, vec![])
-            .await;
+        let result = extract_from(client, vec![]).await;
 
         // Then: transient, worth retrying once the transaction commits.
         assert_matches!(result, Err(ForeignChainInspectionError::NotFinalized));
         assert!(result.unwrap_err().is_transient());
     }
 
+    #[rstest]
+    // The inspector attests any committed kind; event-type policy belongs to the payload's
+    // consumer.
+    #[case::non_user_committed_kind(
+        "block_metadata_transaction",
+        "0x1::block::NewBlockEvent".to_string(),
+        serde_json::json!({ "epoch": "7510" }),
+        "0x1::block::NewBlockEvent"
+    )]
+    // The signed payload carries the canonical short form.
+    #[case::long_form_address_is_normalized(
+        "user_transaction",
+        format!("0x{}deadbeef::bridge::InitTransfer", "0".repeat(56)),
+        serde_json::json!({ "amount": "100" }),
+        "0xdeadbeef::bridge::InitTransfer"
+    )]
     #[tokio::test]
-    async fn extract__should_accept_non_user_committed_kinds() {
-        // Given — a committed system transaction (block metadata) with an event. The inspector
-        // attests any committed kind; event-type policy belongs to the payload's consumer.
+    async fn extract__should_return_the_canonical_type_tag_of_a_committed_event(
+        #[case] transaction_type: &str,
+        #[case] type_tag: String,
+        #[case] data: serde_json::Value,
+        #[case] expected: &str,
+    ) {
+        // Given
         let tx = TransactionResponse {
-            transaction_type: "block_metadata_transaction".to_string(),
-            hash: HASH.to_string(),
-            success: Some(true),
-            events: vec![event_response(
-                "0x1::block::NewBlockEvent",
-                serde_json::json!({ "epoch": "7510" }),
-            )],
+            transaction_type: transaction_type.to_string(),
+            events: vec![event_response(&type_tag, data)],
+            ..sample_tx(HASH, true)
         };
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
 
         // When
         let values = extracted(
-            inspector
-                .extract(
-                    tx_id,
-                    AptosFinality::Committed,
-                    vec![AptosExtractor::Event { event_index: 0 }],
-                )
-                .await,
+            extract_from(
+                MockAptosClient::success(tx),
+                vec![AptosExtractor::Event { event_index: 0 }],
+            )
+            .await,
         );
 
         // Then
         match &values[0] {
-            AptosExtractedValue::Event(event) => {
-                assert_eq!(event.type_tag, "0x1::block::NewBlockEvent");
-            }
+            AptosExtractedValue::Event(event) => assert_eq!(event.type_tag, expected),
         }
     }
 
@@ -645,56 +625,6 @@ mod tests {
         assert_eq!(normalize_type_tag(input), expected);
     }
 
-    #[tokio::test]
-    async fn extract__should_normalize_long_form_address_in_type_tag() {
-        // Given — a provider returning the struct-tag address in long form.
-        let long_tag = format!("0x{}deadbeef::bridge::InitTransfer", "0".repeat(56));
-        let tx = TransactionResponse {
-            transaction_type: "user_transaction".to_string(),
-            hash: HASH.to_string(),
-            success: Some(true),
-            events: vec![event_response(
-                &long_tag,
-                serde_json::json!({ "amount": "100" }),
-            )],
-        };
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
-
-        // When
-        let values = extracted(
-            inspector
-                .extract(
-                    tx_id,
-                    AptosFinality::Committed,
-                    vec![AptosExtractor::Event { event_index: 0 }],
-                )
-                .await,
-        );
-
-        // Then — the signed payload carries the canonical short form.
-        match &values[0] {
-            AptosExtractedValue::Event(event) => {
-                assert_eq!(event.type_tag, "0xdeadbeef::bridge::InitTransfer");
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn extract__should_return_transaction_not_found_on_404() {
-        // Given
-        let inspector = AptosInspector::new(MockAptosClient::api_error(404));
-        let tx_id = tx_id_from_hex(HASH);
-
-        // When
-        let result = inspector
-            .extract(tx_id, AptosFinality::Committed, vec![])
-            .await;
-
-        // Then
-        assert_matches!(result, Ok(Verdict::TransactionNotFound));
-    }
-
     #[rstest]
     #[case::request_timeout(408)]
     #[case::rate_limited(429)]
@@ -703,13 +633,10 @@ mod tests {
     #[tokio::test]
     async fn extract__should_return_transient_error_on_provider_hiccup(#[case] status: u16) {
         // Given
-        let inspector = AptosInspector::new(MockAptosClient::api_error(status));
-        let tx_id = tx_id_from_hex(HASH);
+        let client = MockAptosClient::api_error(status);
 
         // When
-        let result = inspector
-            .extract(tx_id, AptosFinality::Committed, vec![])
-            .await;
+        let result = extract_from(client, vec![]).await;
 
         // Then — transient, so the provider is dropped from the quorum.
         assert_matches!(
@@ -727,13 +654,10 @@ mod tests {
     #[tokio::test]
     async fn extract__should_reject_deterministic_client_errors(#[case] status: u16) {
         // Given
-        let inspector = AptosInspector::new(MockAptosClient::api_error(status));
-        let tx_id = tx_id_from_hex(HASH);
+        let client = MockAptosClient::api_error(status);
 
         // When
-        let result = inspector
-            .extract(tx_id, AptosFinality::Committed, vec![])
-            .await;
+        let result = extract_from(client, vec![]).await;
 
         // Then: not transient, since retrying cannot change a deterministic rejection. The
         // fan out tolerates it as the provider's own fault rather than a verdict.
@@ -747,19 +671,13 @@ mod tests {
     #[tokio::test]
     async fn extract__should_reject_committed_tx_missing_success_as_malformed() {
         // Given — a committed kind whose execution result is absent, violating the API spec.
-        let tx = TransactionResponse {
+        let client = MockAptosClient::success(TransactionResponse {
             transaction_type: "user_transaction".to_string(),
-            hash: HASH.to_string(),
-            success: None,
-            events: vec![],
-        };
-        let inspector = AptosInspector::new(MockAptosClient::success(tx));
-        let tx_id = tx_id_from_hex(HASH);
+            ..pending_tx()
+        });
 
         // When
-        let result = inspector
-            .extract(tx_id, AptosFinality::Committed, vec![])
-            .await;
+        let result = extract_from(client, vec![]).await;
 
         // Then
         assert_matches!(
