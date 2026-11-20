@@ -1,51 +1,23 @@
 use blstrs::G1Projective;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::CKDResponse;
-use near_sdk::env;
-
-/// Uncompressed encoding of the G1 generator.
-const G1_GENERATOR_UNCOMPRESSED: [u8; 96] = [
-    23, 241, 211, 167, 49, 151, 215, 148, 38, 149, 99, 140, 79, 169, 172, 15, 195, 104, 140, 79,
-    151, 116, 185, 5, 161, 78, 58, 63, 23, 27, 172, 88, 108, 85, 232, 63, 249, 122, 26, 239, 251,
-    58, 240, 10, 219, 34, 198, 187, 8, 179, 244, 129, 227, 170, 160, 241, 160, 158, 48, 237, 116,
-    29, 138, 228, 252, 245, 224, 149, 213, 208, 10, 246, 0, 219, 24, 203, 44, 4, 179, 237, 208, 60,
-    199, 68, 162, 136, 138, 228, 12, 170, 35, 41, 70, 197, 231, 225,
-];
-
-/// Uncompressed encoding of the negated G2 generator (`-g2`)
-const MINUS_G2_GENERATOR_UNCOMPRESSED: [u8; 192] = [
-    19, 224, 43, 96, 82, 113, 159, 96, 125, 172, 211, 160, 136, 39, 79, 101, 89, 107, 208, 208,
-    153, 32, 182, 26, 181, 218, 97, 187, 220, 127, 80, 73, 51, 76, 241, 18, 19, 148, 93, 87, 229,
-    172, 125, 5, 93, 4, 43, 126, 2, 74, 162, 178, 240, 143, 10, 145, 38, 8, 5, 39, 45, 197, 16, 81,
-    198, 228, 122, 212, 250, 64, 59, 2, 180, 81, 11, 100, 122, 227, 209, 119, 11, 172, 3, 38, 168,
-    5, 187, 239, 212, 128, 86, 200, 193, 33, 189, 184, 19, 250, 77, 74, 10, 216, 177, 206, 24, 110,
-    213, 6, 23, 137, 33, 61, 153, 57, 35, 6, 109, 221, 175, 16, 64, 188, 63, 245, 159, 130, 92,
-    120, 223, 116, 242, 215, 84, 103, 226, 94, 15, 85, 248, 160, 15, 160, 48, 237, 13, 27, 60, 194,
-    199, 2, 120, 136, 190, 81, 217, 239, 105, 29, 119, 188, 182, 121, 175, 218, 102, 199, 63, 23,
-    249, 238, 56, 55, 165, 80, 36, 247, 140, 113, 54, 50, 117, 167, 93, 117, 216, 107, 171, 121,
-    247, 71, 130, 170,
-];
+use near_sdk::bls12381::{self, G1, G1Compressed, G2, G2Compressed};
 
 /// Check that `e(app_pk1, g2) = e(g1, app_pk2)`.
 ///
-/// Point validation is fully delegated to the host: the decompression
-/// wrappers return `None` on malformed or off-curve encodings, which this
+/// Point validation is fully delegated to the host: decompression returns
+/// an error on malformed or off-curve encodings, which this
 /// function turns into an abort, and a pairing check that fails or errors,
 /// as it does for a point outside its prime-order subgroup, counts as `false`.
 pub(crate) fn app_public_key_check(app_public_key: &dtos::CKDAppPublicKeyPV) -> bool {
-    let pk1 =
-        env::bls12381_p1_decompress(&app_public_key.pk1).expect("malformed BLS12-381 G1 point");
-    let pk2 =
-        env::bls12381_p2_decompress(&app_public_key.pk2).expect("malformed BLS12-381 G2 point");
+    let pk1 = G1Compressed::new(app_public_key.pk1.0)
+        .decompress()
+        .expect("malformed BLS12-381 G1 point");
+    let pk2 = G2Compressed::new(app_public_key.pk2.0)
+        .decompress()
+        .expect("malformed BLS12-381 G2 point");
 
-    let pairing_input = [
-        pk1.as_slice(),
-        MINUS_G2_GENERATOR_UNCOMPRESSED.as_slice(),
-        G1_GENERATOR_UNCOMPRESSED.as_slice(),
-        pk2.as_slice(),
-    ]
-    .concat();
-    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
+    bls12381::pairing_check(&[(pk1, G2::NEG_GENERATOR), (G1::GENERATOR, pk2)]).unwrap_or(false)
 }
 
 /// Check that `e(big_c, g2) = e(big_y, app_pk2) . e(hash_point, public_key)`.
@@ -58,23 +30,24 @@ pub(crate) fn ckd_output_check(
     app_public_key: &dtos::CKDAppPublicKeyPV,
     public_key: &dtos::Bls12381G2PublicKey,
 ) -> bool {
-    let big_c = env::bls12381_p1_decompress(&output.big_c).expect("malformed BLS12-381 G1 point");
-    let big_y = env::bls12381_p1_decompress(&output.big_y).expect("malformed BLS12-381 G1 point");
-    let pk2 =
-        env::bls12381_p2_decompress(&app_public_key.pk2).expect("malformed BLS12-381 G2 point");
-    let pk = env::bls12381_p2_decompress(public_key).expect("malformed BLS12-381 G2 point");
-    let hash_point = hash_app_id_with_pk(public_key.as_slice(), app_id.as_ref());
+    let big_c = G1Compressed::new(output.big_c.0)
+        .decompress()
+        .expect("malformed BLS12-381 G1 point");
+    let big_y = G1Compressed::new(output.big_y.0)
+        .decompress()
+        .expect("malformed BLS12-381 G1 point");
+    let pk2 = G2Compressed::new(app_public_key.pk2.0)
+        .decompress()
+        .expect("malformed BLS12-381 G2 point");
+    let pk = G2Compressed::new(public_key.0)
+        .decompress()
+        .expect("malformed BLS12-381 G2 point");
+    let hash_point =
+        G1::try_from(hash_app_id_with_pk(public_key.as_slice(), app_id.as_ref()).as_slice())
+            .expect("hash-to-curve output is a 96-byte G1 point");
 
-    let pairing_input = [
-        big_c.as_slice(),
-        MINUS_G2_GENERATOR_UNCOMPRESSED.as_slice(),
-        big_y.as_slice(),
-        pk2.as_slice(),
-        hash_point.as_slice(),
-        pk.as_slice(),
-    ]
-    .concat();
-    env::bls12381_pairing_check(&pairing_input).unwrap_or(false)
+    bls12381::pairing_check(&[(big_c, G2::NEG_GENERATOR), (big_y, pk2), (hash_point, pk)])
+        .unwrap_or(false)
 }
 
 /// Hashes the app id and the public key as `H(pk || app_id)` where `H` is a
@@ -108,6 +81,7 @@ mod tests {
     use elliptic_curve::group::Curve as _;
     use near_mpc_contract_interface::types::CKDResponse;
     use near_mpc_contract_interface::types::kdf::derive_app_id;
+    use near_sdk::env;
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
     use threshold_signatures::confidential_key_derivation::{self as ckd, ElementG2, VerifyingKey};
@@ -194,11 +168,8 @@ mod tests {
         let minus_g2 = (-G2Projective::generator()).to_uncompressed();
 
         // When / Then
-        assert_eq!(g1.as_ref(), G1_GENERATOR_UNCOMPRESSED.as_slice());
-        assert_eq!(
-            minus_g2.as_ref(),
-            MINUS_G2_GENERATOR_UNCOMPRESSED.as_slice()
-        );
+        assert_eq!(g1, G1::GENERATOR.into_bytes());
+        assert_eq!(minus_g2, G2::NEG_GENERATOR.into_bytes());
     }
 
     #[test]
