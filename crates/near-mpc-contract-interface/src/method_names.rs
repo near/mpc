@@ -67,6 +67,7 @@ pub const RETURN_VERIFY_FOREIGN_TX_AND_CLEAN_STATE_ON_SUCCESS: &str =
 pub const STATE: &str = "state";
 pub const CURRENT_KEYSET: &str = "current_keyset";
 pub const CONFIG: &str = "config";
+pub const GENESIS_HASH: &str = "genesis_hash";
 pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
 pub const VERSION: &str = "version";

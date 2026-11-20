@@ -20,7 +20,8 @@ use mpc_contract::{
         key_state::{AttemptId, EpochId},
         participants::{ParticipantInfo, Participants},
         test_utils::{
-            bogus_ed25519_public_key, bogus_tee_verifier_account_id, infer_purpose_from_protocol,
+            bogus_ed25519_public_key, bogus_genesis_hash, bogus_tee_verifier_account_id,
+            infer_purpose_from_protocol,
         },
         thresholds::{
             GovernanceThreshold, GovernanceThresholdParameters,
@@ -124,7 +125,12 @@ pub async fn init_contract(
     init_config: Option<dtos::InitConfig>,
 ) -> ExecutionSuccess {
     let result = contract
-        .init(params.into(), bogus_tee_verifier_account_id(), init_config)
+        .init(
+            params.into(),
+            bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
+            init_config,
+        )
         .await
         .unwrap();
     assert!(result.is_success(), "init failed: {:?}", result);
@@ -147,6 +153,7 @@ pub async fn init_contract_running(
             keyset,
             dtos::GovernanceThresholdParameters::from(params),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             init_config,
         )
         .await

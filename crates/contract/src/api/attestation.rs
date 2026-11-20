@@ -463,14 +463,15 @@ mod tests {
     use crate::dto_mapping::IntoContractType;
     use crate::primitives::participants::{ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key, bogus_tee_verifier_account_id, create_node, gen_account_id,
-        gen_participant_url, gen_participants, node_for,
+        bogus_ed25519_public_key, bogus_genesis_hash, bogus_tee_verifier_account_id, create_node,
+        gen_account_id, gen_participant_url, gen_participants, node_for,
     };
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
     use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
     use crate::tee::test_utils::{
-        NANOS_PER_SECOND, dstack_fixture_node, set_block_secs, whitelist_dstack_measurements,
+        NANOS_PER_SECOND, allow_launcher, dstack_fixture_node, set_block_secs,
+        whitelist_dstack_measurements,
     };
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
@@ -828,6 +829,7 @@ mod tests {
         MpcContract::init(
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .unwrap()
@@ -1041,10 +1043,7 @@ mod tests {
         let never_adopted = LauncherImageHash::from([2u8; 32]);
 
         set_block_secs(ADOPTED_ADDED_AT_SECS);
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(adopted, &[mpc_hash], ttl);
+        allow_launcher(&mut contract.tee_state, adopted, mpc_hash, ttl);
         contract
             .tee_state
             .verify_and_store_mock(
@@ -1052,7 +1051,7 @@ mod tests {
                 MpcMockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
                     launcher_docker_compose_hash: Some(get_docker_compose_hash(
-                        &adopted, &mpc_hash,
+                        &adopted, &mpc_hash, None,
                     )),
                     expiry_timestamp_seconds: None,
                     expected_measurements: None,
@@ -1061,10 +1060,7 @@ mod tests {
             )
             .unwrap();
         set_block_secs(NEVER_ADOPTED_ADDED_AT_SECS);
-        contract
-            .tee_state
-            .allowed_launcher_images
-            .add_or_refresh(never_adopted, &[mpc_hash], ttl);
+        allow_launcher(&mut contract.tee_state, never_adopted, mpc_hash, ttl);
 
         testing_env!(
             VMContextBuilder::new()
