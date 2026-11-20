@@ -99,6 +99,14 @@ Hashing the ordered pair $(\mathcal{S}, \mathcal{R})$ gives every pair its own
 string, and gives the two directions between the same parties different strings.
 A transcript from one pair or one direction is then of no use in another.
 
+**Tag and encoding.** $\mathsf{DST}$ names this protocol, its version and the
+ciphersuite, meaning the group and its hash-to-curve suite.
+The same $\mathsf{sid}$ then gives unrelated strings on another group or in
+another version.
+The tuple $(\mathsf{sid}, \mathcal{S}, \mathcal{R}, j)$ is encoded injectively:
+every field has a fixed width or is prefixed by its length.
+Otherwise two different tuples could hash the same bytes and share a string.
+
 **Messages as inputs.** The sender's messages are inputs, as in the paper, and
 each is encrypted with $V_ i^b$.
 Hashing $V_ i^b$ straight into a key would halve what the sender sends in
