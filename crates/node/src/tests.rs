@@ -135,9 +135,9 @@ impl OneNodeTestConfig {
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
 
-                let secret_db = SecretDB::new(&self.home_dir, self.secrets.local_storage_aes_key)?;
+                let secret_db = SecretDB::new(&self.home_dir, *self.secrets.local_storage_aes_key)?;
                 let key_storage_config =
-                    make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
+                    make_key_storage_config(self.home_dir, *self.secrets.local_storage_aes_key);
                 let keystore = Arc::new(RwLock::new(
                     key_storage_config
                         .create()
@@ -248,8 +248,8 @@ impl IntegrationTestSetup {
                     p2p_private_key: p2p_key.clone(),
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                 },
-                local_storage_aes_key: rand::random(),
-                backup_encryption_key: Key::<Aes256Gcm>::generate().into(),
+                local_storage_aes_key: zeroize::Zeroizing::new(rand::random()),
+                backup_encryption_key: zeroize::Zeroizing::new(Key::<Aes256Gcm>::generate().into()),
             };
             let (indexer_api, task, currently_running_job_name) = indexer_manager.add_indexer_node(
                 i.into(),

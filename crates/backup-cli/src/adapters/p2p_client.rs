@@ -216,7 +216,7 @@ mod tests {
             addr,
             SigningKey::generate(&mut rng).verifying_key(),
             SigningKey::generate(&mut rng),
-            [7u8; 32],
+            zeroize::Zeroizing::new([7u8; 32]),
             Duration::from_millis(50),
         );
         let keyset = KeysetBuilder::new_populated(0, 8, &mut rng).keyset();

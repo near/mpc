@@ -25,7 +25,7 @@ use futures::Future;
 use rand_core::CryptoRngCore;
 use std::pin::Pin;
 use std::sync::Arc;
-use zeroize::ZeroizeOnDrop;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use super::mta::{mta_receiver, mta_sender};
 use std::collections::VecDeque;
@@ -69,18 +69,20 @@ async fn multiplication_sender(
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
     let seed = precomputed_values.seed;
-    let mut res0 = random_ot_extension_sender(
-        chan.child(1),
-        RandomOtExtensionParams {
-            sid,
-            batch_size: 2 * batch_size,
-        },
-        delta,
-        &k,
-        seed,
-    )
-    .await?;
-    let res1 = res0.split_off(batch_size);
+    let mut res0 = Zeroizing::new(
+        random_ot_extension_sender(
+            chan.child(1),
+            RandomOtExtensionParams {
+                sid,
+                batch_size: 2 * batch_size,
+            },
+            &delta,
+            &k,
+            seed,
+        )
+        .await?,
+    );
+    let res1 = Zeroizing::new(res0.split_off(batch_size));
 
     // Step 2
     let task0 = mta_sender(chan.child(2), &res0, *a_i, &precomputed_values.delta0);
@@ -376,6 +378,7 @@ mod test {
         assert_zeroize_on_drop::<super::MultiplicationReceiverRandomPackage>();
         assert_zeroize_on_drop::<crate::ecdsa::ot::bits::BitMatrix>();
         assert_zeroize_on_drop::<crate::ecdsa::ot::bits::ChoiceVector>();
+        assert_zeroize_on_drop::<crate::ecdsa::Polynomial>();
         assert_zeroize_on_drop::<crate::frost::PresignArguments<crate::ecdsa::Secp256K1Sha256>>();
     }
 }

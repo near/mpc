@@ -25,7 +25,7 @@ pub struct MigrationSecrets {
 impl From<&SecretsConfig> for MigrationSecrets {
     fn from(value: &SecretsConfig) -> Self {
         Self {
-            backup_encryption_key: value.backup_encryption_key,
+            backup_encryption_key: value.backup_encryption_key.clone(),
             p2p_private_key: value.persistent_secrets.p2p_private_key.clone(),
         }
     }
@@ -45,7 +45,7 @@ pub async fn spawn_recovery_server_and_run_onboarding(
     let web_server_state = web::types::WebServerState {
         import_keyshares_sender,
         keyshare_storage: keyshare_storage.clone(),
-        backup_encryption_key: migration_secrets.backup_encryption_key,
+        backup_encryption_key: migration_secrets.backup_encryption_key.clone(),
         onboarded: onboarded_receiver,
     };
 

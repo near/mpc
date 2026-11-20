@@ -13,8 +13,8 @@ use zeroize::Zeroizing;
 
 pub(crate) mod start;
 
-pub type AesKey256 = [u8; 32];
-pub type AesKey128 = [u8; 16];
+pub type AesKey256 = Zeroizing<[u8; 32]>;
+pub type AesKey128 = Zeroizing<[u8; 16]>;
 
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
@@ -177,15 +177,19 @@ pub struct SecretsConfig {
     pub backup_encryption_key: AesKey256,
 }
 
-pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<[u8; N]> {
+pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<Zeroizing<[u8; N]>> {
     let decoded_key = Zeroizing::new(
         hex::decode(hex_key).context(format!("Encryption key must be {} hex characters", N * 2))?,
     );
-    decoded_key.as_slice().try_into().context(format!(
-        "Encryption key must be {} bytes ({} hex characters)",
-        N,
-        N * 2
-    ))
+    decoded_key
+        .as_slice()
+        .try_into()
+        .map(Zeroizing::new)
+        .context(format!(
+            "Encryption key must be {} bytes ({} hex characters)",
+            N,
+            N * 2
+        ))
 }
 
 /// Writes data to a file with owner-only permissions (0o600), even if the file

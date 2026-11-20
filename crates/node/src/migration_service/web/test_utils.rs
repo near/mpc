@@ -54,7 +54,7 @@ pub async fn setup(ports: TestPorts) -> TestSetup {
     let web_server_state = Arc::new(WebServerState {
         import_keyshares_sender: import_keyshares_sender.clone(),
         keyshare_storage: keyshare_storage.clone(),
-        backup_encryption_key: backup_encryption_key.into(),
+        backup_encryption_key: zeroize::Zeroizing::new(backup_encryption_key.into()),
         onboarded: watch::channel(true).1,
     });
     start_web_server(
@@ -67,7 +67,7 @@ pub async fn setup(ports: TestPorts) -> TestSetup {
     .expect("Web server should start successfully for test setup");
 
     TestSetup {
-        backup_encryption_key: backup_encryption_key.into(),
+        backup_encryption_key: zeroize::Zeroizing::new(backup_encryption_key.into()),
         client_key,
         server_key,
         target_address,

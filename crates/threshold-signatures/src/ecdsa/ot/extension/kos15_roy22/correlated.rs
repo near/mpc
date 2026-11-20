@@ -12,7 +12,7 @@ pub struct CorrelatedOtParams<'sid> {
 pub async fn correlated_ot_sender(
     mut chan: PrivateChannel,
     params: CorrelatedOtParams<'_>,
-    delta: BitVector,
+    delta: &BitVector,
     k: &SquareBitMatrix,
 ) -> Result<BitMatrix, ProtocolError> {
     // Spec 2
@@ -30,7 +30,7 @@ pub async fn correlated_ot_sender(
     }
 
     // Spec 6
-    let q = u.and_vec(&delta).xor(&t);
+    let q = u.and_vec(delta).xor(&t);
 
     Ok(q)
 }
@@ -91,7 +91,7 @@ mod test {
                     sid: &sid_s,
                     batch_size,
                 };
-                correlated_ot_sender(comms_s.private_channel(s, r), params, delta, &k).await
+                correlated_ot_sender(comms_s.private_channel(s, r), params, &delta, &k).await
             }),
             &mut make_protocol(comms_r.clone(), async move {
                 let params = CorrelatedOtParams {

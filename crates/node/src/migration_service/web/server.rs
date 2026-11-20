@@ -330,7 +330,7 @@ mod tests {
             WebServerState {
                 import_keyshares_sender,
                 keyshare_storage: Arc::new(RwLock::new(keyshare_storage)),
-                backup_encryption_key: BACKUP_ENCRYPTION_KEY,
+                backup_encryption_key: zeroize::Zeroizing::new(BACKUP_ENCRYPTION_KEY),
                 onboarded: watch::channel(false).1,
             },
             import_keyshares_receiver,

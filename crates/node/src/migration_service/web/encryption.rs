@@ -1,4 +1,3 @@
-use crate::config::AesKey256;
 use aes_gcm::{
     Aes256Gcm, KeyInit,
     aead::{Aead, Generate, Nonce},
@@ -6,7 +5,7 @@ use aes_gcm::{
 
 const NONCE_LEN: usize = 12;
 
-pub(crate) fn encrypt_bytes(key: &AesKey256, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn encrypt_bytes(key: &[u8; 32], plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
     let cipher = Aes256Gcm::new(key.into());
     let nonce = Nonce::<Aes256Gcm>::generate();
     let ciphertext = cipher
@@ -18,7 +17,7 @@ pub(crate) fn encrypt_bytes(key: &AesKey256, plaintext: &[u8]) -> anyhow::Result
     Ok(nonce_and_cipher)
 }
 
-pub(crate) fn decrypt_bytes(key: &AesKey256, nonce_and_cipher: &[u8]) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn decrypt_bytes(key: &[u8; 32], nonce_and_cipher: &[u8]) -> anyhow::Result<Vec<u8>> {
     if nonce_and_cipher.len() < NONCE_LEN {
         anyhow::bail!("ciphertext too short: missing nonce");
     }
