@@ -226,9 +226,7 @@ syn = "3.0"
 tempfile = "3.27.0"
 test-log = "0.2.20"
 thiserror = "2.0.18"
-# Must stay on the version nearcore's `near-async` uses, so the graph has one copy;
-# bump alongside the nearcore pin
-thread-priority = "1.2.0"
+thread-priority = "3.0.0"
 tikv-jemallocator = { version = "0.6.0", features = [
     "profiling",
     "unprefixed_malloc_on_supported_platforms",
