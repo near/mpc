@@ -803,6 +803,7 @@ mod tests {
     use std::assert_matches;
 
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn from_vec_succeeds_within_bounds() {
@@ -992,64 +993,49 @@ mod tests {
         assert_eq!(result, [2u8, 4].into());
     }
 
-    #[test]
-    fn get_returns_element_at_valid_index() {
+    #[rstest]
+    #[case::valid_index(1, Some(&2u8))]
+    #[case::out_of_bounds_index(3, None)]
+    fn get_returns_element_only_for_valid_index(
+        #[case] index: usize,
+        #[case] expected: Option<&u8>,
+    ) {
         // Given
         let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
         // When
-        let elem = data.get(1);
+        let elem = data.get(index);
         // Then
-        assert_eq!(elem, Some(&2u8));
+        assert_eq!(elem, expected);
     }
 
-    #[test]
-    fn get_returns_none_for_out_of_bounds_index() {
+    #[rstest]
+    #[case::all_elements_succeed([1u8, 2], Ok([100u8, 50].into()))]
+    #[case::any_element_fails([0u8, 2], Err("error"))]
+    fn try_mapped_fails_iff_any_element_fails(
+        #[case] input: [u8; 2],
+        #[case] expected: Result<BoundedVec<u8, 2, 8>, &str>,
+    ) {
         // Given
-        let data: BoundedVec<_, 2, 8> = vec![1u8, 2].try_into().unwrap();
-        // When
-        let elem = data.get(3);
-        // Then
-        assert_eq!(elem, None);
-    }
-
-    #[test]
-    fn try_mapped_succeeds_when_all_elements_succeed() {
-        // Given
-        let data: BoundedVec<u8, 2, 8> = [1u8, 2].into();
+        let data: BoundedVec<u8, 2, 8> = input.into();
         // When
         let result = data.try_mapped(|x| 100u8.checked_div(x).ok_or("error"));
         // Then
-        assert_eq!(result, Ok([100u8, 50].into()));
+        assert_eq!(result, expected);
     }
 
-    #[test]
-    fn try_mapped_fails_when_any_element_fails() {
+    #[rstest]
+    #[case::all_elements_succeed([1u8, 2], Ok([100u8, 50].into()))]
+    #[case::any_element_fails([0u8, 2], Err("error"))]
+    fn try_mapped_ref_fails_iff_any_element_fails(
+        #[case] input: [u8; 2],
+        #[case] expected: Result<BoundedVec<u8, 2, 8>, &str>,
+    ) {
         // Given
-        let data: BoundedVec<u8, 2, 8> = [0u8, 2].into();
-        // When
-        let result = data.try_mapped(|x| 100u8.checked_div(x).ok_or("error"));
-        // Then
-        assert_eq!(result, Err("error"));
-    }
-
-    #[test]
-    fn try_mapped_ref_succeeds_when_all_elements_succeed() {
-        // Given
-        let data: BoundedVec<u8, 2, 8> = [1u8, 2].into();
+        let data: BoundedVec<u8, 2, 8> = input.into();
         // When
         let result = data.try_mapped_ref(|x| 100u8.checked_div(*x).ok_or("error"));
         // Then
-        assert_eq!(result, Ok([100u8, 50].into()));
-    }
-
-    #[test]
-    fn try_mapped_ref_fails_when_any_element_fails() {
-        // Given
-        let data: BoundedVec<u8, 2, 8> = [0u8, 2].into();
-        // When
-        let result = data.try_mapped_ref(|x| 100u8.checked_div(*x).ok_or("error"));
-        // Then
-        assert_eq!(result, Err("error"));
+        assert_eq!(result, expected);
     }
 
     #[test]

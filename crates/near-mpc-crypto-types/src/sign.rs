@@ -154,58 +154,99 @@ mod tests {
         vec![0x0a; 64]
     }
 
-    #[test]
-    fn deserialize__should_parse_v2_ecdsa_format() {
-        // Given
-        let json = serde_json::json!({
+    fn ecdsa_payload() -> Payload {
+        Payload::from_legacy_ecdsa(ecdsa_payload_bytes())
+    }
+
+    fn eddsa_payload() -> Payload {
+        Payload::Eddsa(eddsa_payload_bytes().try_into().unwrap())
+    }
+
+    #[rstest]
+    #[case::v2_ecdsa_format(
+        serde_json::json!({
             "path": "m/44'/60'/0'/0/0",
             "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
             "domain_id": 0
-        });
-
-        // When
-        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(args.path, "m/44'/60'/0'/0/0");
-        assert_eq!(args.domain_id, DomainId(0));
-        assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
-    }
-
-    #[test]
-    fn deserialize__should_parse_v2_eddsa_format() {
-        // Given
-        let json = serde_json::json!({
+        }),
+        "m/44'/60'/0'/0/0",
+        DomainId(0),
+        ecdsa_payload()
+    )]
+    #[case::v2_eddsa_format(
+        serde_json::json!({
             "path": "solana-path",
             "payload_v2": {"Eddsa": eddsa_payload_hex()},
             "domain_id": 1
-        });
-
-        // When
-        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(args.path, "solana-path");
-        assert_eq!(args.domain_id, DomainId(1));
-        assert_eq!(args.payload.as_eddsa().unwrap(), &eddsa_payload_bytes());
-    }
-
-    #[test]
-    fn deserialize__should_parse_legacy_v1_format_with_raw_payload_and_key_version() {
-        // Given
-        let json = serde_json::json!({
+        }),
+        "solana-path",
+        DomainId(1),
+        eddsa_payload()
+    )]
+    #[case::legacy_v1_format_with_raw_payload_and_key_version(
+        serde_json::json!({
             "path": "m/44'/60'/0'/0/0",
             "payload": ecdsa_payload_bytes().to_vec(),
             "key_version": 0
-        });
+        }),
+        "m/44'/60'/0'/0/0",
+        DomainId(0),
+        ecdsa_payload()
+    )]
+    #[case::key_version_converted_to_domain_id(
+        serde_json::json!({
+            "path": "test",
+            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
+            "key_version": 3
+        }),
+        "test",
+        DomainId(3),
+        ecdsa_payload()
+    )]
+    #[case::mixed_payload_v2_with_key_version(
+        serde_json::json!({
+            "path": "test",
+            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
+            "key_version": 2
+        }),
+        "test",
+        DomainId(2),
+        ecdsa_payload()
+    )]
+    #[case::mixed_legacy_payload_with_domain_id(
+        serde_json::json!({
+            "path": "test",
+            "payload": ecdsa_payload_bytes().to_vec(),
+            "domain_id": 3
+        }),
+        "test",
+        DomainId(3),
+        ecdsa_payload()
+    )]
+    #[case::empty_path(
+        serde_json::json!({
+            "path": "",
+            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
+            "domain_id": 0
+        }),
+        "",
+        DomainId(0),
+        ecdsa_payload()
+    )]
+    fn deserialize__should_accept_supported_wire_formats(
+        #[case] json: serde_json::Value,
+        #[case] expected_path: &str,
+        #[case] expected_domain_id: DomainId,
+        #[case] expected_payload: Payload,
+    ) {
+        // Given
+        let expected = (expected_path, expected_domain_id, expected_payload);
 
         // When
         let args: SignRequestArgs = serde_json::from_value(json).unwrap();
 
         // Then
-        assert_eq!(args.path, "m/44'/60'/0'/0/0");
-        assert_eq!(args.domain_id, DomainId(0));
-        assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
+        assert_eq!((args.path.as_str(), args.domain_id, args.payload), expected);
     }
 
     /// A sign request whose `payload` field is
@@ -230,160 +271,37 @@ mod tests {
         assert!(args.payload.as_eddsa().is_none());
     }
 
-    #[test]
-    fn deserialize__should_reject_both_payload_v2_and_deprecated_payload() {
-        // Given — both payload_v2 and payload present
-        let json = serde_json::json!({
-            "path": "test",
-            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
-            "payload": vec![0u8; 32],
-            "domain_id": 0
-        });
-
-        // When
-        let result = serde_json::from_value::<SignRequestArgs>(json);
-
-        // Then
-        result.unwrap_err();
-    }
-
-    #[test]
-    fn deserialize__should_reject_both_domain_id_and_key_version() {
-        // Given — both domain_id and key_version present
-        let json = serde_json::json!({
-            "path": "test",
-            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
-            "domain_id": 5,
-            "key_version": 0
-        });
-
-        // When
-        let result = serde_json::from_value::<SignRequestArgs>(json);
-
-        // Then
-        result.unwrap_err();
-    }
-
-    #[test]
-    fn deserialize__should_convert_key_version_to_domain_id() {
-        // Given
-        let json = serde_json::json!({
-            "path": "test",
-            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
-            "key_version": 3
-        });
-
-        // When
-        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(args.domain_id, DomainId(3));
-    }
-
-    #[test]
-    fn deserialize__should_reject_missing_payload() {
-        // Given
-        let json = serde_json::json!({
-            "path": "test",
-            "domain_id": 0
-        });
-
-        // When
-        let result = serde_json::from_value::<SignRequestArgs>(json);
-
-        // Then
-        result.unwrap_err();
-    }
-
-    #[test]
-    fn deserialize__should_reject_missing_domain_id_and_key_version() {
-        // Given
-        let json = serde_json::json!({
-            "path": "test",
-            "payload_v2": {"Ecdsa": ecdsa_payload_hex()}
-        });
-
-        // When
-        let result = serde_json::from_value::<SignRequestArgs>(json);
-
-        // Then
-        result.unwrap_err();
-    }
-
-    #[test]
-    fn deserialize__should_reject_missing_path() {
-        // Given
-        let json = serde_json::json!({
-            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
-            "domain_id": 0
-        });
-
-        // When
-        let result = serde_json::from_value::<SignRequestArgs>(json);
-
-        // Then
-        result.unwrap_err();
-    }
-
-    #[test]
-    fn deserialize__should_accept_mixed_payload_v2_with_key_version() {
-        // Given — new payload format + old domain format
-        let json = serde_json::json!({
-            "path": "test",
-            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
-            "key_version": 2
-        });
-
-        // When
-        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
-        assert_eq!(args.domain_id, DomainId(2));
-    }
-
-    #[test]
-    fn deserialize__should_accept_mixed_legacy_payload_with_domain_id() {
-        // Given — old payload format + new domain format
-        let json = serde_json::json!({
-            "path": "test",
-            "payload": ecdsa_payload_bytes().to_vec(),
-            "domain_id": 3
-        });
-
-        // When
-        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(args.payload.as_ecdsa().unwrap(), &ecdsa_payload_bytes());
-        assert_eq!(args.domain_id, DomainId(3));
-    }
-
-    #[test]
-    fn deserialize__should_accept_empty_path() {
-        // Given
-        let json = serde_json::json!({
-            "path": "",
-            "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
-            "domain_id": 0
-        });
-
-        // When
-        let args: SignRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(args.path, "");
-    }
-
-    #[test]
-    fn deserialize__should_reject_invalid_legacy_payload_wrong_length() {
-        // Given — 16 bytes instead of 32
-        let json = serde_json::json!({
-            "path": "test",
-            "payload": vec![0u8; 16],
-            "key_version": 0
-        });
-
+    #[rstest]
+    #[case::both_payload_v2_and_deprecated_payload(serde_json::json!({
+        "path": "test",
+        "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
+        "payload": vec![0u8; 32],
+        "domain_id": 0
+    }))]
+    #[case::both_domain_id_and_key_version(serde_json::json!({
+        "path": "test",
+        "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
+        "domain_id": 5,
+        "key_version": 0
+    }))]
+    #[case::missing_payload(serde_json::json!({
+        "path": "test",
+        "domain_id": 0
+    }))]
+    #[case::missing_domain_id_and_key_version(serde_json::json!({
+        "path": "test",
+        "payload_v2": {"Ecdsa": ecdsa_payload_hex()}
+    }))]
+    #[case::missing_path(serde_json::json!({
+        "payload_v2": {"Ecdsa": ecdsa_payload_hex()},
+        "domain_id": 0
+    }))]
+    #[case::invalid_legacy_payload_wrong_length(serde_json::json!({
+        "path": "test",
+        "payload": vec![0u8; 16],
+        "key_version": 0
+    }))]
+    fn deserialize__should_reject_invalid_sign_request(#[case] json: serde_json::Value) {
         // When
         let result = serde_json::from_value::<SignRequestArgs>(json);
 
@@ -396,7 +314,7 @@ mod tests {
         // Given
         let args = SignRequestArgs {
             path: "test".to_string(),
-            payload: Payload::from_legacy_ecdsa(ecdsa_payload_bytes()),
+            payload: ecdsa_payload(),
             domain_id: DomainId(1),
         };
 
@@ -432,13 +350,19 @@ mod tests {
         assert!(payload_v2.get("Eddsa").is_some());
     }
 
-    #[test]
-    fn serialize__should_roundtrip_ecdsa() {
+    #[rstest]
+    #[case::ecdsa("m/44'/60'/0'/0/0", ecdsa_payload(), DomainId(0))]
+    #[case::eddsa("solana-path", eddsa_payload(), DomainId(1))]
+    fn serialize__should_roundtrip(
+        #[case] path: &str,
+        #[case] payload: Payload,
+        #[case] domain_id: DomainId,
+    ) {
         // Given
         let args = SignRequestArgs {
-            path: "m/44'/60'/0'/0/0".to_string(),
-            payload: Payload::from_legacy_ecdsa(ecdsa_payload_bytes()),
-            domain_id: DomainId(0),
+            path: path.to_string(),
+            payload,
+            domain_id,
         };
 
         // When
@@ -446,30 +370,14 @@ mod tests {
         let deserialized: SignRequestArgs = serde_json::from_value(json).unwrap();
 
         // Then
-        assert_eq!(deserialized.path, args.path);
-        assert_eq!(deserialized.domain_id, args.domain_id);
-        assert_eq!(deserialized.payload.as_ecdsa(), args.payload.as_ecdsa());
-    }
-
-    #[test]
-    fn serialize__should_roundtrip_eddsa() {
-        // Given
-        let bounded: UpperBoundedVec<u8, EDDSA_PAYLOAD_SIZE_UPPER_BOUND_BYTES> =
-            eddsa_payload_bytes().try_into().unwrap();
-        let args = SignRequestArgs {
-            path: "solana-path".to_string(),
-            payload: Payload::Eddsa(bounded),
-            domain_id: DomainId(1),
-        };
-
-        // When
-        let json = serde_json::to_value(&args).unwrap();
-        let deserialized: SignRequestArgs = serde_json::from_value(json).unwrap();
-
-        // Then
-        assert_eq!(deserialized.path, args.path);
-        assert_eq!(deserialized.domain_id, args.domain_id);
-        assert_eq!(deserialized.payload.as_eddsa(), args.payload.as_eddsa());
+        assert_eq!(
+            (
+                deserialized.path,
+                deserialized.domain_id,
+                deserialized.payload
+            ),
+            (args.path, args.domain_id, args.payload)
+        );
     }
 
     /// 31 bytes is the largest payload the old lower bound rejected, so it locks
