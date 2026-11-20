@@ -66,7 +66,7 @@ so pick a name you are willing to freeze.
 On `testnet` the faucet service funds the new account:
 
 ```shell
-near account create-account sponsor-by-faucet-service "$VERIFIER_ACCOUNT" autogenerate-new-keypair save-to-keychain network-config "$NETWORK" create
+near account create-account sponsor-by-faucet-service "$VERIFIER_ACCOUNT" autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain network-config "$NETWORK" create
 ```
 
 On `mainnet` there is no faucet; create and fund the account from an existing one. The
@@ -80,7 +80,7 @@ before the account is locked (see [step 5](#5-lock-the-account)):
 ```shell
 # storage stake for the WASM size from step 1, plus 0.1 NEAR for gas; e.g. 420 KB -> 4.2 + 0.1
 export FUNDING_NEAR=4.3
-near account create-account fund-myself "$VERIFIER_ACCOUNT" "$FUNDING_NEAR NEAR" autogenerate-new-keypair save-to-keychain sign-as <funding-account> network-config "$NETWORK" sign-with-keychain send
+near account create-account fund-myself "$VERIFIER_ACCOUNT" "$FUNDING_NEAR NEAR" autogenerate-new-keypair --signature-scheme ed25519 save-to-keychain sign-as <funding-account> network-config "$NETWORK" sign-with-keychain send
 ```
 
 `near-cli` prints the account's new full-access public key. Note it;

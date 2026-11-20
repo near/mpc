@@ -15,6 +15,23 @@
         "type": "github"
       }
     },
+    "nearcore": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793040403,
+        "narHash": "sha256-0HmrdulP/tvckWpjJUbYQ3Ktpda+tixi5rEDJv/uPUA=",
+        "owner": "near",
+        "repo": "nearcore",
+        "rev": "bc4e9e8cfb03d9e82f027883055624e18576993e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "near",
+        "ref": "2.14.0",
+        "repo": "nearcore",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1790533781,
@@ -34,6 +51,7 @@
     "root": {
       "inputs": {
         "crane": "crane",
+        "nearcore": "nearcore",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       }

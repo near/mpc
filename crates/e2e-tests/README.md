@@ -326,6 +326,9 @@ export NEAR_SANDBOX_BIN_PATH=/path/to/neard   # e.g. a neard built from nearcore
 cargo make e2e-tests
 ```
 
+On NixOS, the downloaded binary cannot run at all; use `nix develop .#localnet`,
+which sets `NEAR_SANDBOX_BIN_PATH` to a `neard` built from source.
+
 ---
 
 ## Running the tests
