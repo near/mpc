@@ -19,12 +19,13 @@ The inputs to this protocol are:
 1. Each party derives the four points from four distinct inputs:
 
 $$
-(G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathsf{sid} \mathbin{\Vert} j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
+(G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathsf{sid}, \mathcal{S}, \mathcal{R}, j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
 $$
 
 Here $\mathsf{HashToCurve}$ is a hash to $\mathbb{G}$ whose outputs have unknown
 discrete logarithms, and $\mathsf{DST}$ is a domain separation tag that only
 this protocol uses.
+The hash takes the identities of the two parties as the ordered pair $(\mathcal{S}, \mathcal{R})$.
 
 **Round 1 (Receiver):**
 
@@ -77,13 +78,19 @@ The choice bits are hidden from the sender under DDH.
 **Hashed common reference string.** A party who chose the string could cheat:
 the receiver by picking $x_ 0 = x_ 1$ and learning both messages, the sender by
 using $x_ 0, x_ 1$ to recover the choice bits.
-Hashing $\mathsf{sid}$ to the curve gives four points whose discrete logarithms
+Hashing $\mathsf{sid}$ and the pair $(\mathcal{S}, \mathcal{R})$ to the curve gives four points whose discrete logarithms
 nobody knows, in messy mode except with probability $1/q$, with no extra round
 and no trusted setup.
 This relies on the four inputs being distinct and on the tag being used nowhere
 else: it is what makes $x_ 0$ and $x_ 1$ independent and uniform.
 Hashing the same input four times would give $G_ 0 = H_ 0 = G_ 1 = H_ 1$, so
 $x_ 0 = x_ 1$, and the receiver would learn both messages.
+
+**Party pair in the hash.** Several pairs of parties may run this protocol
+under the same $\mathsf{sid}$.
+Hashing the ordered pair $(\mathcal{S}, \mathcal{R})$ gives every pair its own
+string, and gives the two directions between the same parties different strings.
+A transcript from one pair or one direction is then of no use in another.
 
 **Messages as inputs.** The sender's messages are inputs, as in the paper, and
 each is encrypted with $V_ i^b$.
