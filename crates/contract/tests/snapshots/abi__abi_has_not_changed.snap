@@ -2257,7 +2257,7 @@ expression: abi
       },
       {
         "name": "vote_add_domains",
-        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
+        "doc": " Propose adding a new set of domains for the MPC network.\n Once every participant has voted for the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
         "kind": "call",
         "params": {
           "serialization_type": "json",
