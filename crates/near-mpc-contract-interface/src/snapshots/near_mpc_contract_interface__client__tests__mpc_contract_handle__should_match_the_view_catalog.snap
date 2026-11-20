@@ -51,6 +51,10 @@ method:   config
 args:     {}
 
 contract: mpc.near
+method:   genesis_hash
+args:     {}
+
+contract: mpc.near
 method:   get_tee_accounts
 args:     {}
 

@@ -54,18 +54,26 @@ pub async fn vote_cancel_reshaing(
     .await
 }
 
+/// Votes for `proposal` from the first governance threshold of `current_participants`, the
+/// votes that make the contract accept it. A vote past the threshold would fail with
+/// `EpochMismatch`, as acceptance moves the contract past `prospective_epoch_id`.
 pub async fn vote_new_parameters(
     contract: &SandboxMpcContract,
     prospective_epoch_id: u64,
     proposal: &GovernanceThresholdParameters,
-    persistent_participants: &[Account],
-    new_participants: &[Account],
+    current_participants: &[Account],
 ) -> anyhow::Result<()> {
+    let threshold = match get_state(contract).await {
+        ProtocolContractState::Running(state) => state.parameters.threshold,
+        ProtocolContractState::Resharing(state) => {
+            state.previous_running_state.parameters.threshold
+        }
+        state => anyhow::bail!("cannot vote for new parameters in state {state:?}"),
+    };
+    let voters = &current_participants[..usize::try_from(threshold.0)?];
     let proposal: dtos::ProposedGovernanceThresholdParameters =
         ProposedGovernanceThresholdParameters::new(proposal.clone(), BTreeMap::new()).into();
-    // At least threshold old participants need to vote first,
-    // here we are just using all of them
-    execute_async_handle_calls(persistent_participants, contract, |handle| {
+    execute_async_handle_calls(voters, contract, |handle| {
         let proposal = proposal.clone();
         async move {
             handle
@@ -73,19 +81,7 @@ pub async fn vote_new_parameters(
                 .await
         }
     })
-    .await?;
-
-    // then new participant can vote
-    execute_async_handle_calls(new_participants, contract, |handle| {
-        let proposal = proposal.clone();
-        async move {
-            handle
-                .vote_new_parameters(EpochId::new(prospective_epoch_id), proposal)
-                .await
-        }
-    })
-    .await?;
-    Ok(())
+    .await
 }
 
 pub async fn start_reshare_instance(
@@ -149,7 +145,6 @@ pub async fn do_resharing(
         prospective_epoch_id.0,
         &new_threshold_parameters,
         remaining_accounts,
-        &[],
     )
     .await?;
     conclude_resharing(contract, remaining_accounts, prospective_epoch_id).await?;
