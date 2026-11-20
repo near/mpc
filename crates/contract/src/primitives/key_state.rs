@@ -123,6 +123,7 @@ pub mod tests {
             AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, EpochId, KeyForDomain,
             Keyset,
         },
+        participants::Participants,
         test_utils::{bogus_ed25519_public_key_extended, gen_account_id, gen_threshold_params},
     };
     use near_mpc_contract_interface::types::DomainId;
@@ -172,8 +173,7 @@ pub mod tests {
         let _ = keyset.public_key(DomainId(1)).unwrap_err();
     }
 
-    #[test]
-    fn test_authenticated_participant_id() {
+    fn assert_authenticates_only_participants(authenticate: impl Fn(&Participants) -> bool) {
         let proposed_parameters = gen_threshold_params(MAX_N);
         proposed_parameters
             .validate()
@@ -182,30 +182,25 @@ pub mod tests {
             let mut context = VMContextBuilder::new();
             context.signer_account_id(account_id.clone());
             testing_env!(context.build());
-            let _ = AuthenticatedParticipantId::new(proposed_parameters.participants()).unwrap();
+            assert!(authenticate(proposed_parameters.participants()));
             let mut context = VMContextBuilder::new();
             context.signer_account_id(gen_account_id());
             testing_env!(context.build());
-            let _ =
-                AuthenticatedParticipantId::new(proposed_parameters.participants()).unwrap_err();
+            assert!(!authenticate(proposed_parameters.participants()));
         }
     }
 
     #[test]
+    fn test_authenticated_participant_id() {
+        assert_authenticates_only_participants(|participants| {
+            AuthenticatedParticipantId::new(participants).is_ok()
+        });
+    }
+
+    #[test]
     fn test_authenticated_account_id() {
-        let proposed_parameters = gen_threshold_params(MAX_N);
-        proposed_parameters
-            .validate()
-            .expect("Proposed parameters should validate");
-        for (account_id, _, _) in proposed_parameters.participants().participants() {
-            let mut context = VMContextBuilder::new();
-            context.signer_account_id(account_id.clone());
-            testing_env!(context.build());
-            let _ = AuthenticatedAccountId::new(proposed_parameters.participants()).unwrap();
-            let mut context = VMContextBuilder::new();
-            context.signer_account_id(gen_account_id());
-            testing_env!(context.build());
-            let _ = AuthenticatedAccountId::new(proposed_parameters.participants()).unwrap_err();
-        }
+        assert_authenticates_only_participants(|participants| {
+            AuthenticatedAccountId::new(participants).is_ok()
+        });
     }
 }

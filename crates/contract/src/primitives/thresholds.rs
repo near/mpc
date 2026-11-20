@@ -295,7 +295,7 @@ mod tests {
     use crate::{
         errors::{Error, InvalidCandidateSet, InvalidThreshold},
         primitives::{
-            participants::{ParticipantId, Participants},
+            participants::{ParticipantId, ParticipantInfo, Participants},
             test_utils::{gen_participant, gen_participants, gen_threshold_params},
             thresholds::{
                 GovernanceThreshold, GovernanceThresholdParameters,
@@ -305,6 +305,7 @@ mod tests {
         },
         state::test_utils::gen_valid_params_proposal,
     };
+    use near_account_id::AccountId;
     use near_mpc_contract_interface::types::{DomainId, ParticipantCount, ReconstructionThreshold};
     use rand::Rng;
     use std::{assert_matches, collections::BTreeMap};
@@ -498,16 +499,11 @@ mod tests {
         let _ = params.validate_incoming_proposal(&proposal).unwrap_err();
     }
 
-    #[test]
-    fn test_proposal_participant_id_changed() {
-        let params =
-            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
-                .unwrap();
-
-        // Take an existing participant and change their ID
-        let (account, old_id, info) = params.participants.participants()[0].clone();
-        let wrong_id = ParticipantId(old_id.get() + 100);
-
+    fn proposal_replacing_first_participant(
+        params: &GovernanceThresholdParameters,
+        replacement: (AccountId, ParticipantId, ParticipantInfo),
+        next_id: ParticipantId,
+    ) -> GovernanceThresholdParameters {
         let mut new_participants_vec: Vec<_> = params
             .participants
             .participants()
@@ -515,11 +511,25 @@ mod tests {
             .skip(1)
             .cloned()
             .collect();
-        new_participants_vec.push((account.clone(), wrong_id, info));
-
-        let proposal = GovernanceThresholdParameters::new_unvalidated(
-            Participants::init(ParticipantId(wrong_id.get() + 1), new_participants_vec),
+        new_participants_vec.push(replacement);
+        GovernanceThresholdParameters::new_unvalidated(
+            Participants::init(next_id, new_participants_vec),
             params.threshold,
+        )
+    }
+
+    #[test]
+    fn test_proposal_participant_id_changed() {
+        let params =
+            GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
+                .unwrap();
+        let (account, old_id, info) = params.participants.participants()[0].clone();
+        let wrong_id = ParticipantId(old_id.get() + 100);
+
+        let proposal = proposal_replacing_first_participant(
+            &params,
+            (account.clone(), wrong_id, info),
+            ParticipantId(wrong_id.get() + 1),
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),
@@ -536,23 +546,13 @@ mod tests {
         let params =
             GovernanceThresholdParameters::new(gen_participants(5), GovernanceThreshold::new(3))
                 .unwrap();
-
-        // Take an existing participant and change their info
         let (account, id, _) = params.participants.participants()[0].clone();
         let (_, changed_info) = gen_participant(999);
 
-        let mut new_participants_vec: Vec<_> = params
-            .participants
-            .participants()
-            .iter()
-            .skip(1)
-            .cloned()
-            .collect();
-        new_participants_vec.push((account.clone(), id, changed_info));
-
-        let proposal = GovernanceThresholdParameters::new_unvalidated(
-            Participants::init(params.participants.next_id(), new_participants_vec),
-            params.threshold,
+        let proposal = proposal_replacing_first_participant(
+            &params,
+            (account.clone(), id, changed_info),
+            params.participants.next_id(),
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),
@@ -574,19 +574,10 @@ mod tests {
         let (existing_account, reused_id, _) = params.participants.participants()[0].clone();
         let (new_account, new_info) = gen_participant(999);
 
-        // Keep participants 1..5 (skip participant 0), then add new account with reused id 0
-        let mut new_participants_vec: Vec<_> = params
-            .participants
-            .participants()
-            .iter()
-            .skip(1)
-            .cloned()
-            .collect();
-        new_participants_vec.push((new_account.clone(), reused_id, new_info));
-
-        let proposal = GovernanceThresholdParameters::new_unvalidated(
-            Participants::init(params.participants.next_id(), new_participants_vec),
-            params.threshold,
+        let proposal = proposal_replacing_first_participant(
+            &params,
+            (new_account.clone(), reused_id, new_info),
+            params.participants.next_id(),
         );
         assert_eq!(
             params.validate_incoming_proposal(&proposal).unwrap_err(),

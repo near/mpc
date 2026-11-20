@@ -612,38 +612,59 @@ pub mod tests {
         assert_eq!(result, registry);
     }
 
-    #[test]
-    fn with_threshold_updates__should_apply_per_domain_updates() {
-        // Given a registry with two domains and threshold updates targeting one
-        let registry = registry_of(vec![
-            DomainConfig {
-                id: DomainId(0),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(1),
-                protocol: Protocol::Frost,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::Sign,
-            },
-        ]);
-        let mut threshold_updates = BTreeMap::new();
-        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
+    #[rstest]
+    #[case::per_domain_updates(
+        &[(Protocol::CaitSith, 3), (Protocol::Frost, 2)],
+        &[(0, 5)],
+        &[5, 2],
+    )]
+    #[case::diverging_caitsith_thresholds(
+        &[(Protocol::CaitSith, 3), (Protocol::CaitSith, 3)],
+        &[(0, 5)],
+        &[5, 3],
+    )]
+    #[case::uniform_caitsith_thresholds(
+        &[(Protocol::CaitSith, 3), (Protocol::CaitSith, 3), (Protocol::Frost, 2)],
+        &[(0, 5), (1, 5)],
+        &[5, 5, 2],
+    )]
+    fn with_threshold_updates__should_apply_updates_to_targeted_domains(
+        #[case] domains: &[(Protocol, u64)],
+        #[case] updates: &[(u64, u64)],
+        #[case] expected_thresholds: &[u64],
+    ) {
+        // Given
+        let registry = registry_of(
+            domains
+                .iter()
+                .zip(0..)
+                .map(|(&(protocol, threshold), id)| DomainConfig {
+                    id: DomainId(id),
+                    protocol,
+                    reconstruction_threshold: ReconstructionThreshold::new(threshold),
+                    purpose: DomainPurpose::Sign,
+                })
+                .collect(),
+        );
+        let threshold_updates: BTreeMap<_, _> = updates
+            .iter()
+            .map(|&(id, threshold)| (DomainId(id), ReconstructionThreshold::new(threshold)))
+            .collect();
 
-        // When applying the threshold updates
+        // When
         let result = registry.with_threshold_updates(&threshold_updates).unwrap();
 
-        // Then only the targeted domain's threshold changes
-        assert_eq!(
-            result.domains()[0].reconstruction_threshold,
-            ReconstructionThreshold::new(5)
-        );
-        assert_eq!(
-            result.domains()[1].reconstruction_threshold,
-            ReconstructionThreshold::new(2)
-        );
+        // Then
+        let thresholds: Vec<_> = result
+            .domains()
+            .iter()
+            .map(|domain| domain.reconstruction_threshold)
+            .collect();
+        let expected: Vec<_> = expected_thresholds
+            .iter()
+            .map(|&threshold| ReconstructionThreshold::new(threshold))
+            .collect();
+        assert_eq!(thresholds, expected);
     }
 
     #[test]
@@ -670,87 +691,6 @@ pub mod tests {
         );
     }
 
-    #[test]
-    fn with_threshold_updates__should_accept_updates_that_diverge_caitsith_thresholds() {
-        // Given a registry with two CaitSith domains sharing one threshold and
-        // threshold updates that rewrite only one of them to a different value.
-        let registry = registry_of(vec![
-            DomainConfig {
-                id: DomainId(0),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(1),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-        ]);
-        let mut threshold_updates = BTreeMap::new();
-        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
-
-        // When applying the threshold updates
-        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
-
-        // Then CaitSith domains may carry independent thresholds.
-        assert_eq!(
-            result.domains()[0].reconstruction_threshold,
-            ReconstructionThreshold::new(5)
-        );
-        assert_eq!(
-            result.domains()[1].reconstruction_threshold,
-            ReconstructionThreshold::new(3)
-        );
-    }
-
-    #[test]
-    fn with_threshold_updates__should_accept_updates_that_keep_caitsith_thresholds_uniform() {
-        // Given two CaitSith domains and a Frost domain, with threshold updates
-        // that move both CaitSith domains to the same new threshold.
-        let registry = registry_of(vec![
-            DomainConfig {
-                id: DomainId(0),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(1),
-                protocol: Protocol::CaitSith,
-                reconstruction_threshold: ReconstructionThreshold::new(3),
-                purpose: DomainPurpose::Sign,
-            },
-            DomainConfig {
-                id: DomainId(2),
-                protocol: Protocol::Frost,
-                reconstruction_threshold: ReconstructionThreshold::new(2),
-                purpose: DomainPurpose::Sign,
-            },
-        ]);
-        let mut threshold_updates = BTreeMap::new();
-        threshold_updates.insert(DomainId(0), ReconstructionThreshold::new(5));
-        threshold_updates.insert(DomainId(1), ReconstructionThreshold::new(5));
-
-        // When applying the threshold updates
-        let result = registry.with_threshold_updates(&threshold_updates).unwrap();
-
-        // Then both CaitSith domains move together and Frost is untouched
-        assert_eq!(
-            result.domains()[0].reconstruction_threshold,
-            ReconstructionThreshold::new(5)
-        );
-        assert_eq!(
-            result.domains()[1].reconstruction_threshold,
-            ReconstructionThreshold::new(5)
-        );
-        assert_eq!(
-            result.domains()[2].reconstruction_threshold,
-            ReconstructionThreshold::new(2)
-        );
-    }
-
     fn sign_domain(protocol: Protocol, threshold: u64) -> DomainConfig {
         DomainConfig {
             id: DomainId(0),
@@ -760,14 +700,20 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn validate_domain_reconstruction_threshold__should_accept_robust_ecdsa_at_required_signers_bound()
-     {
-        // Given t = 3, so RobustEcdsa requires 2t - 1 = 5 active signers
-        let domain = sign_domain(Protocol::RobustEcdsa, 3);
+    #[rstest]
+    #[case::robust_ecdsa_at_required_signers_bound(Protocol::RobustEcdsa, 3, 5)]
+    #[case::cait_sith_when_threshold_equals_participants(Protocol::CaitSith, 4, 4)]
+    fn validate_domain_reconstruction_threshold__should_accept(
+        #[case] protocol: Protocol,
+        #[case] threshold: u64,
+        #[case] participants: u64,
+    ) {
+        // Given
+        let domain = sign_domain(protocol, threshold);
 
         // When
-        let result = validate_domain_reconstruction_threshold(&domain, ParticipantCount::new(5));
+        let result =
+            validate_domain_reconstruction_threshold(&domain, ParticipantCount::new(participants));
 
         // Then
         result.unwrap();
@@ -792,18 +738,5 @@ pub mod tests {
                 participants: ParticipantCount::new(4),
             })
         );
-    }
-
-    #[test]
-    fn validate_domain_reconstruction_threshold__should_accept_cait_sith_when_threshold_equals_participants()
-     {
-        // Given t = n = 4, which RobustEcdsa would reject
-        let domain = sign_domain(Protocol::CaitSith, 4);
-
-        // When
-        let result = validate_domain_reconstruction_threshold(&domain, ParticipantCount::new(4));
-
-        // Then
-        result.unwrap();
     }
 }
