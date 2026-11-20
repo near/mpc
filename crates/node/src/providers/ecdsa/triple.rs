@@ -1,5 +1,5 @@
 use crate::assets::DistributedAssetStorage;
-use crate::assets::retention::RecentPeer;
+use crate::assets::retention::RecentAlivePeer;
 use crate::background::InFlightGenerationTracker;
 use crate::config::MpcConfig;
 use crate::db::{DBCol, SecretDB};
@@ -107,7 +107,7 @@ impl EcdsaSignatureProvider {
             .iter()
             .map(|p| p.id)
             .collect();
-        let mut recently_alive = RecentPeer::new(
+        let mut recently_alive = RecentAlivePeer::new(
             Clock::real(),
             &running_participants,
             OFFLINE_TRIPLE_RETENTION,
@@ -208,7 +208,7 @@ impl EcdsaSignatureProvider {
             triple_store
                 .maybe_discard_owned(
                     discard_budget,
-                    &recently_alive.retained(),
+                    recently_alive.retained(),
                     config.desired_triples_to_buffer,
                 )
                 .await;

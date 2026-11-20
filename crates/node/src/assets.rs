@@ -449,8 +449,9 @@ where
             let mut cold_queue = self.cold_queue.lock().unwrap();
             if let ColdQueueAddIfSatisfiedResult::ConditionNotSatisfied(value) =
                 cold_queue.add_if_condition_satisfied(id, value)
+                && let Some((id, _)) = cold_queue.park_or_drop(id, value, retain, max_parked)
             {
-                let _ = cold_queue.park_or_drop(id, value, retain, max_parked);
+                removed_from_cold_queue.push(id);
             }
         }
 
@@ -668,12 +669,12 @@ where
     pub async fn maybe_discard_owned(
         &self,
         num_assets_to_process: usize,
-        retain: &[ParticipantId],
+        recently_alive: Vec<ParticipantId>,
         max_parked: usize,
     ) {
         let removed_cold_ids = self
             .owned_queue
-            .maybe_discard_owned(num_assets_to_process, &retain.to_vec(), max_parked)
+            .maybe_discard_owned(num_assets_to_process, &recently_alive, max_parked)
             .await;
         if !removed_cold_ids.is_empty() {
             let mut update = self.db.update();
@@ -1423,7 +1424,10 @@ mod tests {
         assert_eq!(store.take_owned().now_or_never().unwrap().1, 2);
         assert_eq!(store.owned_asset_counts().offline, 1);
 
-        store.maybe_discard_owned(1, &[], 0).now_or_never().unwrap();
+        store
+            .maybe_discard_owned(1, Vec::new(), 0)
+            .now_or_never()
+            .unwrap();
 
         drop(store);
         let store = DistributedAssetStorage::<u32>::new(
@@ -1461,7 +1465,7 @@ mod tests {
         // When
         *alive.lock().unwrap() = participants(&[0, 1, 2]);
         store
-            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 10)
+            .maybe_discard_owned(32, participants(&[0, 1, 2, 3]), 10)
             .now_or_never()
             .unwrap();
 
@@ -1504,7 +1508,7 @@ mod tests {
 
         // When
         store
-            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 10)
+            .maybe_discard_owned(32, participants(&[0, 1, 2, 3]), 10)
             .now_or_never()
             .unwrap();
 
@@ -1525,7 +1529,7 @@ mod tests {
 
         store.add_owned(id, ParticipantsWithI32(everyone.clone(), 1));
         store
-            .maybe_discard_owned(1, &everyone, 10)
+            .maybe_discard_owned(1, everyone.clone(), 10)
             .now_or_never()
             .unwrap();
 
@@ -1534,7 +1538,7 @@ mod tests {
         // When
         *alive.lock().unwrap() = participants(&[0, 1, 2]);
         store
-            .maybe_discard_owned(32, &everyone, 10)
+            .maybe_discard_owned(32, everyone, 10)
             .now_or_never()
             .unwrap();
 
@@ -1562,7 +1566,7 @@ mod tests {
         );
 
         store
-            .maybe_discard_owned(32, &retain, 10)
+            .maybe_discard_owned(32, retain.clone(), 10)
             .now_or_never()
             .unwrap();
 
@@ -1571,7 +1575,7 @@ mod tests {
         // When
         *alive.lock().unwrap() = participants(&[0, 1]);
         store
-            .maybe_discard_owned(0, &retain, 10)
+            .maybe_discard_owned(0, retain, 10)
             .now_or_never()
             .unwrap();
 
@@ -1590,7 +1594,7 @@ mod tests {
             ParticipantsWithI32(participants(&[0, 1, 2, 3]), 1),
         );
         store
-            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 10)
+            .maybe_discard_owned(32, participants(&[0, 1, 2, 3]), 10)
             .now_or_never()
             .unwrap();
 
@@ -1599,7 +1603,7 @@ mod tests {
 
         // When
         store
-            .maybe_discard_owned(0, &participants(&[0, 1, 2]), 10)
+            .maybe_discard_owned(0, participants(&[0, 1, 2]), 10)
             .now_or_never()
             .unwrap();
 
@@ -1622,7 +1626,7 @@ mod tests {
 
         // When
         store
-            .maybe_discard_owned(32, &participants(&[0, 1, 2]), 10)
+            .maybe_discard_owned(32, participants(&[0, 1, 2]), 10)
             .now_or_never()
             .unwrap();
 
@@ -1634,7 +1638,7 @@ mod tests {
     #[test]
     fn maybe_discard_owned__should_not_keep_more_than_max_parked_assets() {
         // Given
-        let (_dir, _db, _alive, store) = setup(&[0, 1, 2]);
+        let (_dir, db, _alive, store) = setup(&[0, 1, 2]);
 
         for i in 0..3 {
             store.add_owned(
@@ -1645,12 +1649,13 @@ mod tests {
 
         // When
         store
-            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 2)
+            .maybe_discard_owned(32, participants(&[0, 1, 2, 3]), 2)
             .now_or_never()
             .unwrap();
 
         // Then
         assert_eq!(store.owned_asset_counts().offline, 2);
+        assert_eq!(num_assets_persisted(&db), 2);
     }
 
     #[test]
@@ -1670,7 +1675,7 @@ mod tests {
 
         // When
         store
-            .maybe_discard_owned(32, &participants(&[0, 1, 2, 3]), 2)
+            .maybe_discard_owned(32, participants(&[0, 1, 2, 3]), 2)
             .now_or_never()
             .unwrap();
 

@@ -2,13 +2,13 @@ use crate::primitives::ParticipantId;
 use near_time::Clock;
 use std::collections::HashMap;
 
-pub struct RecentPeer {
+pub struct RecentAlivePeer {
     clock: Clock,
     grace: near_time::Duration,
     last_alive: HashMap<ParticipantId, near_time::Instant>,
 }
 
-impl RecentPeer {
+impl RecentAlivePeer {
     pub fn new(clock: Clock, participants: &[ParticipantId], grace: near_time::Duration) -> Self {
         let now = clock.now();
         Self {
@@ -41,7 +41,7 @@ impl RecentPeer {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::RecentPeer;
+    use super::RecentAlivePeer;
     use crate::primitives::ParticipantId;
     use near_time::{Duration, FakeClock};
     const GRACE: Duration = Duration::seconds(60);
@@ -51,7 +51,7 @@ mod tests {
         // Given
         let clock = FakeClock::default();
         let mut recently_alive =
-            RecentPeer::new(clock.clock(), &[0, 1].map(ParticipantId::from_raw), GRACE);
+            RecentAlivePeer::new(clock.clock(), &[0, 1].map(ParticipantId::from_raw), GRACE);
         clock.advance(Duration::seconds(120));
         recently_alive.observe(&[0].map(ParticipantId::from_raw));
 
@@ -70,7 +70,7 @@ mod tests {
         // Given
         let clock = FakeClock::default();
         let mut recently_alive =
-            RecentPeer::new(clock.clock(), &[0, 1].map(ParticipantId::from_raw), GRACE);
+            RecentAlivePeer::new(clock.clock(), &[0, 1].map(ParticipantId::from_raw), GRACE);
 
         // When
         clock.advance(GRACE - Duration::seconds(1));
