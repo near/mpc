@@ -76,8 +76,8 @@ has the exact rules.
 | `mpc_foreign_chain_rpc_providers_whitelisted` | gauge by `chain`: whitelisted providers yours conform to. Two of yours behind one count once. | below `mpc_foreign_chain_rpc_quorum_required` |
 
 Below the quorum, the node does not register the chain with the contract and
-refuses its requests. The [probe log lines](#probe-log-lines) name the provider
-to fix. The gauges appear once the node is a participant, for configured chains
+refuses its requests. The [probe log lines](#probe-log-lines) show what to
+fix. The gauges appear once the node is a participant, for configured chains
 with a whitelist, and follow whitelist changes live.
 
 If registration does not land, the node logs WARN
@@ -102,10 +102,14 @@ A provider fails the probe when it:
 * is unreachable, or silent past `timeout_sec`, in all `max_retries` attempts
 * refuses the request, for example over a wrong API key
 * answers with data the node cannot read
-* has a token or URL the node cannot use, such as an unset `env` token
 
 A chain without `expected_network_fingerprint` is not probed, and all its
 providers count as failed.
+
+A token or URL the node cannot use, such as an unset `env` token, fails the
+probe with `AuthTokenUnresolved` or `ClientSetupFailed`. It also stops
+the node from serving any request: the node logs ERROR `[Running] failed:`
+until you fix the config and restart.
 
 #### Probe log lines
 
@@ -121,7 +125,7 @@ from it:
 | INFO | `foreign chain whitelist: chain is not whitelisted yet` | Nothing. Wait for the vote. |
 | INFO | `foreign chain whitelist: extra provider (its host matches no whitelist entry)` | It never counts toward the quorum, but can fail requests. |
 | WARN | `foreign chain whitelist: provider differs from its whitelist entry` | Fix what the `mismatch` field names: URL, chain routing or auth. One line per difference. |
-| WARN | `foreign chain whitelist: two providers match the same whitelist entry` | Only the first that conforms, by config name, counts. |
+| WARN | `foreign chain whitelist: two providers match the same whitelist entry` | Remove the other. Only the first that conforms, by config name, counts. |
 | ERROR | `foreign chain whitelist: entry uses a variant this node version does not know, upgrade the node` | Upgrade the node. |
 | ERROR | `foreign chain whitelist: cannot parse the on chain whitelist entry, contact the NEAR MPC team` | Contact the NEAR MPC team. |
 
@@ -129,7 +133,7 @@ Then it logs each unhealthy whitelisted chain in your config:
 
 | Level | Message | What to do |
 | --- | --- | --- |
-| WARN | `foreign chain is below quorum: ...` | Fix the whitelist differences above. |
+| WARN | `foreign chain is below quorum: ...` | Fix the whitelist differences above, or configure more of the voted providers. |
 | WARN | `foreign chain is unhealthy: an RPC provider serves another network, so every verify request fails` | Fix or remove the `WrongNetwork` provider. |
 | WARN | `foreign chain is unhealthy: too few whitelisted RPC providers passed the probe, so every verify request fails` | Fix the providers that failed. |
 | WARN | `foreign chain is unhealthy: a whitelisted RPC provider did not pass the probe, the others still reach the quorum` | Fix it before another fails. |
@@ -145,8 +149,8 @@ Each round ends with INFO `foreign chain probe round complete`:
 
 ### During traffic
 
-For each request it signs, the node asks every configured provider once,
-whitelisted or not, and waits at most 5 seconds, with no retries.
+For each verify request it takes part in, the node asks every configured
+provider once, whitelisted or not, and waits at most 5 seconds, with no retries.
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
@@ -181,7 +185,7 @@ Reading the numbers:
 * Keep `outcome="failed"` out of latency percentiles.
 * Series start at zero once the node is a participant, and stay flat on an
   idle node, so rely on the probe there.
-* Each node counts only the requests it signs.
+* Each node counts only the requests it takes part in.
 
 #### Provider labels
 
@@ -282,6 +286,7 @@ mpc_attestation_expiry_timestamp_seconds == 0  for 15m
 A `-1` expiry satisfies neither expiry alert, so a node holding an attestation
 without an expiry is covered by the staleness alert alone.
 
-No metric shows a foreign chain request that fails because providers disagree
-or too few of them agree. If you collect logs, alert on the two log lines
-in [During traffic](#during-traffic).
+No metric names the two failures that [During traffic](#during-traffic) shows
+only in logs, so alert on those lines if you collect logs.
+`mpc_num_verify_foreign_tx_computations_led{result="failed"}` counts the verify
+requests this node led that failed, whatever the cause.
