@@ -48,11 +48,11 @@ $$
 
 1.6 $\blacktriangle$ $\mathcal{S}$ *asserts* that $\forall i \in [l],\quad P_ i \neq Identity$ and $Q_ i \neq Identity$.
 
-1.7 For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples fresh $s, t \overset{R}{\longleftarrow} \mathbb{F}_ q$ and computes:
+1.7 For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ samples fresh $s_ {i, b}, t_ {i, b} \overset{R}{\longleftarrow} \mathbb{F}_ q$ and computes:
 
 $$
-U_ i^b \gets s \cdot G_ b + t \cdot H_ b \qquad
-V_ i^b \gets s \cdot P_ i + t \cdot Q_ i
+U_ i^b \gets s_ {i, b} \cdot G_ b + t_ {i, b} \cdot H_ b \qquad
+V_ i^b \gets s_ {i, b} \cdot P_ i + t_ {i, b} \cdot Q_ i
 $$
 
 1.8 For $i \in [l]$ and $b \in \\\{0, 1\\\}$, $\mathcal{S}$ computes $W_ i^b \gets V_ i^b + M_ i^b$.
@@ -115,9 +115,9 @@ cover it.
 
 **One string per batch, fresh randomness per transfer.** The whole batch shares
 the string and takes one message in each direction.
-The sender's $(s, t)$ is sampled independently for every $i$ and $b$, and
+The sender's $(s_ {i, b}, t_ {i, b})$ is sampled independently for every $i$ and $b$, and
 neither is optional.
-Reusing $(s, t)$ across $b$ gives $V_ i^0 = V_ i^1$, so the receiver learns both
+Reusing the pair across $b$ gives $V_ i^0 = V_ i^1$, so the receiver learns both
 messages: it decrypts $M_ i^{b_ i}$ and gets the other one from
 $W_ i^0 - W_ i^1 = M_ i^0 - M_ i^1$.
 Reusing it across $i$ makes the hidden values $V_ i^b$ linearly related.
