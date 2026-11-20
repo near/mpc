@@ -2362,6 +2362,28 @@ expression: abi
         }
       },
       {
+        "name": "vote_genesis_hash",
+        "doc": " Votes to set the genesis hash of a contract that has none. Once a governance threshold of\n participants voted for the same hash, the contract stores it and allows the compose hashes\n that carry it. Later votes for that hash are no-ops, and votes for another return\n [`InvalidState::GenesisHashAlreadySet`].",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "genesis_hash",
+              "type_schema": {
+                "$ref": "#/definitions/GenesisHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_mpc_node_manifest_digest",
         "kind": "call",
         "params": {

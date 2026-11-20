@@ -30,6 +30,7 @@ pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
 pub const VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS: &str = "vote_update_foreign_chain_providers";
 pub const VOTE_TEE_VERIFIER_CHANGE: &str = "vote_tee_verifier_change";
 pub const WITHDRAW_TEE_VERIFIER_VOTE: &str = "withdraw_tee_verifier_vote";
+pub const VOTE_GENESIS_HASH: &str = "vote_genesis_hash";
 pub const VOTE_CONTRACT_UPDATE: &str = "vote_contract_update";
 pub const REMOVE_CONTRACT_UPDATE_VOTE: &str = "remove_contract_update_vote";
 pub const REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES: &str =

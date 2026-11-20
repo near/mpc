@@ -19,8 +19,9 @@ use crate::call_args::{
     StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
     UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
     VoteAddDomainsArgs, VoteAddLauncherHashArgs, VoteAddOsMeasurementArgs, VoteCancelKeygenArgs,
-    VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs,
-    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
+    VoteContractUpdateArgs, VoteGenesisHashArgs, VoteMpcNodeManifestDigestArgs,
+    VoteNewParametersArgs, VotePkArgs, VoteResharedArgs, VoteTeeVerifierChangeArgs,
+    VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -42,7 +43,7 @@ use crate::method_names::{
     TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
     VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
-    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
+    VOTE_GENESIS_HASH, VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
     VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
@@ -451,6 +452,19 @@ impl<C: CallContract> MpcContractHandle<C> {
             VOTE_TEE_VERIFIER_CHANGE,
             args,
             VOTE_TEE_VERIFIER_CHANGE_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_genesis_hash(
+        &self,
+        genesis_hash: GenesisHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteGenesisHashArgs::new(genesis_hash))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_GENESIS_HASH,
+            args,
+            MAX_GAS,
         ))
         .await
     }
@@ -1075,6 +1089,7 @@ mod tests {
             )
             .await
             .unwrap();
+        handle.vote_genesis_hash(genesis_hash).await.unwrap();
         handle
             .update_participant_url("http://localhost:7".try_into().unwrap())
             .await

@@ -1,4 +1,4 @@
-//! Contract lifecycle: initialization, state migration, and the top-level
+//! Contract lifecycle: initialization, state migration, the genesis hash vote, and the top-level
 //! state and config views.
 #![expect(
     clippy::too_many_arguments,
@@ -13,12 +13,14 @@ use crate::node_migrations::NodeMigrations;
 use crate::primitives::domain::{
     AddDomainsVotes, DomainRegistry, validate_domains_against_governance,
 };
-use crate::primitives::key_state::{EpochId, Keyset};
+use crate::primitives::key_state::{AuthenticatedAccountId, EpochId, Keyset};
+use crate::primitives::proposal_hash::ToProposalHash;
 use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
 use crate::state::running::RunningContractState;
 use crate::storage_keys::StorageKey;
+use crate::tee::genesis_hash_votes::GenesisHashVotes;
 use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ContractUpdateVotes;
@@ -27,6 +29,7 @@ use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
+use std::time::Duration;
 
 #[near]
 impl MpcContract {
@@ -81,6 +84,7 @@ impl MpcContract {
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
             genesis_hash: Some(genesis_hash),
+            genesis_hash_votes: GenesisHashVotes::default(),
         })
     }
 
@@ -162,6 +166,7 @@ impl MpcContract {
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
             genesis_hash: Some(genesis_hash),
+            genesis_hash_votes: GenesisHashVotes::default(),
         })
     }
 
@@ -190,6 +195,40 @@ impl MpcContract {
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
+    }
+
+    /// Votes to set the genesis hash of a contract that has none. Once a governance threshold of
+    /// participants voted for the same hash, the contract stores it and allows the compose hashes
+    /// that carry it. Later votes for that hash are no-ops, and votes for another return
+    /// [`InvalidState::GenesisHashAlreadySet`].
+    #[handle_result]
+    pub fn vote_genesis_hash(&mut self, genesis_hash: GenesisHash) -> Result<(), Error> {
+        log!(
+            "vote_genesis_hash: signer={}, genesis_hash={}",
+            env::signer_account_id(),
+            genesis_hash,
+        );
+        Self::assert_caller_is_signer();
+        let parameters = self.protocol_state.threshold_parameters_or_panic();
+        let voter = AuthenticatedAccountId::new(parameters.participants())?;
+        match self.genesis_hash {
+            None => {}
+            Some(stored) if stored == genesis_hash => return Ok(()),
+            Some(_) => return Err(InvalidState::GenesisHashAlreadySet.into()),
+        }
+        let num_votes = self
+            .genesis_hash_votes
+            .vote(voter, genesis_hash.to_proposal_hash())
+            .count_participants(parameters.participants());
+        if parameters.threshold().is_met_by(num_votes) {
+            self.genesis_hash_votes.clear();
+            self.genesis_hash = Some(genesis_hash);
+            self.tee_state.add_compose_hashes(
+                &genesis_hash,
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+            );
+        }
+        Ok(())
     }
 
     pub fn state(&self) -> near_mpc_contract_interface::types::ProtocolContractState {
@@ -221,16 +260,43 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::api::test_utils::init_running_with_domain;
+    use crate::api::test_utils::{
+        init_running_with_domain, running_contract_called_by_participant_via_forwarder,
+    };
     use crate::primitives::test_utils::{
         bogus_genesis_hash, bogus_tee_verifier_account_id, gen_participants,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
+    use crate::state::test_utils::threshold_voters;
+    use crate::tee::proposal::get_docker_compose_hash;
+    use crate::tee::test_utils::Environment;
     use dtos::{DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold};
+    use rstest::rstest;
+
+    const PARTICIPANTS: usize = 3;
+    const THRESHOLD: usize = 2;
 
     fn parameters() -> GovernanceThresholdParameters {
-        GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
-            .unwrap()
+        GovernanceThresholdParameters::new(
+            gen_participants(PARTICIPANTS),
+            GovernanceThreshold::new(u64::try_from(THRESHOLD).unwrap()),
+        )
+        .unwrap()
+    }
+
+    fn contract_with_genesis_hash(
+        genesis_hash: Option<GenesisHash>,
+    ) -> (MpcContract, Vec<AccountId>) {
+        let parameters = parameters();
+        let mut contract = MpcContract::init(
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
+            None,
+        )
+        .unwrap();
+        contract.genesis_hash = genesis_hash;
+        (contract, threshold_voters(&parameters))
     }
 
     #[test]
@@ -269,5 +335,93 @@ mod tests {
         // Then
         assert!(contract.tee_state.nodes.is_empty());
         assert!(!contract.accept_requests);
+    }
+
+    #[rstest]
+    #[case::below_threshold(&[GenesisHash::MAINNET; THRESHOLD - 1], None)]
+    #[case::split_between_hashes(&[GenesisHash::MAINNET, GenesisHash::TESTNET], None)]
+    #[case::threshold_reached(&[GenesisHash::MAINNET; THRESHOLD], Some(GenesisHash::MAINNET))]
+    fn vote_genesis_hash__should_set_the_hash_once_a_threshold_of_participants_voted_for_it(
+        #[case] votes: &[GenesisHash],
+        #[case] expected: Option<GenesisHash>,
+    ) {
+        // Given
+        let (mut contract, voters) = contract_with_genesis_hash(None);
+        let mut env = Environment::new(None, None, None);
+
+        // When
+        for (voter, &genesis_hash) in voters.iter().zip(votes) {
+            env.set_signer(voter);
+            contract.vote_genesis_hash(genesis_hash).unwrap();
+        }
+
+        // Then
+        assert_eq!(contract.genesis_hash(), expected);
+        assert_eq!(
+            contract.genesis_hash_votes.all().is_empty(),
+            expected.is_some()
+        );
+    }
+
+    #[rstest]
+    #[case::stored_hash(GenesisHash::TESTNET, Ok(()))]
+    #[case::other_hash(GenesisHash::MAINNET, Err(InvalidState::GenesisHashAlreadySet.into()))]
+    fn vote_genesis_hash__should_keep_a_stored_hash(
+        #[case] genesis_hash: GenesisHash,
+        #[case] expected: Result<(), Error>,
+    ) {
+        // Given
+        let stored_hash = GenesisHash::TESTNET;
+        let (mut contract, voters) = contract_with_genesis_hash(Some(stored_hash));
+        Environment::new(None, Some(voters[0].clone()), None);
+
+        // When
+        let result = contract.vote_genesis_hash(genesis_hash);
+
+        // Then
+        assert_eq!(result, expected);
+        assert_eq!(contract.genesis_hash(), Some(stored_hash));
+    }
+
+    #[test]
+    fn vote_genesis_hash__should_allow_compose_hashes_that_carry_it_for_allowed_pairs() {
+        // Given
+        let (mut contract, voters) = contract_with_genesis_hash(None);
+        let genesis_hash = GenesisHash::MAINNET;
+        let launcher_hash = dtos::LauncherImageHash::from([1; 32]);
+        let mpc_image_hash = dtos::NodeImageHash::from([2; 32]);
+        let mut env = Environment::new(None, None, None);
+        for voter in &voters {
+            env.set_signer(voter);
+            contract
+                .vote_mpc_node_manifest_digest(mpc_image_hash)
+                .unwrap();
+            contract.vote_add_launcher_hash(launcher_hash).unwrap();
+        }
+
+        // When
+        for voter in &voters {
+            env.set_signer(voter);
+            contract.vote_genesis_hash(genesis_hash).unwrap();
+        }
+
+        // Then
+        let compose_hash = |hash| get_docker_compose_hash(&launcher_hash, &mpc_image_hash, hash);
+        assert_eq!(
+            contract.allowed_launcher_compose_hashes(),
+            vec![compose_hash(None), compose_hash(Some(&genesis_hash))],
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn vote_genesis_hash__should_panic_when_predecessor_differs_from_signer() {
+        // Given
+        let mut contract = running_contract_called_by_participant_via_forwarder();
+
+        // When
+        contract
+            .vote_genesis_hash(GenesisHash::MAINNET)
+            .expect("expected panic when predecessor != signer");
     }
 }

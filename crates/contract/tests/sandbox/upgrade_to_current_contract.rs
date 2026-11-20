@@ -378,6 +378,32 @@ async fn migrate__should_leave_the_genesis_hash_unset_outside_mainnet_and_testne
     assert_eq!(contract.genesis_hash().await.unwrap().value, None);
 }
 
+#[tokio::test]
+async fn vote_genesis_hash__should_set_the_genesis_hash_left_unset_by_the_migration() {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
+    let contract = deploy_old(&worker, Network::Mainnet).await.unwrap();
+    let (accounts, _) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
+    upgrade_to_new(&contract).await.unwrap();
+    migrate_and_assert_contract_code(&contract).await.unwrap();
+    let genesis_hash_before_vote = contract.genesis_hash().await.unwrap().value;
+    let genesis_hash = bogus_genesis_hash();
+
+    // When
+    execute_async_handle_calls(&accounts, &contract, |handle| async move {
+        handle.vote_genesis_hash(genesis_hash).await
+    })
+    .await
+    .unwrap();
+
+    // Then
+    assert_eq!(genesis_hash_before_vote, None);
+    assert_eq!(
+        contract.genesis_hash().await.unwrap().value,
+        Some(genesis_hash)
+    );
+}
+
 //// Verifies that upgrading the contract preserves state and functionality.
 ///
 /// This test:

@@ -364,6 +364,13 @@ BorshSchemaContainer {
                 ],
             ),
         },
+        "GenesisHashVotes": Struct {
+            fields: UnnamedFields(
+                [
+                    "Votes<AuthenticatedAccountId>",
+                ],
+            ),
+        },
         "GovernanceThreshold": Struct {
             fields: UnnamedFields(
                 [
@@ -629,6 +636,10 @@ BorshSchemaContainer {
                     (
                         "genesis_hash",
                         "Option<GenesisHash>",
+                    ),
+                    (
+                        "genesis_hash_votes",
+                        "GenesisHashVotes",
                     ),
                 ],
             ),

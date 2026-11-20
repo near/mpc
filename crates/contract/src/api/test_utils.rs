@@ -441,6 +441,7 @@ impl MpcContract {
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: Default::default(),
             genesis_hash: Some(bogus_genesis_hash()),
+            genesis_hash_votes: Default::default(),
         }
     }
 }
