@@ -35,12 +35,24 @@ jobs:
       - name: Build contract
         run: nix develop --no-update-lock-file .#contract --command cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
 
-      - name: Stage contract artifact
-        run: cp target/near/mpc_contract/mpc_contract.wasm ./mpc_contract.wasm
+      - name: Build TEE verifier
+        run: nix develop --no-update-lock-file .#contract --command cargo near build reproducible-wasm --manifest-path crates/tee-verifier/Cargo.toml
+
+      - name: Stage contract artifacts
+        run: |
+          cp target/near/mpc_contract/mpc_contract.wasm ./mpc_contract.wasm
+          cp target/near/tee_verifier/tee_verifier.wasm ./tee_verifier.wasm
 
       - name: Upload contract artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: contract
           path: mpc_contract.wasm
+          if-no-files-found: error
+
+      - name: Upload TEE verifier artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tee-verifier
+          path: tee_verifier.wasm
           if-no-files-found: error

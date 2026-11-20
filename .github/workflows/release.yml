@@ -145,6 +145,14 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: contract-artifact
 
+      - name: Download TEE verifier artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tee-verifier
+          run-id: ${{ steps.contract-run.outputs.run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: verifier-artifact
+
       - name: Retag images and collect digests
         id: digests
         env:
@@ -178,12 +186,57 @@ jobs:
           echo "hash=$CONTRACT_HASH" >> "$GITHUB_OUTPUT"
           echo "archive=$PWD/mpc-contract-v${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
 
+      - name: Package TEE verifier artifact
+        id: verifier
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.inputs.outputs.version }}
+        run: |
+          set -euo pipefail
+          cd verifier-artifact
+          WASM="tee-verifier-v${VERSION}.wasm"
+          mv tee_verifier.wasm "$WASM"
+          tar -czf "tee-verifier-v${VERSION}.tar.gz" "$WASM"
+          HASH=$(sha256sum "$WASM" | awk '{print $1}')
+          HASH_BS58=$(python3 -c 'import sys
+          A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+          n, s = int(sys.argv[1], 16), ""
+          while n:
+              n, r = divmod(n, 58)
+              s = A[r] + s
+          print(s)' "$HASH")
+
+          # Reproducible builds make equal hashes mean an unchanged verifier.
+          PREV=$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+            --limit 1 --json tagName -q '.[0].tagName')
+          if [[ -z "$PREV" ]]; then
+            CHANGED="unknown: no previous release"
+          elif gh release download "$PREV" --repo "$GITHUB_REPOSITORY" \
+              --pattern 'tee-verifier-v*.tar.gz' --dir prev 2>/dev/null; then
+            PREV_HASH=$(tar -xzOf prev/*.tar.gz | sha256sum | awk '{print $1}')
+            if [[ "$PREV_HASH" == "$HASH" ]]; then
+              CHANGED="no, same as ${PREV}"
+            else
+              CHANGED="**yes**, differs from ${PREV}: deploy and vote in a new verifier before upgrading the contract"
+            fi
+          else
+            CHANGED="unknown: ${PREV} has no verifier artifact"
+          fi
+
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "hash-bs58=$HASH_BS58" >> "$GITHUB_OUTPUT"
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "archive=$PWD/tee-verifier-v${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
+
       - name: Compose release notes
         env:
           VERSION: ${{ steps.inputs.outputs.version }}
           NODE_DIGEST: ${{ steps.digests.outputs.mpc_node_digest }}
           LAUNCHER_DIGEST: ${{ steps.digests.outputs.mpc_launcher_digest }}
           CONTRACT_HASH: ${{ steps.contract.outputs.hash }}
+          VERIFIER_HASH: ${{ steps.verifier.outputs.hash }}
+          VERIFIER_HASH_BS58: ${{ steps.verifier.outputs.hash-bs58 }}
+          VERIFIER_CHANGED: ${{ steps.verifier.outputs.changed }}
         run: |
           set -euo pipefail
           cp release-notes-raw.md release-notes.md
@@ -200,6 +253,11 @@ jobs:
           ## MPC contract
 
           - digest: \`sha256:${CONTRACT_HASH}\`
+
+          ## TEE verifier contract
+
+          - digest: \`sha256:${VERIFIER_HASH}\` (bs58: \`${VERIFIER_HASH_BS58}\`)
+          - changed since the previous release: ${VERIFIER_CHANGED}
           EOF
 
       - name: Create draft release
@@ -208,6 +266,7 @@ jobs:
           VERSION: ${{ steps.inputs.outputs.version }}
           SHA: ${{ steps.inputs.outputs.sha }}
           CONTRACT_ARCHIVE: ${{ steps.contract.outputs.archive }}
+          VERIFIER_ARCHIVE: ${{ steps.verifier.outputs.archive }}
         run: |
           set -euo pipefail
           # The git tag is NOT created here. GitHub materializes the tag at
@@ -218,4 +277,5 @@ jobs:
             --notes-file release-notes.md \
             --target "$SHA" \
             --draft \
-            "$CONTRACT_ARCHIVE"
+            "$CONTRACT_ARCHIVE" \
+            "$VERIFIER_ARCHIVE"
