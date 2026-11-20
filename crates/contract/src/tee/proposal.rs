@@ -174,7 +174,7 @@ impl StoredDockerImageHashes {
 
 /// An allowed launcher image entry containing the launcher image hash and all
 /// derived compose hashes (one per allowed MPC image at the time of addition,
-/// plus any added later via MPC image votes).
+/// plus any added later via MPC image votes or the genesis hash vote).
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -305,8 +305,7 @@ impl AllowedLauncherImages {
         self.entries.len() < len_before
     }
 
-    /// Adds a compose hash for a new MPC image to all existing launcher entries.
-    /// Called when a new MPC image hash is voted in.
+    /// Adds the compose hash of the MPC image for every allowed launcher, unless already there.
     pub fn add_mpc_image_compose_hashes(
         &mut self,
         mpc_image_hash: &NodeImageHash,

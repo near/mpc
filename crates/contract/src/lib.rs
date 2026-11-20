@@ -76,6 +76,7 @@ pub struct MpcContract {
     /// [`None`] if the contract was migrated on a chain other than mainnet or testnet, until
     /// participants [vote one in](MpcContract::vote_genesis_hash); meanwhile the launcher refuses
     /// to start its TEE nodes.
+    // TODO(#5267): require the genesis hash once every contract has one
     genesis_hash: Option<GenesisHash>,
     genesis_hash_votes: GenesisHashVotes,
 }

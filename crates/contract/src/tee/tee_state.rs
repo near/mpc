@@ -288,6 +288,19 @@ impl TeeState {
             .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
 
+    pub fn add_compose_hashes(
+        &mut self,
+        genesis_hash: &GenesisHash,
+        tee_upgrade_deadline_duration: Duration,
+    ) {
+        for mpc_image_hash in
+            self.get_allowed_mpc_docker_image_hashes(tee_upgrade_deadline_duration)
+        {
+            self.allowed_launcher_images
+                .add_mpc_image_compose_hashes(&mpc_image_hash, Some(genesis_hash));
+        }
+    }
+
     pub fn get_allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
         self.allowed_launcher_images.all_compose_hashes()
     }
