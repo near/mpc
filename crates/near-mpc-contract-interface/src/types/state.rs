@@ -542,6 +542,7 @@ mod tests {
         assert_eq!(json[proposal.as_hex()][0], "alice.near");
     }
 
+    // TODO(#5277): drop once no deployed contract reports add-domains votes in `state()`.
     #[test]
     #[expect(non_snake_case)]
     fn running_contract_state__should_ignore_the_legacy_add_domains_votes_report() {
