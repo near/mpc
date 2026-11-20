@@ -494,7 +494,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_vote_accepts_once_every_participant_voted() {
+    fn vote__should_accept_once_every_participant_voted() {
         // Given
         let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
@@ -511,7 +511,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_vote_ignores_votes_from_dropped_participants() {
+    fn vote__should_not_count_votes_from_dropped_participants() {
         // Given: a stale vote from a participant no longer in the set
         let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
@@ -525,7 +525,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_retain_keeps_only_current_participants_votes() {
+    fn retain__should_keep_only_current_participants_votes() {
         // Given: three of four participants voted
         let (participants, auth_ids) = gen_authenticated_participants(4);
         let proposal = sample_proposal();
@@ -548,7 +548,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_retain_drops_all_votes_when_no_voter_remains() {
+    fn retain__should_drop_all_votes_when_no_voter_remains() {
         // Given
         let (participants, auth_ids) = gen_authenticated_participants(4);
         let proposal = sample_proposal();
@@ -565,7 +565,7 @@ pub mod tests {
     }
 
     #[test]
-    fn test_retain_preserves_different_proposals() {
+    fn retain__should_preserve_different_proposals() {
         // Given
         let (participants, auth_ids) = gen_authenticated_participants(4);
         let proposal_a = vec![DomainConfig {

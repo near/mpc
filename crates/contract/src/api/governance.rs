@@ -570,6 +570,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn vote_new_parameters__should_drop_add_domains_votes_of_removed_participants_without_domains()
+    {
+        // Given: a contract without domains, where the participant to remove voted to add one
+        let (mut contract, participants, _) = setup_tee_test_contract(3, 2);
+        let removed = participants.participants()[2].0.clone();
+        Environment::new(Some(0), Some(removed), None);
+        contract
+            .vote_add_domains(vec![dtos::DomainConfig {
+                id: DomainId::default(),
+                protocol: Protocol::CaitSith,
+                reconstruction_threshold: ReconstructionThreshold::new(2),
+                purpose: DomainPurpose::Sign,
+            }])
+            .unwrap();
+        assert!(!contract.add_domains_votes.is_empty());
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(
+                participants.subset(0..2),
+                GovernanceThreshold::new(2),
+            )
+            .unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When: the governance threshold accepts the new participant set
+        for (account_id, _, _) in participants.participants().iter().take(2) {
+            vote_params(&mut contract, account_id, &proposal).unwrap();
+        }
+
+        // Then: the proposal applied in place
+        assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
+        assert_eq!(contract.protocol_state.active_participants().len(), 2);
+        assert!(contract.add_domains_votes.is_empty());
+    }
+
     /// Installs a context where `account_id` calls as an attested participant, signing with the
     /// account key of its attested node.
     fn attested_context(
