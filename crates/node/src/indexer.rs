@@ -10,7 +10,9 @@ use near_async::{
     messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
 };
 use near_client::{RpcHandlerActor, Status, client_actor::ClientActor};
-use near_indexer::near_primitives::{transaction::SignedTransaction, views::StatusResponse};
+use near_indexer::near_primitives::{
+    hash::CryptoHash, transaction::SignedTransaction, views::StatusResponse,
+};
 use near_indexer_primitives::types::BlockHeight;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
@@ -68,13 +70,16 @@ impl IndexerState {
         }
     }
 
-    async fn ensure_chain_matches_contract(&self) -> anyhow::Result<()> {
+    async fn ensure_chain_matches_contract(
+        &self,
+        expected_genesis_hash: Option<CryptoHash>,
+    ) -> anyhow::Result<()> {
         let status = self
             .client
             .status()
             .await
             .context("querying nearcore status")?;
-        chain_binding::ensure_chain_matches_contract(&self.mpc_contract_id, status.genesis_hash)
+        chain_binding::ensure_chain_matches_contract(expected_genesis_hash, status.genesis_hash)
     }
 }
 

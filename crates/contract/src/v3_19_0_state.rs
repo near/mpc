@@ -8,11 +8,12 @@
 //! A better approach: only copy the structures that have changed and import the rest from the existing codebase.
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
     CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
-    AccountId, require,
+    AccountId, env, require,
     store::{IterableMap, Lazy, LookupMap},
 };
 
@@ -69,6 +70,39 @@ impl From<MpcContract> for crate::MpcContract {
             tee_verifier_votes: old.tee_verifier_votes,
             available_attestation_grants: old.available_attestation_grants,
             parameters_votes: old.parameters_votes,
+            genesis_hash: genesis_hash_of(&env::chain_id()),
         }
+    }
+}
+
+/// The `3.19.0` contract does not store the genesis hash of its chain. Its chain id tells the
+/// genesis hash only for mainnet and testnet, so a contract on any other chain gets none.
+fn genesis_hash_of(chain_id: &str) -> Option<GenesisHash> {
+    match chain_id {
+        "mainnet" => Some(GenesisHash::MAINNET),
+        "testnet" => Some(GenesisHash::TESTNET),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case::mainnet("mainnet", Some(GenesisHash::MAINNET))]
+    #[case::testnet("testnet", Some(GenesisHash::TESTNET))]
+    #[case::other_chain("localnet", None)]
+    fn genesis_hash_of__should_return_the_genesis_hash_of_mainnet_and_testnet_only(
+        #[case] chain_id: &str,
+        #[case] expected: Option<GenesisHash>,
+    ) {
+        // When
+        let genesis_hash = genesis_hash_of(chain_id);
+
+        // Then
+        assert_eq!(genesis_hash, expected);
     }
 }
