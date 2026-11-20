@@ -79,7 +79,7 @@ impl MpcContract {
     }
 
     /// Propose adding a new set of domains for the MPC network.
-    /// If a threshold number of votes are reached on the exact same proposal, this will transition
+    /// Once every participant has voted for the exact same proposal, this will transition
     /// the contract into the Initializing state to generate keys for the new domains.
     ///
     /// The specified list of domains must have increasing and contiguous IDs, and the first ID
@@ -744,6 +744,39 @@ mod tests {
                 [voters[2].1].map(dtos::AuthenticatedParticipantId).into(),
             ),
         ]));
+        assert_eq!(contract.add_domains_votes(), expected);
+    }
+
+    #[test]
+    fn add_domains_votes__should_report_pending_votes_while_resharing() {
+        // Given: an add-domains vote is pending in the Running state
+        let (mut contract, participants, signer, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(2),
+            ReconstructionThreshold::new(2),
+        );
+        let domains = vec![dtos::DomainConfig {
+            id: DomainId(domain_id.0 + 1),
+            protocol: Protocol::CaitSith,
+            reconstruction_threshold: ReconstructionThreshold::new(2),
+            purpose: DomainPurpose::Sign,
+        }];
+        let voter_id = participants.participants()[0].1;
+        Environment::new(Some(0), Some(signer), None);
+        contract.vote_add_domains(domains.clone()).unwrap();
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(participants, GovernanceThreshold::new(2)).unwrap(),
+            BTreeMap::new(),
+        );
+
+        // When
+        vote_into_resharing(&mut contract, &proposal);
+
+        // Then
+        let expected = dtos::AddDomainsVotes(BTreeMap::from([(
+            domains.to_proposal_hash(),
+            [dtos::AuthenticatedParticipantId(voter_id)].into(),
+        )]));
         assert_eq!(contract.add_domains_votes(), expected);
     }
 
