@@ -1277,6 +1277,8 @@ pub mod tests {
         fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
 
         // When / Then
+        assert_zeroize_on_drop::<crate::config::AesKey128>();
+        assert_zeroize_on_drop::<crate::config::AesKey256>();
         assert_zeroize_on_drop::<crate::config::SecretsConfig>();
         assert_zeroize_on_drop::<crate::config::PersistentSecrets>();
         assert_zeroize_on_drop::<crate::migration_service::MigrationSecrets>();

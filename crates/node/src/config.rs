@@ -9,12 +9,46 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 pub(crate) mod start;
 
-pub type AesKey256 = Zeroizing<[u8; 32]>;
-pub type AesKey128 = Zeroizing<[u8; 16]>;
+/// AES key that is zeroized on drop.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+pub struct AesKey<const N: usize>([u8; N]);
+
+pub type AesKey256 = AesKey<32>;
+pub type AesKey128 = AesKey<16>;
+
+impl<const N: usize> AesKey<N> {
+    pub fn from_hex(hex_key: &str) -> anyhow::Result<Self> {
+        let decoded_key = Zeroizing::new(
+            hex::decode(hex_key)
+                .context(format!("Encryption key must be {} hex characters", N * 2))?,
+        );
+        decoded_key.as_slice().try_into().map(Self).context(format!(
+            "Encryption key must be {} bytes ({} hex characters)",
+            N,
+            N * 2
+        ))
+    }
+
+    pub fn as_bytes(&self) -> &[u8; N] {
+        &self.0
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for AesKey<N> {
+    fn from(key: [u8; N]) -> Self {
+        Self(key)
+    }
+}
+
+impl<const N: usize> std::fmt::Debug for AesKey<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AesKey(<redacted>)")
+    }
+}
 
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
@@ -177,21 +211,6 @@ pub struct SecretsConfig {
     pub backup_encryption_key: AesKey256,
 }
 
-pub fn hex_to_binary_key<const N: usize>(hex_key: &str) -> anyhow::Result<Zeroizing<[u8; N]>> {
-    let decoded_key = Zeroizing::new(
-        hex::decode(hex_key).context(format!("Encryption key must be {} hex characters", N * 2))?,
-    );
-    decoded_key
-        .as_slice()
-        .try_into()
-        .map(Zeroizing::new)
-        .context(format!(
-            "Encryption key must be {} bytes ({} hex characters)",
-            N,
-            N * 2
-        ))
-}
-
 /// Writes data to a file with owner-only permissions (0o600), even if the file
 /// already exists with different permissions.
 fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
@@ -218,9 +237,9 @@ impl SecretsConfig {
         persistent_secrets: PersistentSecrets,
         backup_encryption_key_hex: &str,
     ) -> anyhow::Result<Self> {
-        let local_storage_aes_key = hex_to_binary_key(local_storage_aes_key_hex)
+        let local_storage_aes_key = AesKey::from_hex(local_storage_aes_key_hex)
             .context("invalid local storage aes key hex")?;
-        let backup_encryption_key = hex_to_binary_key(backup_encryption_key_hex)
+        let backup_encryption_key = AesKey::from_hex(backup_encryption_key_hex)
             .context("invalid backup symmetric key hex")?;
         Ok(Self {
             persistent_secrets,
@@ -769,5 +788,41 @@ cores: 4
         assert!(!dir.path().join("config.yaml.tmp").exists());
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
+    }
+
+    #[test]
+    fn aes_key__should_redact_debug_output() {
+        // Given
+        let key = AesKey128::from([0xAB; 16]);
+
+        // When
+        let debug = format!("{key:?}");
+
+        // Then
+        assert_eq!(debug, "AesKey(<redacted>)");
+    }
+
+    #[test]
+    fn aes_key_from_hex__should_decode_key_of_expected_length() {
+        // Given
+        let hex_key = "ab".repeat(16);
+
+        // When
+        let key = AesKey128::from_hex(&hex_key).unwrap();
+
+        // Then
+        assert_eq!(key.as_bytes(), &[0xAB; 16]);
+    }
+
+    #[test]
+    fn aes_key_from_hex__should_reject_key_of_wrong_length() {
+        // Given
+        let hex_key = "ab".repeat(16);
+
+        // When
+        let result = AesKey256::from_hex(&hex_key);
+
+        // Then
+        assert_matches!(result, Err(_));
     }
 }
