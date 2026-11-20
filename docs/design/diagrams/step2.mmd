@@ -1,0 +1,3 @@
+flowchart LR
+    R["Relay"] -->|"witness_view_call(contract, method, args, block B)"| WP["Witness provider<br/>(untrusted full node)"]
+    CHAIN[("NEAR chain")] -->|"full state sync"| WP
