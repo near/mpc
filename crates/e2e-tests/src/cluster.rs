@@ -667,18 +667,21 @@ impl MpcCluster {
             .await?;
 
         let state = self.get_contract_state().await?;
-        let (prospective_epoch_id, current_participants) = match &state {
+        let (prospective_epoch_id, current_parameters) = match &state {
             ProtocolContractState::Running(r) => {
                 let base = r
                     .previously_cancelled_resharing_epoch_id
                     .unwrap_or(r.keyset.epoch_id);
-                (EpochId(base.0 + 1), &r.parameters.participants)
+                (EpochId(base.0 + 1), &r.parameters)
             }
             _ => anyhow::bail!("cannot reshare: contract not in Running state"),
         };
 
-        let participants =
-            build_participants_from_nodes(new_participants, &self.nodes, current_participants);
+        let participants = build_participants_from_nodes(
+            new_participants,
+            &self.nodes,
+            &current_parameters.participants,
+        );
         let proposal = ProposedGovernanceThresholdParameters {
             parameters: GovernanceThresholdParameters {
                 threshold: GovernanceThreshold(new_threshold as u64),
@@ -688,7 +691,7 @@ impl MpcCluster {
         };
 
         tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");
-        self.vote_resharing(current_participants, prospective_epoch_id, proposal)
+        self.vote_resharing(current_parameters, prospective_epoch_id, proposal)
             .await?;
 
         self.wait_for_state(VOTE_KEY_EVENT_TIMEOUT, |s| {
@@ -738,38 +741,36 @@ impl MpcCluster {
         Ok(())
     }
 
-    /// Vote for resharing from all running nodes: current participants first,
-    /// then candidates. The contract requires threshold participant votes
-    /// before candidates can vote.
+    /// Vote for resharing from the first running current participants, as many
+    /// as the governance threshold. The contract accepts the proposal at the
+    /// threshold, and only current participants can vote.
     async fn vote_resharing(
         &self,
-        current_participants: &Participants,
+        current_parameters: &GovernanceThresholdParameters,
         prospective_epoch_id: EpochId,
         proposal: ProposedGovernanceThresholdParameters,
     ) -> anyhow::Result<()> {
-        let current_accounts: std::collections::HashSet<_> = current_participants
+        let current_accounts: HashSet<&AccountId> = current_parameters
+            .participants
             .participants
             .iter()
-            .map(|(a, _, _)| a.to_string())
+            .map(|(a, _, _)| a)
             .collect();
+        let threshold = usize::try_from(current_parameters.threshold.0)?;
+        let voters = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| {
+                matches!(node, MpcNodeState::Running(_))
+                    && current_accounts.contains(node.account_id())
+            })
+            .map(|(i, _)| i)
+            .take(threshold);
 
-        let mut participants_first: Vec<usize> = Vec::new();
-        let mut candidates_second: Vec<usize> = Vec::new();
-        for (i, node) in self.nodes.iter().enumerate() {
-            if !matches!(node, MpcNodeState::Running(_)) {
-                continue;
-            }
-            let acct: &str = node.account_id().as_ref();
-            if current_accounts.contains(acct) {
-                participants_first.push(i);
-            } else {
-                candidates_second.push(i);
-            }
-        }
-
-        for i in participants_first.iter().chain(candidates_second.iter()) {
+        for i in voters {
             let outcome = self
-                .operator_client_for(*i)
+                .operator_client_for(i)
                 .call_mpc(self.contract_id())
                 .vote_new_parameters(prospective_epoch_id, proposal.clone())
                 .await

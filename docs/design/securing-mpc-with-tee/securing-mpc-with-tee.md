@@ -293,6 +293,7 @@ sequenceDiagram
     participant operator
     participant MPC_NODE
     participant contract
+    participant current_operators
 
     operator ->> MPC_NODE: Start CVM
     MPC_NODE ->> operator: Node boots and is ready
@@ -310,8 +311,8 @@ sequenceDiagram
         operator ->> contract: Submit remote attestation on node's behalf
     end
 
-    loop Until threshold participants reached
-        operator ->> contract: Call "vote_new_parameters"
+    loop Until a threshold of current participants voted
+        current_operators ->> contract: Call "vote_new_parameters"
     end
 
 ```
@@ -326,8 +327,8 @@ sequenceDiagram
 6. **(Optional – if the MPC Node fails to submit remote attestation):**
    - Operator ↔ MPC Node: Collects the quote, event log, and collateral from the node.
    - Operator → Contract: Submits the remote attestation on behalf of the node.
-7. **Loop (until threshold participants are reached):**
-   - Operator → Contract: Calls `vote_new_parameters` to update the active participant set.
+7. **Loop (until a threshold of current participants voted for the same proposal):**
+   - Current operators → Contract: Call `vote_new_parameters` to update the active participant set. The new operator cannot vote.
 
 # Design Details
 

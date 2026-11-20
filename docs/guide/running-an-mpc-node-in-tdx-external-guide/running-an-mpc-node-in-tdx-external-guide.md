@@ -2190,7 +2190,7 @@ hour. To register at once, restart the node.
 
 After the MPC node has been deployed and its NEAR account key successfully added to the operator's account, the node will attempt to sync and then submit its attestation information to the contract.
 
-Once these steps are complete, the operator should request all other operators to vote for adding the new MPC node by calling the **vote_new_parameters** method.
+Once these steps are complete, the operator should ask the current operators to vote for adding the new MPC node by calling the **vote_new_parameters** method.
 
 ### Wait for NEAR Indexer to Sync
 
@@ -2276,9 +2276,9 @@ Example `Dstack` response from `v1.signer-prod.testnet` for an existing particip
 
 ### Voting: (vote_new_parameters)
 
-Ask other members to vote for your candidacy via the `vote_new_parameters` contract method.
+Only current participants can vote for your candidacy, via the `vote_new_parameters` contract method. The contract rejects a vote from your own account until you are a participant. Share your account ID, TLS public key and URL with the current operators. A **threshold** number of them must vote for the exact same proposal, so one of them should build the request below and share it, and every voter submits it unchanged.
 
-To generate a voting command, follow these steps:
+To build the request, follow these steps:
 
 1. **Get the current state**
 
@@ -2344,11 +2344,13 @@ To generate a voting command, follow these steps:
    * `participants`
    * `epoch_id` (10 in this example)
    * `next_id` (12 in this example)
+   * `threshold` (5 in this example)
 
 2. **Update the state**
-   * Add your new participant to the `participants` array.
+   * Add the new participant to the `participants` array.
    * Set `prospective_epoch_id = epoch_id + 1` (11 in this example).
    * Set `next_id = next_id + 1` (13 in this example).
+   * Keep `threshold`, unless the operators agree on a new one.
 
 #### Before
 
@@ -2407,21 +2409,27 @@ To generate a voting command, follow these steps:
    REQUEST='{
      "prospective_epoch_id": 11,
      "proposal": {
-       "participants": {
-         "next_id": 13,
-         "participants": <participants_with_new_entry>
-       }
+       "parameters": {
+         "participants": {
+           "next_id": 13,
+           "participants": <participants_with_new_entry>
+         },
+         "threshold": 5
+       },
+       "per_domain_thresholds": {}
      }
    }'
    ```
 
 #### **Create the vote command**
 
+   Each voting operator sends the same `$REQUEST`, signed with their own participant account:
+
    ```bash
-   near contract call-function as-transaction v1.signer vote_new_parameters json-args "$REQUEST" prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as $YOUR_MPC_NEAR_ACCOUNT network-config mainnet sign-with-keychain send
+   near contract call-function as-transaction v1.signer vote_new_parameters json-args "$REQUEST" prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as <voter-account-id> network-config mainnet sign-with-keychain send
    ```
 
-After all participants have voted, the contract will move to a resharing phase.
+Once a threshold of current participants has voted for the same proposal, the contract will move to a resharing phase.
 
 **When resharing starts.** Each node detects the contract state change and logs:
 

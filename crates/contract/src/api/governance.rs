@@ -16,8 +16,9 @@ impl MpcContract {
     /// threshold, and optional per-domain
     /// [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates
     /// (empty map keeps the current ones), applied on resharing completion.
-    /// If a threshold number of votes are reached on the exact same proposal, this will transition
-    /// the contract into the Resharing state.
+    /// Only current participants vote, including those the proposal would remove; accounts it
+    /// would add cannot. Once the governance threshold of current participants voted for the exact
+    /// same proposal, this will transition the contract into the Resharing state.
     ///
     /// The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch
     /// ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from
@@ -512,8 +513,8 @@ mod tests {
             .set_pk(must_get_attested_signer_key(contract, &info.tls_public_key));
     }
 
-    /// Drives a 3-participant Running contract with one domain into Resharing: every
-    /// participant votes `proposal`, a key refresh keeping participants and threshold.
+    /// Drives a 3-participant Running contract with one domain into Resharing: a threshold of
+    /// participants votes `proposal`, a key refresh keeping participants and threshold.
     fn resharing_contract_with_domain() -> (
         MpcContract,
         Participants,
@@ -615,7 +616,11 @@ mod tests {
         // Given: a Resharing contract holding a pending re-proposal vote
         let (mut contract, participants, domain_id, proposal) = resharing_contract_with_domain();
         let voter = authenticate_account_as(&participants.participants()[0].0, &participants);
-        contract.parameters_votes.vote(&proposal, voter);
+        contract.parameters_votes.vote(
+            &proposal,
+            voter,
+            contract.protocol_state.threshold_parameters_or_panic(),
+        );
         assert!(!contract.parameters_votes.is_empty());
 
         // When: the resharing completes
