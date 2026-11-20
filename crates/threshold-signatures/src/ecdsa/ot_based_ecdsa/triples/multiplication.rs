@@ -360,4 +360,18 @@ mod test {
             assert_eq!(a_v[i] * b_v[i], c_v[i]);
         }
     }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn secret_types__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<super::MultiplicationSenderRandomPackage>();
+        assert_zeroize_on_drop::<super::MultiplicationReceiverRandomPackage>();
+        assert_zeroize_on_drop::<crate::ecdsa::ot::bits::BitMatrix>();
+        assert_zeroize_on_drop::<crate::ecdsa::ot::bits::ChoiceVector>();
+        assert_zeroize_on_drop::<crate::frost::PresignArguments<crate::ecdsa::Secp256K1Sha256>>();
+    }
 }

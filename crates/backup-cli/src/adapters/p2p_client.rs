@@ -262,4 +262,14 @@ mod tests {
 
         assert_eq!(keyshares, expected_keyshares);
     }
+
+    #[test]
+    fn secret_types__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<super::MpcP2PClient>();
+        assert_zeroize_on_drop::<crate::types::PersistentSecrets>();
+    }
 }

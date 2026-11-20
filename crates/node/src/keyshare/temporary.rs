@@ -125,8 +125,11 @@ impl TemporaryKeyStorage {
 }
 
 /// Handle to write a completed Keyshare to temporary key storage.
+#[derive(zeroize::ZeroizeOnDrop)]
 pub struct PendingKeyshareStorageHandle {
+    #[zeroize(skip)]
     pub path: PathBuf,
+    #[zeroize(skip)]
     key_id: KeyEventId,
     local_encryption_key: [u8; 16],
 }
@@ -148,7 +151,7 @@ impl PendingKeyshareStorageHandle {
         let mut file = tokio::fs::File::create_new(&self.path).await?;
         file.write_all(&encrypted).await?;
         file.sync_all().await?;
-        sync_parent_dir_async(self.path).await?;
+        sync_parent_dir_async(self.path.clone()).await?;
         Ok(())
     }
 }
