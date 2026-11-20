@@ -25,6 +25,7 @@ use std::{
 };
 
 const TX_SLOT: u64 = 296_112_296;
+const ACCOUNT_OWNER: SvmAddress = SvmAddress([8; 32]);
 
 /// Like `SequentialResponseMockClientBuilder`, but records each request's method and
 /// params — the `common` mocks discard both, so they cannot pin what the inspector sends.
@@ -131,17 +132,17 @@ fn confirmed_tx() -> serde_json::Value {
     })
 }
 
-fn account_info(owner_byte: u8, data: &[u8]) -> serde_json::Value {
-    account_info_at_slot(owner_byte, data, TX_SLOT + 10)
+fn account_info(data: &[u8]) -> serde_json::Value {
+    account_info_at_slot(data, TX_SLOT + 10)
 }
 
-fn account_info_at_slot(owner_byte: u8, data: &[u8], slot: u64) -> serde_json::Value {
+fn account_info_at_slot(data: &[u8], slot: u64) -> serde_json::Value {
     json!({
         "context": { "apiVersion": "2.0.15", "slot": slot },
         "value": {
             // Served by the RPC but deliberately not extracted: see `SvmAccount`.
             "lamports": 1_000_000u64,
-            "owner": key(owner_byte),
+            "owner": bs58::encode(ACCOUNT_OWNER.0).into_string(),
             "data": [base64::engine::general_purpose::STANDARD.encode(data), "base64"],
             "executable": false,
             "rentEpoch": u64::MAX,
@@ -163,10 +164,13 @@ fn account_state_extractor() -> SvmExtractor {
     }
 }
 
-fn confirmed_tx_with(pointer: &str, value: serde_json::Value) -> serde_json::Value {
-    let mut tx = confirmed_tx();
-    *tx.pointer_mut(pointer).unwrap() = value;
-    tx
+fn patched(
+    mut response: serde_json::Value,
+    pointer: &str,
+    value: serde_json::Value,
+) -> serde_json::Value {
+    *response.pointer_mut(pointer).unwrap() = value;
+    response
 }
 
 fn resolved_inner_instruction() -> SvmExtractedValue {
@@ -174,6 +178,13 @@ fn resolved_inner_instruction() -> SvmExtractedValue {
         program_id: SvmAddress([3; 32]),
         accounts: vec![SvmAddress([1; 32]), SvmAddress([4; 32])],
         data: vec![0xde, 0xad, 0xbe, 0xef],
+    })
+}
+
+fn account_state(data: &[u8]) -> SvmExtractedValue {
+    SvmExtractedValue::AccountState(SvmAccount {
+        owner: ACCOUNT_OWNER,
+        data: data.to_vec(),
     })
 }
 
@@ -187,97 +198,59 @@ async fn extract_from(
         .await
 }
 
+#[rstest]
+#[case::repeated_account(
+    vec![6, 6],
+    vec![confirmed_tx(), account_info(b"once")],
+    vec![account_state(b"once"), account_state(b"once")],
+    vec![key(6)],
+)]
+#[case::distinct_accounts(
+    vec![6, 7],
+    vec![confirmed_tx(), account_info(b"first"), account_info(b"second")],
+    vec![account_state(b"first"), account_state(b"second")],
+    vec![key(6), key(7)],
+)]
 #[tokio::test]
-async fn extract__should_read_a_repeated_account_once() {
-    // Given — one response per distinct account, so a second read would exhaust the mock.
-    let mock_client = RecordingClient::new(vec![confirmed_tx(), account_info(8, b"once")]);
+async fn extract__should_read_each_distinct_account_once(
+    #[case] pubkey_bytes: Vec<u8>,
+    #[case] responses: Vec<serde_json::Value>,
+    #[case] expected_values: Vec<SvmExtractedValue>,
+    #[case] expected_reads: Vec<String>,
+) {
+    // Given
+    let mock_client = RecordingClient::new(responses);
     let inspector = SolanaInspector::new(mock_client.clone());
+    let extractors = pubkey_bytes
+        .into_iter()
+        .map(|byte| SvmExtractor::AccountState {
+            pubkey: SvmAddress([byte; 32]),
+        })
+        .collect();
 
     // When
     let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![
-                SvmExtractor::AccountState {
-                    pubkey: SvmAddress([6; 32]),
-                },
-                SvmExtractor::AccountState {
-                    pubkey: SvmAddress([6; 32]),
-                },
-            ],
-        )
+        .extract(tx_id(), SvmFinality::Confirmed, extractors)
         .await
         .unwrap()
         .into_extracted()
         .unwrap();
 
-    // Then — both extractors resolve, from a single round trip, to the same state.
-    let expected = SvmExtractedValue::AccountState(SvmAccount {
-        owner: SvmAddress([8; 32]),
-        data: b"once".to_vec(),
-    });
-    assert_eq!(values, vec![expected.clone(), expected]);
-    let account_reads = mock_client
+    // Then
+    assert_eq!(values, expected_values);
+    let account_reads: Vec<_> = mock_client
         .requests()
         .into_iter()
         .filter(|(method, _)| method == "getAccountInfo")
-        .count();
-    assert_eq!(account_reads, 1);
-}
-
-#[tokio::test]
-async fn extract__should_read_distinct_accounts_separately() {
-    // Given
-    let mock_client = RecordingClient::new(vec![
-        confirmed_tx(),
-        account_info(8, b"first"),
-        account_info(9, b"second"),
-    ]);
-    let inspector = SolanaInspector::new(mock_client.clone());
-
-    // When
-    let values = inspector
-        .extract(
-            tx_id(),
-            SvmFinality::Confirmed,
-            vec![
-                SvmExtractor::AccountState {
-                    pubkey: SvmAddress([6; 32]),
-                },
-                SvmExtractor::AccountState {
-                    pubkey: SvmAddress([7; 32]),
-                },
-            ],
-        )
-        .await
-        .unwrap()
-        .into_extracted()
-        .unwrap();
-
-    // Then — deduplication keys on the pubkey, so distinct accounts are both read, in order.
-    assert_eq!(
-        values,
-        vec![
-            SvmExtractedValue::AccountState(SvmAccount {
-                owner: SvmAddress([8; 32]),
-                data: b"first".to_vec(),
-            }),
-            SvmExtractedValue::AccountState(SvmAccount {
-                owner: SvmAddress([9; 32]),
-                data: b"second".to_vec(),
-            }),
-        ]
-    );
-    let requests = mock_client.requests();
-    assert_eq!(requests[1].1[0], bs58::encode([6; 32]).into_string());
-    assert_eq!(requests[2].1[0], bs58::encode([7; 32]).into_string());
+        .map(|(_, params)| params[0].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(account_reads, expected_reads);
 }
 
 #[tokio::test]
 async fn extract__should_read_account_state_at_finalized_when_finality_is_finalized() {
     // Given — the only combination in which `Commitment::Finalized` reaches `getAccountInfo`.
-    let mock_client = RecordingClient::new(vec![confirmed_tx(), account_info(8, b"rooted")]);
+    let mock_client = RecordingClient::new(vec![confirmed_tx(), account_info(b"rooted")]);
     let inspector = SolanaInspector::new(mock_client.clone());
 
     // When
@@ -285,9 +258,7 @@ async fn extract__should_read_account_state_at_finalized_when_finality_is_finali
         .extract(
             tx_id(),
             SvmFinality::Finalized,
-            vec![SvmExtractor::AccountState {
-                pubkey: SvmAddress([6; 32]),
-            }],
+            vec![account_state_extractor()],
         )
         .await
         .unwrap()
@@ -295,13 +266,7 @@ async fn extract__should_read_account_state_at_finalized_when_finality_is_finali
         .unwrap();
 
     // Then
-    assert_eq!(
-        values,
-        vec![SvmExtractedValue::AccountState(SvmAccount {
-            owner: SvmAddress([8; 32]),
-            data: b"rooted".to_vec(),
-        })]
-    );
+    assert_eq!(values, vec![account_state(b"rooted")]);
     // Asserted on the recorded params: decoded responses alone cannot show the commitment.
     let requests = mock_client.requests();
     assert_eq!(requests.len(), 2, "the rooted answer needs no second read");
@@ -340,25 +305,6 @@ async fn extract__should_query_the_transaction_at_the_requested_commitment_with_
 }
 
 #[tokio::test]
-async fn extract__should_accept_finalized_transaction_when_finality_is_finalized() {
-    // Given — the provider serves the transaction at `finalized`, i.e. from a slot it rooted.
-
-    // When
-    let values = extract_from(
-        vec![confirmed_tx()],
-        SvmFinality::Finalized,
-        vec![inner_instruction_extractor()],
-    )
-    .await
-    .unwrap()
-    .into_extracted()
-    .unwrap();
-
-    // Then
-    assert_eq!(values.len(), 1);
-}
-
-#[tokio::test]
 async fn extract__should_return_not_finalized_when_the_transaction_is_only_confirmed() {
     // Given — null at `finalized`, then the same transaction at `confirmed`: it exists but
     // the provider has not rooted its slot.
@@ -389,7 +335,13 @@ async fn extract__should_return_not_finalized_when_the_transaction_is_only_confi
     vec![inner_instruction_extractor()],
     Verdict::Extracted(vec![resolved_inner_instruction()]),
 )]
-#[case::program_id_from_loaded_addresses(
+#[case::finalized_transaction_when_finality_is_finalized(
+    vec![confirmed_tx()],
+    SvmFinality::Finalized,
+    vec![inner_instruction_extractor()],
+    Verdict::Extracted(vec![resolved_inner_instruction()]),
+)]
+#[case::program_id_from_loaded_readonly_address_after_writable(
     vec![confirmed_tx()],
     SvmFinality::Confirmed,
     vec![SvmExtractor::InnerInstruction {
@@ -403,34 +355,22 @@ async fn extract__should_return_not_finalized_when_the_transaction_is_only_confi
     })]),
 )]
 #[case::account_state(
-    vec![confirmed_tx(), account_info(8, b"bridge message")],
+    vec![confirmed_tx(), account_info(b"bridge message")],
     SvmFinality::Confirmed,
     vec![account_state_extractor()],
-    Verdict::Extracted(vec![SvmExtractedValue::AccountState(SvmAccount {
-        owner: SvmAddress([8; 32]),
-        data: b"bridge message".to_vec(),
-    })]),
+    Verdict::Extracted(vec![account_state(b"bridge message")]),
 )]
 #[case::account_read_answered_at_the_transaction_slot(
-    vec![confirmed_tx(), account_info_at_slot(8, b"fresh", TX_SLOT)],
+    vec![confirmed_tx(), account_info_at_slot(b"fresh", TX_SLOT)],
     SvmFinality::Confirmed,
     vec![account_state_extractor()],
-    Verdict::Extracted(vec![SvmExtractedValue::AccountState(SvmAccount {
-        owner: SvmAddress([8; 32]),
-        data: b"fresh".to_vec(),
-    })]),
+    Verdict::Extracted(vec![account_state(b"fresh")]),
 )]
 #[case::values_in_extractor_order(
-    vec![confirmed_tx(), account_info(8, &[0xca, 0xfe])],
+    vec![confirmed_tx(), account_info(&[0xca, 0xfe])],
     SvmFinality::Confirmed,
     vec![inner_instruction_extractor(), account_state_extractor()],
-    Verdict::Extracted(vec![
-        resolved_inner_instruction(),
-        SvmExtractedValue::AccountState(SvmAccount {
-            owner: SvmAddress([8; 32]),
-            data: vec![0xca, 0xfe],
-        }),
-    ]),
+    Verdict::Extracted(vec![resolved_inner_instruction(), account_state(&[0xca, 0xfe])]),
 )]
 #[case::transaction_not_found_only_when_neither_commitment_has_it(
     vec![serde_json::Value::Null, serde_json::Value::Null],
@@ -445,7 +385,11 @@ async fn extract__should_return_not_finalized_when_the_transaction_is_only_confi
     Verdict::TransactionNotFound,
 )]
 #[case::failed_transaction(
-    vec![confirmed_tx_with("/meta/err", json!({ "InstructionError": [0, { "Custom": 6000 }] }))],
+    vec![patched(
+        confirmed_tx(),
+        "/meta/err",
+        json!({ "InstructionError": [0, { "Custom": 6000 }] }),
+    )],
     SvmFinality::Confirmed,
     vec![inner_instruction_extractor()],
     Verdict::TransactionFailed,
@@ -469,7 +413,7 @@ async fn extract__should_return_not_finalized_when_the_transaction_is_only_confi
     Verdict::LogIndexOutOfBounds,
 )]
 #[case::empty_inner_instruction_list_is_the_chains_own_answer(
-    vec![confirmed_tx_with("/meta/innerInstructions", json!([]))],
+    vec![patched(confirmed_tx(), "/meta/innerInstructions", json!([]))],
     SvmFinality::Confirmed,
     vec![inner_instruction_extractor()],
     Verdict::LogIndexOutOfBounds,
@@ -495,12 +439,17 @@ async fn extract__should_return_the_expected_verdict(
 }
 
 #[rstest]
+// Transient, so the fan-out drops the provider instead of signing an absence or a stale answer
 #[case::null_inner_instructions_means_not_recorded_unlike_the_empty_list(
-    vec![confirmed_tx_with("/meta/innerInstructions", serde_json::Value::Null)],
+    vec![patched(confirmed_tx(), "/meta/innerInstructions", serde_json::Value::Null)],
+    vec![inner_instruction_extractor()],
+)]
+#[case::missing_transaction_meta(
+    vec![patched(confirmed_tx(), "/meta", serde_json::Value::Null)],
     vec![inner_instruction_extractor()],
 )]
 #[case::account_read_answered_before_the_transaction_slot_from_a_lagging_backend(
-    vec![confirmed_tx(), account_info_at_slot(8, b"stale", TX_SLOT - 1)],
+    vec![confirmed_tx(), account_info_at_slot(b"stale", TX_SLOT - 1)],
     vec![account_state_extractor()],
 )]
 #[tokio::test]
@@ -516,6 +465,7 @@ async fn extract__should_report_a_transient_provider_failure(
     // Then
     assert_matches!(error, ForeignChainInspectionError::RpcRequestFailed(_));
     assert!(error.is_transient());
+    assert_eq!(error.provider_failure(), Some(ProviderFailure::Unreachable));
 }
 
 #[tokio::test]
@@ -549,7 +499,8 @@ async fn extract__should_not_read_a_failed_finality_recheck_as_transaction_not_f
 #[tokio::test]
 async fn extract__should_reject_response_with_mismatched_signature() {
     // Given — the provider returns a different transaction than queried.
-    let tx = confirmed_tx_with(
+    let tx = patched(
+        confirmed_tx(),
         "/transaction/signatures",
         json!([bs58::encode([8; 64]).into_string()]),
     );
@@ -567,26 +518,6 @@ async fn extract__should_reject_response_with_mismatched_signature() {
         response,
         Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
     );
-}
-
-#[tokio::test]
-async fn extract__should_report_missing_meta_as_a_provider_failure() {
-    // Given — a node that holds the transaction but not its status metadata.
-    let tx = confirmed_tx_with("/meta", serde_json::Value::Null);
-
-    // When
-    let response = extract_from(
-        vec![tx],
-        SvmFinality::Confirmed,
-        vec![inner_instruction_extractor()],
-    )
-    .await;
-
-    // Then — the same class as an unrecorded inner-instruction list, and reported the same
-    // way: a gap in what this provider serves, not data the chain settled or a broken payload.
-    let error = response.unwrap_err();
-    assert_matches!(error, ForeignChainInspectionError::RpcRequestFailed(_));
-    assert_eq!(error.provider_failure(), Some(ProviderFailure::Unreachable));
 }
 
 #[tokio::test]
@@ -618,34 +549,47 @@ async fn extract__should_report_absent_transaction_history_as_a_provider_failure
     assert!(error.is_transient());
 }
 
-#[tokio::test]
-async fn extract__should_reject_out_of_bounds_account_index_as_malformed() {
-    // Given — an instruction referencing an account index past the full key list.
-    let tx = confirmed_tx_with(
+#[rstest]
+#[case::out_of_bounds_account_index(
+    vec![patched(
+        confirmed_tx(),
         "/meta/innerInstructions/0/instructions/0/accounts",
         json!([99]),
-    );
-
+    )],
+    vec![inner_instruction_extractor()],
+)]
+#[case::account_response_omitting_value_instead_of_answering_null(
+    vec![confirmed_tx(), json!({ "context": { "slot": TX_SLOT } })],
+    vec![account_state_extractor()],
+)]
+#[case::account_data_in_wrong_encoding(
+    vec![
+        confirmed_tx(),
+        patched(account_info(&[1, 2, 3]), "/value/data", json!(["3Bxs4NN8M2Yn4TLb", "base58"])),
+    ],
+    vec![account_state_extractor()],
+)]
+#[tokio::test]
+async fn extract__should_reject_the_response_as_malformed(
+    #[case] responses: Vec<serde_json::Value>,
+    #[case] extractors: Vec<SvmExtractor>,
+) {
     // When
-    let response = extract_from(
-        vec![tx],
-        SvmFinality::Confirmed,
-        vec![inner_instruction_extractor()],
-    )
-    .await;
+    let error = extract_from(responses, SvmFinality::Confirmed, extractors)
+        .await
+        .unwrap_err();
 
     // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-    );
+    assert_matches!(error, ForeignChainInspectionError::MalformedRpcResponse(_));
+    assert_eq!(error.provider_failure(), Some(ProviderFailure::Malformed));
 }
 
 #[tokio::test]
 async fn extract__should_reject_oversized_account_list_before_resolving_it() {
     // Given — index 99 is out of bounds, so resolve-then-cap would answer "index out of
     // bounds"; the count in the message proves the cap fired before resolving.
-    let tx = confirmed_tx_with(
+    let tx = patched(
+        confirmed_tx(),
         "/meta/innerInstructions/0/instructions/0/accounts",
         json!(vec![99u8; 300]),
     );
@@ -662,51 +606,6 @@ async fn extract__should_reject_oversized_account_list_before_resolving_it() {
     assert_matches!(
         response,
         Err(ForeignChainInspectionError::MalformedRpcResponse(message)) if message.contains("lists 300 accounts")
-    );
-}
-
-#[tokio::test]
-async fn extract__should_reject_an_account_response_omitting_value_as_malformed() {
-    // Given — a provider that omits `value` rather than answering `null`.
-    let responses = vec![confirmed_tx(), json!({ "context": { "slot": TX_SLOT } })];
-
-    // When
-    let response = extract_from(
-        responses,
-        SvmFinality::Confirmed,
-        vec![account_state_extractor()],
-    )
-    .await;
-
-    // Then — the provider is at fault, not the chain: an omitted field must not read as an
-    // absent account, which would blame nobody for a broken response.
-    let error = response.unwrap_err();
-    assert_matches!(
-        error,
-        ForeignChainInspectionError::MalformedRpcResponse(_),
-        "an omitted `value` must not be indistinguishable from an absent account"
-    );
-    assert_eq!(error.provider_failure(), Some(ProviderFailure::Malformed));
-}
-
-#[tokio::test]
-async fn extract__should_reject_account_data_in_wrong_encoding_as_malformed() {
-    // Given — a provider that ignored the requested base64 encoding.
-    let mut account = account_info(8, &[1, 2, 3]);
-    account["value"]["data"] = json!(["3Bxs4NN8M2Yn4TLb", "base58"]);
-
-    // When
-    let response = extract_from(
-        vec![confirmed_tx(), account],
-        SvmFinality::Confirmed,
-        vec![account_state_extractor()],
-    )
-    .await;
-
-    // Then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
     );
 }
 

@@ -18,6 +18,7 @@ use rstest::rstest;
 use std::assert_matches;
 
 const EVENT_BCS_BYTES: [u8; 4] = [0xde, 0xad, 0xbe, 0xef];
+const STAKING_REQUEST_EVENT_TYPE: &str = "0x3::validator::StakingRequestEvent";
 
 struct MockSuiClient {
     response: Option<Result<GetTransactionResponse, Status>>,
@@ -139,41 +140,6 @@ async fn extract_from(
 }
 
 #[tokio::test]
-async fn extract__should_return_correct_event_for_specific_index() {
-    // Given a transaction with two events.
-    let second = framework_event()
-        .with_event_type("0x3::validator::StakingRequestEvent")
-        .with_contents(
-            Bcs::default()
-                .with_name("0x3::validator::StakingRequestEvent")
-                .with_value(EVENT_BCS_BYTES.to_vec()),
-        );
-    let tx = checkpointed_tx(vec![framework_event(), second]);
-    let inspector = SuiInspector::new(MockSuiClient::transaction(tx));
-
-    // When
-    let extracted_values = inspector
-        .extract(
-            tx_id(),
-            SuiFinality::Checkpointed,
-            vec![SuiExtractor::Event { event_index: 1 }],
-        )
-        .await
-        .expect("extract should succeed");
-    let Verdict::Extracted(extracted_values) = extracted_values else {
-        panic!("expected extracted values, got: {extracted_values}");
-    };
-
-    // Then
-    assert_eq!(extracted_values.len(), 1);
-    let SuiExtractedValue::Event(event) = &extracted_values[0];
-    assert_eq!(
-        event.type_tag,
-        format!("0x{}3::validator::StakingRequestEvent", "0".repeat(63))
-    );
-}
-
-#[tokio::test]
 async fn extract__should_return_not_finalized_when_checkpoint_is_missing() {
     // Given — executed but not yet included in a certified checkpoint.
     let tx = checkpointed_tx_with(|tx| tx.checkpoint = None);
@@ -210,6 +176,23 @@ async fn extract__should_return_not_finalized_when_checkpoint_is_missing() {
     )])),
     vec![SuiExtractor::Event { event_index: 0 }],
     Verdict::Extracted(vec![SuiExtractedValue::Event(expected_event())]),
+)]
+#[case::event_at_the_requested_index(
+    MockSuiClient::transaction(checkpointed_tx(vec![
+        framework_event(),
+        framework_event()
+            .with_event_type(STAKING_REQUEST_EVENT_TYPE)
+            .with_contents(
+                Bcs::default()
+                    .with_name(STAKING_REQUEST_EVENT_TYPE)
+                    .with_value(EVENT_BCS_BYTES.to_vec()),
+            ),
+    ])),
+    vec![SuiExtractor::Event { event_index: 1 }],
+    Verdict::Extracted(vec![SuiExtractedValue::Event(SuiEvent {
+        type_tag: format!("0x{}3::validator::StakingRequestEvent", "0".repeat(63)),
+        ..expected_event()
+    })]),
 )]
 #[case::transaction_failed_when_execution_failed(
     MockSuiClient::transaction(checkpointed_tx_with(|tx| {
@@ -273,7 +256,7 @@ async fn extract__should_return_the_expected_verdict(
 #[case::event_whose_contents_type_disagrees_with_the_event_type(
     MockSuiClient::transaction(checkpointed_tx(vec![framework_event().with_contents(
         Bcs::default()
-            .with_name("0x3::validator::StakingRequestEvent")
+            .with_name(STAKING_REQUEST_EVENT_TYPE)
             .with_value(EVENT_BCS_BYTES.to_vec()),
     )])),
     vec![SuiExtractor::Event { event_index: 0 }],
