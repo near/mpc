@@ -262,7 +262,6 @@ mod tests {
     use super::*;
     use crate::api::test_utils::{
         init_running_with_domain, running_contract_called_by_participant_via_forwarder,
-        setup_tee_test_contract,
     };
     use crate::primitives::test_utils::{
         bogus_genesis_hash, bogus_tee_verifier_account_id, gen_participants,
@@ -274,16 +273,30 @@ mod tests {
     use dtos::{DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold};
     use rstest::rstest;
 
+    const PARTICIPANTS: usize = 3;
+    const THRESHOLD: usize = 2;
+
     fn parameters() -> GovernanceThresholdParameters {
-        GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
-            .unwrap()
+        GovernanceThresholdParameters::new(
+            gen_participants(PARTICIPANTS),
+            GovernanceThreshold::new(u64::try_from(THRESHOLD).unwrap()),
+        )
+        .unwrap()
     }
 
-    fn contract_without_genesis_hash() -> (MpcContract, Vec<AccountId>) {
-        let (mut contract, _, _) = setup_tee_test_contract(3, 2);
-        contract.genesis_hash = None;
-        let voters = threshold_voters(contract.protocol_state.threshold_parameters_or_panic());
-        (contract, voters)
+    fn contract_with_genesis_hash(
+        genesis_hash: Option<GenesisHash>,
+    ) -> (MpcContract, Vec<AccountId>) {
+        let parameters = parameters();
+        let mut contract = MpcContract::init(
+            (&parameters).into_dto_type(),
+            bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
+            None,
+        )
+        .unwrap();
+        contract.genesis_hash = genesis_hash;
+        (contract, threshold_voters(&parameters))
     }
 
     #[test]
@@ -325,15 +338,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::below_threshold(&[GenesisHash::MAINNET], None)]
+    #[case::below_threshold(&[GenesisHash::MAINNET; THRESHOLD - 1], None)]
     #[case::split_between_hashes(&[GenesisHash::MAINNET, GenesisHash::TESTNET], None)]
-    #[case::threshold_reached(&[GenesisHash::MAINNET; 2], Some(GenesisHash::MAINNET))]
+    #[case::threshold_reached(&[GenesisHash::MAINNET; THRESHOLD], Some(GenesisHash::MAINNET))]
     fn vote_genesis_hash__should_set_the_hash_once_a_threshold_of_participants_voted_for_it(
         #[case] votes: &[GenesisHash],
         #[case] expected: Option<GenesisHash>,
     ) {
         // Given
-        let (mut contract, voters) = contract_without_genesis_hash();
+        let (mut contract, voters) = contract_with_genesis_hash(None);
         let mut env = Environment::new(None, None, None);
 
         // When
@@ -351,28 +364,30 @@ mod tests {
     }
 
     #[rstest]
-    #[case::stored_hash(bogus_genesis_hash(), Ok(()))]
+    #[case::stored_hash(GenesisHash::TESTNET, Ok(()))]
     #[case::other_hash(GenesisHash::MAINNET, Err(InvalidState::GenesisHashAlreadySet.into()))]
     fn vote_genesis_hash__should_keep_a_stored_hash(
         #[case] genesis_hash: GenesisHash,
         #[case] expected: Result<(), Error>,
     ) {
         // Given
-        let (mut contract, _, voter) = setup_tee_test_contract(3, 2);
-        Environment::new(None, Some(voter), None);
+        let stored_hash = GenesisHash::TESTNET;
+        let (mut contract, voters) = contract_with_genesis_hash(Some(stored_hash));
+        Environment::new(None, Some(voters[0].clone()), None);
 
         // When
         let result = contract.vote_genesis_hash(genesis_hash);
 
         // Then
         assert_eq!(result, expected);
-        assert_eq!(contract.genesis_hash(), Some(bogus_genesis_hash()));
+        assert_eq!(contract.genesis_hash(), Some(stored_hash));
     }
 
     #[test]
     fn vote_genesis_hash__should_allow_compose_hashes_that_carry_it_for_allowed_pairs() {
         // Given
-        let (mut contract, voters) = contract_without_genesis_hash();
+        let (mut contract, voters) = contract_with_genesis_hash(None);
+        let genesis_hash = GenesisHash::MAINNET;
         let launcher_hash = dtos::LauncherImageHash::from([1; 32]);
         let mpc_image_hash = dtos::NodeImageHash::from([2; 32]);
         let mut env = Environment::new(None, None, None);
@@ -387,18 +402,14 @@ mod tests {
         // When
         for voter in &voters {
             env.set_signer(voter);
-            contract.vote_genesis_hash(GenesisHash::MAINNET).unwrap();
+            contract.vote_genesis_hash(genesis_hash).unwrap();
         }
 
         // Then
-        let compose_hash =
-            |genesis_hash| get_docker_compose_hash(&launcher_hash, &mpc_image_hash, genesis_hash);
+        let compose_hash = |hash| get_docker_compose_hash(&launcher_hash, &mpc_image_hash, hash);
         assert_eq!(
             contract.allowed_launcher_compose_hashes(),
-            vec![
-                compose_hash(None),
-                compose_hash(Some(&GenesisHash::MAINNET))
-            ],
+            vec![compose_hash(None), compose_hash(Some(&genesis_hash))],
         );
     }
 

@@ -386,6 +386,7 @@ async fn vote_genesis_hash__should_set_the_genesis_hash_left_unset_by_the_migrat
     let (accounts, _) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
     upgrade_to_new(&contract).await.unwrap();
     migrate_and_assert_contract_code(&contract).await.unwrap();
+    let genesis_hash_before_vote = contract.genesis_hash().await.unwrap().value;
     let genesis_hash = bogus_genesis_hash();
 
     // When
@@ -396,6 +397,7 @@ async fn vote_genesis_hash__should_set_the_genesis_hash_left_unset_by_the_migrat
     .unwrap();
 
     // Then
+    assert_eq!(genesis_hash_before_vote, None);
     assert_eq!(
         contract.genesis_hash().await.unwrap().value,
         Some(genesis_hash)
