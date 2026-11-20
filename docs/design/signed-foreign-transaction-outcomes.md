@@ -1,6 +1,6 @@
 # Signed Negative and Inconclusive Outcomes for Foreign Transaction Verification
 
-**Status:** Final · **Author:** Haiyue Chen (with Claude) · **Date:** 28 September 2026, revised 19 November 2026
+**Status:** Approved · **Author:** Haiyue Chen (with Claude) · **Date:** 28 September 2026, revised 19 November 2026
 
 **Note on naming:** the new caller facing method is `read_rpc`. To ease comparison with current
 foreign transaction verification (V1), the doc calls the new flow V2.
