@@ -319,7 +319,7 @@ pub struct IndexerHeightReport<N> {
 
 In the future, we may extend to add more indexer reports, such as results from an echo-connection check or pings.
 
-### Network Connectivity Manager
+### Network Connectivity Monitor
 
 We need a component that takes input from producers, processes that input into useful observations about network link status, and then produces a qualitative statement about the network connections (the `EstablishedConnections` graph the publishers above require).
 
