@@ -97,10 +97,6 @@ $\mathsf{DST}$ names this protocol, its version and the ciphersuite.
 The tuple $(\mathsf{sid}, \mathcal{S}, \mathcal{R}, j)$ is encoded injectively:
 every field has a fixed width or is prefixed by its length.
 
-**Messages as inputs.** The sender's messages are inputs, as in the paper.
-Hashing $V_ {i, b}$ straight into a key would save sending $W_ {i, b}$, but the
-paper's proof does not cover it.
-
 **Fresh randomness.** The pair $(s_ {i, b}, t_ {i, b})$ is sampled independently
 for every $i$ and $b$.
 Reusing it across $b$ gives $V_ {i, 0} = V_ {i, 1}$, so
