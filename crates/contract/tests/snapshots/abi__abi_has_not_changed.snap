@@ -16,6 +16,23 @@ expression: abi
   "body": {
     "functions": [
       {
+        "name": "add_domains_votes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
         "kind": "view",
@@ -2239,7 +2256,7 @@ expression: abi
       },
       {
         "name": "vote_add_domains",
-        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
+        "doc": " Propose adding a new set of domains for the MPC network.\n Once every participant has voted for the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2575,24 +2592,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AddDomainsVotes": {
-          "description": "Votes for adding new domains.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/DomainConfig"
-                }
-              }
-            }
-          }
-        },
         "AllowedMpcDockerImageHash": {
           "type": "object",
           "required": [
@@ -4872,15 +4871,11 @@ expression: abi
           "description": "State when the contract is ready for signature operations.",
           "type": "object",
           "required": [
-            "add_domains_votes",
             "domains",
             "keyset",
             "parameters"
           ],
           "properties": {
-            "add_domains_votes": {
-              "$ref": "#/definitions/AddDomainsVotes"
-            },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
             },
