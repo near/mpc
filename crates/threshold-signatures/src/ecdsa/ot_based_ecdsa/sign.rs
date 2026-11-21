@@ -42,7 +42,7 @@ pub struct SignArguments {
 /// The signing protocol, consuming two triples directly.
 ///
 /// The nonce never leaves this computation and is never stored; the key-derivation `tweak` is
-/// applied locally between rounds 2 and 3. Only the coordinator obtains the signature.
+/// applied locally in round 2. Only the coordinator obtains the signature.
 ///
 /// # Safety contract
 ///
@@ -245,13 +245,9 @@ async fn do_sign(
         e_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
     let big_r: AffinePoint = (big_d * e_inv).into();
 
-    // sigmai = alpha*xi - beta*ai + ci
+    // sigmai = alpha*xi - beta*ai + ci + tweak*ki
     // Spec 2.7
-    let sigma_i = alpha * private_share - (beta * a_i - c_i);
-
-    // Key derivation
-    // sigmai = sigmai + tweak*ki
-    let sigma_i = sigma_i + tweak.value() * k_i;
+    let sigma_i = alpha * private_share - (beta * a_i - c_i) + tweak.value() * k_i;
     chan.yield_point().await;
 
     // Round 3

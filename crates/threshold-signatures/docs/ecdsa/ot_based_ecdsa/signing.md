@@ -22,6 +22,8 @@ resp. associated to the (master) Beaver triples $(a, b, c)$ and $(k, d, e)$
 
 *Note: neither* $d_i$ *nor* $C$ *are actually used in the algorithm.*
 
+*Note: the key derivation is not a separate step. The tweak* $\epsilon$ *only adds* $\epsilon \cdot k_i$ *to* $\sigma_i$ *in Round 2.*
+
 **Round 1:**
 
 1. Each $P_i$ linearizes their shares, setting:
@@ -63,9 +65,7 @@ $$
 $$
 
 6. Each $P_i$ sets: $R \gets \frac{1}{e} \cdot D$. (Recall that Beaver triple $(k,d,e)$ is computed s.t. $e = k\cdot d$ )
-7. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i$, which is already threshold shared.
-
-**Key Derivation:** each $P_i$ sets $\sigma_i \gets \sigma_i + \epsilon \cdot k_i$.
+7. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i + \epsilon \cdot k_i$, which is already threshold shared.
 
 **Round 3:**
 
