@@ -41,6 +41,7 @@ use mpc_node_config::ConfigFile;
 use mpc_primitives::domain::{Curve, DomainId, Protocol};
 use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_time::Clock;
 use std::collections::HashMap;
 use std::future::Future;
@@ -179,6 +180,7 @@ where
                                 self.indexer.txn_sender.clone(),
                                 self.indexer.foreign_chain_supporters_receiver.clone(),
                                 self.indexer.foreign_chain_whitelist_receiver.clone(),
+                                self.indexer.foreign_chains_configs_receiver.clone(),
                                 self.indexer
                                     .block_update_receiver
                                     .clone()
@@ -378,6 +380,7 @@ where
         chain_txn_sender: TransactionSender,
         foreign_chain_supporters_receiver: watch::Receiver<ForeignChainSupporters>,
         foreign_chain_whitelist_receiver: watch::Receiver<ForeignChainWhitelist>,
+        foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
         block_update_receiver: tokio::sync::OwnedMutexGuard<
             mpsc::UnboundedReceiver<ChainBlockUpdate>,
         >,
@@ -437,6 +440,8 @@ where
         let _foreign_chains_registrar = spawn_foreign_chains_registrar(
             chain_txn_sender.clone(),
             foreign_chain_whitelist_receiver.clone(),
+            foreign_chains_configs_receiver,
+            dtos::Ed25519PublicKey::from(&p2p_key.verifying_key()),
             config_file.foreign_chains.clone(),
         );
 

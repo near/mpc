@@ -14,7 +14,7 @@ use rand::rngs::OsRng;
 use std::time::Duration;
 use threshold_signatures::{
     MaxMalicious,
-    ecdsa::robust_ecdsa::{PresignArguments, presign_and_sign},
+    ecdsa::robust_ecdsa::{SignArguments, sign},
     ecdsa::{Signature, SignatureOption},
     frost_secp256k1::VerifyingKey,
     participants::Participant,
@@ -159,11 +159,11 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for SignComput
 
         let derived_public_key = tweak.derive_verifying_key(&self.keygen_out.public_key);
 
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &cs_participants,
             channel.sender().get_leader().into(),
             channel.my_participant_id().into(),
-            PresignArguments {
+            SignArguments {
                 keygen_out: self.keygen_out,
                 max_malicious: self.max_malicious,
             },

@@ -39,13 +39,15 @@ These gauges say whether that happened:
 ## Attestation freshness
 
 The node runs in trusted hardware and proves this by submitting an attestation
-on chain. If it stops doing so, the contract eventually drops the node from the
-participant set. These gauges tell you how much runway is left:
+on chain. If it stops doing so, the attestation eventually expires and the
+contract stops accepting signature requests until the node attests again or a
+vote removes it from the participant set. These gauges tell you how much runway
+is left:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
-| `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node is already out. `-1` means an attestation is stored that carries no expiry. |
+| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to the attestation expiring. |
+| `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node already counts as unattested. `-1` means an attestation is stored that carries no expiry. |
 
 ## Foreign chain RPC providers
 
@@ -130,7 +132,7 @@ answer with the chain's `expected_network_fingerprint` from your config:
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain |
+| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain, whitelisted or not |
 | `mpc_foreign_chain_rpc_providers_healthy` | providers that passed the latest probe |
 
 `healthy` should equal `configured`. Anything less is a provider the probe
@@ -138,9 +140,57 @@ could not confirm: unreachable, refusing, too slow, serving a different
 network, or a chain configured without an `expected_network_fingerprint`,
 which the probe cannot check.
 
-Until the node has synced and read the provider whitelist from the contract,
-each round logs that the whitelist is not read yet. The node probes again as
-soon as the whitelist is read, and whenever the whitelist changes.
+After each round the node also compares the configured providers with the
+provider whitelist. A round runs at startup, every hour, and as soon as the
+whitelist is read or changes. So a wrong config is reported until it is fixed.
+
+Each round logs:
+
+* A warning for each unhealthy provider.
+* A line for each difference from the whitelist. A difference you must fix is
+  a warning or an error. Two differences are normal and are logged as info: a
+  chain that is not whitelisted yet, and an extra provider.
+* A warning or an error for each chain that is not healthy, once the whitelist
+  is read.
+* One `foreign chain probe round complete` line at the end, with these fields:
+
+| Field | What it tells you |
+| --- | --- |
+| `healthy` | providers that passed the probe |
+| `probed` | providers of a chain that has a probe |
+| `unchecked` | providers of a chain that has no probe |
+| `unchecked_chains` | the chains that have no probe |
+| `whitelist` | `not read yet`, `matches the local config`, or the number of differences logged above |
+| `healthy_chains` | chains judged healthy |
+| `judged_chains` | chains judged, `0` until the whitelist is read |
+
+The whitelist is `not read yet` until the node has synced and read it from the
+contract.
+
+Once the whitelist is read, each round judges every whitelisted chain in your
+config. First it checks the quorum, which needs no probe:
+
+* A voted quorum the node cannot enforce is logged as an error. The contract
+  rejects such votes, so this should never happen.
+* A chain with fewer whitelisted providers configured than its quorum gets a
+  warning. The node does not serve that chain.
+
+A chain that passes these checks is judged further only when it has a probe and
+sets an `expected_network_fingerprint`. It is healthy when all of these hold:
+
+* All of its whitelisted providers passed the probe.
+* No configured provider serves another network. Such a provider fails every
+  verify request on its chain, whitelisted or not, because the verdicts of all
+  configured providers must agree.
+
+When some whitelisted providers fail the probe, the warning says whether the
+others still reach the quorum. If they do not, every verify request on that
+chain fails.
+
+A configured provider counts for a whitelisted provider only when its URL host,
+scheme, port, path, chain routing and auth all match the voted entry. When two
+configured providers match one whitelisted provider, only the first by name
+counts. The second one cannot stand in when the first one fails.
 
 ### Whitelist and quorum
 
@@ -158,7 +208,7 @@ participant:
 `whitelisted` must reach `required`. Anything less means the chain is
 configured but neither registered nor served: a provider's URL or auth differs
 from the voted entry, or you run fewer of the voted providers than the quorum
-asks. The node logs the differing provider at startup and on every whitelist change.
+asks. The probe logs the differing provider each round, as described above.
 
 ## Recommended alerts
 

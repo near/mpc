@@ -66,6 +66,7 @@ mod onboarding;
 mod protocol_yielding;
 mod reconstruction_thresholds;
 mod resharing;
+mod slow_peer_link;
 mod update_participant_url;
 mod verify_foreign_tx_gating;
 
@@ -214,6 +215,7 @@ impl IntegrationTestSetup {
                     concurrency: 1.try_into().unwrap(),
                     finality: Finality::Final,
                     mpc_contract_id: "test".parse().unwrap(),
+                    genesis_hash: None,
                     port_override: None,
                     wipe_near_data_token: 0,
                     sync_mode: SyncMode::Latest,
@@ -636,8 +638,9 @@ fn test_build_info_metric_values() {
     assert_eq!(value, 1);
 }
 
-/// Waits until `node_count` nodes have registered exactly `chains`.
-pub async fn wait_for_registrations(
+/// Waits until `node_count` nodes have registered exactly `chains`, failing the test after
+/// [`DEFAULT_MAX_PROTOCOL_WAIT_TIME`].
+pub async fn wait_and_assert_registrations(
     indexer: &FakeIndexerManager,
     node_count: usize,
     chains: &std::collections::BTreeSet<near_mpc_contract_interface::types::ForeignChain>,

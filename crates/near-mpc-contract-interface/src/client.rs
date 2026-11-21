@@ -27,15 +27,16 @@ use crate::deposits::{
     SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
 };
 use crate::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS, AVAILABLE_ATTESTATION_GRANTS,
-    CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS, CLEAN_TEE_STATUS, CONFIG,
-    CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS,
-    GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST,
-    GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT, INIT_RUNNING,
-    LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY,
-    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
+    ADD_DOMAINS_VOTES, ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS,
+    AVAILABLE_ATTESTATION_GRANTS, CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS,
+    CLEAN_TEE_STATUS, CONFIG, CONTRACT_UPDATE_VOTES, CURRENT_KEYSET, DERIVED_PUBLIC_KEY,
+    GENESIS_HASH, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+    GET_TEE_ACCOUNTS, INIT, INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO,
+    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES,
+    PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
+    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
     START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
@@ -46,17 +47,17 @@ use crate::method_names::{
     VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
+    AccountId, AddDomainsVotes, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
     CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
-    InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes,
-    LauncherImageHash, MeasurementVotes, MigrationInfo, NodeId, NodeImageHash, ParticipantUrl,
-    ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
-    SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
-    Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
-    VerifyForeignTransactionResponse, YieldIndex,
+    ForeignChainsConfigs, GenesisHash, GovernanceThresholdParameters,
+    GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
+    LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
+    ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState,
+    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation,
+    TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -124,17 +125,20 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         parameters: GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
         init_config: Option<InitConfig>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&InitArgs::new(
             parameters,
             tee_verifier_account_id,
+            genesis_hash,
             init_config,
         ))?;
         self.call(FunctionCallArgs::no_deposit(INIT, args, MAX_GAS))
             .await
     }
 
+    #[expect(clippy::too_many_arguments)]
     pub async fn init_running(
         &self,
         domains: Vec<DomainConfig>,
@@ -142,6 +146,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         keyset: Keyset,
         parameters: GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
         init_config: Option<InitConfig>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&InitRunningArgs::new(
@@ -150,6 +155,7 @@ impl<C: CallContract> MpcContractHandle<C> {
             keyset,
             parameters,
             tee_verifier_account_id,
+            genesis_hash,
             init_config,
         ))?;
         self.call(FunctionCallArgs::no_deposit(INIT_RUNNING, args, MAX_GAS))
@@ -637,6 +643,10 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(PARAMETERS_VOTES))
     }
 
+    pub fn add_domains_votes(&self) -> ViewCall<C, AddDomainsVotes> {
+        self.view(ViewArgs::no_args(ADD_DOMAINS_VOTES))
+    }
+
     pub fn os_measurement_votes(&self) -> ViewCall<C, MeasurementVotes> {
         self.view(ViewArgs::no_args(OS_MEASUREMENT_VOTES))
     }
@@ -651,11 +661,22 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(STATE))
     }
 
+    /// The keyset of the running state, or of the previous running state while resharing;
+    /// `None` otherwise. Unlike [`Self::state`], its JSON format stays stable across contract
+    /// versions.
+    pub fn current_keyset(&self) -> ViewCall<C, Option<Keyset>> {
+        self.view(ViewArgs::no_args(CURRENT_KEYSET))
+    }
+
     pub fn config(&self) -> ViewCall<C, Config> {
         self.view(ViewArgs::no_args(CONFIG))
     }
 
-    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeId>> {
+    pub fn genesis_hash(&self) -> ViewCall<C, Option<GenesisHash>> {
+        self.view(ViewArgs::no_args(GENESIS_HASH))
+    }
+
+    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeInfo>> {
         self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
     }
 
@@ -775,9 +796,9 @@ mod tests {
         BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV,
         CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ExpectedMeasurements,
-        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GovernanceThreshold,
-        GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint, K256Scalar,
-        K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
+        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GenesisHash,
+        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
+        K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
         MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
         ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
         ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
@@ -860,6 +881,7 @@ mod tests {
                 )],
             },
         };
+        let genesis_hash = GenesisHash::from([7u8; 32]);
         let key_event_id = KeyEventId::new(EpochId::new(7), DomainId(0), AttemptId(0));
         let signature_response = SignatureResponse::Secp256k1(K256Signature {
             big_r: K256AffinePoint {
@@ -883,6 +905,7 @@ mod tests {
             .init(
                 governance_threshold_parameters.clone(),
                 "tee-verifier.near".parse().unwrap(),
+                genesis_hash,
                 Some(InitConfig::default()),
             )
             .await
@@ -894,6 +917,7 @@ mod tests {
                 Keyset::new(EpochId::new(7), Vec::new()),
                 governance_threshold_parameters.clone(),
                 "tee-verifier.near".parse().unwrap(),
+                genesis_hash,
                 Some(InitConfig::default()),
             )
             .await
@@ -1144,10 +1168,13 @@ mod tests {
         let _ = handle.mpc_node_manifest_digest_votes().await;
         let _ = handle.launcher_hash_votes().await;
         let _ = handle.parameters_votes().await;
+        let _ = handle.add_domains_votes().await;
         let _ = handle.os_measurement_votes().await;
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;
+        let _ = handle.current_keyset().await;
         let _ = handle.config().await;
+        let _ = handle.genesis_hash().await;
         let _ = handle.get_tee_accounts().await;
         let _ = handle.migration_info().await;
         let _ = handle.get_available_foreign_chains().await;

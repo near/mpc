@@ -178,16 +178,21 @@ This ensures:
 To run all the benchmarks, simply type the following command in your terminal:
 
 ```sh
-cargo bench
+cargo bench -p threshold-signatures --features test-utils
 ```
 
-Some benchmarks accept additional features that one can fix such as the maximum number of malicious parties `MAX_MALICIOUS`, the number of iterations to be executed `SAMPLE_SIZE`, and the network latency `LATENCY`. All three variables have to be added as environment variables. Example:
+The `naive_*`, `advanced_*` and `ckd` benchmarks measure computation with Criterion. They read the maximum number of malicious parties from `MAX_MALICIOUS` (default 6) and the number of samples from `SAMPLE_SIZE` (default 15). Example:
 
 ```sh
-MAX_MALICIOUS=15 LATENCY=100 SAMPLE_SIZE=20 cargo bench -- ot_ecdsa_presign_and_sign_advanced
+MAX_MALICIOUS=15 SAMPLE_SIZE=20 cargo bench -p threshold-signatures --features test-utils --bench advanced_ot_based_ecdsa
 ```
 
-By default, the maximum number of malicious parties is 6, the latency is 0 milliseconds and the number of iterations is 15.
+The `simulate_*` benchmarks run a protocol among all participants on a virtual clock that adds a fixed network latency to every message. They report virtual time, messages and bytes, compute time, the longest computation without yielding and the largest message, and read `NUM_PARTICIPANTS` (default 7), `THRESHOLD` (default `NUM_PARTICIPANTS / 2 + 1`), `LATENCY_MS` (default 50) and `SAMPLE_SIZE` (default 15). Like the node, `simulate_triples` generates triples among exactly `NUM_PARTICIPANTS` parties, so it ignores `THRESHOLD`; it compares the batch sizes listed in `TRIPLE_BATCH_SIZES` (default `2,4,8,16,32,64`). Example:
+
+```sh
+NUM_PARTICIPANTS=11 LATENCY_MS=100 TRIPLE_BATCH_SIZES=8,16,64 cargo bench -p threshold-signatures --features test-utils --bench simulate_triples
+```
+
 The detailed numbers and analysis can be found in the [docs/benches/results.md](docs/benches/results.md) documentation.
 
 As for Ed25519, the implementation without presigning takes 3 rounds to serve a message signing request, as many as ECDSA's online phase, so with 100ms of latency both take roughly 300ms.

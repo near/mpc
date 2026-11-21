@@ -31,6 +31,10 @@ method:   parameters_votes
 args:     {}
 
 contract: mpc.near
+method:   add_domains_votes
+args:     {}
+
+contract: mpc.near
 method:   os_measurement_votes
 args:     {}
 
@@ -43,7 +47,15 @@ method:   state
 args:     {}
 
 contract: mpc.near
+method:   current_keyset
+args:     {}
+
+contract: mpc.near
 method:   config
+args:     {}
+
+contract: mpc.near
+method:   genesis_hash
 args:     {}
 
 contract: mpc.near

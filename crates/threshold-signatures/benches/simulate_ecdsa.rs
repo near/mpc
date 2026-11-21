@@ -5,15 +5,11 @@ use rand::RngCore;
 use rand_core::SeedableRng;
 
 mod bench_utils;
-use bench_utils::split_even_odd;
+use bench_utils::{TriplePair, ot_run_triples, split_even_odd};
 
 use threshold_signatures::{
     MaxMalicious, ReconstructionThreshold,
-    ecdsa::{
-        self,
-        ot_based_ecdsa::{self, triples::generate_triple_many},
-        robust_ecdsa,
-    },
+    ecdsa::{self, ot_based_ecdsa, robust_ecdsa},
     participants::Participant,
     protocol::Protocol,
     test_utils::{
@@ -21,12 +17,6 @@ use threshold_signatures::{
         generate_participants_with_random_ids, run_keygen, run_simulation,
     },
 };
-
-type TriplePair = (
-    ot_based_ecdsa::triples::TripleShare,
-    ot_based_ecdsa::triples::TriplePub,
-);
-type TriplesResult = Vec<(Participant, Vec<TriplePair>)>;
 
 fn main() {
     let config = BenchConfig::from_env();
@@ -94,21 +84,21 @@ fn bench_cait_sith(
     config: &BenchConfig,
 ) {
     let mut triple_rng = MockCryptoRng::seed_from_u64(55);
-    let (triples, _) = ot_run_triples(participants, threshold, &config.latency, &mut triple_rng);
+    let (triples, _) = ot_run_triples(participants, threshold, 2, &config.latency, &mut triple_rng);
 
     bench_simulation(
         "Cait-Sith: triples",
         &|| {
             let mut rng = MockCryptoRng::seed_from_u64(55);
-            ot_run_triples(participants, threshold, &config.latency, &mut rng).1
+            ot_run_triples(participants, threshold, 2, &config.latency, &mut rng).1
         },
         config.samples,
     );
     bench_simulation(
-        "Cait-Sith: presign+sign online",
+        "Cait-Sith: sign",
         &|| {
             let mut rng = MockCryptoRng::seed_from_u64(77);
-            ot_run_presign_and_sign(
+            ot_run_sign(
                 participants,
                 &triples,
                 key_packages,
@@ -149,25 +139,8 @@ fn bench_robust_ecdsa(
     );
 }
 
-fn ot_run_triples(
-    participants: &[Participant],
-    threshold: ReconstructionThreshold,
-    latency: &LatencyModel,
-    rng: &mut MockCryptoRng,
-) -> (TriplesResult, SimulationMetrics) {
-    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = _>>)> =
-        Vec::with_capacity(participants.len());
-    for &p in participants {
-        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = generate_triple_many(participants, p, threshold, 2, rng_p)
-            .expect("Triple generation should succeed");
-        protocols.push((p, Box::new(protocol)));
-    }
-    run_simulation(protocols, latency)
-}
-
 #[allow(clippy::too_many_arguments)]
-fn ot_run_presign_and_sign(
+fn ot_run_sign(
     participants: &[Participant],
     two_triples: &[(Participant, Vec<TriplePair>)],
     key_packages: &[(Participant, ecdsa::KeygenOutput)],
@@ -194,11 +167,11 @@ fn ot_run_presign_and_sign(
         Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
     )> = Vec::with_capacity(participants.len());
     for (((p, keygen_out), share0), share1) in key_packages.iter().zip(shares0).zip(shares1) {
-        let protocol = ot_based_ecdsa::presign_and_sign(
+        let protocol = ot_based_ecdsa::sign(
             participants,
             coordinator,
             *p,
-            ot_based_ecdsa::PresignArguments {
+            ot_based_ecdsa::SignArguments {
                 triple0: (share0, pub0[0].clone()),
                 triple1: (share1, pub1[0].clone()),
                 keygen_out: keygen_out.clone(),
@@ -207,7 +180,7 @@ fn ot_run_presign_and_sign(
             tweak,
             msg_hash,
         )
-        .expect("Presign and sign should succeed");
+        .expect("Signing should succeed");
         protocols.push((*p, Box::new(protocol)));
     }
 
@@ -240,11 +213,11 @@ fn robust_run_sign(
     )> = Vec::with_capacity(participants.len());
     for (p, keygen_out) in key_packages {
         let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
-        let protocol = robust_ecdsa::presign_and_sign(
+        let protocol = robust_ecdsa::sign(
             participants,
             coordinator,
             *p,
-            robust_ecdsa::PresignArguments {
+            robust_ecdsa::SignArguments {
                 keygen_out: keygen_out.clone(),
                 max_malicious,
             },

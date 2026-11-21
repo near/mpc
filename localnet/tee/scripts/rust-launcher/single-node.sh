@@ -128,6 +128,7 @@ LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-$(find_free_port)}"
 
 # dstack
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
+# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
 OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 DISK="${DISK:-500G}"
@@ -197,6 +198,7 @@ render_env_and_conf() {
   export MPC_IMAGE="nearone/mpc-node"
   export MPC_ACCOUNT_ID="$NODE_ACCOUNT"
   export MPC_CONTRACT_ID="$CONTRACT_ACCOUNT"
+  export NEAR_GENESIS_HASH="${NEAR_GENESIS_HASH:-$(curl -s localhost:3030/status | jq -r .genesis_hash)}"
   export MPC_SECRET_STORE_KEY="${MPC_SECRET_STORE_KEY:-00000000000000000000000000000000}"
   # The launcher PORTS map is CVM->container. vmm-cli (in deploy-launcher.sh)
   # forwards host:$MIGRATION_PORT -> CVM:$INTERNAL_MIGRATION_PORT, so the

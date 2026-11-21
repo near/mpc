@@ -78,6 +78,14 @@ git checkout -b release-prep/v3.11.1
 ```
 
 Push the working branch and open a PR against the branch you started from.
+
+Before merging, check the "Mainnet protocol compatibility" CI job on the PR. It
+is red when the contract needs a newer protocol than mainnet runs. First run
+`./scripts/check-mainnet-protocol-version.sh`; if mainnet has upgraded, bump
+`MAINNET_PROTOCOL_VERSION` so the job tests the right protocol. A red job can be
+intended (e.g. a testnet-only release); if so, say in the release summary which
+protocol the contract needs and that it can't be deployed to mainnet before then.
+
 Once it merges:
 
 - **Major/minor**: a repo admin cuts `release/vX.Y` at the merged prep commit

@@ -1,6 +1,8 @@
-use pprof::{ProfilerGuardBuilder, Report};
+use inferno::flamegraph::{self, Options};
+use itertools::Itertools;
+use pprof::{Frames, ProfilerGuardBuilder, Report};
 use regex::Regex;
-use std::{sync::LazyLock, time::Duration};
+use std::{collections::HashMap, io, iter, sync::LazyLock, time::Duration};
 use thiserror::Error;
 use tokio::task::{JoinError, spawn_blocking};
 
@@ -64,6 +66,23 @@ pub(super) async fn collect_pprof(
         .map_err(Into::into)
 }
 
+// TODO(#5275): switch back to pprof's own flamegraph rendering once it uses inferno 0.12
+pub(super) fn write_flamegraph(report: &Report, writer: impl io::Write) -> io::Result<()> {
+    let stacks = collapsed_stacks(&report.data);
+    flamegraph::from_reader(&mut Options::default(), stacks.as_bytes(), writer)
+}
+
+fn collapsed_stacks(samples: &HashMap<Frames, isize>) -> String {
+    samples
+        .iter()
+        .map(|(stack, count)| {
+            let thread = iter::once(stack.thread_name_or_id());
+            let symbols = stack.frames.iter().flatten().rev().map(ToString::to_string);
+            format!("{} {count}", thread.chain(symbols).join(";"))
+        })
+        .join("\n")
+}
+
 #[derive(Debug, Error)]
 pub(super) enum ProfileCollectionError {
     #[error("pprof profiling error")]
@@ -91,8 +110,37 @@ fn normalized_thread_name(thread_name: &str) -> String {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use pprof::Symbol;
+    use std::time::SystemTime;
+
+    fn symbol(name: &str) -> Symbol {
+        Symbol {
+            name: Some(name.into()),
+            addr: None,
+            lineno: None,
+            filename: None,
+        }
+    }
+
+    #[test]
+    fn collapsed_stacks__should_list_frames_from_outermost_to_innermost() {
+        // Given
+        let stack = Frames {
+            frames: vec![vec![symbol("leaf"), symbol("mid")], vec![symbol("root")]],
+            thread_name: "worker".into(),
+            thread_id: 0,
+            sample_timestamp: SystemTime::UNIX_EPOCH,
+        };
+
+        // When
+        let collapsed_stacks = collapsed_stacks(&HashMap::from([(stack, 3)]));
+
+        // Then
+        assert_eq!(collapsed_stacks, "worker;root;mid;leaf 3");
+    }
 
     #[test]
     fn leaves_thread_name_unchanged_when_no_trailing_numeric_id_exists() {

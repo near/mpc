@@ -1,20 +1,23 @@
 use std::collections::HashMap;
 
 use rand::Rng;
-use rand_core::{CryptoRngCore, SeedableRng};
+use rand_core::{CryptoRngCore, RngCore, SeedableRng};
 
 use threshold_signatures::{
     ReconstructionThreshold,
     ecdsa::{
         self,
         ot_based_ecdsa::{
-            PresignArguments, presign_and_sign,
+            SignArguments, sign,
             triples::{TriplePub, TripleShare, generate_triple_many},
         },
     },
     participants::Participant,
     protocol::Protocol,
-    test_utils::{MockCryptoRng, generate_participants_with_random_ids, run_keygen},
+    test_utils::{
+        LatencyModel, MockCryptoRng, SimulationMetrics, generate_participants_with_random_ids,
+        run_keygen, run_simulation,
+    },
 };
 
 /// Used to prepare ot based ecdsa triples for benchmarking
@@ -43,8 +46,27 @@ pub fn ot_ecdsa_prepare_triples<R: CryptoRngCore + SeedableRng + Send + 'static>
     }
 }
 
+/// Runs a batch of `batch_size` triple generations among `participants` in the latency simulator
+pub fn ot_run_triples(
+    participants: &[Participant],
+    threshold: ReconstructionThreshold,
+    batch_size: usize,
+    latency: &LatencyModel,
+    rng: &mut MockCryptoRng,
+) -> (TriplesResult, SimulationMetrics) {
+    let mut protocols: Vec<(Participant, Box<dyn Protocol<Output = _>>)> =
+        Vec::with_capacity(participants.len());
+    for &p in participants {
+        let rng_p = MockCryptoRng::seed_from_u64(rng.next_u64());
+        let protocol = generate_triple_many(participants, p, threshold, batch_size, rng_p)
+            .expect("Triple generation should succeed");
+        protocols.push((p, Box::new(protocol)));
+    }
+    run_simulation(protocols, latency)
+}
+
 /// Used to prepare ot based ecdsa signatures for benchmarking, each consuming a pair of triples
-pub fn ot_ecdsa_prepare_presign_and_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
+pub fn ot_ecdsa_prepare_sign<R: CryptoRngCore + SeedableRng + Send + 'static>(
     two_triples: &[(Participant, Vec<(TripleShare, TriplePub)>)],
     threshold: ReconstructionThreshold,
     rng: &mut R,
@@ -74,11 +96,11 @@ pub fn ot_ecdsa_prepare_presign_and_sign<R: CryptoRngCore + SeedableRng + Send +
     for (((p, keygen_out), share0), share1) in
         key_packages.clone().into_iter().zip(shares0).zip(shares1)
     {
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &participants,
             coordinator,
             p,
-            PresignArguments {
+            SignArguments {
                 triple0: (share0, pub0[0].clone()),
                 triple1: (share1, pub1[0].clone()),
                 keygen_out,
@@ -88,7 +110,7 @@ pub fn ot_ecdsa_prepare_presign_and_sign<R: CryptoRngCore + SeedableRng + Send +
             msg_hash,
         )
         .map(|sig| Box::new(sig) as Box<dyn Protocol<Output = ecdsa::SignatureOption>>)
-        .expect("Presigning and signing should succeed");
+        .expect("Signing should succeed");
         protocols.push((p, protocol));
     }
     OTECDSAPreparedSig {
@@ -113,6 +135,9 @@ pub fn split_even_odd<T: Clone>(v: Vec<T>) -> (Vec<T>, Vec<T>) {
     }
     (even, odd)
 }
+
+pub type TriplesResult = Vec<(Participant, Vec<TriplePair>)>;
+pub type TriplePair = (TripleShare, TriplePub);
 
 type TriplesProtocols = Vec<(
     Participant,

@@ -1,4 +1,4 @@
-This document specifies the signing protocol, `presign_and_sign`. Once the message is known, the
+This document specifies the signing protocol, `sign`. Once the message is known, the
 signers consume two triples and run three rounds over one channel.
 
 *Note: Due to the complexity of signing with multiplicative triples, this protocol shifts from the signing formulae stated in [Preliminaries](../preliminaries.md) and computes* $R$ *as in* $R\gets \frac{1}{k}\cdot G$ *and* $s$ *as in* $s \gets k \cdot (H(m) + rx)$*. These formulae do not require changes to be done on the verifier's end*
