@@ -1,8 +1,11 @@
-# Lag and Uptime Link Type
+# Network Connectivity Link Observations
 
-This document builds on the [Network Connectivity Tracker](./network-connectivity-tracker.md), which describes the `ConnectivityMonitor` and the traits a link type has to implement.
+## Background
 
-To make this concrete, in this document, we explore how to convert an `IndexerHeightReport` into link observations, how those observations lead to link measurements and finally, how two link measurements are combined into a single connection status.
+This document builds on the [Network Connectivity Monitor](./network-connectivity-monitor.md), which describes the `ConnectivityMonitor` and the traits a link type has to implement.
+It lays out what connectivity data we currently track and how we can turn those into useful observations about link quality.
+
+Concretely, in this document, we explore how we can leverage an `IndexerHeightReport` to make qualitative statements about network connections in the cluster.
 
 ```mermaid
 flowchart LR
@@ -26,6 +29,7 @@ flowchart LR
 ```
 
 ## Link observation
+
 An `IndexerHeightReport` reports the reporter's indexer height, as well as the indexer height it has last received from each of its peers.
 
 We can use that to approximate the latency of a link:
@@ -34,6 +38,7 @@ indexer height lag(A --> B) ~ first_hand_indexer_height(A) - indexer_height of A
 ```
 
 ```rust
+/// a concrete type for a link observation
 pub enum IndexerHeightLag {
     /// `reporter` lists `peer`: the height `peer` reported to us first-hand, minus the height
     /// `reporter` lists for it. Zero if `reporter` is ahead.
@@ -67,57 +72,59 @@ impl IndexerHeightLag {
         }
     }
 }
-
 ```
 
-## Tracking link history
 
-We keep track of a bounded number of observations. The idea is that we use uptime history to model the probability that the link will remain up for a given duration.
-We also track block height lags, as even though a link may be up, if it is very slow, it may not be suitable for some computations.
+### Deriving a link observation from the `IndexerHeightReport`
+
+Recall that in [Network Connectivity Monitor](./network-connectivity-monitor.md), we had a generic type `O` for link observation, and that we introduced the trait `DeriveLinkObservations` to derive a series of observations from the peer report. Recall also the `ObservationContext` that the trait is given:
 
 ```rust
-/// What has been measured about one directed link: how far the heights it carries lag behind, and
-/// when it was up.
-#[derive(Default)]
-pub struct LagsAndUptimeHistory {
-    lags: BlockHeightLags,
-    uptime_history: UptimeHistory,
-}
-
-/// The most recent lags of a link.
-#[derive(Default)]
-struct BlockHeightLags {
-    lags: VecDeque<BlockCount>,
-}
-
-/// When a link was up: the last finished up periods and the running one.
-#[derive(Default)]
-struct UptimeHistory {
-    /// How long each finished up period lasted. Each one ended in a disconnect.
-    finished_uptimes: VecDeque<Duration>,
-    /// `None` while the link is down.
-    up_since: Option<Instant>,
+pub struct ObservationContext<'a, N> {
+    pub first_hand_indexer_heights: &'a FirstHandIndexerHeights<N>,
 }
 ```
 
-We infer the link status from its history:
+This is exactly what we do now:
 
 ```rust
+impl<N: Ord + Clone> DeriveLinkObservations<N> for IndexerHeightReport<N> {
+    type Observation = IndexerHeightLag;
 
-impl ReportLinkStatus for LagsAndUptimeHistory {
-    type LinkStatus = LinkLagAndUptime;
-
-    fn link_status(&self) -> LinkLagAndUptime {
-        match self.uptime_history.summary() {
-            Some(uptime) => LinkLagAndUptime::Up(UpLink {
-                mean_lag: self.lags.mean(),
-                uptime,
-            }),
-            None => LinkLagAndUptime::Down,
+    fn derive_link_observations(
+        &self,
+        context: &ObservationContext<'_, N>,
+    ) -> Vec<DerivedLinkObservation<N, IndexerHeightLag>> {
+        // infers indexer height lag from first hand report in the context and the reported peer heights
+        let IndexerHeightReport {
+            reporter,
+            indexer_heights,
+        } = self;
+        let mut res = Vec::new();
+        for (my_peer, &first_hand) in context.first_hand_indexer_heights.iter() {
+            let Ok(link) = DirectedEdge::new(my_peer.clone(), reporter.clone()) else {
+                continue;
+            };
+            let peer_reported_height = indexer_heights.get(my_peer);
+            let observation = IndexerHeightLag::new(first_hand, peer_reported_height.copied());
+            res.push(DerivedLinkObservation { link, observation });
         }
+        res
     }
 }
+```
 
+## The link status
+
+Recall that we had a generic link status type (`LS`) in [Network Connectivity Monitor](./network-connectivity-monitor.md).
+We make this case concrete. We want the link status to describe:
+- whether the link is up or down
+- for how long the link has been up
+- how often it has been interrupted in the past (as that will help us try to predict how likely it is to break)
+- if the link is qualitatively insufficient (is too slow? do block heights arrive too late?)
+
+```rust
+// a concrete type for link status `LS`
 pub enum LinkLagAndUptime {
     /// The last observation was `Absent`.
     Down,
@@ -141,7 +148,86 @@ pub struct UptimeSummary {
 }
 ```
 
-And finally, we infer the connection status from two link statuses:
+## The link type
+
+Now, the link status is a condensed view of the link history, aggregated from a number of link observations.
+The idea is that we use uptime history to model the probability that the link will remain up for a given duration.
+We also track block height lags, as even though a link may be up, if it is very slow, it may not be suitable for some computations.
+
+The link is what processes and stores our link observations of type `IndexerHeightLag`, and produces a `LinkStatus`:
+
+```rust
+/// What has been measured about one directed link: how far the heights it carries lag behind, and
+/// when it was up.
+#[derive(Default)]
+pub struct LagsAndUptimeHistory {
+    lags: BlockHeightLags,
+    uptime_history: UptimeHistory,
+}
+
+/// The most recent lags of a link (exact number tbd).
+#[derive(Default)]
+struct BlockHeightLags {
+    lags: VecDeque<BlockCount>,
+}
+
+/// When a link was up: the last finished up periods (exact number tbd) and the running one.
+#[derive(Default)]
+struct UptimeHistory {
+    /// How long each finished up period lasted. Each one ended in a disconnect.
+    finished_uptimes: VecDeque<Duration>,
+    /// `None` while the link is down.
+    up_since: Option<Instant>,
+}
+```
+
+```rust
+impl ReportLinkStatus for LagsAndUptimeHistory {
+    type LinkStatus = LinkLagAndUptime;
+
+    fn link_status(&self) -> LinkLagAndUptime {
+        match self.uptime_history.summary() {
+            Some(uptime) => LinkLagAndUptime::Up(UpLink {
+                mean_lag: self.lags.mean(),
+                uptime,
+            }),
+            None => LinkLagAndUptime::Down,
+        }
+    }
+}
+
+impl UpdateLinkStatus<IndexerHeightLag> for LagsAndUptimeHistory {
+    fn update_with_observation(
+        &mut self,
+        observation: IndexerHeightLag,
+        at: Instant,
+    ) -> LinkStatusChange<LinkLagAndUptime> {
+        let previous = self.link_status();
+        match observation {
+            IndexerHeightLag::Present(lag) => {
+                self.uptime_history.record_up(at);
+                self.lags.record(lag);
+            }
+            IndexerHeightLag::Unknown => self.uptime_history.record_up(at),
+            IndexerHeightLag::Absent => {
+                self.uptime_history.record_down(at);
+                self.lags.clear();
+            }
+        }
+        let status = self.link_status();
+        if status == previous {
+            LinkStatusChange::Unchanged
+        } else {
+            LinkStatusChange::Changed(status)
+        }
+    }
+}
+```
+
+
+## Connection Status
+
+And finally, recall that two link statuses `A --> B` and `B --> A` must yield the connection status for `A <--> B`:
 
 ```rust
 impl InferConnection for LinkLagAndUptime {
@@ -161,6 +247,7 @@ impl InferConnection for LinkLagAndUptime {
     }
 }
 
+/// the actual connection status
 pub struct ConnectionLagAndUptime {
     round_trip_lag: RoundTripLag,
     /// One per link, each judged on its own. Sorted, so that the status does not depend on which
@@ -184,12 +271,12 @@ impl ConnectionLagAndUptime {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RoundTripLag {
     Good,
-    /// Above [`AT_RISK_ROUND_TRIP_LAG`]: the connection may be about to break.
+    /// Above [`AT_RISK_ROUND_TRIP_LAG`] (exact value tbd): the connection may be about to break.
     AtRisk,
 }
 
 impl RoundTripLag {
-    /// `None` above [`MAX_ROUND_TRIP_LAG`]: the connection counts as broken.
+    /// `None` above [`MAX_ROUND_TRIP_LAG`] (exact value tbd): the connection counts as broken.
     fn new(a: BlockCount, b: BlockCount) -> Option<Self> {
         let round_trip = BlockCount::new(u64::from(a).saturating_add(u64::from(b)));
         if round_trip > MAX_ROUND_TRIP_LAG {
@@ -240,3 +327,4 @@ impl CheckComputationSupport for ConnectionLagAndUptime {
     }
 }
 ```
+
