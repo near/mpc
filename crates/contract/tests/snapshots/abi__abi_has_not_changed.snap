@@ -17,7 +17,6 @@ expression: abi
     "functions": [
       {
         "name": "add_domains_votes",
-        "doc": " Returns the pending `vote_add_domains` votes, keyed by proposal hash.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
