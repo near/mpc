@@ -106,7 +106,7 @@ pub struct TlsMeshSender {
     my_id: ParticipantId,
     participants: Vec<ParticipantId>,
     connections: HashMap<ParticipantId, Arc<PersistentConnection>>,
-    connectivities: Arc<AllNodeConnectivities<OutgoingConnection, IncomingConnection>>,
+    connectivities: Arc<AllNodeConnectivities<OutgoingConnection, IncomingConnectionInfo>>,
 }
 
 /// Implements MeshNetworkTransportReceiver.
@@ -156,7 +156,7 @@ struct ParticipantIdentities {
 /// connection is broken.
 struct PersistentConnection {
     target_participant_id: ParticipantId,
-    connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
+    connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnectionInfo>>,
     // The task that loops to connect to the target. When `PersistentConnection`
     // is dropped, this task is aborted. The task owns any active connection,
     // so dropping it also frees any connection currently alive.
@@ -645,7 +645,7 @@ impl PersistentConnection {
         initial_target_address: String,
         target_participant_id: ParticipantId,
         participant_identities: Arc<ParticipantIdentities>,
-        connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
+        connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnectionInfo>>,
         resolve_address: impl Fn() -> Option<String> + Send + 'static,
     ) -> anyhow::Result<PersistentConnection> {
         let connectivity_clone = connectivity.clone();
@@ -717,18 +717,18 @@ impl PersistentConnection {
     }
 }
 
-pub struct IncomingConnection {
+pub struct IncomingConnectionInfo {
     sender_connection_id: u32,
     peer_network_protocol_version: NetworkProtocolVersion,
 }
 
-impl SenderConnectionId for IncomingConnection {
+impl SenderConnectionId for IncomingConnectionInfo {
     fn sender_connection_id(&self) -> u32 {
         self.sender_connection_id
     }
 }
 
-impl HasPeerNetworkProtocolVersion for IncomingConnection {
+impl HasPeerNetworkProtocolVersion for IncomingConnectionInfo {
     fn peer_network_protocol_version(&self) -> NetworkProtocolVersion {
         self.peer_network_protocol_version
     }
@@ -779,7 +779,7 @@ where
     let mut connections = HashMap::new();
     let connectivities = Arc::new(AllNodeConnectivities::<
         OutgoingConnection,
-        IncomingConnection,
+        IncomingConnectionInfo,
     >::new(
         config.my_participant_id,
         &config
@@ -900,7 +900,7 @@ impl OutgoingWatchdog {
 
 async fn incoming_connection_handler(
     message_sender: tokio::sync::mpsc::UnboundedSender<PeerMessage>,
-    connectivities: Arc<AllNodeConnectivities<OutgoingConnection, IncomingConnection>>,
+    connectivities: Arc<AllNodeConnectivities<OutgoingConnection, IncomingConnectionInfo>>,
     tcp_stream: TcpStream,
     tls_acceptor: TlsAcceptor,
     participant_identities: Arc<ParticipantIdentities>,
@@ -982,7 +982,7 @@ async fn incoming_connection_handler(
         }
     };
     tracing::info!("Incoming {} <-- {} handshake succeeded", my_id, peer_id);
-    let incoming_conn = Arc::new(IncomingConnection {
+    let incoming_conn = Arc::new(IncomingConnectionInfo {
         sender_connection_id,
         peer_network_protocol_version,
     });
@@ -1400,7 +1400,7 @@ pub mod testing {
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        IncomingConnection, IncomingConnectionLimits, MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
+        IncomingConnectionInfo, IncomingConnectionLimits, MAX_CONCURRENT_CONNECTIONS_PER_PARTICIPANT,
         OUTGOING_MAX_MISSED_CHECKS, OutgoingConnection, OutgoingWatchdog, ParticipantIdentities,
         PersistentConnection, incoming_connection_handler, outgoing_queue::OutgoingQueue,
     };
@@ -1749,7 +1749,7 @@ mod tests {
         let (queue, mut packets) = OutgoingQueue::new();
         let connection = test_outgoing_connection(queue, peer_version);
         let connectivity =
-            Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnection>::new());
+            Arc::new(NodeConnectivity::<OutgoingConnection, IncomingConnectionInfo>::new());
         connectivity.set_outgoing_connection(&connection);
         let persistent_connection = PersistentConnection {
             target_participant_id: ParticipantId::from_raw(1),
@@ -1976,7 +1976,7 @@ mod tests {
 
         start_root_task_with_periodic_dump(async move {
             let connectivities =
-                AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                AllNodeConnectivities::<OutgoingConnection, IncomingConnectionInfo>::new(
                     my_id,
                     &[my_id, target_id],
                 );
@@ -2022,7 +2022,7 @@ mod tests {
 
         start_root_task_with_periodic_dump(async move {
             let connectivities =
-                AllNodeConnectivities::<OutgoingConnection, IncomingConnection>::new(
+                AllNodeConnectivities::<OutgoingConnection, IncomingConnectionInfo>::new(
                     my_id,
                     &[my_id, target_id],
                 );
@@ -2069,7 +2069,7 @@ mod tests {
         let my_id = ParticipantId::from_raw(0);
         let connectivities = Arc::new(AllNodeConnectivities::<
             OutgoingConnection,
-            IncomingConnection,
+            IncomingConnectionInfo,
         >::new(my_id, &[my_id]));
 
         // When
@@ -2116,7 +2116,7 @@ mod tests {
                 .collect();
             let connectivities = Arc::new(AllNodeConnectivities::<
                 OutgoingConnection,
-                IncomingConnection,
+                IncomingConnectionInfo,
             >::new(my_id, &[my_id, peer_id]));
             let (message_sender, _message_receiver) = mpsc::unbounded_channel();
             let (server_tcp, client_tcp) = must_accept_silent_connection().await;
@@ -2203,7 +2203,7 @@ mod tests {
         }
 
         struct LoopbackPeer {
-            connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnection>>,
+            connectivity: Arc<NodeConnectivity<OutgoingConnection, IncomingConnectionInfo>>,
             client: tokio_util::codec::Framed<
                 tokio_rustls::client::TlsStream<TcpStream>,
                 tokio_util::codec::LengthDelimitedCodec,
@@ -2220,7 +2220,7 @@ mod tests {
                     .insert(make_signing_key().verifying_key(), peer_id);
                 let connectivities = Arc::new(AllNodeConnectivities::<
                     OutgoingConnection,
-                    IncomingConnection,
+                    IncomingConnectionInfo,
                 >::new(my_id, &[my_id, peer_id]));
                 let (sender, _) = mpsc::unbounded_channel();
                 let (local, remote) = must_accept_silent_connection().await;

@@ -109,7 +109,7 @@ impl MpcContract {
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
         assert_migration_destination_allowed(
-            running_state.parameters.participants(),
+            running_state.participants(),
             &self.tee_state,
             &account_id,
             &destination_node_info,
@@ -156,7 +156,7 @@ impl MpcContract {
             return Err(InvalidState::ProtocolStateNotRunning.into());
         };
 
-        let Some(existing_info) = running_state.parameters.participants().info(&account_id) else {
+        let Some(existing_info) = running_state.participants().info(&account_id) else {
             return Err(InvalidState::NotParticipant { account_id }.into());
         };
 
@@ -166,7 +166,7 @@ impl MpcContract {
         };
         // Checked after the participant/state validation so those errors take precedence.
         require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
-        running_state.parameters.update_info(account_id, new_info)
+        running_state.update_participant_info(account_id, new_info)
     }
 
     /// Finalizes a node migration for the calling account.
@@ -216,7 +216,7 @@ impl MpcContract {
 
         // Converted after the participant/state validation so those errors take precedence.
         let keyset: Keyset = keyset.try_into_contract_type()?;
-        let expected_keyset = &running_state.keyset;
+        let expected_keyset = running_state.keyset();
         if *expected_keyset != keyset {
             return Err(errors::NodeMigrationError::KeysetMismatch {
                 found: keyset,
@@ -241,7 +241,7 @@ impl MpcContract {
         // Re-checked here, not just in `start_node_migration`: the participant set and the
         // destination node may have changed since the migration was started
         assert_migration_destination_allowed(
-            running_state.parameters.participants(),
+            running_state.participants(),
             &self.tee_state,
             &account_id,
             &expected_destination_node,
@@ -249,7 +249,6 @@ impl MpcContract {
         )?;
 
         let old_tls_key = running_state
-            .parameters
             .participants()
             .info(&account_id)
             .map(|info| info.tls_public_key.clone());
@@ -263,9 +262,7 @@ impl MpcContract {
             contract_participant_info
         );
 
-        running_state
-            .parameters
-            .update_info(account_id, contract_participant_info)?;
+        running_state.update_participant_info(account_id, contract_participant_info)?;
 
         // Safe to drop unconditionally: `assert_migration_destination_allowed` above rejects a
         // destination that reuses `old_key`, so the config removed here is never the new node's.
@@ -402,8 +399,8 @@ mod tests {
 
     fn running_contract() -> (MpcContract, Keyset, Participants) {
         let running_state = gen_running_state(NUM_DOMAINS);
-        let keyset = running_state.keyset.clone();
-        let participants = running_state.parameters.participants().clone();
+        let keyset = running_state.keyset().clone();
+        let participants = running_state.participants().clone();
         let contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running_state));
         (contract, keyset, participants)
@@ -446,7 +443,7 @@ mod tests {
             let ProtocolContractState::Running(running) = &contract.protocol_state else {
                 panic!("expected running state");
             };
-            running.parameters.participants().clone()
+            running.participants().clone()
         };
         let mut expected_migration_state = BTreeMap::new();
         let mut test_env = Environment::new(None, None, None);
@@ -789,10 +786,9 @@ mod tests {
     fn test_conclude_node_migration_failure_resharing() {
         let (_, resharing_state) = gen_resharing_state(NUM_DOMAINS);
 
-        let keyset = resharing_state.previous_running_state.keyset.clone();
+        let keyset = resharing_state.previous_running_state.keyset().clone();
         let participants = resharing_state
             .previous_running_state
-            .parameters
             .participants()
             .clone();
         let resharing_state = ProtocolContractState::Resharing(resharing_state);
@@ -861,11 +857,9 @@ mod tests {
             {
                 let res_participants = {
                     match &contract.protocol_state {
-                        ProtocolContractState::Running(running) => {
-                            running.parameters.participants()
-                        }
+                        ProtocolContractState::Running(running) => running.participants(),
                         ProtocolContractState::Resharing(resharing) => {
-                            resharing.previous_running_state.parameters.participants()
+                            resharing.previous_running_state.participants()
                         }
                         ProtocolContractState::Initializing(initializing) => initializing
                             .generating_key
@@ -1107,12 +1101,9 @@ mod tests {
         let ProtocolContractState::Running(running) = &contract.protocol_state else {
             panic!("expected running state");
         };
+        assert_eq!(running.participants().info(&account_id), Some(&own_info));
         assert_eq!(
-            running.parameters.participants().info(&account_id),
-            Some(&own_info)
-        );
-        assert_eq!(
-            running.parameters.participants().id(&account_id).unwrap(),
+            running.participants().id(&account_id).unwrap(),
             participant_id
         );
     }

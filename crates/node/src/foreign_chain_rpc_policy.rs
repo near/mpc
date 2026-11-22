@@ -19,7 +19,7 @@ pub(crate) fn rpc_quorum_statuses(
     whitelist: &ForeignChainWhitelist,
 ) -> BTreeMap<ForeignChain, RpcQuorumStatus> {
     local
-        .iter_chains()
+        .into_iter()
         .filter_map(|(chain, local_chain)| {
             let quorum = ChainQuorum::new(local_chain, whitelist.get(&chain)?)?;
             Some((chain, quorum.status))
