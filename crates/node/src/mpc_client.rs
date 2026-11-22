@@ -526,7 +526,7 @@ impl MpcClient {
                             .unwrap()
                             .last_response_submission = Some(Clock::real().now());
 
-                        anyhow::Ok(true)
+                        anyhow::Ok(())
                     },
                 );
             }

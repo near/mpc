@@ -199,7 +199,7 @@ impl EcdsaSignatureProvider {
                 // improve throughput by avoiding thundering herd situations.
                 // Further optimization can be done to avoid thundering herd
                 // situations in the first place.
-                tokio::time::sleep(Duration::from_secs(
+                tokio::time::sleep(std::time::Duration::from_secs(
                     config.parallel_triple_generation_stagger_time_sec,
                 ))
                 .await;
@@ -213,7 +213,7 @@ impl EcdsaSignatureProvider {
                 tracing::error!(?err, "failed to discard owned triples");
             }
 
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
 

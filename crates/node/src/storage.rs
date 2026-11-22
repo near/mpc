@@ -12,23 +12,23 @@ pub struct SignRequestStorage {
 
 impl SignRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = broadcast::channel(500);
+        let (tx, _) = tokio::sync::broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &SignatureRequest) -> anyhow::Result<bool> {
+    pub fn add(&self, request: &SignatureRequest) -> anyhow::Result<()> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::SignRequest, &key)?.is_some() {
-            return Ok(false);
+            return Err(anyhow::anyhow!("signature request already exists"));
         }
         let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::SignRequest, &key, &value_ser);
         update.commit()?;
         let _ = self.add_sender.send(request.id);
-        Ok(true)
+        Ok(())
     }
 
     /// Returns when a signature request with given id is present, then returns it.
@@ -71,7 +71,7 @@ pub struct CKDRequestStorage {
 
 impl CKDRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = broadcast::channel(500);
+        let (tx, _) = tokio::sync::broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
@@ -130,7 +130,7 @@ pub struct VerifyForeignTransactionRequestStorage {
 
 impl VerifyForeignTransactionRequestStorage {
     pub fn new(db: Arc<SecretDB>) -> anyhow::Result<Self> {
-        let (tx, _) = broadcast::channel(500);
+        let (tx, _) = tokio::sync::broadcast::channel(500);
         Ok(Self { db, add_sender: tx })
     }
 
