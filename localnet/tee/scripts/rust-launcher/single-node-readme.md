@@ -72,7 +72,6 @@ After collecting `public_data.json`, update test assets:
 mkdir -p crates/test-utils/assets/dstack-<version>
 cp <WORKDIR>/public_data.json crates/test-utils/assets/dstack-<version>/public_data.json
 (cd crates/test-utils/assets && bash ./create-assets.sh dstack-<version>/public_data.json dstack-<version>)
-touch crates/test-utils/assets/dstack-<version>/collateral.json
 cp crates/test-utils/assets/dstack-<version>/tcb_info.json crates/attestation-types/assets/tcb_info.json
 ```
 

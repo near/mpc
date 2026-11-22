@@ -42,12 +42,6 @@ Capture on the release (non-dev) image: set `OS_IMAGE=dstack-<version>`, since t
    bash ./create-assets.sh dstack-<version>/public_data.json dstack-<version>
    ```
 
-   Then create an empty `collateral.json`, so the crate compiles until step 8 fills it in:
-
-   ```shell
-   touch dstack-<version>/collateral.json
-   ```
-
 This will regenerate the following files:
 
 - `near_p2p_public_key.pub`
@@ -57,6 +51,7 @@ This will regenerate the following files:
 - `tcb_info.json`
 - `launcher_image_compose.yaml`
 - `mpc_image_digest.txt`
+- `collateral.json`, empty when new; step 8 fills it in
 
 All files will be written into the specified output directory.
 
