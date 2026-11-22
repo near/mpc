@@ -1,6 +1,7 @@
 use std::num::NonZeroU16;
 
 use launcher_interface::types::DockerSha256Digest;
+use mpc_primitives::hash::GenesisHash;
 use near_account_id::AccountId;
 
 use clap::{Parser, ValueEnum};
@@ -25,6 +26,10 @@ pub struct CliArgs {
     /// Account id of the MPC contract the node serves
     #[arg(long, env = "MPC_CONTRACT_ID")]
     pub mpc_contract_id: AccountId,
+
+    /// Genesis hash of the chain the MPC contract runs on
+    #[arg(long, env = "NEAR_GENESIS_HASH")]
+    pub near_genesis_hash: GenesisHash,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]

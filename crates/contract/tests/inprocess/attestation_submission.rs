@@ -136,7 +136,7 @@ impl TestSetupBuilder {
                         .unwrap();
                 }
 
-                assert_matches!(setup.contract.state(), ProtocolContractState::Running(_));
+                assert_matches!(setup.contract.state(), ProtocolContractState::Resharing(_));
             }
         };
 

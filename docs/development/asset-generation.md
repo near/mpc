@@ -239,7 +239,7 @@ section of the node configuration specifies:
 If a node owns fewer triples than configured, it initiates new generation
 computations (see
 [`providers/ecdsa/triple.rs`](https://github.com/near/mpc/blob/main/crates/node/src/providers/ecdsa/triple.rs)).
-Triples are generated in batches of `triple.batch_size` (64 by default).
+Triples are generated in batches of `triple.batch_size` (16 by default).
 There is one triple generation loop per triple store, that is, per
 distinct reconstruction threshold `t` among the OT-based ECDSA domains.
 
@@ -337,7 +337,7 @@ Defined in `crates/node-config/src/lib.rs` and set in `config.yaml`.
 | `desired_triples_to_buffer` | `usize` | Target number of owned triples to maintain. Generation pauses when `num_owned + in_flight >= desired`. |
 | `timeout_sec` | `u64` | Timeout for a single triple generation protocol execution. |
 | `parallel_triple_generation_stagger_time_sec` | `u64` | Delay between spawning successive triple generation tasks, to prevent all tasks from starting at the same time. |
-| `batch_size` | `usize` | Triples produced per generation computation. Even, non-zero and at most 64; defaults to 64. Only the leader reads it; followers take the size from the leader's task id. |
+| `batch_size` | `usize` | Triples produced per generation computation. Even, non-zero and at most 64; defaults to 16. Only the leader reads it; followers take the size from the leader's task id. |
 
 ### `SignatureConfig`
 

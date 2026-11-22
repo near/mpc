@@ -1,4 +1,5 @@
 use crate::sandbox::common::SandboxTestSetup;
+use mpc_contract::primitives::test_utils::bogus_genesis_hash;
 use near_mpc_contract_interface::types::BlockCount;
 
 #[tokio::test]
@@ -40,4 +41,24 @@ async fn contract_configuration_can_be_set_on_initialization() {
         serde_json::to_value(stored_config).unwrap(),
         serde_json::to_value(init_config).unwrap()
     );
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn init__should_store_the_genesis_hash() {
+    // Given
+    let SandboxTestSetup {
+        worker: _worker,
+        contract,
+        ..
+    } = SandboxTestSetup::builder()
+        .with_number_of_participants(2)
+        .build()
+        .await;
+
+    // When
+    let genesis_hash = contract.genesis_hash().await.unwrap().value;
+
+    // Then
+    assert_eq!(genesis_hash, Some(bogus_genesis_hash()));
 }

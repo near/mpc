@@ -65,7 +65,7 @@ pub(super) fn compare(
     whitelist: &ForeignChainWhitelist,
 ) -> Vec<Diagnostic> {
     local
-        .iter_chains()
+        .into_iter()
         .flat_map(|(chain, local_config)| match whitelist.get(&chain) {
             Some(whitelist_entry) => compare_chain(chain, local_config, whitelist_entry),
             None => vec![Diagnostic {

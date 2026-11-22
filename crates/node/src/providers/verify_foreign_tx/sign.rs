@@ -202,7 +202,7 @@ impl VerifyForeignTxProvider {
         let (_, local_chain) = self
             .config
             .foreign_chains
-            .iter_chains()
+            .into_iter()
             .find(|(configured, _)| *configured == chain)
             .ok_or(NoRpcQuorumError::NotConfigured { chain })?;
         let whitelist = self.foreign_chain_whitelist.borrow();

@@ -1,5 +1,6 @@
 use std::io::Write;
 use std::path::Path;
+use std::process::Command;
 
 use clap::Parser;
 use launcher_interface::types::{
@@ -10,7 +11,8 @@ use mpc_primitives::hash::MPC_IMAGE_HASH_EVENT;
 use compose::launch_mpc_container;
 use config::{intercept_node_config, validate_image_reference};
 use constants::{
-    DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, IMAGE_DIGEST_FILE, MPC_CONFIG_SHARED_PATH,
+    DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, DSTACK_UTIL_PATH, IMAGE_DIGEST_FILE,
+    MPC_CONFIG_SHARED_PATH,
 };
 use error::LauncherError;
 use selection::select_image_hash;
@@ -33,6 +35,7 @@ pub async fn run() -> Result<(), LauncherError> {
     tracing::info!(
         platform = ?args.platform,
         mpc_contract_id = %args.mpc_contract_id,
+        near_genesis_hash = %args.near_genesis_hash,
         "starting launcher"
     );
 
@@ -58,12 +61,16 @@ pub async fn run() -> Result<(), LauncherError> {
     .await?;
 
     if args.platform == Platform::Tee {
-        emit_image_hash_event(&manifest_digest).await?;
+        extend_rtmr3_with_dstack_util(&manifest_digest)?;
     }
 
     let tee_config = build_tee_config(args.platform, manifest_digest.clone());
-    let mpc_node_config =
-        intercept_node_config(config.mpc_node_config, &tee_config, &args.mpc_contract_id)?;
+    let mpc_node_config = intercept_node_config(
+        config.mpc_node_config,
+        &tee_config,
+        &args.mpc_contract_id,
+        &args.near_genesis_hash,
+    )?;
 
     write_config_atomically(&mpc_node_config)?;
 
@@ -127,16 +134,32 @@ fn load_approved_hashes(
     }
 }
 
-async fn emit_image_hash_event(manifest_digest: &DockerSha256Digest) -> Result<(), LauncherError> {
-    let dstack_client = dstack_sdk::dstack_client::DstackClient::new(Some(DSTACK_UNIX_SOCKET));
+fn extend_rtmr3_with_dstack_util(
+    manifest_digest: &DockerSha256Digest,
+) -> Result<(), LauncherError> {
+    tracing::info!("measuring MPC image into RTMR3 via dstack-util extend");
+    let output = Command::new(DSTACK_UTIL_PATH)
+        .env_clear()
+        .args(dstack_util_extend_args(manifest_digest))
+        .output()
+        .map_err(LauncherError::DstackUtilSpawn)?;
 
-    dstack_client
-        .emit_event(
-            MPC_IMAGE_HASH_EVENT.to_string(),
-            manifest_digest.as_ref().to_vec(),
-        )
-        .await
-        .map_err(|e| LauncherError::DstackEmitEventFailed(e.to_string()))
+    if !output.status.success() {
+        return Err(LauncherError::DstackUtilExtendFailed(output));
+    }
+    Ok(())
+}
+
+/// `dstack-util extend` hex-decodes `--payload` and measures the raw bytes, which the verifier
+/// compares with the digest.
+fn dstack_util_extend_args(manifest_digest: &DockerSha256Digest) -> [String; 5] {
+    [
+        "extend".into(),
+        "--event".into(),
+        MPC_IMAGE_HASH_EVENT.into(),
+        "--payload".into(),
+        manifest_digest.as_hex(),
+    ]
 }
 
 fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeConfig {
@@ -176,4 +199,32 @@ fn write_config_atomically(mpc_node_config: &toml::Table) -> Result<(), Launcher
     })?;
 
     Ok(())
+}
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dstack_util_extend_args__should_pass_the_digest_as_bare_hex_payload() {
+        // Given
+        let hex = "0123456789abcdef".repeat(4);
+        let digest: DockerSha256Digest = format!("sha256:{hex}").parse().unwrap();
+
+        // When
+        let args = dstack_util_extend_args(&digest);
+
+        // Then
+        assert_eq!(
+            args,
+            [
+                "extend",
+                "--event",
+                MPC_IMAGE_HASH_EVENT,
+                "--payload",
+                hex.as_str()
+            ]
+        );
+    }
 }

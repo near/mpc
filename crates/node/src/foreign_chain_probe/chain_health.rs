@@ -52,13 +52,60 @@ impl ChainHealth {
     }
 }
 
-/// `healthy` and `unhealthy` count only the providers in [`ChainQuorum::counted_providers`],
-/// `wrong_network` counts every probed provider.
 #[derive(Default)]
 struct ProviderTally {
     wrong_network: usize,
     healthy: usize,
     unhealthy: usize,
+}
+
+impl ProviderTally {
+    fn record(self, verdict: ProviderVerdict) -> Self {
+        match verdict {
+            ProviderVerdict::WrongNetwork => Self {
+                wrong_network: self.wrong_network.saturating_add(1),
+                ..self
+            },
+            ProviderVerdict::Healthy => Self {
+                healthy: self.healthy.saturating_add(1),
+                ..self
+            },
+            ProviderVerdict::Unhealthy => Self {
+                unhealthy: self.unhealthy.saturating_add(1),
+                ..self
+            },
+        }
+    }
+}
+
+impl FromIterator<ProviderVerdict> for ProviderTally {
+    fn from_iter<I: IntoIterator<Item = ProviderVerdict>>(verdicts: I) -> Self {
+        verdicts.into_iter().fold(Self::default(), Self::record)
+    }
+}
+
+/// [`ProviderVerdict::WrongNetwork`] applies to every probed provider and wins over the others,
+/// which apply only to the providers in [`ChainQuorum::counted_providers`]. A chain with a provider
+/// on another network is judged by that alone, so its other counts do not matter.
+enum ProviderVerdict {
+    WrongNetwork,
+    Healthy,
+    Unhealthy,
+}
+
+impl ProviderVerdict {
+    /// [`None`] for a provider outside [`ChainQuorum::counted_providers`] on the expected network.
+    fn of(row: &ProviderHealth, counted: &BTreeSet<&str>) -> Option<Self> {
+        if matches!(row.status, ProviderStatus::WrongNetwork { .. }) {
+            Some(Self::WrongNetwork)
+        } else if !counted.contains(row.provider.0.as_str()) {
+            None
+        } else if row.status.is_healthy() {
+            Some(Self::Healthy)
+        } else {
+            Some(Self::Unhealthy)
+        }
+    }
 }
 
 /// Leaves out a chain that is not whitelisted. A chain whose quorum cannot be enforced or is not
@@ -74,21 +121,12 @@ pub(crate) fn judge<'a>(
         .into_iter()
         .filter_map(|(chain, local_chain)| {
             let whitelist_entry = whitelist.get(&chain)?;
-            let probed_rows: Vec<&ProviderHealth> = report
-                .rows()
-                .iter()
-                .filter(|row| {
-                    row.chain == chain
-                        && row.status.was_probed()
-                        && row.status != ProviderStatus::MissingExpectedFingerprint
-                })
-                .collect();
             let health = match ChainQuorum::new(local_chain, whitelist_entry) {
                 None => Some(ChainHealth::InvalidQuorum(whitelist_entry.quorum)),
                 Some(chain_quorum) if !chain_quorum.status.reaches_quorum() => {
                     Some(ChainHealth::BelowQuorum(chain_quorum.status))
                 }
-                Some(chain_quorum) => judge_probed_chain(&probed_rows, &chain_quorum),
+                Some(chain_quorum) => judge_probed_chain(&report.probed_rows(chain), &chain_quorum),
             };
             health.map(|health| (chain, health))
         })
@@ -112,22 +150,8 @@ fn judge_probed_chain(
         .collect();
     let tally = probed_rows
         .iter()
-        .fold(ProviderTally::default(), |tally, row| {
-            let is_counted = counted.contains(row.provider.0.as_str());
-            let is_healthy = row.status.is_healthy();
-            ProviderTally {
-                wrong_network: tally.wrong_network.saturating_add(usize::from(matches!(
-                    row.status,
-                    ProviderStatus::WrongNetwork { .. }
-                ))),
-                healthy: tally
-                    .healthy
-                    .saturating_add(usize::from(is_counted && is_healthy)),
-                unhealthy: tally
-                    .unhealthy
-                    .saturating_add(usize::from(is_counted && !is_healthy)),
-            }
-        });
+        .filter_map(|row| ProviderVerdict::of(row, &counted))
+        .collect();
     Some(ChainHealth::from_probe(chain_quorum.status, tally))
 }
 
@@ -195,8 +219,8 @@ mod tests {
 
     use super::*;
     use crate::foreign_chain_probe::test_utils::{
-        ALCHEMY_URL, OWN_NODE_URL, ProbedConfig, ProbedProvider, QUICKNODE_URL, config_with_report,
-        logged_times, polygon_with_report, whitelist_of,
+        ALCHEMY_URL, OWN_NODE_URL, ProbedChainProvider, ProbedConfig, ProbedProvider,
+        QUICKNODE_URL, config_with_report, logged_times, polygon_with_report, whitelist_of,
     };
 
     fn quorum(required: usize, configured: usize) -> RpcQuorumStatus {
@@ -377,20 +401,26 @@ mod tests {
             status,
         };
         let ProbedConfig { local, report } = config_with_report(&[
-            (
-                dtos::ForeignChain::Polygon,
-                alchemy(ProviderStatus::Healthy),
-            ),
-            (dtos::ForeignChain::Ethereum, alchemy(wrong_network())),
-            (dtos::ForeignChain::Base, alchemy(ProviderStatus::Healthy)),
-            (
-                dtos::ForeignChain::Bnb,
-                alchemy(ProviderStatus::ProbeNotImplemented),
-            ),
-            (
-                dtos::ForeignChain::Arbitrum,
-                alchemy(ProviderStatus::MissingExpectedFingerprint),
-            ),
+            ProbedChainProvider {
+                chain: dtos::ForeignChain::Polygon,
+                provider: alchemy(ProviderStatus::Healthy),
+            },
+            ProbedChainProvider {
+                chain: dtos::ForeignChain::Ethereum,
+                provider: alchemy(wrong_network()),
+            },
+            ProbedChainProvider {
+                chain: dtos::ForeignChain::Base,
+                provider: alchemy(ProviderStatus::Healthy),
+            },
+            ProbedChainProvider {
+                chain: dtos::ForeignChain::Bnb,
+                provider: alchemy(ProviderStatus::ProbeNotImplemented),
+            },
+            ProbedChainProvider {
+                chain: dtos::ForeignChain::Arbitrum,
+                provider: alchemy(ProviderStatus::MissingExpectedFingerprint),
+            },
         ]);
         let whitelist: ForeignChainWhitelist = [
             dtos::ForeignChain::Polygon,
