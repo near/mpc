@@ -124,7 +124,7 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
 
     /// Try to remove and return an element that *doesn't* satisfy the current condition.
     /// If the element does satisfy it, it will be moved to the front of the queue.
-    pub(self) fn discard(&mut self) -> anyhow::Result<ColdQueueDiscardResult<T>> {
+    pub(self) fn discard(&mut self) -> anyhow::Result<ColdQueueDiscardResult<T>, anyhow::Error> {
         self.update_condition_value_if_due();
         if self.cold_ready == self.cold_queue.len() {
             return Ok(ColdQueueDiscardResult::NotDiscardedAndNoneAvailable);
@@ -278,7 +278,7 @@ where
         Ok(())
     }
 
-    pub async fn take_owned(&self) -> anyhow::Result<(UniqueId, T)> {
+    pub async fn take_owned(&self) -> anyhow::Result<(UniqueId, T), anyhow::Error> {
         // Always query the new condition value before taking an element.
         // This is to prevent the case where the condition has been updated,
         // but we're not yet aware of it, and the caller calls this in a loop and
@@ -335,7 +335,10 @@ where
         }
     }
 
-    pub async fn take_owned_matching(&self, cond_val: CondVal) -> anyhow::Result<(UniqueId, T)> {
+    pub async fn take_owned_matching(
+        &self,
+        cond_val: CondVal,
+    ) -> anyhow::Result<(UniqueId, T), anyhow::Error> {
         loop {
             let cold_queue_new_elements = self.cold_queue_new_elements.notified();
             let (taken, ingested) = {
@@ -391,7 +394,7 @@ where
     pub async fn maybe_discard_owned(
         &self,
         mut num_elements_to_process: usize,
-    ) -> anyhow::Result<Vec<UniqueId>> {
+    ) -> anyhow::Result<Vec<UniqueId>, anyhow::Error> {
         self.cold_queue
             .lock()
             .map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?
@@ -448,7 +451,7 @@ where
 
     /// Owned counts under a single lock, so they describe the same moment:
     /// `online + unknown == available`, and `offline` is the rest.
-    pub fn counts(&self) -> anyhow::Result<OwnedAssetCounts> {
+    pub fn counts(&self) -> anyhow::Result<OwnedAssetCounts, anyhow::Error> {
         let hot = self.hot_receiver.len();
         let cold_queue = self
             .cold_queue
@@ -562,7 +565,7 @@ where
     fn make_prefix_range(
         participant_id: ParticipantId,
         prefix: &[u8],
-    ) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    ) -> anyhow::Result<(Vec<u8>, Vec<u8>), anyhow::Error> {
         let mut start = prefix.to_vec();
         let mut end = prefix.to_vec();
         start.extend_from_slice(&UniqueId::prefix_for_participant_id(participant_id));
@@ -577,7 +580,7 @@ where
         Ok((start, end))
     }
 
-    fn make_key(&self, id: UniqueId) -> anyhow::Result<Vec<u8>> {
+    fn make_key(&self, id: UniqueId) -> anyhow::Result<Vec<u8>, anyhow::Error> {
         let mut key = self.prefix.clone();
         key.extend_from_slice(&borsh::to_vec(&id)?);
         Ok(key)
@@ -589,7 +592,7 @@ where
 
     /// Same as [`Self::generate_and_reserve_id_range`], for a single ID.
     #[cfg(test)]
-    pub fn generate_and_reserve_id(&self) -> anyhow::Result<UniqueId> {
+    pub fn generate_and_reserve_id(&self) -> anyhow::Result<UniqueId, anyhow::Error> {
         self.generate_and_reserve_id_range(1)
     }
 
@@ -600,7 +603,10 @@ where
     /// TODO(#10): This reservation does not persist across restarts, leading to
     /// the assumption that the clock moves forward at least a second across
     /// restarts.
-    pub fn generate_and_reserve_id_range(&self, count: u32) -> anyhow::Result<UniqueId> {
+    pub fn generate_and_reserve_id_range(
+        &self,
+        count: u32,
+    ) -> anyhow::Result<UniqueId, anyhow::Error> {
         assert!(count > 0);
         let mut last_id = self
             .last_id
@@ -617,17 +623,17 @@ where
 
     /// Returns the current number of owned assets in the database.
     /// Excludes assets which are known to have offline participants.
-    pub fn num_owned(&self) -> anyhow::Result<usize> {
+    pub fn num_owned(&self) -> anyhow::Result<usize, anyhow::Error> {
         self.owned_queue.available()
     }
 
     /// Available, online and offline counts, read under one lock so they are
     /// consistent with each other.
-    pub fn owned_asset_counts(&self) -> anyhow::Result<OwnedAssetCounts> {
+    pub fn owned_asset_counts(&self) -> anyhow::Result<OwnedAssetCounts, anyhow::Error> {
         self.owned_queue.counts()
     }
 
-    pub async fn take_owned(&self) -> anyhow::Result<(UniqueId, T)> {
+    pub async fn take_owned(&self) -> anyhow::Result<(UniqueId, T), anyhow::Error> {
         let (id, asset) = self.owned_queue.take_owned().await?;
         let mut update = self.db.update();
         update.delete(self.col, &self.make_key(id)?);
@@ -636,7 +642,7 @@ where
     }
 
     /// Adds an owned asset to the storage.
-    pub fn add_owned(&self, id: UniqueId, value: T) -> anyhow::Result<()> {
+    pub fn add_owned(&self, id: UniqueId, value: T) -> anyhow::Result<(), anyhow::Error> {
         let key = self.make_key(id)?;
         let value_ser = serde_json::to_vec(&value)?;
         let mut update = self.db.update();
@@ -649,7 +655,10 @@ where
     /// Examines up to `num_assets_to_process` elements in the storage.
     /// If any are found not to satisfy the current condition, they are discarded.
     /// Otherwise, they are kept aside as ready for immediate use.
-    pub async fn maybe_discard_owned(&self, num_assets_to_process: usize) -> anyhow::Result<()> {
+    pub async fn maybe_discard_owned(
+        &self,
+        num_assets_to_process: usize,
+    ) -> anyhow::Result<(), anyhow::Error> {
         let removed_cold_ids = self
             .owned_queue
             .maybe_discard_owned(num_assets_to_process)
@@ -665,7 +674,7 @@ where
     }
 
     /// Adds an unowned asset to the storage.
-    pub fn add_unowned(&self, id: UniqueId, value: T) -> anyhow::Result<()> {
+    pub fn add_unowned(&self, id: UniqueId, value: T) -> anyhow::Result<(), anyhow::Error> {
         let key = self.make_key(id)?;
         let value_ser = serde_json::to_vec(&value)?;
         let mut update = self.db.update();
@@ -677,7 +686,7 @@ where
     /// Removes an unowned asset from the storage and returns it. Returns
     /// an error if we do not have the asset in our database or if a concurrent
     /// call is already taking the same asset.
-    pub fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T> {
+    pub fn take_unowned(&self, id: UniqueId) -> anyhow::Result<T, anyhow::Error> {
         // Prevent two concurrent callers from both reading the same asset
         // before either commits the delete (read-then-delete race).
         {
@@ -709,7 +718,7 @@ where
     pub async fn take_owned_matching(
         &self,
         eligible: Vec<ParticipantId>,
-    ) -> anyhow::Result<(UniqueId, T)> {
+    ) -> anyhow::Result<(UniqueId, T), anyhow::Error> {
         let (id, val) = self.owned_queue.take_owned_matching(eligible).await?;
         let mut update = self.db.update();
         update.delete(self.col, &self.make_key(id)?);
