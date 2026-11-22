@@ -169,8 +169,8 @@ mod tests {
     #[serial(asset_gauges)]
     #[expect(non_snake_case)]
     fn clear_owned_asset_gauges_on_drop__should_remove_every_series() {
-        // Given: no series left over from other tests in this process, a reported store,
-        // and the guard the reporter task holds.
+        // Given: a reported store, and the guard the reporter task holds.
+        // `serial` only stops interleaving: earlier tests in this process leave their series behind.
         TRIPLE_GAUGES.reset();
         let guard = ClearOwnedAssetGaugesOnDrop;
         set_owned_asset_gauges(&TRIPLE_GAUGES, "test-cleared", counts(3, 2, 1));
