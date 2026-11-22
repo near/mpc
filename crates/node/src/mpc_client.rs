@@ -240,7 +240,7 @@ impl MpcClient {
 
         let _ = monitor_passive_channels.await?;
         asset_metrics_reporter.await?;
-        let _ = monitor_chain.await?;
+        monitor_chain.await?;
         let _ = robust_ecdsa_background_tasks.await?;
         let _ = ecdsa_background_tasks.await?;
         let _ = eddsa_background_tasks.await?;
@@ -257,7 +257,7 @@ impl MpcClient {
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-    ) -> anyhow::Result<()> {
+    ) {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
@@ -297,7 +297,7 @@ impl MpcClient {
                     let Some(block_update) = block_update else {
                         // If this branch hits, it means the channel is closed, meaning the
                         // indexer is being shutdown. So just quit this task.
-                        break Ok(());
+                        break;
                     };
 
                     self.network_client.update_indexer_height(block_update.block.height.into());

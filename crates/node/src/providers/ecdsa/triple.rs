@@ -186,10 +186,10 @@ impl EcdsaSignatureProvider {
                             .await?;
 
                             for (i, paired_triple) in triples.into_iter().enumerate() {
-                                triple_store.add_owned(
-                                    id_start.add_to_counter(i.try_into()?)?,
-                                    paired_triple,
-                                )?;
+                                let id = id_start.add_to_counter(i.try_into()?)?;
+                                if let Err(err) = triple_store.add_owned(id, paired_triple) {
+                                    tracing::error!(?err, ?id, "failed to store owned triple");
+                                }
                             }
 
                             anyhow::Ok(())

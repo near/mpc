@@ -77,17 +77,17 @@ impl CKDRequestStorage {
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &CKDRequest) -> anyhow::Result<bool> {
+    pub fn add(&self, request: &CKDRequest) -> anyhow::Result<()> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::CKDRequest, &key)?.is_some() {
-            return Ok(false);
+            return Err(anyhow::anyhow!("CKD request already exists"));
         }
         let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::CKDRequest, &key, &value_ser);
         update.commit()?;
         let _ = self.add_sender.send(request.id);
-        Ok(true)
+        Ok(())
     }
 
     /// Returns when a ckd request with given id is present, then returns it.
@@ -136,17 +136,17 @@ impl VerifyForeignTransactionRequestStorage {
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &VerifyForeignTxRequest) -> anyhow::Result<bool> {
+    pub fn add(&self, request: &VerifyForeignTxRequest) -> anyhow::Result<()> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::VerifyForeignTxRequest, &key)?.is_some() {
-            return Ok(false);
+            return Err(anyhow::anyhow!("verification request already exists"));
         }
         let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::VerifyForeignTxRequest, &key, &value_ser);
         update.commit()?;
         let _ = self.add_sender.send(request.id);
-        Ok(true)
+        Ok(())
     }
 
     /// Returns when a verify foreign tx request with given id is present, then returns it.
@@ -265,8 +265,9 @@ mod tests {
         let storage = CKDRequestStorage::new(db).unwrap();
 
         let req1 = cdk_request();
-        assert!(storage.add(&req1).unwrap());
-        assert!(!storage.add(&req1).unwrap());
+        storage.add(&req1).unwrap();
+        let err = storage.add(&req1).unwrap_err();
+        assert_eq!(err.to_string(), "CKD request already exists");
         let _ = storage
             .get(req1.id)
             .await
