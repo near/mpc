@@ -19,7 +19,6 @@ use near_mpc_contract_interface::types::DomainConfig;
 use near_time::Clock;
 use rand::rngs::OsRng;
 use std::collections::BTreeSet;
-use std::convert::Infallible;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
@@ -95,7 +94,7 @@ impl EcdsaSignatureProvider {
         config: Arc<TripleConfig>,
         triple_store: Arc<TripleStorage>,
         reconstruction_threshold: TSReconstructionThreshold,
-    ) -> Result<Infallible, anyhow::Error> {
+    ) -> ! {
         let in_flight_generations = InFlightGenerationTracker::new();
         let parallelism_limiter = Arc::new(tokio::sync::Semaphore::new(config.concurrency));
         let mut tasks = AutoAbortTaskCollection::new();
@@ -107,7 +106,13 @@ impl EcdsaSignatureProvider {
             .collect();
 
         loop {
-            let my_triples_count = triple_store.num_owned()?;
+            let Some(my_triples_count) = triple_store
+                .num_owned()
+                .inspect_err(|err| tracing::error!(?err, "failed to read owned triple count"))
+                .ok()
+            else {
+                continue;
+            };
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
 
@@ -135,7 +140,15 @@ impl EcdsaSignatureProvider {
 
                 let batch_size = config.batch_size;
                 let count = u32::from(batch_size);
-                let id_start = triple_store.generate_and_reserve_id_range(count)?;
+                let Some(id_start) = triple_store
+                    .generate_and_reserve_id_range(count)
+                    .inspect_err(|err| {
+                        tracing::error!(?err, count, "failed to reserve triple id range")
+                    })
+                    .ok()
+                else {
+                    continue;
+                };
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,
                     count,
@@ -194,8 +207,10 @@ impl EcdsaSignatureProvider {
             }
 
             // If the store is full, try to discard some triples which cannot be used right now
-            if my_triples_count >= config.desired_triples_to_buffer {
-                triple_store.maybe_discard_owned(32).await?;
+            if my_triples_count >= config.desired_triples_to_buffer
+                && let Err(err) = triple_store.maybe_discard_owned(32).await
+            {
+                tracing::error!(?err, "failed to discard owned triples");
             }
 
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -693,7 +708,7 @@ mod tests {
         store.add_owned(id, make_triple(&participants)).unwrap();
 
         // When the triple is consumed.
-        let _ = store.take_owned().now_or_never().unwrap();
+        let _ = store.take_owned().now_or_never().unwrap().unwrap();
 
         // Then it is gone from the TripleV2 column.
         assert!(

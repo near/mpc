@@ -89,7 +89,7 @@ impl EcdsaSignatureProvider {
 
     /// Reports the owned-asset gauges of every triple store of this provider,
     /// labelled by their `t`.
-    pub fn report_asset_metrics(&self) -> anyhow::Result<()> {
+    pub fn report_asset_metrics(&self) -> anyhow::Result<(), prometheus::Error> {
         for (t, store) in &self.triple_stores {
             report_store(&TRIPLE_GAUGES, t.value(), store)?
         }
@@ -240,22 +240,15 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        for (i, join_result) in futures::future::join_all(generate_triples)
+        for (i, Err(join_error)) in futures::future::join_all(generate_triples)
             .await
             .into_iter()
             .enumerate()
         {
-            if let Ok(Err(err)) = &join_result {
-                tracing::error!(
-                    task_index = i,
-                    "ecdsa background triple generation failed: {err:#}"
-                );
-            } else if let Err(join_err) = &join_result {
-                tracing::error!(
-                    task_index = i,
-                    "ecdsa background triple generation task ended unexpectedly: {join_err}"
-                );
-            }
+            tracing::error!(
+                task_index = i,
+                "ecdsa background triple generation task ended unexpectedly: {join_error}"
+            );
         }
 
         Ok(())

@@ -159,7 +159,9 @@ impl MpcClient {
             async move {
                 let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
                 loop {
-                    ecdsa.report_asset_metrics().expect("should report metrics");
+                    if let Err(err) = ecdsa.report_asset_metrics() {
+                        tracing::warn!("failed to report owned-asset metrics: {err:#}");
+                    }
                     tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
                 }
             }
@@ -171,14 +173,16 @@ impl MpcClient {
                 MpcClient::monitor_passive_channels_inner(channel_receiver, self.clone()),
             )
         };
-        let self_clone = self.clone();
         let monitor_chain = {
             let chain_txn_sender = chain_txn_sender.clone();
-            tracking::spawn("monitor chain", async {
-                self_clone
-                    .monitor_block_updates(block_update_receiver, chain_txn_sender, debug_receiver)
-                    .await
-            })
+            tracking::spawn(
+                "monitor chain",
+                self.clone().monitor_block_updates(
+                    block_update_receiver,
+                    chain_txn_sender,
+                    debug_receiver,
+                ),
+            )
         };
 
         let tee_verification_handle = {
@@ -253,7 +257,7 @@ impl MpcClient {
         >,
         chain_txn_sender: impl TransactionSender + 'static,
         mut debug_receiver: tokio::sync::broadcast::Receiver<DebugRequest>,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<()> {
         let mut tasks = AutoAbortTaskCollection::new();
         let mut pending_signatures =
             PendingRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::new(
@@ -293,7 +297,7 @@ impl MpcClient {
                     let Some(block_update) = block_update else {
                         // If this branch hits, it means the channel is closed, meaning the
                         // indexer is being shutdown. So just quit this task.
-                        return Err(anyhow::anyhow!("Block update channel closed"));
+                        break Ok(());
                     };
 
                     self.network_client.update_indexer_height(block_update.block.height.into());
@@ -309,7 +313,9 @@ impl MpcClient {
 
                     // TODO(#3031): add batch request and unify stores
                     for request in &signature_requests.requests {
-                        self.sign_request_store.add(request)?;
+                        if let Err(err) = self.sign_request_store.add(request) {
+                            tracing::error!(?err, "failed to add sign request");
+                        }
                     }
 
                     // TODO(#3032): remove completed & finalized requests from store
@@ -322,7 +328,9 @@ impl MpcClient {
                         block_update.completed_ckds
                     );
                     for request in &ckd_requests.requests {
-                        self.ckd_request_store.add(request)?;
+                        if let Err(err) = self.ckd_request_store.add(request) {
+                            tracing::error!(?err, "failed to add ckd request");
+                        }
                     }
 
                     pending_ckds.notify_new_block(ckd_requests);
@@ -335,7 +343,9 @@ impl MpcClient {
                     );
 
                     for request in &verify_foreign_tx_requests.requests {
-                        self.verify_foreign_tx_request_store.add(request)?;
+                        if let Err(err) = self.verify_foreign_tx_request_store.add(request) {
+                            tracing::error!(?err, "failed to add verify foreign tx request");
+                        }
                     }
                     pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                 }

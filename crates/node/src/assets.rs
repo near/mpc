@@ -102,30 +102,37 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
         if self.cold_available == 0 {
             return ColdQueueTakeResult::NotTakenAndNoneAvailable;
         }
-        if let Some((id, value)) = self.cold_queue.pop_front() {
-            self.cold_available -= 1;
-            if self.cold_ready > 0 {
-                self.cold_ready -= 1;
-                return ColdQueueTakeResult::Taken((id, value));
-            }
-            if (self.condition)(&self.last_condition_value, &value) {
-                return ColdQueueTakeResult::Taken((id, value));
-            }
-            self.cold_queue.push_back((id, value));
-            ColdQueueTakeResult::NotTakenButSomeMayBeAvailable
-        } else {
-            ColdQueueTakeResult::NotTakenButSomeMayBeAvailable
+        let Some((id, value)) = self.cold_queue.pop_front() else {
+            tracing::error!(
+                cold_available = self.cold_available,
+                "cold queue barrier points past an empty queue; resetting"
+            );
+            self.cold_available = 0;
+            return ColdQueueTakeResult::NotTakenAndNoneAvailable;
+        };
+        self.cold_available -= 1;
+        if self.cold_ready > 0 {
+            self.cold_ready -= 1;
+            return ColdQueueTakeResult::Taken((id, value));
         }
+        if (self.condition)(&self.last_condition_value, &value) {
+            return ColdQueueTakeResult::Taken((id, value));
+        }
+        self.cold_queue.push_back((id, value));
+        ColdQueueTakeResult::NotTakenButSomeMayBeAvailable
     }
 
     /// Try to remove and return an element that *doesn't* satisfy the current condition.
     /// If the element does satisfy it, it will be moved to the front of the queue.
-    pub(self) fn discard(&mut self) -> ColdQueueDiscardResult<T> {
+    pub(self) fn discard(&mut self) -> anyhow::Result<ColdQueueDiscardResult<T>> {
         self.update_condition_value_if_due();
         if self.cold_ready == self.cold_queue.len() {
-            return ColdQueueDiscardResult::NotDiscardedAndNoneAvailable;
+            return Ok(ColdQueueDiscardResult::NotDiscardedAndNoneAvailable);
         }
-        let (id, value) = self.cold_queue.pop_back().unwrap(); // can't fail
+        let (id, value) = self
+            .cold_queue
+            .pop_back()
+            .ok_or_else(|| anyhow!("Cold queue is empty"))?;
         let condition_satisfied = if self.cold_available > self.cold_queue.len() {
             self.cold_available -= 1;
             (self.condition)(&self.last_condition_value, &value)
@@ -133,12 +140,12 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
             false
         };
         if !condition_satisfied {
-            return ColdQueueDiscardResult::Discarded((id, value));
+            return Ok(ColdQueueDiscardResult::Discarded((id, value)));
         }
         self.cold_queue.push_front((id, value));
         self.cold_ready += 1;
         self.cold_available += 1;
-        ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable
+        Ok(ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable)
     }
 
     /// Adds an element to the cold queue. If the condition is *not* satisfied,
@@ -398,7 +405,7 @@ where
                 .cold_queue
                 .lock()
                 .map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?
-                .discard();
+                .discard()?;
             match discarded {
                 ColdQueueDiscardResult::Discarded((id, _)) => {
                     removed_from_cold_queue.push(id);
@@ -727,7 +734,7 @@ mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
     use crate::async_testing::{MaybeReady, run_future_once};
-    use crate::db::{DBCol, SecretDB};
+    use crate::db::DBCol;
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
     use borsh::BorshDeserialize;
@@ -739,22 +746,6 @@ mod tests {
     use std::default::Default;
     use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
-
-    fn storage(
-        db: Arc<SecretDB>,
-        participant: ParticipantId,
-        domain_id: Vec<u8>,
-    ) -> anyhow::Result<DistributedAssetStorage<u64>> {
-        DistributedAssetStorage::<u64>::new(
-            FakeClock::default().clock(),
-            db,
-            DBCol::Presignature,
-            domain_id,
-            participant,
-            |_, _| true,
-            Arc::new(Vec::new),
-        )
-    }
 
     /// Adapter used by tests that previously took `Option<DomainId>` to compose
     /// the equivalent prefix bytes for the generalized [`DistributedAssetStorage`].
@@ -803,7 +794,7 @@ mod tests {
 
         // Operations on empty
         verify_cold_queue_internal_consistency(&queue, 0);
-        queue.discard();
+        queue.discard().unwrap();
         verify_cold_queue_internal_consistency(&queue, 0);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 0);
@@ -819,13 +810,13 @@ mod tests {
         verify_cold_queue_internal_consistency(&queue, 0);
         queue.add_if_condition_satisfied(id1, 1);
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard().unwrap();
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.add_if_condition_not_satisfied(id2, 2);
         verify_cold_queue_internal_consistency(&queue, 2);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard().unwrap();
         verify_cold_queue_internal_consistency(&queue, 0);
 
         // Reset then discard
@@ -834,13 +825,13 @@ mod tests {
         queue.update_condition_value();
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard().unwrap();
         verify_cold_queue_internal_consistency(&queue, 0);
         // Reset then take
         queue.add_if_condition_not_satisfied(id1, 1);
         cond_value.store(1, Ordering::Relaxed);
         queue.update_condition_value();
-        queue.discard();
+        queue.discard().unwrap();
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 0);
@@ -853,7 +844,7 @@ mod tests {
         // Discard from known non-satisfying
         queue.add_if_condition_not_satisfied(id2, 2);
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard();
+        queue.discard().unwrap();
         verify_cold_queue_internal_consistency(&queue, 0);
     }
 
@@ -1010,7 +1001,7 @@ mod tests {
     fn test_distributed_assets_storage() {
         let clock = FakeClock::default();
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let all_participants = vec![
             ParticipantId::from_raw(0),
             ParticipantId::from_raw(1),
@@ -1031,7 +1022,7 @@ mod tests {
         let store = DistributedAssetStorage::<ParticipantsWithI32>::new(
             clock.clock(),
             db,
-            DBCol::TripleV2,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
             |cond, val| val.is_subset_of_active_participants(cond),
@@ -1174,8 +1165,17 @@ mod tests {
     #[test]
     fn test_distributed_store_add_take_owned() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = storage(db.clone(), ParticipantId::from_raw(42), Vec::new()).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
+            ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
         assert_eq!(store.num_owned().unwrap(), 0);
 
         // Put in two assets, then dequeue them.
@@ -1212,8 +1212,17 @@ mod tests {
     #[test]
     fn test_distributed_store_add_owned_different_order() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = storage(db.clone(), ParticipantId::from_raw(42), Vec::new()).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
+            ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
 
         // Adding assets in a different order from when the IDs are generated
         // is fine. They are dequeued in the order that they are queued.
@@ -1257,7 +1266,16 @@ mod tests {
         // be based on the key. It doesn't have to be this way, but we test it
         // here just to clarify the current behavior.
         drop(store);
-        let store = storage(db.clone(), ParticipantId::from_raw(42), Vec::new()).unwrap();
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
+            ParticipantId::from_raw(42),
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
         assert_eq!(
             store.take_owned().now_or_never().unwrap().unwrap(),
             (id5, 5)
@@ -1269,17 +1287,17 @@ mod tests {
     }
 
     #[test]
-    fn test_distributed_store_add_take_unowned() {
+    fn test_distribtued_store_add_take_unowned() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            DBCol::TripleV2,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
             ParticipantId::from_raw(42),
             |_, _| true,
-            Arc::new(Vec::new),
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
 
@@ -1311,16 +1329,16 @@ mod tests {
     #[test]
     fn test_distributed_store_persistence() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let myself = ParticipantId::from_raw(42);
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            DBCol::TripleV2,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
             myself,
             |_, _| true,
-            Arc::new(Vec::new),
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
 
@@ -1337,7 +1355,16 @@ mod tests {
         store.add_unowned(UniqueId::new(other, 4, 0), 8).unwrap();
 
         drop(store);
-        let store = storage(db.clone(), myself, Vec::new()).unwrap();
+        let store = DistributedAssetStorage::<u32>::new(
+            FakeClock::default().clock(),
+            db,
+            crate::db::DBCol::TripleV2,
+            Vec::new(),
+            myself,
+            |_, _| true,
+            Arc::new(std::vec::Vec::new),
+        )
+        .unwrap();
         assert_eq!(store.num_owned().unwrap(), 4);
         assert_eq!(
             store.take_owned().now_or_never().unwrap().unwrap(),
@@ -1362,13 +1389,13 @@ mod tests {
     #[test]
     fn test_maybe_discard_unowned_persistence() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let myself = ParticipantId::from_raw(42);
 
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
-            DBCol::TripleV2,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
             myself,
             |_, x| *x != 1,
@@ -1383,17 +1410,21 @@ mod tests {
         assert_eq!(store.take_owned().now_or_never().unwrap().unwrap().1, 2);
         assert_eq!(store.owned_asset_counts().unwrap().offline, 1);
 
-        let _ = store.maybe_discard_owned(1).now_or_never().unwrap();
+        store
+            .maybe_discard_owned(1)
+            .now_or_never()
+            .unwrap()
+            .unwrap();
 
         drop(store);
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db,
-            DBCol::TripleV2,
+            crate::db::DBCol::TripleV2,
             Vec::new(),
             myself,
             |_, _| true,
-            Arc::new(Vec::new),
+            Arc::new(std::vec::Vec::new),
         )
         .unwrap();
 
@@ -1403,13 +1434,22 @@ mod tests {
     #[test]
     fn test_multiple_domains() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let myself = ParticipantId::from_raw(42);
         let other = ParticipantId::from_raw(43);
 
         for i in 0..4 {
             let domain_id = Some(DomainId(i));
-            let store = storage(db.clone(), myself, domain_id_to_prefix(domain_id)).unwrap();
+            let store = DistributedAssetStorage::<u64>::new(
+                FakeClock::default().clock(),
+                db.clone(),
+                crate::db::DBCol::Presignature,
+                domain_id_to_prefix(domain_id),
+                myself,
+                |_, _| true,
+                Arc::new(std::vec::Vec::new),
+            )
+            .unwrap();
 
             for j in 0..10 {
                 store
@@ -1444,11 +1484,11 @@ mod tests {
             let store = DistributedAssetStorage::<u64>::new(
                 FakeClock::default().clock(),
                 db.clone(),
-                DBCol::Presignature,
+                crate::db::DBCol::Presignature,
                 domain_id_to_prefix(domain_id),
                 myself,
                 |_, _| true,
-                Arc::new(Vec::new),
+                Arc::new(std::vec::Vec::new),
             )
             .unwrap();
 
@@ -1471,7 +1511,7 @@ mod tests {
     fn test_distributed_assets_storage_cleanup() {
         let clock = FakeClock::default();
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
         let all_participants = vec![
             ParticipantId::from_raw(0),
             ParticipantId::from_raw(1),
@@ -1513,7 +1553,7 @@ mod tests {
             assert_eq!(store.num_owned().unwrap(), expected);
         };
         for domain_id in [None, Some(DomainId(0)), Some(DomainId(1))] {
-            for db_col in [DBCol::Presignature, DBCol::TripleV2] {
+            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::TripleV2] {
                 assert_db_num_owned(db_col, domain_id, 0);
                 {
                     // populate the database
@@ -1591,10 +1631,14 @@ mod tests {
         queue.add_owned(id3, 4).unwrap();
 
         // When
-        let taken = queue.take_owned_matching(vec![3, 4]).now_or_never();
+        let taken = queue
+            .take_owned_matching(vec![3, 4])
+            .now_or_never()
+            .unwrap()
+            .unwrap();
 
         // Then
-        assert_eq!(taken.unwrap().unwrap(), (id2, 3));
+        assert_eq!(taken, (id2, 3));
         assert_eq!(queue.available().unwrap(), 2);
         assert_eq!(queue.counts().unwrap().offline, 0);
     }
@@ -1637,10 +1681,12 @@ mod tests {
         // When: the caller's own value still accepts both
         let taken = queue
             .take_owned_matching(vec![offline_participant, online_participant.clone()])
-            .now_or_never();
+            .now_or_never()
+            .unwrap()
+            .unwrap();
 
         // Then: the one the stale value would have allowed is skipped
-        assert_eq!(taken.unwrap().unwrap(), (id_fresh, online_participant));
+        assert_eq!(taken, (id_fresh, online_participant));
         // and it is parked rather than dropped, so it becomes usable again on reconnect
         assert_eq!(queue.counts().unwrap().offline, 1);
         assert_eq!(queue.available().unwrap(), 0);

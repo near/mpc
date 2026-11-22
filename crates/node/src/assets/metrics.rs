@@ -57,20 +57,25 @@ fn to_gauge_value(count: usize) -> i64 {
 }
 
 /// Sets the series `label` of `gauges` to `counts`.
-pub fn set_owned_asset_gauges(gauges: &OwnedAssetGauges, label: &str, counts: OwnedAssetCounts) {
+pub fn set_owned_asset_gauges(
+    gauges: &OwnedAssetGauges,
+    label: &str,
+    counts: OwnedAssetCounts,
+) -> Result<(), prometheus::Error> {
     let label = [label];
     gauges
         .available
-        .with_label_values(&label)
+        .get_metric_with_label_values(&label)?
         .set(to_gauge_value(counts.available));
     gauges
         .online
-        .with_label_values(&label)
+        .get_metric_with_label_values(&label)?
         .set(to_gauge_value(counts.online));
     gauges
         .offline
-        .with_label_values(&label)
+        .get_metric_with_label_values(&label)?
         .set(to_gauge_value(counts.offline));
+    Ok(())
 }
 
 /// Sets the series `label` of `gauges` from a fresh read of `store`.
@@ -78,11 +83,17 @@ pub fn report_store<T>(
     gauges: &OwnedAssetGauges,
     label: impl ToString,
     store: &DistributedAssetStorage<T>,
-) -> anyhow::Result<()>
+) -> anyhow::Result<(), prometheus::Error>
 where
     T: Serialize + DeserializeOwned + Send + 'static,
 {
-    set_owned_asset_gauges(gauges, &label.to_string(), store.owned_asset_counts()?);
+    set_owned_asset_gauges(
+        gauges,
+        &label.to_string(),
+        store
+            .owned_asset_counts()
+            .map_err(|e| prometheus::Error::Msg(e.to_string()))?,
+    )?;
     Ok(())
 }
 
@@ -111,13 +122,30 @@ mod tests {
             .sum()
     }
 
-    fn read(gauges: &OwnedAssetGauges, label: &str) -> OwnedAssetCounts {
+    fn read(
+        gauges: &OwnedAssetGauges,
+        label: &str,
+    ) -> anyhow::Result<OwnedAssetCounts, prometheus::Error> {
         let label = [label];
-        counts(
-            gauges.available.with_label_values(&label).get() as usize,
-            gauges.online.with_label_values(&label).get() as usize,
-            gauges.offline.with_label_values(&label).get() as usize,
-        )
+        let available = gauges
+            .available
+            .get_metric_with_label_values(&label)?
+            .get()
+            .try_into()
+            .map_err(|e| prometheus::Error::Msg(format!("{e}")))?;
+        let online = gauges
+            .online
+            .get_metric_with_label_values(&label)?
+            .get()
+            .try_into()
+            .map_err(|e| prometheus::Error::Msg(format!("{e}")))?;
+        let offline = gauges
+            .offline
+            .get_metric_with_label_values(&label)?
+            .get()
+            .try_into()
+            .map_err(|e| prometheus::Error::Msg(format!("{e}")))?;
+        Ok(counts(available, online, offline))
     }
 
     #[test]
@@ -125,12 +153,12 @@ mod tests {
     #[expect(non_snake_case)]
     fn set_owned_asset_gauges__should_keep_series_apart_by_label() {
         // Given, When
-        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-t2", counts(10, 7, 2));
-        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-t3", counts(5, 1, 3));
+        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-t2", counts(10, 7, 2)).unwrap();
+        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-t3", counts(5, 1, 3)).unwrap();
 
         // Then
-        assert_eq!(read(&TRIPLE_GAUGES, "test-t2"), counts(10, 7, 2));
-        assert_eq!(read(&TRIPLE_GAUGES, "test-t3"), counts(5, 1, 3));
+        assert_eq!(read(&TRIPLE_GAUGES, "test-t2").unwrap(), counts(10, 7, 2));
+        assert_eq!(read(&TRIPLE_GAUGES, "test-t3").unwrap(), counts(5, 1, 3));
     }
 
     #[test]
@@ -138,13 +166,16 @@ mod tests {
     #[expect(non_snake_case)]
     fn set_owned_asset_gauges__should_overwrite_previous_values() {
         // Given
-        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-overwrite", counts(42, 40, 2));
+        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-overwrite", counts(42, 40, 2)).unwrap();
 
         // When
-        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-overwrite", counts(0, 0, 0));
+        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-overwrite", counts(0, 0, 0)).unwrap();
 
         // Then
-        assert_eq!(read(&TRIPLE_GAUGES, "test-overwrite"), counts(0, 0, 0));
+        assert_eq!(
+            read(&TRIPLE_GAUGES, "test-overwrite").unwrap(),
+            counts(0, 0, 0)
+        );
     }
     #[tokio::test]
     #[serial(asset_gauges)]
@@ -163,14 +194,20 @@ mod tests {
                 .unwrap();
         }
         report_store(&TRIPLE_GAUGES, "test-take-owned", &store).unwrap();
-        assert_eq!(read(&TRIPLE_GAUGES, "test-take-owned").available, 2);
+        assert_eq!(
+            read(&TRIPLE_GAUGES, "test-take-owned").unwrap().available,
+            2
+        );
 
         // When
         store.take_owned().await.unwrap();
         report_store(&TRIPLE_GAUGES, "test-take-owned", &store).unwrap();
 
         // Then
-        assert_eq!(read(&TRIPLE_GAUGES, "test-take-owned").available, 1);
+        assert_eq!(
+            read(&TRIPLE_GAUGES, "test-take-owned").unwrap().available,
+            1
+        );
     }
     #[test]
     #[serial(asset_gauges)]
@@ -178,7 +215,7 @@ mod tests {
     fn clear_owned_asset_gauges_on_drop__should_remove_every_series() {
         // Given: a reported store, and the guard the reporter task holds.
         let guard = ClearOwnedAssetGaugesOnDrop;
-        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-cleared", counts(3, 2, 1));
+        set_owned_asset_gauges(&TRIPLE_GAUGES, "test-cleared", counts(3, 2, 1)).unwrap();
         assert_eq!(series_count(&TRIPLE_GAUGES), 3);
 
         // When: the reporter task ends with its job.
