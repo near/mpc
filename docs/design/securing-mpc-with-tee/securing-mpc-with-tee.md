@@ -293,6 +293,7 @@ sequenceDiagram
     participant operator
     participant MPC_NODE
     participant contract
+    participant current_operators
 
     operator ->> MPC_NODE: Start CVM
     MPC_NODE ->> operator: Node boots and is ready
@@ -310,8 +311,8 @@ sequenceDiagram
         operator ->> contract: Submit remote attestation on node's behalf
     end
 
-    loop Until threshold participants reached
-        operator ->> contract: Call "vote_new_parameters"
+    loop Until a threshold of current participants voted
+        current_operators ->> contract: Call "vote_new_parameters"
     end
 
 ```
@@ -326,8 +327,8 @@ sequenceDiagram
 6. **(Optional – if the MPC Node fails to submit remote attestation):**
    - Operator ↔ MPC Node: Collects the quote, event log, and collateral from the node.
    - Operator → Contract: Submits the remote attestation on behalf of the node.
-7. **Loop (until threshold participants are reached):**
-   - Operator → Contract: Calls `vote_new_parameters` to update the active participant set.
+7. **Loop (until a threshold of current participants voted for the same proposal):**
+   - Current operators → Contract: Call `vote_new_parameters` to update the active participant set. The new operator cannot vote.
 
 # Design Details
 
@@ -530,7 +531,7 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 **Details**
 
-The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with three placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash, `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash and `{{MPC_CONTRACT_ID}}` for the contract's own account id.
+The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with four placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash, `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash, `{{MPC_CONTRACT_ID}}` for the contract's own account id and `{{NEAR_GENESIS_HASH}}` for the genesis hash of its chain.
 
 Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_mpc_node_manifest_digest`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
 A valid Docker compose file to start the MPC node might look like the following

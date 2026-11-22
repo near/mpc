@@ -1,5 +1,9 @@
 //! Contract lifecycle: initialization, state migration, and the top-level
 //! state and config views.
+#![expect(
+    clippy::too_many_arguments,
+    reason = "the `MpcContractExt::init_running` that near-sdk generates takes `self` on top of the arguments"
+)]
 
 use crate::config::Config;
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
@@ -19,6 +23,7 @@ use crate::tee::tee_state::TeeState;
 use crate::tee::verifier_votes::TeeVerifierVotes;
 use crate::update::ContractUpdateVotes;
 use crate::{MpcContract, MpcContractExt, v3_19_0_state};
+use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
@@ -30,17 +35,19 @@ impl MpcContract {
     pub fn init(
         parameters: dtos::GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         let parameters: GovernanceThresholdParameters = parameters.try_into_contract_type()?;
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
-            "init: signer={}, num_participants={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
+            "init: signer={}, num_participants={}, parameters_hash={:?}, tee_verifier_account_id={}, genesis_hash={}, init_config={:?}",
             env::signer_account_id(),
             parameters.participants().count(),
             params_hash,
             tee_verifier_account_id,
+            genesis_hash,
             init_config,
         );
         parameters.validate()?;
@@ -73,6 +80,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            genesis_hash: Some(genesis_hash),
         })
     }
 
@@ -86,6 +94,7 @@ impl MpcContract {
         keyset: dtos::Keyset,
         parameters: dtos::GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
         init_config: Option<dtos::InitConfig>,
     ) -> Result<Self, Error> {
         let keyset: Keyset = keyset.try_into_contract_type()?;
@@ -93,7 +102,7 @@ impl MpcContract {
         // Log participant count and hash - full parameters exceed NEAR's 16KB log limit at ~100 participants
         let params_hash = env::sha256_array(borsh::to_vec(&parameters).unwrap());
         log!(
-            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, threshold={}, parameters_hash={:?}, tee_verifier_account_id={}, init_config={:?}",
+            "init_running: signer={}, domains={:?}, keyset={:?}, num_participants={}, threshold={}, parameters_hash={:?}, tee_verifier_account_id={}, genesis_hash={}, init_config={:?}",
             env::signer_account_id(),
             domains,
             keyset,
@@ -101,6 +110,7 @@ impl MpcContract {
             parameters.threshold().value(),
             params_hash,
             tee_verifier_account_id,
+            genesis_hash,
             init_config,
         );
         parameters.validate()?;
@@ -151,6 +161,7 @@ impl MpcContract {
             tee_verifier_votes: TeeVerifierVotes::default(),
             available_attestation_grants: IterableMap::new(StorageKey::AttestationGrants),
             parameters_votes: GovernanceThresholdParametersVotes::default(),
+            genesis_hash: Some(genesis_hash),
         })
     }
 
@@ -189,6 +200,10 @@ impl MpcContract {
         dtos::Config::from(&self.config)
     }
 
+    pub fn genesis_hash(&self) -> Option<GenesisHash> {
+        self.genesis_hash
+    }
+
     // contract version
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
@@ -207,7 +222,9 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 mod tests {
     use super::*;
     use crate::api::test_utils::init_running_with_domain;
-    use crate::primitives::test_utils::{bogus_tee_verifier_account_id, gen_participants};
+    use crate::primitives::test_utils::{
+        bogus_genesis_hash, bogus_tee_verifier_account_id, gen_participants,
+    };
     use crate::primitives::thresholds::GovernanceThreshold;
     use dtos::{DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold};
 
@@ -225,6 +242,7 @@ mod tests {
         let contract = MpcContract::init(
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .unwrap();

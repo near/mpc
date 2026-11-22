@@ -35,6 +35,7 @@ pub async fn run() -> Result<(), LauncherError> {
     tracing::info!(
         platform = ?args.platform,
         mpc_contract_id = %args.mpc_contract_id,
+        near_genesis_hash = %args.near_genesis_hash,
         "starting launcher"
     );
 
@@ -64,8 +65,12 @@ pub async fn run() -> Result<(), LauncherError> {
     }
 
     let tee_config = build_tee_config(args.platform, manifest_digest.clone());
-    let mpc_node_config =
-        intercept_node_config(config.mpc_node_config, &tee_config, &args.mpc_contract_id)?;
+    let mpc_node_config = intercept_node_config(
+        config.mpc_node_config,
+        &tee_config,
+        &args.mpc_contract_id,
+        &args.near_genesis_hash,
+    )?;
 
     write_config_atomically(&mpc_node_config)?;
 
