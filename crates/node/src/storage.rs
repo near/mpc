@@ -239,8 +239,9 @@ mod tests {
         let storage = SignRequestStorage::new(db).unwrap();
 
         let req1 = signature_request();
-        assert!(storage.add(&req1).unwrap());
-        assert!(!storage.add(&req1).unwrap());
+        storage.add(&req1).unwrap();
+        let err = storage.add(&req1).unwrap_err();
+        assert_eq!(err.to_string(), "signature request already exists");
         let _ = storage
             .get(req1.id)
             .await
