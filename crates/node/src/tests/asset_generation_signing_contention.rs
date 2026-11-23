@@ -133,15 +133,14 @@ impl LatencyReport {
             };
         }
 
-        let nearest_rank = |percent: usize| latencies[(n_ok * percent).div_ceil(100) - 1];
         Self {
             label,
             n_ok,
             timeouts,
             mean: latencies.iter().sum::<Duration>() / u32::try_from(n_ok).unwrap(),
-            p50: nearest_rank(50),
-            p90: nearest_rank(90),
-            max: nearest_rank(100),
+            p50: latencies[n_ok / 2],
+            p90: latencies[n_ok * 9 / 10],
+            max: latencies[n_ok - 1],
         }
     }
 
