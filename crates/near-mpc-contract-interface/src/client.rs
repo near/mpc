@@ -18,8 +18,8 @@ use crate::call_args::{
     RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs,
     StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
     UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
-    VoteAddDomainsArgs, VoteAddLauncherHashArgs, VoteAddOsMeasurementArgs, VoteCancelKeygenArgs,
-    VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs,
+    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteLauncherHashArgs,
+    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VoteOsMeasurementArgs, VotePkArgs,
     VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
@@ -43,8 +43,9 @@ use crate::method_names::{
     TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
     VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
-    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
-    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_REMOVE_LAUNCHER_HASH,
+    VOTE_REMOVE_OS_MEASUREMENT, VOTE_RESHARED, VOTE_TEE_VERIFIER_CHANGE,
+    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AddDomainsVotes, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
@@ -417,9 +418,22 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         launcher_hash: LauncherImageHash,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&VoteAddLauncherHashArgs::new(launcher_hash))?;
+        let args = serde_json::to_vec(&VoteLauncherHashArgs::new(launcher_hash))?;
         self.call(FunctionCallArgs::no_deposit(
             VOTE_ADD_LAUNCHER_HASH,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_remove_launcher_hash(
+        &self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteLauncherHashArgs::new(launcher_hash))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_REMOVE_LAUNCHER_HASH,
             args,
             MAX_GAS,
         ))
@@ -430,9 +444,22 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         measurement: ExpectedMeasurements,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&VoteAddOsMeasurementArgs::new(measurement))?;
+        let args = serde_json::to_vec(&VoteOsMeasurementArgs::new(measurement))?;
         self.call(FunctionCallArgs::no_deposit(
             VOTE_ADD_OS_MEASUREMENT,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_remove_os_measurement(
+        &self,
+        measurement: ExpectedMeasurements,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteOsMeasurementArgs::new(measurement))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_REMOVE_OS_MEASUREMENT,
             args,
             MAX_GAS,
         ))
@@ -900,6 +927,14 @@ mod tests {
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
         };
+        let launcher_hash = LauncherImageHash::from([7u8; 32]);
+        let measurement = ExpectedMeasurements {
+            mrtd: MrtdHash::from([7u8; 48]),
+            rtmr0: Rtmr0Hash::from([7u8; 48]),
+            rtmr1: Rtmr1Hash::from([7u8; 48]),
+            rtmr2: Rtmr2Hash::from([7u8; 48]),
+            key_provider_event_digest: KeyProviderEventDigest::from([7u8; 48]),
+        };
         // When: every handle method, once, in declaration order
         handle
             .init(
@@ -1059,18 +1094,17 @@ mod tests {
         handle.vote_reshared(key_event_id).await.unwrap();
         handle.vote_cancel_keygen(DomainId(7)).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
+        handle.vote_add_launcher_hash(launcher_hash).await.unwrap();
         handle
-            .vote_add_launcher_hash(LauncherImageHash::from([7u8; 32]))
+            .vote_remove_launcher_hash(launcher_hash)
             .await
             .unwrap();
         handle
-            .vote_add_os_measurement(ExpectedMeasurements {
-                mrtd: MrtdHash::from([7u8; 48]),
-                rtmr0: Rtmr0Hash::from([7u8; 48]),
-                rtmr1: Rtmr1Hash::from([7u8; 48]),
-                rtmr2: Rtmr2Hash::from([7u8; 48]),
-                key_provider_event_digest: KeyProviderEventDigest::from([7u8; 48]),
-            })
+            .vote_add_os_measurement(measurement.clone())
+            .await
+            .unwrap();
+        handle
+            .vote_remove_os_measurement(measurement)
             .await
             .unwrap();
         handle
