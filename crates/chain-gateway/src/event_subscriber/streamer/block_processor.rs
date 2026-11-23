@@ -89,7 +89,6 @@ fn make_context(streamer_message: &near_indexer_primitives::StreamerMessage) -> 
         hash: streamer_message.block.header.hash,
         height: streamer_message.block.header.height.into(),
         prev_hash: streamer_message.block.header.prev_hash,
-        entropy: streamer_message.block.header.random_value.into(),
         timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
         last_final_block: streamer_message.block.header.last_final_block,
     }
