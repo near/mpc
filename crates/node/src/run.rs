@@ -66,8 +66,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
     config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
-    // Must run before `spawn_real_indexer` loads/validates the config, and
-    // after `init_logging` so its logs are emitted. No-op for the `start` path.
+    // Must run after `init_logging` so its logs are emitted. No-op for the `start` path.
     config.ensure_near_initialized()?;
 
     // Log startup info
@@ -152,6 +151,11 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
 
+    let near_core_network_public_key = match near_config.network_config.node_id().public_key() {
+        near_crypto::PublicKey::ED25519(key) => key.as_ref().try_into().ok().map(Ed25519PublicKey),
+        _ => None,
+    };
+
     let report_data = ReportDataV1::new(
         *Ed25519PublicKey::from(tls_public_key).as_bytes(),
         *Ed25519PublicKey::from(account_public_key).as_bytes(),
@@ -207,7 +211,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
-            static_web_data(&secrets, &near_config.network_config.node_id(), attestation),
+            static_web_data(&secrets, near_core_network_public_key, attestation),
             protocol_state_receiver,
             migration_state_receiver,
             node_config.clone(),

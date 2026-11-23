@@ -8,7 +8,8 @@ pub struct StaticWebData {
 
     pub near_p2p_public_key: Ed25519PublicKey,
 
-    pub near_core_network_public_key: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub near_core_network_public_key: Option<Ed25519PublicKey>,
 
     pub tee_participant_info: Option<Attestation>,
 }
@@ -31,14 +32,12 @@ mod tests {
         // Given
         let near_signer_public_key = gen_ed25519_public_key(1);
         let near_p2p_public_key = gen_ed25519_public_key(2);
-
-        let near_core_network_public_key =
-            "ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ".to_string();
+        let near_core_network_public_key = gen_ed25519_public_key(3);
 
         let data = StaticWebData {
             near_signer_public_key: near_signer_public_key.clone(),
             near_p2p_public_key: near_p2p_public_key.clone(),
-            near_core_network_public_key: near_core_network_public_key.clone(),
+            near_core_network_public_key: Some(near_core_network_public_key.clone()),
             tee_participant_info: None,
         };
 
@@ -51,6 +50,10 @@ mod tests {
         // Then
         assert_eq!(decoded.near_signer_public_key, near_signer_public_key);
         assert_eq!(decoded.near_p2p_public_key, near_p2p_public_key);
+        assert_eq!(
+            decoded.near_core_network_public_key.unwrap(),
+            near_core_network_public_key
+        );
     }
 
     #[test]
@@ -62,24 +65,13 @@ mod tests {
             "near_responder_public_keys": [gen_ed25519_public_key(3)],
             "tee_participant_info": null,
         });
-
-        let near_core_network_public_key =
-            "ed25519:9qyu1RaJ5shX6UEb7UooPQYVXCC1tNHCiDPPxJ8Pv1UJ".to_string();
-
         // When
         let decoded: Result<StaticWebData, _> = serde_json::from_value(json);
         let decoded = decoded.unwrap();
 
-        let (decoded_gen_ed25519_public_key, decoded_near_core_network_public_key) = (
-            decoded.near_signer_public_key.clone(),
-            decoded.near_core_network_public_key.clone(),
-        );
+        let decoded_gen_ed25519_public_key = decoded.near_signer_public_key.clone();
 
         // Then
         assert_eq!(decoded_gen_ed25519_public_key, gen_ed25519_public_key(1));
-        assert_eq!(
-            decoded_near_core_network_public_key,
-            near_core_network_public_key
-        );
     }
 }

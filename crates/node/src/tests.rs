@@ -49,6 +49,7 @@ use near_indexer_primitives::types::Finality;
 use near_mpc_bounded_collections::UpperBoundedVec;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_mpc_contract_interface::types::Payload;
+use near_mpc_crypto_types::Ed25519PublicKey;
 use near_time::Clock;
 use rand::{Rng, RngCore};
 use std::path::{Path, PathBuf};
@@ -119,14 +120,20 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
-                let dummy_peer_id = PeerId::random();
+                let dummy_near_core_network_public_key = match PeerId::random().public_key() {
+                    near_crypto::PublicKey::ED25519(key) => {
+                        key.as_ref().try_into().ok().map(Ed25519PublicKey)
+                    }
+                    _ => None,
+                };
+
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui,
-                    static_web_data(&self.secrets, &dummy_peer_id, None),
+                    static_web_data(&self.secrets, dummy_near_core_network_public_key, None),
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
