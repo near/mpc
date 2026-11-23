@@ -14,8 +14,8 @@ For details on how to set up a TDX-based Confidential VM and prepare the DStack 
 1. Prepare a TDX-enabled setup as described in the [TDX Guide](https://github.com/near/mpc/blob/main/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md).
 2. Prepare the localnet setup as described in the [Localnet Setup Guide](https://github.com/near/mpc/blob/main/docs/development/localnet/localnet.md), excluding the startup of the MPC nodes.
 3. Start two MPC nodes that will run inside CVMs.
-4. Extract the public keys from the nodes and add them to the contract and user accounts.
-5. Vote for a new MPC Docker image hash on the contract.
+4. Extract the public keys from the nodes and add them to the contract and user accounts, then prepay attestation storage for each node.
+5. Vote for a new MPC Docker image hash, a launcher image hash and the OS measurements on the contract.
 6. Vote to add a domain to the contract.
 7. Send a `sign` command to the network.
 
@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template) — rendered with the launcher and MPC node manifest digests before deployment (see below)
+* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template): rendered with the launcher and MPC node manifest digests, the contract account id and the localnet's genesis hash before deployment (see below)
 * [frodo.toml](../../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../../deployment/localnet/tee/frodo.env)/ [sam.env](../../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
@@ -87,7 +87,9 @@ mkdir -p "/tmp/$USER"
 Set the launcher and MPC node manifest digests in the env file
 (`LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`). `deploy-launcher.sh`
 renders the contract template at deploy time, substituting these digests
-into the `image:` and `DEFAULT_IMAGE_DIGEST` fields.
+into the `image:` and `DEFAULT_IMAGE_DIGEST` fields, and the env file's
+`MPC_CONTRACT_ID` and `NEAR_GENESIS_HASH` (read from the localnet) into the
+fields of the same name.
 
 Example values:
 
@@ -191,16 +193,11 @@ Your MPC nodes are now running inside TDX-backed CVMs and ready to participate i
 
 ## Extracting Keys from MPC Nodes
 
-We must delegate the generated account/responder keys from Sam and Frodo as access keys to their NEAR accounts, allowing them to sign transactions requiring authorization on the contract.
-
-> 📝 *Note:* Responder keys are deprecated and can be removed in future revisions.
+We must delegate the generated account keys from Sam and Frodo as access keys to their NEAR accounts, allowing them to sign transactions requiring authorization on the contract.
 
 ```bash
 export FRODO_PUBKEY=$(curl -s localhost:18081/public_data | jq -r ".near_signer_public_key")
 export SAM_PUBKEY=$(curl -s localhost:18082/public_data | jq -r ".near_signer_public_key")
-
-export FRODO_RESPONDER_KEY=$(curl -s localhost:18081/public_data | jq -r ".near_responder_public_keys[0]")
-export SAM_RESPONDER_KEY=$(curl -s localhost:18082/public_data | jq -r ".near_responder_public_keys[0]")
 ```
 
 ```bash
@@ -208,6 +205,7 @@ export FRODO_P2P_KEY=$(curl -s localhost:18081/public_data | jq -r '.near_p2p_pu
 export SAM_P2P_KEY=$(curl -s localhost:18082/public_data | jq -r '.near_p2p_public_key')
 
 export MPC_HOST=$MACHINE_IP
+export NEAR_GENESIS_HASH=$(curl -s localhost:3030/status | jq -r .genesis_hash)
 ```
 
 ### Add the Keys to User Accounts
@@ -219,10 +217,8 @@ break when a release adds a method the node must call.
 
 ```bash
 near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key frodo.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$FRODO_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 
 near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_PUBKEY" network-config mpc-localnet sign-with-keychain send
-near account add-key sam.test.near grant-function-call-access --allowance unlimited --contract-account-id mpc-contract.test.near --function-names '' use-manually-provided-public-key "$SAM_RESPONDER_KEY" network-config mpc-localnet sign-with-keychain send
 ```
 
 ### Initialize the MPC Contract
@@ -257,6 +253,14 @@ Verify that initialization succeeded:
 
 ```bash
 near contract call-function as-read-only mpc-contract.test.near state json-args {} network-config mpc-localnet now
+```
+
+The contract does not accept requests until every participant has an accepted attestation. Storing a node's first attestation consumes an attestation-storage grant, so prepay one for each node (0.02 NEAR each at the default fee):
+
+```bash
+near contract call-function as-transaction mpc-contract.test.near prepay_attestation_storage json-args '{"account_id":"frodo.test.near","grants":1}' prepaid-gas '30.0 Tgas' attached-deposit '0.02 NEAR' sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+
+near contract call-function as-transaction mpc-contract.test.near prepay_attestation_storage json-args '{"account_id":"sam.test.near","grants":1}' prepaid-gas '30.0 Tgas' attached-deposit '0.02 NEAR' sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
 ---
@@ -344,6 +348,33 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_launc
   sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
 ```
 
+### Vote for OS Measurements
+
+The allowed OS measurements start empty too, and the contract rejects every Dstack attestation until one set is voted in. Both nodes vote for the measurement set of the OS image, found in `crates/mpc-attestation/assets/tcb_info.json`:
+
+```bash
+TCB_FILE=crates/mpc-attestation/assets/tcb_info.json
+MRTD=$(jq -r '.mrtd' $TCB_FILE)
+RTMR0=$(jq -r '.rtmr0' $TCB_FILE)
+RTMR1=$(jq -r '.rtmr1' $TCB_FILE)
+RTMR2=$(jq -r '.rtmr2' $TCB_FILE)
+KP_DIGEST=$(jq -r '.event_log[] | select(.event == "key-provider") | .digest' $TCB_FILE)
+```
+
+```bash
+# Sam votes
+near contract call-function as-transaction mpc-contract.test.near vote_add_os_measurement \
+  json-args "{\"measurement\": {\"mrtd\": \"$MRTD\", \"rtmr0\": \"$RTMR0\", \"rtmr1\": \"$RTMR1\", \"rtmr2\": \"$RTMR2\", \"key_provider_event_digest\": \"$KP_DIGEST\"}}" \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as sam.test.near network-config mpc-localnet sign-with-keychain send
+
+# Frodo votes
+near contract call-function as-transaction mpc-contract.test.near vote_add_os_measurement \
+  json-args "{\"measurement\": {\"mrtd\": \"$MRTD\", \"rtmr0\": \"$RTMR0\", \"rtmr1\": \"$RTMR1\", \"rtmr2\": \"$RTMR2\", \"key_provider_event_digest\": \"$KP_DIGEST\"}}" \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as frodo.test.near network-config mpc-localnet sign-with-keychain send
+```
+
 Verify the contract state:
 
 ```bash
@@ -374,7 +405,7 @@ near contract call-function as-transaction \
 
 You should see both nodes with valid attestations containing a `tls_public_key` and an `account_public_key`.
 
-> **Note:** If the `account_public_key` is `null`, this means the attestation recorded on the contract is the mock attestation, and the real attestation verification failed.
+> **Note:** A node is listed only once the contract has accepted its attestation. If one is missing, its logs show why its submissions are rejected.
 
 
 ---

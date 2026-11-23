@@ -4,7 +4,6 @@ use crate::config::ParticipantsConfig;
 use crate::db::SecretDB;
 use crate::indexer::participants::convert_participant_infos;
 use crate::providers::HasParticipants;
-use crate::providers::ecdsa::presign::PresignOutputWithParticipants;
 use crate::providers::ecdsa::triple::PairedTriple;
 use crate::{
     db::DBCol,
@@ -14,7 +13,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use k256::ProjectivePoint;
 use mpc_contract::primitives::test_utils::gen_participants;
 use mpc_contract::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
-use mpc_primitives::{EpochId, ReconstructionThreshold, domain::DomainId};
+use mpc_primitives::{EpochId, ReconstructionThreshold};
 use near_time::FakeClock;
 use rand::RngCore;
 use rand::rngs::OsRng;
@@ -22,7 +21,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
 use threshold_signatures::ecdsa::Polynomial;
-use threshold_signatures::ecdsa::ot_based_ecdsa::PresignOutput;
 use threshold_signatures::ecdsa::ot_based_ecdsa::triples::{
     TripleGenerationOutput, TriplePub, TripleShare,
 };
@@ -37,7 +35,7 @@ pub fn random_verifying_key() -> VerifyingKey {
 /// Mirrors the internal `make_key` in [`DistributedAssetStorage`] so tests don't
 /// depend on its implementation details.
 pub fn triple_v2_key(t: ReconstructionThreshold, id: UniqueId) -> Vec<u8> {
-    let mut key = t.inner().to_be_bytes().to_vec();
+    let mut key = t.value().to_be_bytes().to_vec();
     key.extend_from_slice(&borsh::to_vec(&id).unwrap());
     key
 }
@@ -50,7 +48,7 @@ pub fn gen_four_participants() -> (EpochData, ParticipantId, ReconstructionThres
     let epoch_id = EpochId::new(rand::thread_rng().next_u64());
     let parameters = GovernanceThresholdParameters::new(
         gen_participants(4),
-        GovernanceThreshold::new(reconstruction_threshold.inner()),
+        GovernanceThreshold::new(reconstruction_threshold.value()),
     )
     .unwrap();
     let parameters_dto: near_mpc_contract_interface::types::GovernanceThresholdParameters =
@@ -78,7 +76,6 @@ pub struct TestContext {
     pub clock: FakeClock,
     pub my_participant_id: ParticipantId,
     pub alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
-    pub presign_domain_ids: Vec<DomainId>,
     /// GovernanceThreshold whose [`TripleV2`] prefix `populate`/`assert_owned` operate on;
     /// matches the fixture from [`gen_four_participants`].
     pub triple_threshold: ReconstructionThreshold,
@@ -107,21 +104,6 @@ pub fn make_triple(participants: &[ParticipantId]) -> PairedTriple {
     (triple_gen_output.clone(), triple_gen_output.clone())
 }
 
-pub fn make_presign(participants: &[ParticipantId]) -> PresignOutputWithParticipants {
-    let g = Polynomial::generate_polynomial(None, 2 - 1, &mut OsRng).unwrap();
-    let scalar = g.eval_at_zero().unwrap().0;
-    let affine_point = (ProjectivePoint::GENERATOR * scalar.invert().unwrap()).to_affine();
-    let presignature = PresignOutput {
-        big_r: affine_point,
-        k: scalar,
-        sigma: scalar,
-    };
-    PresignOutputWithParticipants {
-        presignature: presignature.clone(),
-        participants: participants.to_owned(),
-    }
-}
-
 impl TestContext {
     pub fn new(
         my_participant_id: ParticipantId,
@@ -134,13 +116,12 @@ impl TestContext {
             clock: FakeClock::default(),
             my_participant_id,
             alive_participants,
-            presign_domain_ids: [DomainId(0), DomainId(1)].to_vec(),
             triple_threshold: ReconstructionThreshold::new(3),
         }
     }
 
     fn triple_prefix(&self) -> Vec<u8> {
-        self.triple_threshold.inner().to_be_bytes().to_vec()
+        self.triple_threshold.value().to_be_bytes().to_vec()
     }
 
     pub fn new_store<T>(&self, db_col: DBCol, prefix: Vec<u8>) -> DistributedAssetStorage<T>
@@ -167,27 +148,10 @@ impl TestContext {
         let store = self.new_store::<PairedTriple>(DBCol::TripleV2, self.triple_prefix());
         let id = store.generate_and_reserve_id();
         store.add_owned(id, make_triple(participants));
-
-        for &d in &self.presign_domain_ids {
-            let store = self.new_store::<PresignOutputWithParticipants>(
-                DBCol::Presignature,
-                d.0.to_be_bytes().to_vec(),
-            );
-            let id = store.generate_and_reserve_id();
-            store.add_owned(id, make_presign(participants));
-        }
     }
 
     pub fn assert_owned(&self, expected: usize) {
         let store = self.new_store::<PairedTriple>(DBCol::TripleV2, self.triple_prefix());
         assert_eq!(store.num_owned(), expected);
-
-        for &d in &self.presign_domain_ids {
-            let store = self.new_store::<PresignOutputWithParticipants>(
-                DBCol::Presignature,
-                d.0.to_be_bytes().to_vec(),
-            );
-            assert_eq!(store.num_owned(), expected);
-        }
     }
 }

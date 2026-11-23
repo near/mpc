@@ -16,9 +16,6 @@ pub enum ProtocolError {
     #[error("could not extract the verification key from the commitment")]
     ErrorExtractVerificationKey,
 
-    #[error("could not generate frost rerandomized parameters")]
-    ErrorFrostRerandomizingParameters,
-
     #[error("could not generate valid frost signature")]
     ErrorFrostSigningFailed,
 
@@ -33,9 +30,6 @@ pub enum ProtocolError {
 
     #[error("encountered the identity element (identity point)")]
     IdentityElement,
-
-    #[error("cannot rerandomize presignature with incompatible inputs")]
-    IncompatibleRerandomizationInputs,
 
     #[error("the sent commitment_hash does not equal the hash of the commitment")]
     InvalidCommitmentHash,
@@ -107,8 +101,12 @@ pub enum ProtocolError {
     #[error("integer overflow")]
     IntegerOverflow,
 
-    #[error("expected vector of length {expected}, got {actual}")]
-    UnexpectedLength { expected: usize, actual: usize },
+    #[error("participant {participant:?} sent a vector of length {actual}, expected {expected}")]
+    UnexpectedLength {
+        expected: usize,
+        actual: usize,
+        participant: Participant,
+    },
 
     #[error("deserialization failed: {0}")]
     DeserializationError(String),
@@ -159,12 +157,6 @@ pub enum InitializationError {
 
     #[error("Participant count cannot be < 2, found: {participants}")]
     NotEnoughParticipants { participants: usize },
-
-    #[error("Participant count cannot be < {threshold}, found: {participants}")]
-    NotEnoughParticipantsForThreshold {
-        participants: usize,
-        threshold: usize,
-    },
 
     #[error(
         "not enough intersecting old/new participants ({participants}) to reconstruct private key for resharing with threshold bigger than old threshold ({threshold})"

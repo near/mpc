@@ -11,49 +11,53 @@ use near_contract_transport::{
 use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    AvailableAttestationGrantsArgs, DerivedPublicKeyArgs, GetAttestationArgs,
-    GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs,
-    InitArgs, LatestKeyVersionArgs, PrepayAttestationStorageArgs, PublicKeyArgs,
-    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RemoveUpdateProposalArgs,
-    RequestAppPrivateKeyArgs, SignArgs, StartNodeMigrationArgs, SubmitParticipantInfoArgs,
-    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VoteAddDomainsArgs,
-    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs,
-    VoteNewParametersArgs, VoteTeeVerifierChangeArgs, VoteUpdateArgs,
-    VoteUpdateForeignChainProvidersArgs,
+    AvailableAttestationGrantsArgs, CKDRespondArgs, CleanInvalidAttestationsArgs,
+    DerivedPublicKeyArgs, GetAttestationArgs, GetPendingCKDRequestArgs,
+    GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs, InitArgs,
+    InitRunningArgs, PrepayAttestationStorageArgs, PublicKeyArgs, RegisterBackupServiceArgs,
+    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs,
+    StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
+    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
+    VoteAddDomainsArgs, VoteAddLauncherHashArgs, VoteAddOsMeasurementArgs, VoteCancelKeygenArgs,
+    VoteContractUpdateArgs, VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VotePkArgs,
+    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
-    DepositOverflowError, MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
-    STORAGE_BYTE_COST_YOCTONEAR, SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
-    propose_update_required_deposit_yoctonear,
+    MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
+    SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR,
 };
 use crate::method_names::{
-    ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS, ALLOWED_LAUNCHER_COMPOSE_HASHES,
-    ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS, AVAILABLE_ATTESTATION_GRANTS,
-    CANCEL_NODE_MIGRATION, CONFIG, CONTRACT_UPDATE_VOTES, DERIVED_PUBLIC_KEY, GET_ATTESTATION,
-    GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS, GET_PENDING_CKD_REQUEST,
-    GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST, GET_TEE_ACCOUNTS, INIT,
-    LATEST_KEY_VERSION, LAUNCHER_HASH_VOTES, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES,
-    OS_MEASUREMENT_VOTES, PREPAY_ATTESTATION_STORAGE, PROPOSE_UPDATE, PUBLIC_KEY,
-    REGISTER_BACKUP_SERVICE, REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
-    REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REMOVE_UPDATE_PROPOSAL, REQUEST_APP_PRIVATE_KEY,
-    SIGN, START_NODE_MIGRATION, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
+    ADD_DOMAINS_VOTES, ALLOWED_DOCKER_IMAGE_HASHES, ALLOWED_FOREIGN_CHAIN_PROVIDERS,
+    ALLOWED_LAUNCHER_COMPOSE_HASHES, ALLOWED_LAUNCHER_IMAGE_HASHES, ALLOWED_OS_MEASUREMENTS,
+    AVAILABLE_ATTESTATION_GRANTS, CANCEL_NODE_MIGRATION, CLEAN_INVALID_ATTESTATIONS,
+    CLEAN_TEE_STATUS, CONFIG, CONTRACT_UPDATE_VOTES, CURRENT_KEYSET, DERIVED_PUBLIC_KEY,
+    GENESIS_HASH, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
+    GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
+    GET_TEE_ACCOUNTS, INIT, INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO,
+    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES,
+    PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
+    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
+    REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
+    RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
+    START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
     TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_CANCEL_KEYGEN,
-    VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST,
-    VOTE_NEW_PARAMETERS, VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE,
-    VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
+    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
+    VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
+    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
+    VOTE_TEE_VERIFIER_CHANGE, VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
-    AccountId, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
+    AccountId, AddDomainsVotes, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
     AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
-    ChainEntry, CodeHashesVotes, Config, Curve, DestinationNodeInfo, DomainConfig, DomainId,
+    CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
     Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GetAttestationResponse, GovernanceThresholdParameters, InitConfig,
-    LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash, MeasurementVotes,
-    MigrationInfo, NodeId, NodeImageHash, PayloadBytesError, ProposalHash, ProposeUpdateArgs,
-    ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey, SignRequestArgs,
-    SignatureRequest, TeeVerifierCodeHash, Update, UpdateHash, UpdateId,
-    VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs, YieldIndex,
+    ForeignChainsConfigs, GenesisHash, GovernanceThresholdParameters,
+    GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
+    LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
+    ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState,
+    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation,
+    TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
+    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -78,12 +82,6 @@ pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
 // TODO(#166): not benchmarked, carried over from the callers.
 pub const PREPAY_ATTESTATION_STORAGE_GAS: NearGas = NearGas::from_tgas(30);
 pub const VOTE_MPC_NODE_MANIFEST_DIGEST_GAS: NearGas = NearGas::from_tgas(300);
-/// TODO(#1571): Gas cost for voting on contract updates. Reduced somewhat after
-/// optimization (#1617) by avoiding full contract code deserialization; there’s likely still
-/// room for further optimization.
-// TODO(#4513): drop once production runs the vote-then-submit API.
-#[deprecated(note = "gas for the id-based `vote_update`")]
-pub const VOTE_UPDATE_GAS: NearGas = NearGas::from_tgas(260);
 // TODO(#166): not benchmarked.
 pub const VOTE_CONTRACT_UPDATE_GAS: NearGas = NearGas::from_tgas(22);
 pub const REMOVE_CONTRACT_UPDATE_VOTE_GAS: NearGas = NearGas::from_tgas(5);
@@ -105,6 +103,14 @@ impl<C> MpcContractHandle<C> {
         }
     }
 
+    pub fn id(&self) -> &AccountId {
+        &self.contract_id
+    }
+
+    pub fn caller(&self) -> &C {
+        &self.caller
+    }
+
     /// This method can be used to swap the caller while keeping the contract account.
     pub fn map_caller<D>(self, f: impl FnOnce(C) -> D) -> MpcContractHandle<D> {
         MpcContractHandle {
@@ -119,15 +125,50 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         parameters: GovernanceThresholdParameters,
         tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
         init_config: Option<InitConfig>,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&InitArgs::new(
             parameters,
             tee_verifier_account_id,
+            genesis_hash,
             init_config,
         ))?;
         self.call(FunctionCallArgs::no_deposit(INIT, args, MAX_GAS))
             .await
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub async fn init_running(
+        &self,
+        domains: Vec<DomainConfig>,
+        next_domain_id: DomainId,
+        keyset: Keyset,
+        parameters: GovernanceThresholdParameters,
+        tee_verifier_account_id: AccountId,
+        genesis_hash: GenesisHash,
+        init_config: Option<InitConfig>,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&InitRunningArgs::new(
+            domains,
+            next_domain_id,
+            keyset,
+            parameters,
+            tee_verifier_account_id,
+            genesis_hash,
+            init_config,
+        ))?;
+        self.call(FunctionCallArgs::no_deposit(INIT_RUNNING, args, MAX_GAS))
+            .await
+    }
+
+    pub async fn migrate(&self) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        self.call(FunctionCallArgs::no_deposit(
+            MIGRATE,
+            b"{}".to_vec(),
+            MAX_GAS,
+        ))
+        .await
     }
 
     pub async fn sign(
@@ -142,6 +183,16 @@ impl<C: CallContract> MpcContractHandle<C> {
             NearToken::from_yoctonear(SIGN_DEPOSIT_YOCTONEAR),
         ))
         .await
+    }
+
+    pub async fn respond(
+        &self,
+        request: SignatureRequest,
+        response: SignatureResponse,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&SignatureRespondArgs::new(request, response))?;
+        self.call(FunctionCallArgs::no_deposit(RESPOND, args, MAX_GAS))
+            .await
     }
 
     pub async fn request_app_private_key(
@@ -162,6 +213,16 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn respond_ckd(
+        &self,
+        request: CKDRequest,
+        response: CKDResponse,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&CKDRespondArgs::new(request, response))?;
+        self.call(FunctionCallArgs::no_deposit(RESPOND_CKD, args, MAX_GAS))
+            .await
+    }
+
     pub async fn verify_foreign_transaction(
         &self,
         request: VerifyForeignTransactionRequestArgs,
@@ -176,39 +237,17 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    // TODO(#4513): drop once production runs the vote-then-submit API.
-    #[deprecated(note = "current contracts take `submit_contract_update`")]
-    pub async fn propose_update(
+    pub async fn respond_verify_foreign_tx(
         &self,
-        args: ProposeUpdateArgs,
+        request: VerifyForeignTransactionRequest,
+        response: VerifyForeignTransactionResponse,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let payload_bytes = args.payload_bytes()?;
-        let deposit = NearToken::from_yoctonear(propose_update_required_deposit_yoctonear(
-            payload_bytes,
-            STORAGE_BYTE_COST_YOCTONEAR,
-        )?);
-        let args = borsh::to_vec(&args)?;
-        self.call(FunctionCallArgs::new(
-            PROPOSE_UPDATE,
+        let args =
+            serde_json::to_vec(&VerifyForeignTransactionRespondArgs::new(request, response))?;
+        self.call(FunctionCallArgs::no_deposit(
+            RESPOND_VERIFY_FOREIGN_TX,
             args,
             MAX_GAS,
-            deposit,
-        ))
-        .await
-    }
-
-    // TODO(#4513): drop once production runs the vote-then-submit API.
-    #[deprecated(note = "current contracts take `vote_contract_update`")]
-    pub async fn vote_update(
-        &self,
-        id: UpdateId,
-    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&VoteUpdateArgs::new(id))?;
-        #[expect(deprecated)]
-        self.call(FunctionCallArgs::no_deposit(
-            VOTE_UPDATE,
-            args,
-            VOTE_UPDATE_GAS,
         ))
         .await
     }
@@ -263,22 +302,6 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    // TODO(#4513): drop once production runs the vote-then-submit API.
-    #[deprecated(note = "current contracts store no proposals")]
-    pub async fn remove_update_proposal(
-        &self,
-        id: UpdateId,
-    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&RemoveUpdateProposalArgs::new(id))?;
-        self.call(FunctionCallArgs::no_deposit(
-            REMOVE_UPDATE_PROPOSAL,
-            args,
-            // Cost scales with the size of the removed proposal, which can be a full contract.
-            MAX_GAS,
-        ))
-        .await
-    }
-
     pub async fn vote_add_domains(
         &self,
         domains: Vec<DomainConfig>,
@@ -290,6 +313,29 @@ impl<C: CallContract> MpcContractHandle<C> {
             VOTE_ADD_DOMAINS_GAS,
         ))
         .await
+    }
+
+    pub async fn start_keygen_instance(
+        &self,
+        key_event_id: KeyEventId,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&StartKeygenArgs::new(key_event_id))?;
+        self.call(FunctionCallArgs::no_deposit(
+            START_KEYGEN_INSTANCE,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_pk(
+        &self,
+        key_event_id: KeyEventId,
+        public_key: PublicKey,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VotePkArgs::new(key_event_id, public_key))?;
+        self.call(FunctionCallArgs::no_deposit(VOTE_PK, args, MAX_GAS))
+            .await
     }
 
     pub async fn vote_new_parameters(
@@ -306,9 +352,31 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn start_reshare_instance(
+        &self,
+        key_event_id: KeyEventId,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&StartReshareArgs::new(key_event_id))?;
+        self.call(FunctionCallArgs::no_deposit(
+            START_RESHARE_INSTANCE,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_reshared(
+        &self,
+        key_event_id: KeyEventId,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteResharedArgs::new(key_event_id))?;
+        self.call(FunctionCallArgs::no_deposit(VOTE_RESHARED, args, MAX_GAS))
+            .await
+    }
+
     pub async fn vote_cancel_keygen(
         &self,
-        next_domain_id: u64,
+        next_domain_id: DomainId,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&VoteCancelKeygenArgs::new(next_domain_id))?;
         self.call(FunctionCallArgs::no_deposit(
@@ -345,6 +413,32 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn vote_add_launcher_hash(
+        &self,
+        launcher_hash: LauncherImageHash,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteAddLauncherHashArgs::new(launcher_hash))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_ADD_LAUNCHER_HASH,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn vote_add_os_measurement(
+        &self,
+        measurement: ExpectedMeasurements,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&VoteAddOsMeasurementArgs::new(measurement))?;
+        self.call(FunctionCallArgs::no_deposit(
+            VOTE_ADD_OS_MEASUREMENT,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
     pub async fn vote_tee_verifier_change(
         &self,
         candidate_account_id: AccountId,
@@ -364,7 +458,7 @@ impl<C: CallContract> MpcContractHandle<C> {
 
     pub async fn update_participant_url(
         &self,
-        url: String,
+        url: ParticipantUrl,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
         let args = serde_json::to_vec(&UpdateParticipantUrlArgs::new(url))?;
         self.call(FunctionCallArgs::new(
@@ -496,6 +590,28 @@ impl<C: CallContract> MpcContractHandle<C> {
         ))
         .await
     }
+
+    pub async fn clean_tee_status(&self) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        self.call(FunctionCallArgs::no_deposit(
+            CLEAN_TEE_STATUS,
+            b"{}".to_vec(),
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn clean_invalid_attestations(
+        &self,
+        max_scan: u32,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&CleanInvalidAttestationsArgs::new(max_scan))?;
+        self.call(FunctionCallArgs::no_deposit(
+            CLEAN_INVALID_ATTESTATIONS,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
 }
 
 impl<C: ViewContract + Clone> MpcContractHandle<C> {
@@ -523,6 +639,14 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(LAUNCHER_HASH_VOTES))
     }
 
+    pub fn parameters_votes(&self) -> ViewCall<C, GovernanceThresholdParametersVotes> {
+        self.view(ViewArgs::no_args(PARAMETERS_VOTES))
+    }
+
+    pub fn add_domains_votes(&self) -> ViewCall<C, AddDomainsVotes> {
+        self.view(ViewArgs::no_args(ADD_DOMAINS_VOTES))
+    }
+
     pub fn os_measurement_votes(&self) -> ViewCall<C, MeasurementVotes> {
         self.view(ViewArgs::no_args(OS_MEASUREMENT_VOTES))
     }
@@ -537,11 +661,22 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(STATE))
     }
 
+    /// The keyset of the running state, or of the previous running state while resharing;
+    /// `None` otherwise. Unlike [`Self::state`], its JSON format stays stable across contract
+    /// versions.
+    pub fn current_keyset(&self) -> ViewCall<C, Option<Keyset>> {
+        self.view(ViewArgs::no_args(CURRENT_KEYSET))
+    }
+
     pub fn config(&self) -> ViewCall<C, Config> {
         self.view(ViewArgs::no_args(CONFIG))
     }
 
-    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeId>> {
+    pub fn genesis_hash(&self) -> ViewCall<C, Option<GenesisHash>> {
+        self.view(ViewArgs::no_args(GENESIS_HASH))
+    }
+
+    pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeInfo>> {
         self.view(ViewArgs::no_args(GET_TEE_ACCOUNTS))
     }
 
@@ -598,12 +733,6 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::new(DERIVED_PUBLIC_KEY, args))
     }
 
-    pub fn latest_key_version(&self, signature_scheme: Option<Curve>) -> ViewCall<C, u32> {
-        let args = serde_json::to_vec(&LatestKeyVersionArgs::new(signature_scheme))
-            .expect("plain-data args; JSON serialization cannot fail");
-        self.view(ViewArgs::new(LATEST_KEY_VERSION, args))
-    }
-
     pub fn available_attestation_grants(&self, account_id: AccountId) -> ViewCall<C, u32> {
         let args = serde_json::to_vec(&AvailableAttestationGrantsArgs::new(account_id))
             .expect("plain-data args; JSON serialization cannot fail");
@@ -613,7 +742,7 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     pub fn get_attestation(
         &self,
         tls_public_key: &Ed25519PublicKey,
-    ) -> ViewCall<C, Option<GetAttestationResponse>> {
+    ) -> ViewCall<C, Option<StoredAttestation>> {
         let args = serde_json::to_vec(&GetAttestationArgs::new(tls_public_key))
             .expect("plain-data args; JSON serialization cannot fail");
         self.view(ViewArgs::new(GET_ATTESTATION, args))
@@ -654,19 +783,8 @@ pub enum MpcContractHandleError<E> {
     Serialize(#[from] serde_json::Error),
     #[error("failed to borsh-encode call arguments: {0}")]
     Encode(#[from] std::io::Error),
-    #[error("failed to compute the required deposit: {0}")]
-    Deposit(#[from] DepositOverflowError),
     #[error("contract call failed: {0}")]
     Call(E),
-}
-
-impl<E> From<PayloadBytesError> for MpcContractHandleError<E> {
-    fn from(value: PayloadBytesError) -> Self {
-        match value {
-            PayloadBytesError::Serialize(err) => MpcContractHandleError::Serialize(err),
-            PayloadBytesError::Overflow => MpcContractHandleError::Deposit(DepositOverflowError),
-        }
-    }
 }
 
 #[cfg(test)]
@@ -674,16 +792,19 @@ impl<E> From<PayloadBytesError> for MpcContractHandleError<E> {
 mod tests {
     use super::MpcContractHandle;
     use crate::types::{
-        AccountId, Attestation, AuthScheme, BackupServiceInfo, BitcoinExtractor, BitcoinRpcRequest,
-        BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV, CKDRequest,
-        CKDRequestArgs, ChainEntry, ChainRouting, Curve, DestinationNodeInfo, DomainConfig,
-        DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain, ForeignChainRpcRequest,
-        ForeignTxPayloadVersion, GovernanceThreshold, GovernanceThresholdParameters, Hash256,
-        InitConfig, MockAttestation, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposeUpdateArgs, ProposedGovernanceThresholdParameters, Protocol, ProviderConfig,
-        ProviderId, ReconstructionThreshold, SignRequestArgs, SignatureRequest,
-        TeeVerifierCodeHash, Update, UpdateHash, UpdateId, VerifyForeignTransactionRequest,
-        VerifyForeignTransactionRequestArgs,
+        AccountId, AttemptId, Attestation, AuthScheme, BackupServiceInfo, BitcoinExtractor,
+        BitcoinRpcRequest, BitcoinTxId, BlockConfirmations, CKDAppPublicKey, CKDAppPublicKeyPV,
+        CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry, ChainRouting, DestinationNodeInfo,
+        DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ExpectedMeasurements,
+        ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GenesisHash,
+        GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
+        K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
+        MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
+        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
+        ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
+        SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
+        VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+        VerifyForeignTransactionResponse,
     };
     use near_contract_transport::{
         CallContract, FunctionCallArgs, NearToken, ObservedState, mock::MockViewContract,
@@ -754,27 +875,72 @@ mod tests {
                     "alice.near".parse().unwrap(),
                     ParticipantId(0),
                     ParticipantInfo {
-                        url: "http://localhost:7".to_string(),
+                        url: "http://localhost:7".try_into().unwrap(),
                         tls_public_key: Ed25519PublicKey::from([7u8; 32]),
                     },
                 )],
             },
+        };
+        let genesis_hash = GenesisHash::from([7u8; 32]);
+        let key_event_id = KeyEventId::new(EpochId::new(7), DomainId(0), AttemptId(0));
+        let signature_response = SignatureResponse::Secp256k1(K256Signature {
+            big_r: K256AffinePoint {
+                affine_point: [7u8; 33],
+            },
+            s: K256Scalar { scalar: [7u8; 32] },
+            recovery_id: 0,
+        });
+        let foreign_tx_request = VerifyForeignTransactionRequest {
+            request: ForeignChainRpcRequest::Bitcoin(BitcoinRpcRequest {
+                tx_id: BitcoinTxId([7u8; 32]),
+                confirmations: BlockConfirmations(1),
+                extractors: [BitcoinExtractor::BlockHash].into(),
+            }),
+            domain_id: DomainId(0),
+            payload_version: ForeignTxPayloadVersion::V1,
+            expected_payload_hash: None,
         };
         // When: every handle method, once, in declaration order
         handle
             .init(
                 governance_threshold_parameters.clone(),
                 "tee-verifier.near".parse().unwrap(),
+                genesis_hash,
                 Some(InitConfig::default()),
             )
             .await
             .unwrap();
+        handle
+            .init_running(
+                Vec::new(),
+                DomainId(0),
+                Keyset::new(EpochId::new(7), Vec::new()),
+                governance_threshold_parameters.clone(),
+                "tee-verifier.near".parse().unwrap(),
+                genesis_hash,
+                Some(InitConfig::default()),
+            )
+            .await
+            .unwrap();
+        handle.migrate().await.unwrap();
         handle
             .sign(SignRequestArgs::new(
                 "test".to_string(),
                 Payload::Ecdsa([7u8; 32].into()),
                 DomainId(0),
             ))
+            .await
+            .unwrap();
+        handle
+            .respond(
+                SignatureRequest::new(
+                    DomainId(0),
+                    Payload::Ecdsa([7u8; 32].into()),
+                    &"alice.near".parse().unwrap(),
+                    "test",
+                ),
+                signature_response.clone(),
+            )
             .await
             .unwrap();
         handle
@@ -794,6 +960,21 @@ mod tests {
                 }),
                 domain_id: DomainId(0),
             })
+            .await
+            .unwrap();
+        handle
+            .respond_ckd(
+                CKDRequest::new(
+                    CKDAppPublicKey::AppPublicKey(Bls12381G1PublicKey([7u8; 48])),
+                    DomainId(0),
+                    &"alice.near".parse().unwrap(),
+                    "test",
+                ),
+                CKDResponse {
+                    big_y: Bls12381G1PublicKey([7u8; 48]),
+                    big_c: Bls12381G1PublicKey([7u8; 48]),
+                },
+            )
             .await
             .unwrap();
         handle
@@ -824,16 +1005,16 @@ mod tests {
             })
             .await
             .unwrap();
-        #[expect(deprecated)]
         handle
-            .propose_update(ProposeUpdateArgs {
-                code: Some(vec![7u8; 4]),
-                config: None,
-            })
+            .respond_verify_foreign_tx(
+                foreign_tx_request,
+                VerifyForeignTransactionResponse {
+                    payload_hash: Hash256([7u8; 32]),
+                    signature: signature_response,
+                },
+            )
             .await
             .unwrap();
-        #[expect(deprecated)]
-        handle.vote_update(UpdateId(7)).await.unwrap();
         handle
             .submit_contract_update(Update::Code(vec![7u8; 4]))
             .await
@@ -847,8 +1028,6 @@ mod tests {
             .remove_non_participant_contract_update_votes()
             .await
             .unwrap();
-        #[expect(deprecated)]
-        handle.remove_update_proposal(UpdateId(7)).await.unwrap();
         handle
             .vote_add_domains(vec![DomainConfig {
                 id: DomainId(0),
@@ -856,6 +1035,14 @@ mod tests {
                 reconstruction_threshold: ReconstructionThreshold::new(2),
                 purpose: DomainPurpose::Sign,
             }])
+            .await
+            .unwrap();
+        handle.start_keygen_instance(key_event_id).await.unwrap();
+        handle
+            .vote_pk(
+                key_event_id,
+                PublicKey::Ed25519(Ed25519PublicKey::from([7u8; 32])),
+            )
             .await
             .unwrap();
         handle
@@ -868,8 +1055,24 @@ mod tests {
             )
             .await
             .unwrap();
-        handle.vote_cancel_keygen(7).await.unwrap();
+        handle.start_reshare_instance(key_event_id).await.unwrap();
+        handle.vote_reshared(key_event_id).await.unwrap();
+        handle.vote_cancel_keygen(DomainId(7)).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
+        handle
+            .vote_add_launcher_hash(LauncherImageHash::from([7u8; 32]))
+            .await
+            .unwrap();
+        handle
+            .vote_add_os_measurement(ExpectedMeasurements {
+                mrtd: MrtdHash::from([7u8; 48]),
+                rtmr0: Rtmr0Hash::from([7u8; 48]),
+                rtmr1: Rtmr1Hash::from([7u8; 48]),
+                rtmr2: Rtmr2Hash::from([7u8; 48]),
+                key_provider_event_digest: KeyProviderEventDigest::from([7u8; 48]),
+            })
+            .await
+            .unwrap();
         handle
             .vote_tee_verifier_change(
                 "verifier.near".parse().unwrap(),
@@ -878,7 +1081,7 @@ mod tests {
             .await
             .unwrap();
         handle
-            .update_participant_url("http://localhost:7".to_string())
+            .update_participant_url("http://localhost:7".try_into().unwrap())
             .await
             .unwrap();
         handle
@@ -891,7 +1094,7 @@ mod tests {
             .start_node_migration(DestinationNodeInfo {
                 signer_account_pk: Ed25519PublicKey::from([7u8; 32]),
                 destination_node_info: ParticipantInfo {
-                    url: "http://localhost:7".to_string(),
+                    url: "http://localhost:7".try_into().unwrap(),
                     tls_public_key: Ed25519PublicKey::from([7u8; 32]),
                 },
             })
@@ -931,6 +1134,8 @@ mod tests {
             .await
             .unwrap();
         handle.verify_tee().await.unwrap();
+        handle.clean_tee_status().await.unwrap();
+        handle.clean_invalid_attestations(7).await.unwrap();
 
         // Then
         let calls = caller.calls.lock().unwrap();
@@ -962,10 +1167,14 @@ mod tests {
         let _ = handle.allowed_os_measurements().await;
         let _ = handle.mpc_node_manifest_digest_votes().await;
         let _ = handle.launcher_hash_votes().await;
+        let _ = handle.parameters_votes().await;
+        let _ = handle.add_domains_votes().await;
         let _ = handle.os_measurement_votes().await;
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;
+        let _ = handle.current_keyset().await;
         let _ = handle.config().await;
+        let _ = handle.genesis_hash().await;
         let _ = handle.get_tee_accounts().await;
         let _ = handle.migration_info().await;
         let _ = handle.get_available_foreign_chains().await;
@@ -982,7 +1191,6 @@ mod tests {
                 Some(DomainId(0)),
             )
             .await;
-        let _ = handle.latest_key_version(Some(Curve::Secp256k1)).await;
         let _ = handle
             .available_attestation_grants("alice.near".parse().unwrap())
             .await;

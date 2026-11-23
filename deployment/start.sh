@@ -82,8 +82,7 @@ if not p2p_key_str or not account_sk_str:
 
 secrets = {
     "p2p_private_key": p2p_key_str,
-    "near_signer_key": account_sk_str,
-    "near_responder_keys": [account_sk_str]
+    "near_signer_key": account_sk_str
 }
 
 # Write to secrets.json
@@ -95,19 +94,9 @@ EOF
 }
 
 initialize_mpc_config() {
-
-    if [ -n "$MPC_RESPONDER_ID" ]; then
-        responder_id="$MPC_RESPONDER_ID"
-    else
-        echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
-        responder_id="$MPC_ACCOUNT_ID"
-    fi
-
     cat <<EOF >"$1"
 # Configuration File
 my_near_account_id: $MPC_ACCOUNT_ID
-near_responder_account_id: $responder_id
-number_of_responder_keys: 50
 web_ui: 0.0.0.0:8080
 migration_web_ui: 0.0.0.0:8079
 pprof_bind_address: 0.0.0.0:34001
@@ -116,10 +105,6 @@ triple:
   desired_triples_to_buffer: 16384
   timeout_sec: 120
   parallel_triple_generation_stagger_time_sec: 1
-presignature:
-  concurrency: 16
-  desired_presignatures_to_buffer: 8192
-  timeout_sec: 60
 signature:
   timeout_sec: 60
 ckd:
@@ -143,14 +128,6 @@ update_mpc_config() {
     # Use sed to replace placeholder values
     sed -i "s/my_near_account_id:.*/my_near_account_id: $MPC_ACCOUNT_ID/" "$1"
     sed -i "s/mpc_contract_id:.*/mpc_contract_id: $MPC_CONTRACT_ID/" "$1"
-
-    if [ -n "$MPC_RESPONDER_ID" ]; then
-        responder_id="$MPC_RESPONDER_ID"
-    else
-        echo "WARNING: \$MPC_RESPONDER_ID is not set, falling back to \$MPC_ACCOUNT_ID"
-        responder_id="$MPC_ACCOUNT_ID"
-    fi
-    sed -i "s/near_responder_account_id:.*/near_responder_account_id: $responder_id/" "$1"
 }
 
 generate_secrets_json() {
@@ -160,28 +137,6 @@ generate_secrets_json() {
     if [ -f "$secrets_file" ]; then
         echo "secrets.json already exists, skipping generation"
         return 0
-    fi
-
-    # Check if MPC_P2P_PRIVATE_KEY is empty - if so, fetch from GCP Secret Manager
-    if [ -z "${MPC_P2P_PRIVATE_KEY}" ]; then
-        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_P2P_PRIVATE_KEY_SECRET_ID}" ]; then
-            echo "MPC_P2P_PRIVATE_KEY not provided in environment, fetching from GCP Secret Manager..."
-            MPC_P2P_PRIVATE_KEY=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_P2P_PRIVATE_KEY_SECRET_ID")
-            export MPC_P2P_PRIVATE_KEY
-        fi
-    else
-        echo "Using provided MPC_P2P_PRIVATE_KEY from environment"
-    fi
-
-    # Check if MPC_ACCOUNT_SK is empty - if so, fetch from GCP Secret Manager
-    if [ -z "${MPC_ACCOUNT_SK}" ]; then
-        if [ -n "${GCP_PROJECT_ID}" ] && [ -n "${GCP_ACCOUNT_SK_SECRET_ID}" ]; then
-            echo "MPC_ACCOUNT_SK not provided in environment, fetching from GCP Secret Manager..."
-            MPC_ACCOUNT_SK=$(gcloud secrets versions access latest --project "$GCP_PROJECT_ID" --secret="$GCP_ACCOUNT_SK_SECRET_ID")
-            export MPC_ACCOUNT_SK
-        fi
-    else
-        echo "Using provided MPC_ACCOUNT_SK from environment"
     fi
 
     # Only generate secrets.json if we have the required keys
@@ -228,15 +183,6 @@ update_mpc_config "$MPC_NODE_CONFIG_FILE" && echo "MPC node config updated"
 
 # Generate secrets.json from environment variables if needed (for 2.2.0 -> 3.0.0 upgrade)
 generate_secrets_json
-
-# Check if MPC_SECRET_STORE_KEY is empty - if so, fetch from GCP Secret Manager
-if [ -z "${MPC_SECRET_STORE_KEY}" ]; then
-  echo "MPC_SECRET_STORE_KEY not provided in environment, will fetch from GCP Secret Manager..."
-  MPC_SECRET_STORE_KEY=$(gcloud secrets versions access latest --project $GCP_PROJECT_ID --secret=$GCP_LOCAL_ENCRYPTION_KEY_SECRET_ID)
-  export MPC_SECRET_STORE_KEY
-else
-  echo "Using provided MPC_SECRET_STORE_KEY from environment"
-fi
 
 echo "Starting mpc node..."
 # `exec` so mpc-node becomes PID 1 and receives SIGTERM directly; otherwise

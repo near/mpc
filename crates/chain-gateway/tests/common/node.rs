@@ -1,11 +1,11 @@
 use base64::Engine;
 use chain_gateway::{
-    ChainGateway, NodeHandle,
-    event_subscriber::{block_events::BlockUpdate, subscriber::BlockEventSubscriptions},
+    BlockEventStream, ChainGateway, NodeConfig, NodeHandle,
+    event_subscriber::subscriber::BlockEventSubscriptions,
 };
-use near_indexer::near_primitives::types::Finality;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 use super::accounts::{Contract, TestAccount};
 
@@ -14,7 +14,7 @@ pub struct LocalNode {
     pub ports: PortsConfig,
     pub chain_gateway: ChainGateway,
     pub node_handle: NodeHandle,
-    pub block_update_receiver: Option<tokio::sync::mpsc::Receiver<BlockUpdate>>,
+    pub block_event_stream: Option<BlockEventStream>,
 }
 
 #[derive(Clone)]
@@ -29,18 +29,16 @@ pub(crate) struct LocalNodeBuilder {
 }
 
 impl LocalNodeBuilder {
-    pub(crate) async fn start(self, streamer_config: Option<BlockEventSubscriptions>) -> LocalNode {
-        let indexer_config = near_indexer::IndexerConfig {
-            home_dir: self.home_dir.path().to_path_buf(),
-            sync_mode: near_indexer::SyncModeEnum::LatestSynced,
-            await_for_node_synced: near_indexer::AwaitForNodeSyncedEnum::WaitForFullSync,
-            finality: Finality::None,
-            validate_genesis: true,
-            skip_broken_blocks: false,
-        };
+    pub(crate) async fn start(
+        self,
+        streamer_config: Option<BlockEventSubscriptions>,
+        shutdown: CancellationToken,
+    ) -> LocalNode {
+        let node_config =
+            NodeConfig::new(self.home_dir.path().to_path_buf()).with_validate_genesis(true);
 
-        let (chain_gateway, node_handle, block_update_receiver) =
-            chain_gateway::chain_gateway::ChainGateway::start(indexer_config, streamer_config)
+        let (chain_gateway, node_handle, block_event_stream) =
+            ChainGateway::start(node_config, streamer_config, shutdown)
                 .await
                 .expect("chain_gateway::start should succeed");
 
@@ -51,7 +49,7 @@ impl LocalNodeBuilder {
             ports: ports.unwrap(),
             chain_gateway,
             node_handle,
-            block_update_receiver,
+            block_event_stream,
         }
     }
     pub(crate) fn new(node_name: &str, home_dir: TempDir) -> Self {

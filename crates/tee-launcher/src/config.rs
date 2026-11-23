@@ -1,53 +1,65 @@
 use launcher_interface::types::TeeConfig;
+use mpc_primitives::hash::GenesisHash;
+use near_account_id::AccountId;
 
-use crate::error::LauncherError;
-use crate::types::Platform;
+use crate::{constants::MPC_HOME_DIR, error::LauncherError};
 
-/// Config keys that are not allowed in TEE mode because they could allow
-/// an operator to exfiltrate key material.
-/// Must match the field names in node-config's `StartConfig`.
-const TEE_BLOCKED_KEYS: &[&str] = &["gcp"];
-
-/// Inject launcher-controlled config section (`tee`) into the user-provided
-/// MPC node config table.  Returns an error if the user config already
-/// contains a reserved key.
-///
-/// In TEE mode, keys listed in `TEE_BLOCKED_KEYS` are also rejected.
+/// Inject the launcher-controlled keys into the user-provided MPC node config: the `tee`
+/// section, the contract id and its chain's genesis hash measured into the launcher compose, and
+/// the home directory, so that the node always starts from the chain data already on the disk.
+/// Fails if the user config sets any of them to a different value. Equal values are accepted so
+/// that a user config written for an older launcher keeps working.
 pub fn intercept_node_config(
     mut node_config: toml::Table,
     tee_config: &TeeConfig,
-    platform: Platform,
+    mpc_contract_id: &AccountId,
+    genesis_hash: &GenesisHash,
 ) -> Result<toml::Table, LauncherError> {
     insert_reserved(
         &mut node_config,
+        &[],
         "tee",
         toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
     )?;
-
-    if platform == Platform::Tee {
-        for key in TEE_BLOCKED_KEYS {
-            if node_config.contains_key(*key) {
-                return Err(LauncherError::TeeRestrictedConfigKey(key.to_string()));
-            }
-        }
-    }
+    insert_reserved(&mut node_config, &[], "home_dir", MPC_HOME_DIR.into())?;
+    insert_reserved(
+        &mut node_config,
+        &["node", "indexer"],
+        "mpc_contract_id",
+        mpc_contract_id.as_str().into(),
+    )?;
+    insert_reserved(
+        &mut node_config,
+        &["node", "indexer"],
+        "genesis_hash",
+        genesis_hash.to_string().into(),
+    )?;
 
     Ok(node_config)
 }
 
-/// Insert `value` under `key` in `table`, returning an error if the key
-/// already exists. Used to inject launcher-controlled sections into user config.
 fn insert_reserved(
-    table: &mut toml::Table,
+    mut table: &mut toml::Table,
+    parents: &[&str],
     key: &str,
     value: toml::Value,
 ) -> Result<(), LauncherError> {
+    let reserved_key = || LauncherError::ReservedConfigKey([parents, &[key]].concat().join("."));
+    for parent in parents {
+        table = table
+            .entry(*parent)
+            .or_insert_with(|| toml::Table::new().into())
+            .as_table_mut()
+            .ok_or_else(reserved_key)?;
+    }
     match table.entry(key) {
         toml::map::Entry::Vacant(vacant) => {
             vacant.insert(value);
             Ok(())
         }
-        toml::map::Entry::Occupied(_) => Err(LauncherError::ReservedConfigKey(key.to_string())),
+        // TODO(#5225): reject equal values too once older launchers are no longer approved
+        toml::map::Entry::Occupied(occupied) if *occupied.get() == value => Ok(()),
+        toml::map::Entry::Occupied(_) => Err(reserved_key()),
     }
 }
 
@@ -86,8 +98,10 @@ pub fn validate_image_reference(image_ref: &str) -> Result<(), LauncherError> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use launcher_interface::types::{DockerSha256Digest, TeeAuthorityConfig, TeeConfig};
+    use rstest::rstest;
     use std::assert_matches;
 
     use super::*;
@@ -115,70 +129,91 @@ mod tests {
         }
     }
 
-    #[test]
-    fn intercept_config_injects_tee_config() {
-        // given
-        let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
-
-        // then
-        assert!(result.contains_key("tee"));
-        assert_eq!(result["home_dir"].as_str(), Some("/data"));
-    }
-
-    #[test]
-    fn intercept_config_rejects_user_provided_tee_key() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"[tee]
-type = "Local"
-"#,
+    fn intercept(
+        config: toml::Table,
+        tee_config: &TeeConfig,
+    ) -> Result<toml::Table, LauncherError> {
+        intercept_node_config(
+            config,
+            tee_config,
+            &"v1.signer".parse().unwrap(),
+            &GenesisHash::MAINNET,
         )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
-
-        // then
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
     }
 
     #[test]
-    fn intercept_config_empty_table_gets_tee_key() {
-        // given
-        let config = toml::Table::new();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
-
-        // then
-        assert!(result.contains_key("tee"));
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn intercept_config_preserves_all_existing_keys() {
-        // given
+    fn intercept_node_config__should_add_the_reserved_keys_and_keep_the_user_config() {
+        // Given
         let config: toml::Table = toml::from_str(
             r#"
-home_dir = "/data"
-port = 8080
-[nested]
-key = "value"
-"#,
+            port = 8080
+            node.indexer.sync_mode = "Latest"
+            "#,
         )
         .unwrap();
 
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
+        // When
+        let result = intercept(config, &sample_tee_config()).unwrap();
 
-        // then
-        assert_eq!(result["home_dir"].as_str(), Some("/data"));
-        assert_eq!(result["port"].as_integer(), Some(8080));
-        assert_eq!(result["nested"]["key"].as_str(), Some("value"));
-        assert!(result.contains_key("tee"));
+        // Then
+        let mut expected: toml::Table = toml::from_str(&format!(
+            r#"
+            port = 8080
+            home_dir = "/data"
+            node.indexer.sync_mode = "Latest"
+            node.indexer.mpc_contract_id = "v1.signer"
+            node.indexer.genesis_hash = "{}"
+            "#,
+            GenesisHash::MAINNET
+        ))
+        .unwrap();
+        expected.insert(
+            "tee".into(),
+            toml::Value::try_from(sample_tee_config()).unwrap(),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::tee_table(r#"tee.type = "Local""#, "tee")]
+    #[case::tee_value(r#"tee = "sneaky""#, "tee")]
+    #[case::home_dir(r#"home_dir = "/tmp""#, "home_dir")]
+    #[case::contract_id(
+        r#"node.indexer.mpc_contract_id = "other.near""#,
+        "node.indexer.mpc_contract_id"
+    )]
+    #[case::genesis_hash(r#"node.indexer.genesis_hash = "other""#, "node.indexer.genesis_hash")]
+    #[case::non_table_parent(r#"node.indexer = "sneaky""#, "node.indexer.mpc_contract_id")]
+    fn intercept_node_config__should_reject_a_user_config_that_sets_a_reserved_key(
+        #[case] user_config: &str,
+        #[case] reserved_key: &str,
+    ) {
+        // Given
+        let config: toml::Table = toml::from_str(user_config).unwrap();
+
+        // When
+        let result = intercept(config, &sample_tee_config());
+
+        // Then
+        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == reserved_key);
+    }
+
+    #[rstest]
+    #[case::home_dir(r#"home_dir = "/data""#)]
+    #[case::contract_id(r#"node.indexer.mpc_contract_id = "v1.signer""#)]
+    fn intercept_node_config__should_accept_a_reserved_key_set_to_the_launcher_value(
+        #[case] user_config: &str,
+    ) {
+        // Given
+        let config: toml::Table = toml::from_str(user_config).unwrap();
+        let tee_config = sample_tee_config();
+
+        // When
+        let result = intercept(config, &tee_config).unwrap();
+
+        // Then
+        let without_the_key = intercept(toml::Table::new(), &tee_config).unwrap();
+        assert_eq!(result, without_the_key);
     }
 
     #[test]
@@ -194,7 +229,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee, Platform::Tee).unwrap();
+        let result = intercept(config, &tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -213,7 +248,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee, Platform::Tee).unwrap();
+        let result = intercept(config, &tee).unwrap();
 
         // then — Local variant is a unit variant; just verify the key exists
         assert!(result.contains_key("tee"));
@@ -235,7 +270,7 @@ key = "value"
         };
 
         // when
-        let result = intercept_node_config(config, &tee, Platform::Tee).unwrap();
+        let result = intercept(config, &tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -249,68 +284,15 @@ key = "value"
     #[test]
     fn intercept_config_output_re_serializes_to_valid_toml() {
         // given
-        let config: toml::Table = toml::from_str(r#"home_dir = "/data""#).unwrap();
+        let config: toml::Table = toml::from_str("port = 8080").unwrap();
 
         // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee).unwrap();
+        let result = intercept(config, &sample_tee_config()).unwrap();
         let toml_str = toml::to_string(&result).unwrap();
 
         // then — the output can be parsed back
         let reparsed: toml::Table = toml::from_str(&toml_str).unwrap();
-        assert!(reparsed.contains_key("tee"));
-        assert_eq!(reparsed["home_dir"].as_str(), Some("/data"));
-    }
-
-    #[test]
-    fn intercept_config_tee_as_non_table_value_is_rejected() {
-        // given — tee exists but as a string, not a table
-        let config: toml::Table = toml::from_str(r#"tee = "sneaky""#).unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
-
-        // then — any occupied entry is rejected regardless of value type
-        assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == "tee");
-    }
-
-    #[test]
-    fn intercept_config_rejects_gcp_in_tee_mode() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"
-home_dir = "/data"
-[gcp]
-keyshare_secret_id = "my-secret"
-project_id = "my-project"
-"#,
-        )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::Tee);
-
-        // then
-        assert_matches!(result, Err(LauncherError::TeeRestrictedConfigKey(key)) if key == "gcp");
-    }
-
-    #[test]
-    fn intercept_config_allows_gcp_in_nontee_mode() {
-        // given
-        let config: toml::Table = toml::from_str(
-            r#"
-home_dir = "/data"
-[gcp]
-keyshare_secret_id = "my-secret"
-project_id = "my-project"
-"#,
-        )
-        .unwrap();
-
-        // when
-        let result = intercept_node_config(config, &sample_tee_config(), Platform::NonTee);
-
-        // then
-        assert_matches!(result, Ok(table) if table.contains_key("gcp"));
+        assert_eq!(reparsed, result);
     }
 
     // --- validate_image_reference: positive (valid references) ---

@@ -58,7 +58,7 @@ graph TB
             subgraph MPC_BOX["MPC Node"]
                 direction TB
                 MPC_NODE["MPC Node Process"]
-                ASSETS["Protected Assets:<br/>- TLS private key (P2P)<br/>- Node account private key<br/>- Keyshare<br/>- Triples / presignatures<br/>- AES wrapping private key"]
+                ASSETS["Protected Assets:<br/>- TLS private key (P2P)<br/>- Node account private key<br/>- Keyshare<br/>- Triples<br/>- AES wrapping private key"]
                 MPC_NODE --- ASSETS
             end
 
@@ -158,7 +158,7 @@ graph TB
 | TLS private key | Encrypted disk (Gramine sealed) | TDX CVM memory encryption |
 | Node account key | Encrypted disk | TDX CVM memory encryption |
 | Keyshare | Encrypted disk | TDX CVM memory encryption |
-| Triples / presignatures | Encrypted disk | TDX CVM memory encryption |
+| Triples | Encrypted disk | TDX CVM memory encryption |
 | AES transport key | Sealed in CVM | TDX CVM memory encryption |
 | Operator keys | Operator-managed (out of scope) | Operator-managed |
 
@@ -283,7 +283,7 @@ sequenceDiagram
 | T8 | Contract bug: rogue TLS key registration | Smart contract exploit | Attacker -> Contract | AES key still required for keyshare decryption | If AES provisioning also flawed |
 | T9 | Remote-only AES provisioning bypass | No physical access | Remote attacker -> CVM | Local-only provisioning requirement | Operator machine compromise |
 | T10 | Single key compromise (TLS or AES signing) | Key theft | Attacker -> Operator | Separation of duties: TLS key != AES signing key | Both keys compromised simultaneously |
-| T11 | Stale node running old binary | Operator neglect | Stale node -> Network | `verify_tee` kicks nodes after 7 days; resharing triggered | Below-threshold scenario pauses signing |
+| T11 | Stale node running old binary | Operator neglect | Stale node -> Network | After 7 days, `verify_tee` pauses signing until every participant attestation is valid again or a vote replaces the participant set | A single stale node halts signing until its operator or a governance vote acts |
 | T12 | Malicious migration service | Rogue endpoint | Attacker -> Migration | Contract validates migration service registration + AES key needed | Contract bug + AES compromise |
 | T13 | Rogue CVM with confidentiality break | Attacker runs own TDX server with HW device that breaks CVM confidentiality; spins up rogue migration service with valid attestation | Attacker -> Node CVM | See analysis below (S2: local provisioning; S6/S7: **vulnerable**) | Attestation proves WHAT, not WHO |
 

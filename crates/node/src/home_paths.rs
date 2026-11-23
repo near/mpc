@@ -13,7 +13,7 @@ pub fn near_config_file(home_dir: &Path) -> PathBuf {
     home_dir.join("config.json")
 }
 
-/// SecretDB: triples and presignatures.
+/// SecretDB: triples.
 pub fn assets_dir(home_dir: &Path) -> PathBuf {
     home_dir.join("assets")
 }
@@ -28,7 +28,7 @@ pub fn permanent_key_link(home_dir: &Path) -> PathBuf {
     home_dir.join("key")
 }
 
-/// Local secrets (`secret_store_key`, responder keys, ...).
+/// Local secrets (`p2p_private_key`, `near_signer_key`).
 pub fn secrets_file(home_dir: &Path) -> PathBuf {
     home_dir.join("secrets.json")
 }

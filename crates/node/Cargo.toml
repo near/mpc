@@ -28,13 +28,13 @@ foreign-chain-inspector = { workspace = true }
 foreign-chain-rpc-factory = { workspace = true }
 foreign-chain-rpc-interfaces = { workspace = true }
 futures = { workspace = true }
-gcloud-sdk = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
+inferno = { workspace = true }
 itertools = { workspace = true }
 k256 = { workspace = true, default-features = true }
 launcher-interface = { workspace = true }
@@ -47,13 +47,14 @@ near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-client = { workspace = true }
 near-config-utils = { workspace = true }
-near-contract-transport = { workspace = true }
+near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = [
     "call-args",
+    "client",
     "k256",
     "ed25519-dalek",
     "blstrs",
@@ -90,7 +91,7 @@ tokio-metrics = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
-tower = { workspace = true }
+tower = { workspace = true, features = ["limit"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
@@ -98,7 +99,6 @@ url = { workspace = true }
 # jemalloc heap profiling is only supported on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
 backtrace = { workspace = true }
-inferno = { workspace = true }
 jemalloc_pprof = { workspace = true }
 mappings = { workspace = true }
 pprof_util = { workspace = true }
@@ -119,6 +119,7 @@ httpmock = { workspace = true }
 insta = { workspace = true }
 itertools = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
+near-contract-transport = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
@@ -126,6 +127,7 @@ test-log = { workspace = true }
 test-port-allocator = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }
+tracing-test = { workspace = true }
 
 [lints]
 workspace = true

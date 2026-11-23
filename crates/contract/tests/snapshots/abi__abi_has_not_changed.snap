@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.17.0",
+    "version": "3.19.0",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -15,6 +15,23 @@ expression: abi
   },
   "body": {
     "functions": [
+      {
+        "name": "add_domains_votes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
       {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
@@ -31,7 +48,7 @@ expression: abi
       },
       {
         "name": "allowed_foreign_chain_providers",
-        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes read this at\n startup to validate their local `foreign_chains.yaml`.",
+        "doc": " On-chain RPC provider whitelist keyed by [`ForeignChain`](dtos::ForeignChain). Nodes poll it to\n check their local config against it and to enforce each chain's RPC quorum.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -137,7 +154,7 @@ expression: abi
       },
       {
         "name": "clean_invalid_attestations",
-        "doc": " Prunes up to `max_scan` stored attestations that fail re-verification (expired or\n referencing stale whitelists), returning one attestation-storage grant to the owner of\n each entry removed. Returns the number of entries removed. Callable by anyone while the\n protocol is in [`Running`](ProtocolContractState::Running).",
+        "doc": " Scans up to the given number of stored nodes and removes those whose attestation fails\n re-verification (expired or referencing stale whitelists), except the nodes in use: each\n participant's current node and the node it is migrating to. Gives one attestation-storage\n grant back to the owner of each node removed and returns the number of nodes removed.\n Callable by anyone while the protocol is in [`Running`](ProtocolContractState::Running).",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -190,7 +207,7 @@ expression: abi
       },
       {
         "name": "conclude_node_migration",
-        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if destination node’s TEE quote is invalid\n - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong): if the destination node's url exceeds\n   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).\n - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed): if the destination node's TLS\n   public key belongs to another account\n - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged): if the destination node reuses the\n   caller's current TLS public key",
+        "doc": " Finalizes a node migration for the calling account.\n\n This method can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state\n and by an existing participant. On success, the participant’s information is\n updated to the new destination node.\n\n # Errors\n Returns the following errors:\n - [`InvalidState::ProtocolStateNotRunning`]: if protocol is not in [`Running`](ProtocolContractState::Running) state\n - [`InvalidState::NotParticipant`]: if caller is not a current participant\n - [`ConversionError::DataConversion`](crate::errors::ConversionError::DataConversion): if the provided keyset contains a malformed public key\n - [`NodeMigrationError::KeysetMismatch`](crate::errors::NodeMigrationError::KeysetMismatch): if provided keyset does not match the expected keyset\n - [`NodeMigrationError::MigrationNotFound`](crate::errors::NodeMigrationError::MigrationNotFound): if no migration record exists for the caller\n - [`NodeMigrationError::AccountPublicKeyMismatch`](crate::errors::NodeMigrationError::AccountPublicKeyMismatch): if caller’s public key does not match the expected destination node\n - [`NodeMigrationError::DestinationNodeNotFound`](crate::errors::NodeMigrationError::DestinationNodeNotFound): if the caller has no node stored under\n   the destination TLS public key\n - [`InvalidParameters::InvalidTeeRemoteAttestation`]: if the destination node's attestation is\n   not valid\n - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed): if the destination node's TLS\n   public key belongs to another account\n - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged): if the destination node reuses the\n   caller's current TLS public key\n - [`NodeMigrationError::DestinationSignerKeyMismatch`](crate::errors::NodeMigrationError::DestinationSignerKeyMismatch): if the destination signer key\n   differs from the one the destination node attested with",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -240,6 +257,24 @@ expression: abi
               },
               "uniqueItems": true
             }
+          }
+        }
+      },
+      {
+        "name": "current_keyset",
+        "doc": " The keyset of the running state, or of the previous running state while resharing;\n `None` otherwise.\n\n The backup-cli, which operators upgrade independently of the contract, depends on this\n view's JSON output staying stable across contract versions.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Keyset"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -312,6 +347,23 @@ expression: abi
         "modifiers": [
           "private"
         ]
+      },
+      {
+        "name": "genesis_hash",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/GenesisHash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
       },
       {
         "name": "get_attestation",
@@ -452,14 +504,14 @@ expression: abi
       },
       {
         "name": "get_tee_accounts",
-        "doc": " Returns all accounts that have TEE attestations stored in the contract.\n Note: This includes both current protocol participants and accounts that may have\n submitted TEE information but are not currently part of the active participant set.",
+        "doc": " Returns every stored node, including nodes of accounts that are not participants.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/NodeId"
+              "$ref": "#/definitions/NodeInfo"
             }
           }
         }
@@ -484,6 +536,12 @@ expression: abi
               "type_schema": {
                 "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
                 "type": "string"
+              }
+            },
+            {
+              "name": "genesis_hash",
+              "type_schema": {
+                "$ref": "#/definitions/GenesisHash"
               }
             },
             {
@@ -524,9 +582,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             },
             {
@@ -549,6 +605,12 @@ expression: abi
               }
             },
             {
+              "name": "genesis_hash",
+              "type_schema": {
+                "$ref": "#/definitions/GenesisHash"
+              }
+            },
+            {
               "name": "init_config",
               "type_schema": {
                 "anyOf": [
@@ -565,44 +627,20 @@ expression: abi
         }
       },
       {
-        "name": "latest_key_version",
-        "doc": " Key versions refer new versions of the root key that we may choose to generate on cohort\n changes. Older key versions will always work but newer key versions were never held by\n older signers. Newer key versions may also add new security features, like only existing\n within a secure enclave. The signature_scheme parameter specifies which protocol\n we're querying the latest version for. The default is Secp256k1. The default is **NOT**\n to query across all protocols.",
-        "kind": "view",
-        "params": {
-          "serialization_type": "json",
-          "args": [
-            {
-              "name": "signature_scheme",
-              "type_schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/definitions/Curve"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            }
-          ]
-        },
-        "result": {
-          "serialization_type": "json",
-          "type_schema": {
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0.0
-          }
-        }
-      },
-      {
         "name": "launcher_hash_votes",
-        "doc": " Returns the current launcher hash votes, showing each participant's vote.",
+        "doc": " Returns pending launcher hash votes, may include former participants' votes",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/LauncherHashVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -645,12 +683,37 @@ expression: abi
       },
       {
         "name": "os_measurement_votes",
-        "doc": " Returns the current OS measurement votes, showing each participant's vote.",
+        "doc": " Returns pending OS measurement votes, may include former participants' votes",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "$ref": "#/definitions/MeasurementVotes"
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
+        "name": "parameters_votes",
+        "doc": " Returns the pending `vote_new_parameters` votes, keyed by proposal hash.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedAccountId"
+              },
+              "uniqueItems": true
+            }
           }
         }
       },
@@ -802,7 +865,7 @@ expression: abi
       },
       {
         "name": "request_app_private_key",
-        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in\n [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)\n to support use cases\n where the derived key is intentionally public (no encryption).",
+        "doc": " The derived key is fully determined by the calling account id (taken\n implicitly from the predecessor), the derivation path and the domain —\n no other account can obtain the same key. `app_public_key` does not\n influence the derived key: it is a caller-chosen ephemeral key the\n response is encrypted to; see [`dtos::CKDResponse`] for the encryption\n layout and how to decrypt.\n\n To avoid overloading the network with too many requests,\n we ask for a small deposit for each ckd request.\n\n Note: identity points are accepted in\n [`AppPublicKeyPV`](near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKeyPV)\n to support use cases\n where the derived key is intentionally public (no encryption).",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -881,7 +944,7 @@ expression: abi
                       "[u8; 48]"
                     ]
                   },
-                  "NodeId": {
+                  "NodeInfo": {
                     "Struct": [
                       [
                         "account_id",
@@ -981,8 +1044,8 @@ expression: abi
                   "VerificationContext": {
                     "Struct": [
                       [
-                        "node_id",
-                        "NodeId"
+                        "node",
+                        "NodeInfo"
                       ],
                       [
                         "tcb_info",
@@ -1025,8 +1088,36 @@ expression: abi
           {
             "serialization_type": "borsh",
             "type_schema": {
-              "declaration": "VerificationResult",
+              "declaration": "VerificationResultWithCollateralDates",
               "definitions": {
+                "CollateralDates": {
+                  "Struct": [
+                    [
+                      "earliest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "latest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "earliest_expiration_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_earliest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_latest_issue_date",
+                      "u64"
+                    ],
+                    [
+                      "qe_iden_earliest_expiration_date",
+                      "u64"
+                    ]
+                  ]
+                },
                 "EnclaveReport": {
                   "Struct": [
                     [
@@ -1097,6 +1188,11 @@ expression: abi
                         2,
                         "TD15",
                         "Report__TD15"
+                      ],
+                      [
+                        3,
+                        "TD15Ex",
+                        "Report__TD15Ex"
                       ]
                     ]
                   }
@@ -1114,6 +1210,11 @@ expression: abi
                 "Report__TD15": {
                   "Struct": [
                     "TDReport15"
+                  ]
+                },
+                "Report__TD15Ex": {
+                  "Struct": [
+                    "TDReport15Ex"
                   ]
                 },
                 "String": {
@@ -1206,6 +1307,54 @@ expression: abi
                     ]
                   ]
                 },
+                "TDReport15Ex": {
+                  "Struct": [
+                    [
+                      "base",
+                      "TDReport15"
+                    ],
+                    [
+                      "vmid",
+                      "u8"
+                    ],
+                    [
+                      "td_id",
+                      "[u8; 32]"
+                    ],
+                    [
+                      "dev_info",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "init_service_td_hash",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "init_service_td_attributes",
+                      "[u8; 8]"
+                    ],
+                    [
+                      "init_cpu_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "init_tee_tcb_svn",
+                      "[u8; 16]"
+                    ],
+                    [
+                      "init_tee_fmspc",
+                      "[u8; 12]"
+                    ],
+                    [
+                      "cur_service_td_hash",
+                      "[u8; 48]"
+                    ],
+                    [
+                      "cur_service_td_attributes",
+                      "[u8; 8]"
+                    ]
+                  ]
+                },
                 "TcbStatus": {
                   "Enum": {
                     "tag_width": 1,
@@ -1244,6 +1393,16 @@ expression: abi
                         6,
                         "Revoked",
                         "TcbStatus__Revoked"
+                      ],
+                      [
+                        7,
+                        "TDRelaunchAdvised",
+                        "TcbStatus__TDRelaunchAdvised"
+                      ],
+                      [
+                        8,
+                        "TDRelaunchAdvisedConfigurationNeeded",
+                        "TcbStatus__TDRelaunchAdvisedConfigurationNeeded"
                       ]
                     ]
                   }
@@ -1278,6 +1437,12 @@ expression: abi
                 "TcbStatus__SWHardeningNeeded": {
                   "Struct": null
                 },
+                "TcbStatus__TDRelaunchAdvised": {
+                  "Struct": null
+                },
+                "TcbStatus__TDRelaunchAdvisedConfigurationNeeded": {
+                  "Struct": null
+                },
                 "TcbStatus__UpToDate": {
                   "Struct": null
                 },
@@ -1301,31 +1466,38 @@ expression: abi
                     "elements": "u8"
                   }
                 },
-                "VerificationResult": {
+                "VerificationResultWithCollateralDates": {
                   "Enum": {
                     "tag_width": 1,
                     "variants": [
                       [
                         0,
                         "Verified",
-                        "VerificationResult__Verified"
+                        "VerificationResultWithCollateralDates__Verified"
                       ],
                       [
                         1,
                         "Rejected",
-                        "VerificationResult__Rejected"
+                        "VerificationResultWithCollateralDates__Rejected"
                       ]
                     ]
                   }
                 },
-                "VerificationResult__Rejected": {
+                "VerificationResultWithCollateralDates__Rejected": {
                   "Struct": [
                     "VerifierError"
                   ]
                 },
-                "VerificationResult__Verified": {
+                "VerificationResultWithCollateralDates__Verified": {
                   "Struct": [
-                    "VerifiedReport"
+                    [
+                      "report",
+                      "VerifiedReport"
+                    ],
+                    [
+                      "collateral_dates",
+                      "CollateralDates"
+                    ]
                   ]
                 },
                 "VerifiedReport": {
@@ -1372,6 +1544,16 @@ expression: abi
                   "Struct": [
                     "String"
                   ]
+                },
+                "[u8; 12]": {
+                  "Sequence": {
+                    "length_width": 0,
+                    "length_range": {
+                      "start": 12,
+                      "end": 12
+                    },
+                    "elements": "u8"
+                  }
                 },
                 "[u8; 16]": {
                   "Sequence": {
@@ -1458,6 +1640,9 @@ expression: abi
                 },
                 "u32": {
                   "Primitive": 4
+                },
+                "u64": {
+                  "Primitive": 8
                 },
                 "u8": {
                   "Primitive": 1
@@ -1655,7 +1840,7 @@ expression: abi
       },
       {
         "name": "sign",
-        "doc": " `key_version` must be less than or equal to the value at `latest_key_version`\n To avoid overloading the network with too many requests,\n we ask for a small deposit for each signature request.",
+        "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each signature request.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1696,7 +1881,7 @@ expression: abi
       },
       {
         "name": "start_node_migration",
-        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n On success, the provided [`DestinationNodeInfo`](dtos::DestinationNodeInfo) is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n - [`InvalidCandidateSet::ParticipantUrlTooLong`](crate::errors::InvalidCandidateSet::ParticipantUrlTooLong) if the destination node's url exceeds\n   [`MAX_PARTICIPANT_URL_BYTES`](crate::primitives::participants::MAX_PARTICIPANT_URL_BYTES).\n - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed) if the destination node's TLS\n   public key belongs to another account.\n - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged) if the destination node reuses the\n   signer's current TLS public key. Use [`Self::update_participant_url`] to change only the url.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
+        "doc": " Sets the destination node for the calling account.\n\n This function can only be called while the protocol is in a [`Running`](ProtocolContractState::Running) state.\n The signer must be a current participant of the current epoch, otherwise an error is returned.\n The destination node must already be attested: the signer must own the node stored under\n the destination TLS public key, and its attestation must be valid.\n On success, the provided [`DestinationNodeInfo`](dtos::DestinationNodeInfo) is stored in the contract state\n under the signer’s account ID.\n\n # Errors\n - [`InvalidState::ProtocolStateNotRunning`] if the protocol is not in the [`Running`](ProtocolContractState::Running) state.\n - [`InvalidState::NotParticipant`] if the signer is not a current participant.\n - [`NodeMigrationError::TlsKeyAlreadyClaimed`](crate::errors::NodeMigrationError::TlsKeyAlreadyClaimed) if the destination node's TLS\n   public key belongs to another account.\n - [`NodeMigrationError::DestinationTlsKeyUnchanged`](crate::errors::NodeMigrationError::DestinationTlsKeyUnchanged) if the destination node reuses the\n   signer's current TLS public key. Use [`Self::update_participant_url`] to change only the url.\n - [`NodeMigrationError::DestinationNodeNotFound`](crate::errors::NodeMigrationError::DestinationNodeNotFound) if the signer has no node stored under\n   the destination TLS public key.\n - [`InvalidParameters::InvalidTeeRemoteAttestation`] if the destination node's attestation is\n   not valid.\n - [`NodeMigrationError::DestinationSignerKeyMismatch`](crate::errors::NodeMigrationError::DestinationSignerKeyMismatch) if the destination signer key\n   differs from the one the destination node attested with.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
         "kind": "call",
         "modifiers": [
           "payable"
@@ -1766,11 +1951,16 @@ expression: abi
               "type_schema": {
                 "declaration": "Update",
                 "definitions": {
+                  "BlockCount": {
+                    "Struct": [
+                      "u64"
+                    ]
+                  },
                   "Config": {
                     "Struct": [
                       [
                         "key_event_timeout_blocks",
-                        "u64"
+                        "BlockCount"
                       ],
                       [
                         "tee_upgrade_deadline_duration_seconds",
@@ -1903,7 +2093,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote` call, with [`Self::resolve_verification`] chained as its\n   callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n A contract that is not accepting requests resumes once a stored attestation leaves every\n participant with an accepted TEE state.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`]\n if the node stored under the TLS key belongs to another account, or another participant\n uses the TLS key.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -1990,7 +2180,7 @@ expression: abi
             {
               "name": "url",
               "type_schema": {
-                "type": "string"
+                "$ref": "#/definitions/BoundedString_256"
               }
             }
           ]
@@ -2023,7 +2213,7 @@ expression: abi
       },
       {
         "name": "verify_tee",
-        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case the participants running in an accepted TEE State are too few for the\n GovernanceThreshold or for any domain's signing protocol.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
+        "doc": " Verifies whether every current participant has an accepted TEE state and returns the\n result. While one does not, the contract stops accepting new signature requests or\n responses. No participant is removed: requests resume once every participant has an\n accepted TEE state again, or once a vote replaces the participant set.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -2066,7 +2256,7 @@ expression: abi
       },
       {
         "name": "vote_add_domains",
-        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
+        "doc": " Propose adding a new set of domains for the MPC network.\n Once every participant has voted for the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2143,9 +2333,7 @@ expression: abi
             {
               "name": "next_domain_id",
               "type_schema": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/DomainId"
               }
             }
           ]
@@ -2213,7 +2401,7 @@ expression: abi
       },
       {
         "name": "vote_new_parameters",
-        "doc": " Propose new parameters for the MPC network: participants, governance\n threshold, and optional per-domain\n [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates\n (empty map keeps the current ones), applied on resharing completion.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: [`assert_caller_is_signer()`](MpcContract::assert_caller_is_signer) requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
+        "doc": " Propose new parameters for the MPC network: participants, governance\n threshold, and optional per-domain\n [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates\n (empty map keeps the current ones), applied on resharing completion.\n Only current participants vote, including those the proposal would remove; accounts it\n would add cannot. Once the governance threshold of current participants voted for the exact\n same proposal, this will transition the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: [`assert_caller_is_signer()`](MpcContract::assert_caller_is_signer) requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2241,7 +2429,7 @@ expression: abi
       },
       {
         "name": "vote_pk",
-        "doc": " Casts a vote for `public_key` for the attempt identified by `key_event_id`.\n\n The effect of this method is either:\n  - Returns error (which aborts with no changes), if there is no active key generation\n    attempt (including if the attempt timed out), if the signer is not a participant, or if\n    the key_event_id corresponds to a different domain, different epoch, or different attempt\n    from the current key generation attempt.\n  - Returns Ok(()), with one of the following changes:\n    - A vote has been collected but we don't have enough votes yet.\n    - This vote is for a public key that disagrees from an earlier voted public key, causing\n      the attempt to abort; another call to `start` is then necessary.\n    - Everyone has now voted for the same public key; the state transitions into generating a\n      key for the next domain.\n    - Same as the last case, except that all domains have a generated key now, and the state\n      transitions into Running with the newly generated keys.",
+        "doc": " Casts a vote for `public_key` for the attempt identified by `key_event_id`.\n\n The effect of this method is either:\n  - Returns error (which aborts with no changes), if there is no active key generation\n    attempt (including if the attempt timed out), if the signer is not a participant, or if\n    the key_event_id corresponds to a different domain, different epoch, or different attempt\n    from the current key generation attempt.\n  - Returns Ok(()), with one of the following changes:\n    - A vote has been collected but we don't have enough votes yet.\n    - This vote is for a public key that disagrees from an earlier voted public key, causing\n      the attempt to abort; another call to [`Self::start_keygen_instance`] is then\n      necessary.\n    - Everyone has now voted for the same public key; the state transitions into generating a\n      key for the next domain.\n    - Same as the last case, except that all domains have a generated key now, and the state\n      transitions into Running with the newly generated keys.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2404,24 +2592,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AddDomainsVotes": {
-          "description": "Votes for adding new domains.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/DomainConfig"
-                }
-              }
-            }
-          }
-        },
         "AllowedMpcDockerImageHash": {
           "type": "object",
           "required": [
@@ -2677,10 +2847,25 @@ expression: abi
           "format": "uint64",
           "minimum": 0.0
         },
+        "BlockCount": {
+          "description": "A number of blocks: a distance between heights or a timeout measured in blocks.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "BlockHeight": {
+          "description": "Height of a NEAR block. Later blocks compare greater.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "Bls12381G1PublicKey": {
           "type": "string"
         },
         "Bls12381G2PublicKey": {
+          "type": "string"
+        },
+        "BoundedString_256": {
           "type": "string"
         },
         "BoundedVec_AptosExtractor_Min0_Max32": {
@@ -2783,7 +2968,7 @@ expression: abi
           }
         },
         "CKDRequest": {
-          "description": "CKD request with derived app_id.",
+          "description": "A CKD request as tracked by the contract, with the app id already derived from the caller's account id and derivation path via [`derive_app_id`](crate::kdf::derive_app_id).",
           "type": "object",
           "required": [
             "app_id",
@@ -2811,17 +2996,29 @@ expression: abi
           ],
           "properties": {
             "app_public_key": {
-              "$ref": "#/definitions/CKDAppPublicKey"
+              "description": "Public key used to encrypt the response. Can be chosen independently for each request and does not affect the derived key.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/CKDAppPublicKey"
+                }
+              ]
             },
             "derivation_path": {
+              "description": "Identifies the derived key. The key is determined by the caller's account ID and this derivation path. Different paths produce different keys.",
               "type": "string"
             },
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "description": "Identifies the CKD domain used to derive the key.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainId"
+                }
+              ]
             }
           }
         },
         "CKDResponse": {
+          "description": "Response to a CKD request: the derived key, ElGamal-encrypted to the request's app public key (`pk1` in the publicly-verifiable variant).\n\nFor an app key pair `(a, A = a·G1)` and an ephemeral scalar `y` chosen by the MPC network, `big_y` holds `Y = y·G1` and `big_c` holds `C = derived_key + y·A`; decrypt with `derived_key = C - a·Y`. The derived key is a BLS signature on the app id under the domain's public key; verify it as such before use. Neither field is a public key: the field type is reused for its 48-byte compressed G1 point encoding.",
           "type": "object",
           "required": [
             "big_c",
@@ -2848,7 +3045,7 @@ expression: abi
               "$ref": "#/definitions/NonEmptyBTreeMap_ProviderId_ProviderConfig"
             },
             "quorum": {
-              "description": "Voted RPC response quorum. Stored for a deferred quorum policy and not yet consumed: nodes currently require every provider that reaches a verdict to agree on it.",
+              "description": "How many whitelisted providers must agree before a node accepts a verdict.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -3058,9 +3255,11 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "allOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "How long a launcher hash that no current participant uses stays allowed after its last vote or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is never removed automatically.",
@@ -3111,21 +3310,12 @@ expression: abi
               "minimum": 0.0
             },
             "verifier_tera_gas": {
-              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
+              "description": "Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             }
           }
-        },
-        "Curve": {
-          "description": "Elliptic curve used by a domain.",
-          "type": "string",
-          "enum": [
-            "Secp256k1",
-            "Edwards25519",
-            "Bls12381"
-          ]
         },
         "DestinationNodeInfo": {
           "type": "object",
@@ -3173,9 +3363,7 @@ expression: abi
               "$ref": "#/definitions/DomainPurpose"
             },
             "reconstruction_threshold": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/ReconstructionThreshold"
             }
           }
         },
@@ -3226,9 +3414,7 @@ expression: abi
               }
             },
             "next_domain_id": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/DomainId"
             }
           }
         },
@@ -3629,6 +3815,10 @@ expression: abi
             "$ref": "#/definitions/ForeignChainsConfig"
           }
         },
+        "GenesisHash": {
+          "description": "Hash of the genesis block of a NEAR chain, which identifies the chain. Its text form is base58, as nearcore prints it.",
+          "type": "string"
+        },
         "GovernanceThreshold": {
           "description": "Network-wide governance threshold (`k`): the minimum number of participants that must agree to approve a governance action (participant set changes, resharing, parameter updates). Distinct from a domain's [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.",
           "type": "integer",
@@ -3648,21 +3838,6 @@ expression: abi
             },
             "threshold": {
               "$ref": "#/definitions/GovernanceThreshold"
-            }
-          }
-        },
-        "GovernanceThresholdParametersVotes": {
-          "description": "Votes for threshold parameter changes.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/ProposedGovernanceThresholdParameters"
-              }
             }
           }
         },
@@ -3769,12 +3944,14 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "TTL for launcher hashes no current participant uses; see [`Config::launcher_hash_unused_ttl_seconds`].",
@@ -3849,7 +4026,7 @@ expression: abi
               "minimum": 0.0
             },
             "verifier_tera_gas": {
-              "description": "Gas attached to the cross-contract `verify_quote` call on the verifier.",
+              "description": "Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.",
               "type": [
                 "integer",
                 "null"
@@ -3994,9 +4171,7 @@ expression: abi
               "uniqueItems": true
             },
             "expires_on": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             },
             "public_key": {
               "anyOf": [
@@ -4009,9 +4184,7 @@ expression: abi
               ]
             },
             "started_in": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             }
           }
         },
@@ -4081,99 +4254,11 @@ expression: abi
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "LauncherHashVotes": {
-          "description": "Tracks votes for adding or removing launcher image hashes. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/LauncherVoteAction"
-              }
-            }
-          }
-        },
         "LauncherImageHash": {
           "type": "string",
           "maxLength": 64,
           "minLength": 64,
           "pattern": "^[0-9a-fA-F]+$"
-        },
-        "LauncherVoteAction": {
-          "description": "The action a participant is voting for on a launcher image hash.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "$ref": "#/definitions/LauncherImageHash"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "$ref": "#/definitions/LauncherImageHash"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "MeasurementVoteAction": {
-          "description": "The action a participant is voting for on an OS measurement set.",
-          "oneOf": [
-            {
-              "type": "object",
-              "required": [
-                "Add"
-              ],
-              "properties": {
-                "Add": {
-                  "$ref": "#/definitions/ExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "required": [
-                "Remove"
-              ],
-              "properties": {
-                "Remove": {
-                  "$ref": "#/definitions/ExpectedMeasurements"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "MeasurementVotes": {
-          "description": "Tracks votes for adding or removing OS measurements. Each participant can have at most one active vote at a time.",
-          "type": "object",
-          "required": [
-            "vote_by_account"
-          ],
-          "properties": {
-            "vote_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "$ref": "#/definitions/MeasurementVoteAction"
-              }
-            }
-          }
         },
         "MigrationInfo": {
           "type": "object",
@@ -4283,7 +4368,8 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "NodeId": {
+        "NodeInfo": {
+          "description": "A node the contract stores under its TLS key. Its attestation is a separate [`StoredAttestation`](crate::types::StoredAttestation).",
           "type": "object",
           "required": [
             "account_id",
@@ -4296,7 +4382,7 @@ expression: abi
               "type": "string"
             },
             "account_public_key": {
-              "description": "Full-access Ed25519 public key of the operator account.",
+              "description": "The key the node signs its own transactions with.",
               "allOf": [
                 {
                   "$ref": "#/definitions/Ed25519PublicKey"
@@ -4344,7 +4430,7 @@ expression: abi
               "$ref": "#/definitions/Ed25519PublicKey"
             },
             "url": {
-              "type": "string"
+              "$ref": "#/definitions/BoundedString_256"
             }
           }
         },
@@ -4411,6 +4497,7 @@ expression: abi
           ]
         },
         "PromiseOrValueCKDResponse": {
+          "description": "Response to a CKD request: the derived key, ElGamal-encrypted to the request's app public key (`pk1` in the publicly-verifiable variant).\n\nFor an app key pair `(a, A = a·G1)` and an ephemeral scalar `y` chosen by the MPC network, `big_y` holds `Y = y·G1` and `big_c` holds `C = derived_key + y·A`; decrypt with `derived_key = C - a·Y`. The derived key is a BLS signature on the app id under the domain's public key; verify it as such before use. Neither field is a public key: the field type is reused for its 48-byte compressed G1 point encoding.",
           "type": "object",
           "required": [
             "big_c",
@@ -4507,9 +4594,7 @@ expression: abi
               "default": {},
               "type": "object",
               "additionalProperties": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/ReconstructionThreshold"
               }
             }
           }
@@ -4719,6 +4804,12 @@ expression: abi
             }
           ]
         },
+        "ReconstructionThreshold": {
+          "description": "Per-domain `t` in a t-of-n threshold scheme: shares needed to reconstruct the secret. Distinct from the network-wide governance threshold.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
         "ResharingContractState": {
           "description": "State when the contract is resharing keys to new participants.",
           "type": "object",
@@ -4741,9 +4832,7 @@ expression: abi
               "default": {},
               "type": "object",
               "additionalProperties": {
-                "type": "integer",
-                "format": "uint64",
-                "minimum": 0.0
+                "$ref": "#/definitions/ReconstructionThreshold"
               }
             },
             "previous_running_state": {
@@ -4782,16 +4871,11 @@ expression: abi
           "description": "State when the contract is ready for signature operations.",
           "type": "object",
           "required": [
-            "add_domains_votes",
             "domains",
             "keyset",
-            "parameters",
-            "parameters_votes"
+            "parameters"
           ],
           "properties": {
-            "add_domains_votes": {
-              "$ref": "#/definitions/AddDomainsVotes"
-            },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
             },
@@ -4800,9 +4884,6 @@ expression: abi
             },
             "parameters": {
               "$ref": "#/definitions/GovernanceThresholdParameters"
-            },
-            "parameters_votes": {
-              "$ref": "#/definitions/GovernanceThresholdParametersVotes"
             },
             "previously_cancelled_resharing_epoch_id": {
               "anyOf": [
@@ -4829,9 +4910,15 @@ expression: abi
           ],
           "properties": {
             "domain_id": {
-              "$ref": "#/definitions/DomainId"
+              "description": "Identifies the domain whose distributed key is used to derive the signing key.",
+              "allOf": [
+                {
+                  "$ref": "#/definitions/DomainId"
+                }
+              ]
             },
             "path": {
+              "description": "Identifies the derived key. The key is determined by the caller's account ID and this derivation path. Different paths produce different keys.",
               "type": "string"
             },
             "payload_v2": {
@@ -4978,15 +5065,13 @@ expression: abi
           "description": "An attestation as the contract stores it.",
           "type": "object",
           "required": [
+            "accepted_at_seconds",
             "attestation"
           ],
           "properties": {
             "accepted_at_seconds": {
-              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it, so a submitter can tell whether its own submission landed. `None` for an entry stored before the contract recorded it.",
-              "type": [
-                "integer",
-                "null"
-              ],
+              "description": "Block time at which the contract accepted this attestation. Every accepted submission restamps it.",
+              "type": "integer",
               "format": "uint64",
               "minimum": 0.0
             },

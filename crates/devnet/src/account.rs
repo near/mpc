@@ -35,8 +35,8 @@ use near_primitives::account::AccessKey;
 use near_primitives::action::{Action, AddKeyAction};
 use near_primitives::hash::CryptoHash;
 use near_primitives::types::Finality;
-use near_primitives::types::{Balance, BlockReference, FunctionArgs, Gas};
-use near_primitives::views::{CallResult, QueryRequest, TxExecutionStatus};
+use near_primitives::types::{Balance, BlockReference, Gas};
+use near_primitives::views::{QueryRequest, TxExecutionStatus};
 use rand::rngs::OsRng;
 use reqwest::StatusCode;
 use std::collections::HashMap;
@@ -448,21 +448,8 @@ impl OperatingAccount {
         });
     }
 
-    /// Performs a readonly query to the contract.
-    pub async fn query_contract(&self, method: &str, args: Vec<u8>) -> anyhow::Result<CallResult> {
-        let request = methods::query::RpcQueryRequest {
-            block_reference: BlockReference::Finality(Finality::Final),
-            request: QueryRequest::CallFunction {
-                account_id: self.account_data.account_id.clone(),
-                method_name: method.to_string(),
-                args: FunctionArgs::from(args),
-            },
-        };
-        let result = self.client.submit(request).await?;
-        match result.kind {
-            QueryResponseKind::CallResult(result) => Ok(result),
-            _ => anyhow::bail!("Unexpected response: {:?}", result),
-        }
+    pub fn rpc_client(&self) -> Arc<NearRpcClients> {
+        self.client.clone()
     }
 
     /// Queries the code of the contract.

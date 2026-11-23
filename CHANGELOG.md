@@ -5,6 +5,335 @@ All notable changes to this project will be documented in this file.
 
 This changelog is maintained using [git-cliff](https://git-cliff.org/) and [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/).
 
+## [3.19.0] - 2026-11-12
+
+### 🚀 Features
+
+- [#4951](https://github.com/near/mpc/pull/4951)(@pbeza): *(contract)* Require an attested destination node to start a node migration (#4951)
+
+- [#4990](https://github.com/near/mpc/pull/4990)(@gilcu3): *(node)* Robust ecdsa stub signing without presignatures (#4990)
+
+- [#5000](https://github.com/near/mpc/pull/5000)(@gilcu3): *(node)* Remove support for presignature generation (#5000)
+
+- [#4872](https://github.com/near/mpc/pull/4872)(@SimonRastikian): *(contract)* Report pending parameter votes by proposal hash in state() (#4872)
+
+- [#4910](https://github.com/near/mpc/pull/4910)(@barakeinav1): *(contract)* [**breaking**] Take the attestation expiry from the collateral (#4910)
+
+- [#5052](https://github.com/near/mpc/pull/5052)(@haiyuechen-nearone): *(node)* Rerun the foreign chain probe when the whitelist changes (#5052)
+
+- [#5067](https://github.com/near/mpc/pull/5067)(@gilcu3): *(devnet)* Prepay attestations and use existing transport patterns (#5067)
+
+- [#5074](https://github.com/near/mpc/pull/5074)(@haiyuechen-nearone): *(node)* Log only problems in each foreign chain probe round, then one summary line (#5074)
+
+
+### 🐛 Bug Fixes
+
+- [#4992](https://github.com/near/mpc/pull/4992)(@anodar): Provider matching (#4992)
+
+- [#4952](https://github.com/near/mpc/pull/4952)(@pbeza): *(contract)* Stop clean_invalid_attestations from deleting nodes in use (#4952)
+
+- [#5066](https://github.com/near/mpc/pull/5066)(@gilcu3): Add RUSTSEC-2026-0441 exception, pin-utils is unmaintained (#5066)
+
+- [#5041](https://github.com/near/mpc/pull/5041)(@anodar): Resend foreign-chain registration until the contract reflects it (#5041)
+
+
+### 🚜 Refactor
+
+- [#4981](https://github.com/near/mpc/pull/4981)(@anodar): Drop rpc quorum statuses for non-whitelisted chains (#4981)
+
+- [#4869](https://github.com/near/mpc/pull/4869)(@SimonRastikian): *(contract)* Move parameter votes from RunningContractState to MpcContract (#4869)
+
+- [#4870](https://github.com/near/mpc/pull/4870)(@SimonRastikian): *(contract)* Store parameter votes hash-only via Votes (#4870)
+
+- [#4247](https://github.com/near/mpc/pull/4247)(@SimonRastikian): Redundant code extermination in running.rs (#4247)
+
+- [#4961](https://github.com/near/mpc/pull/4961)(@SimonRastikian): *(primitives)* Move BlockHeight into mpc-primitives and re-export it from near-contract-transport (#4961)
+
+- [#5051](https://github.com/near/mpc/pull/5051)(@haiyuechen-nearone): *(node)* Split the foreign chain probe into modules (#5051)
+
+- [#4953](https://github.com/near/mpc/pull/4953)(@pbeza): *(contract)* Take TLS-key ownership from the node alone (#4953)
+
+- [#4964](https://github.com/near/mpc/pull/4964)(@SimonRastikian): *(contract)* Type key event heights and timeout with BlockHeight (#4964)
+
+- [#5006](https://github.com/near/mpc/pull/5006)(@SimonRastikian): *(node)* Type node-side block heights and deltas with BlockHeight and BlockCount (#5006)
+
+- [#5031](https://github.com/near/mpc/pull/5031)(@pbeza): *(contract)* Simplify the node types and their tests (#5031)
+
+- [#5071](https://github.com/near/mpc/pull/5071)(@gilcu3): *(crypto)* Presign_and_sign removal step 1 (#5071)
+
+- [#5072](https://github.com/near/mpc/pull/5072)(@gilcu3): *(crypto)* Remove presign_and_sign part 2 (#5072)
+
+- [#5053](https://github.com/near/mpc/pull/5053)(@haiyuechen-nearone): *(node)* Fold the whitelist verifier into the foreign chain probe (#5053)
+
+- [#5107](https://github.com/near/mpc/pull/5107)(@haiyuechen-nearone): *(interface)* Move the foreign chain hash, provider and chain support types into their own files (#5107)
+
+- [#5108](https://github.com/near/mpc/pull/5108)(@haiyuechen-nearone): *(interface)* Move the foreign tx request and RPC request types into their own files (#5108)
+
+- [#5131](https://github.com/near/mpc/pull/5131)(@SimonRastikian): *(crypto)* Move OT protocols into their own ecdsa/ot module (#5131)
+
+
+### 📚 Documentation
+
+- [#4972](https://github.com/near/mpc/pull/4972)(@netrome): Tidy up the top level readme (#4972)
+
+- [#5007](https://github.com/near/mpc/pull/5007)(@pbeza): Tell agents to avoid `as` numeric conversions (#5007)
+
+- [#4897](https://github.com/near/mpc/pull/4897)(@barakeinav1): Update the TEE verifier runbook for rotations (#4897)
+
+- [#5043](https://github.com/near/mpc/pull/5043)(@barakeinav1): Clarify upgrade order and node/contract compatibility in RELEASES.md (#5043)
+
+- [#4208](https://github.com/near/mpc/pull/4208)(@AmHelm): Added design doc for debug information service (#4208)
+
+- [#5026](https://github.com/near/mpc/pull/5026)(@gilcu3): *(crypto)* Update docs after Cait-Sith presignature removal (#5026)
+
+- [#5084](https://github.com/near/mpc/pull/5084)(@kevindeforth): Update engineering standards about wire type and internal type separation (#5084)
+
+- [#5129](https://github.com/near/mpc/pull/5129)(@haiyuechen-nearone): Ask for files under 500 lines in AGENTS.md (#5129)
+
+
+### 🧪 Testing
+
+- [#4986](https://github.com/near/mpc/pull/4986)(@barakeinav1): *(localnet)* Check localnet genesis protocol version matches nearcore (#4986)
+
+- [#4941](https://github.com/near/mpc/pull/4941)(@netrome): E2E test for leader failover (#4941)
+
+- [#5064](https://github.com/near/mpc/pull/5064)(@gilcu3): Ensure participants have valid attestations after contract initialization (#5064)
+
+- [#5012](https://github.com/near/mpc/pull/5012)(@barakeinav1): Run the contract and a cluster at mainnet's protocol version (#5012)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4994](https://github.com/near/mpc/pull/4994)(@SimonRastikian): Update contract migrations after 3.18.0 release (#4994)
+
+- [#4998](https://github.com/near/mpc/pull/4998)(@gilcu3): Address libz-sys advisory (#4998)
+
+- [#5001](https://github.com/near/mpc/pull/5001)(@gilcu3): *(crypto)* Remove presignature support from robust ecdsa stub (#5001)
+
+- [#5016](https://github.com/near/mpc/pull/5016)(@gilcu3): Ignore RUSTSEC-2026-0424 wasmtime (#5016)
+
+- [#5022](https://github.com/near/mpc/pull/5022)(@gilcu3): Switch to opus 5.5 for reviews to improve efficiency (#5022)
+
+- [#4912](https://github.com/near/mpc/pull/4912)(@barakeinav1): Remove support for responder keys (#4912)
+
+- [#5024](https://github.com/near/mpc/pull/5024)(@gilcu3): *(crypto)* Benchmark only presign_and_sign for OT-based ECDSA (#5024)
+
+- [#5032](https://github.com/near/mpc/pull/5032)(@dependabot[bot]): Bump the github-actions group across 1 directory with 4 updates (#5032)
+
+- [#5033](https://github.com/near/mpc/pull/5033)(@dependabot[bot]): Bump httpmock from 0.8.3 to 0.9.0 (#5033)
+
+- [#5025](https://github.com/near/mpc/pull/5025)(@gilcu3): *(crypto)* Remove presignatures from Cait-Sith (#5025)
+
+- [#5040](https://github.com/near/mpc/pull/5040)(@gilcu3): Bump dcap-qvl to benefit from upstream changes in attestation-cli (#5040)
+
+- [#4747](https://github.com/near/mpc/pull/4747)(@anodar): Update release process documentation and release workflow (#4747)
+
+- [#5082](https://github.com/near/mpc/pull/5082)(@gilcu3): Bump near-sdk so that minimum protocol version is 85 again (#5082)
+
+- [#5103](https://github.com/near/mpc/pull/5103)(@pbeza): Bump rustix to 1.1.6 for RUSTSEC-2026-0486 (#5103)
+
+- [#5106](https://github.com/near/mpc/pull/5106)(@gilcu3): Bump nearcore to 2.14.1 (#5106)
+
+
+## [3.18.0] - 2026-10-28
+
+### 🚀 Features
+
+- [#4729](https://github.com/near/mpc/pull/4729)(@kevindeforth): Allow wait_for on subscription (#4729)
+
+- [#4759](https://github.com/near/mpc/pull/4759)(@pbeza): *(backup-cli)* Read the contract state through an embedded NEAR node (#4759)
+
+- [#4837](https://github.com/near/mpc/pull/4837)(@barakeinav1): Bound the participant url in the contract interface (#4837)
+
+- [#4850](https://github.com/near/mpc/pull/4850)(@gilcu3): Show commit version for all CLIs (#4850)
+
+- [#4855](https://github.com/near/mpc/pull/4855)(@anodar): *(foreign-chain-inspector)* Make FanOut RPC quorum aware (#4855)
+
+- [#4833](https://github.com/near/mpc/pull/4833)(@kevindeforth): *(node)* Gossip the connected-peers info (#4833)
+
+- [#4885](https://github.com/near/mpc/pull/4885)(@anodar): *(node)* Label mpc_num_requests_without_refined_leader_total with chain (#4885)
+
+- [#4792](https://github.com/near/mpc/pull/4792)(@gilcu3): *(node)* Use online presign for foreign chain tx (#4792)
+
+- [#4715](https://github.com/near/mpc/pull/4715)(@netrome): Leader failover (#4715)
+
+- [#4904](https://github.com/near/mpc/pull/4904)(@gilcu3): *(backup-cli)* Fetch hourly to ensure node's are aware of backup (#4904)
+
+- [#4863](https://github.com/near/mpc/pull/4863)(@gilcu3): *(node)* Support configurable triple batch size (#4863)
+
+- [#4915](https://github.com/near/mpc/pull/4915)(@anodar): Implement whitelist gate in fake indexer, gate availability based on it (#4915)
+
+- [#4917](https://github.com/near/mpc/pull/4917)(@anodar): Enforce RPC quorum in the node (#4917)
+
+- [#4933](https://github.com/near/mpc/pull/4933)(@anodar): *(node)* Register only the foreign chains whose RPC quorum the node reaches (#4933)
+
+
+### 🐛 Bug Fixes
+
+- [#4719](https://github.com/near/mpc/pull/4719)(@barakeinav1): *(tee-verifier)* Take collateral dates only from verified certificates (#4719)
+
+- [#4811](https://github.com/near/mpc/pull/4811)(@kevindeforth): *(node)* Node should emit network metrics in all protocol states (#4811)
+
+- [#4842](https://github.com/near/mpc/pull/4842)(@gilcu3): *(node)* Set reference height from majority of peers and avoid crashing (#4842)
+
+- [#4878](https://github.com/near/mpc/pull/4878)(@gilcu3): *(node)* Update ca certificates (#4878)
+
+- [#4858](https://github.com/near/mpc/pull/4858)(@pbeza): *(contract)* Reject attestations for a TLS key assigned to another account (#4858)
+
+- [#4943](https://github.com/near/mpc/pull/4943)(@gilcu3): *(node)* Avoid keeping stale participant gauges (#4943)
+
+- [#4849](https://github.com/near/mpc/pull/4849)(@barakeinav1): *(node)* Fsync the directory after replacing node files on disk (#4849)
+
+
+### 💼 Other
+
+- [#4942](https://github.com/near/mpc/pull/4942)(@haiyuechen-nearone): Drop the Rosetta cache from the reproducible image layers (#4942)
+
+- [#4969](https://github.com/near/mpc/pull/4969)(@gilcu3): Ignore unreachable zstd advisories and   bump yanked crypto-bigint (#4969)
+
+
+### 🚜 Refactor
+
+- [#4745](https://github.com/near/mpc/pull/4745)(@pbeza): Gate test-only code behind `#[cfg(test)]` (#4745)
+
+- [#4701](https://github.com/near/mpc/pull/4701)(@pbeza): *(threshold-signatures)* Drop four redundant dependencies to shrink the supply-chain attack surface (#4701)
+
+- [#4714](https://github.com/near/mpc/pull/4714)(@kevindeforth): *(node)* Split `OutgoingConnection::new` into helper functions (#4714)
+
+- [#4758](https://github.com/near/mpc/pull/4758)(@gilcu3): Move recovery id functionality as a crypto helper (#4758)
+
+- [#4626](https://github.com/near/mpc/pull/4626)(@kevindeforth): *(e2e)* Route contract views through MpcContractHandle (#4626)
+
+- [#4754](https://github.com/near/mpc/pull/4754)(@kevindeforth): *(sandbox)* Use MpcContractHandle for remaining function calls (#4754)
+
+- [#4819](https://github.com/near/mpc/pull/4819)(@kevindeforth): *(sandbox)* Use typed view calls in sandbox tests (#4819)
+
+- [#4774](https://github.com/near/mpc/pull/4774)(@kevindeforth): *(contract)* Replace LauncherHashVotes with the generic Votes struct (#4774)
+
+- [#4834](https://github.com/near/mpc/pull/4834)(@kevindeforth): *(contract)* Replace MeasurementVotes with the generic Votes Registry (#4834)
+
+- [#4672](https://github.com/near/mpc/pull/4672)(@haiyuechen-nearone): *(node)* Rework whitelist verifier to match providers by URL host (#4672)
+
+- [#4246](https://github.com/near/mpc/pull/4246)(@SimonRastikian): Getting rid of threshold terminology in running.rs and key_resharing.rs (#4246)
+
+- [#4862](https://github.com/near/mpc/pull/4862)(@gilcu3): *(crypto)* Support non-constant batch size for generating triples (#4862)
+
+- [#4689](https://github.com/near/mpc/pull/4689)(@haiyuechen-nearone): *(node)* Move the foreign chain whitelist monitor out of tee.rs (#4689)
+
+- [#4794](https://github.com/near/mpc/pull/4794)(@pbeza): *(node)* Simplify attestation submission by dropping the landing check (#4794)
+
+- [#4884](https://github.com/near/mpc/pull/4884)(@kevindeforth): *(node)* View mpc contract through `MpcContractHandle` (#4884)
+
+- [#4854](https://github.com/near/mpc/pull/4854)(@pbeza): *(contract)* Require `accepted_at_seconds` on stored attestations (#4854)
+
+- [#4888](https://github.com/near/mpc/pull/4888)(@haiyuechen-nearone): *(node-config)* Shared foreign chain whitelist matching and quorum counting logic (#4888)
+
+- [#4923](https://github.com/near/mpc/pull/4923)(@netrome): Re-intorduce `WatchContractState` port, specializing the upstream WatchContractState trait (#4923)
+
+- [#4928](https://github.com/near/mpc/pull/4928)(@SimonRastikian): *(contract)* Use DomainId for next_domain_id instead of raw u64 (#4928)
+
+- [#4930](https://github.com/near/mpc/pull/4930)(@SimonRastikian): *(contract)* Introduce ParticipantCount and drop the count casts (#4930)
+
+- [#4931](https://github.com/near/mpc/pull/4931)(@SimonRastikian): Reconstruction threshold value (#4931)
+
+- [#4893](https://github.com/near/mpc/pull/4893)(@pbeza): *(contract)* Replace `NodeAttestation` with `Node` and unify node lookups (#4893)
+
+
+### 📚 Documentation
+
+- [#4705](https://github.com/near/mpc/pull/4705)(@barakeinav1): *(migration-guide)* Run backup-cli run as a persistent service (#4705)
+
+- [#4757](https://github.com/near/mpc/pull/4757)(@gilcu3): Explain how to verify the contract ECDSA response recovery id (#4757)
+
+- [#4808](https://github.com/near/mpc/pull/4808)(@barakeinav1): Document the checkout needed to reproduce the node image digest (#4808)
+
+- [#4812](https://github.com/near/mpc/pull/4812)(@barakeinav1): Rename the release draft and add a summary before publishing (#4812)
+
+- [#4853](https://github.com/near/mpc/pull/4853)(@netrome): Add helpful docstrings to ckd types (#4853)
+
+- [#4322](https://github.com/near/mpc/pull/4322)(@barakeinav1): *(design)* TDX CI runner design (#4322)
+
+- [#4956](https://github.com/near/mpc/pull/4956)(@anodar): Add whitelist & quorum section in onboarding guide (#4956)
+
+
+### 🧪 Testing
+
+- [#4864](https://github.com/near/mpc/pull/4864)(@anodar): *(contract)* Reject vote_new_parameters from a non-participant caller (#4864)
+
+- [#4868](https://github.com/near/mpc/pull/4868)(@anodar): Cover voter authorization in process_new_parameters_proposal (#4868)
+
+
+### ⚙️ Miscellaneous Tasks
+
+- [#4736](https://github.com/near/mpc/pull/4736)(@anodar): Update localnet script for testing embedded foreign chain configs (#4736)
+
+- [#4755](https://github.com/near/mpc/pull/4755)(@gilcu3): Improve performance of nix-build-mpc-node workflow (#4755)
+
+- [#4704](https://github.com/near/mpc/pull/4704)(@pbeza): Update the transitive dependencies that dependabot does not cover (#4704)
+
+- [#4761](https://github.com/near/mpc/pull/4761)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4761)
+
+- [#4766](https://github.com/near/mpc/pull/4766)(@kdeforth-bot): *(contract)* Update contract migrations after 3.17.0 release (#4766)
+
+- [#4803](https://github.com/near/mpc/pull/4803)(@pbeza): *(ci)* Ignore rustls advisories RUSTSEC-2026-0346, RUSTSEC-2026-0348 and RUSTSEC-2026-0349 (#4803)
+
+- [#4805](https://github.com/near/mpc/pull/4805)(@gilcu3): Handle wasmtime new advisories (#4805)
+
+- [#4810](https://github.com/near/mpc/pull/4810)(@gilcu3): Remove the gcp node image and gcp secrets support (#4810)
+
+- [#4746](https://github.com/near/mpc/pull/4746)(@anodar): Pin repo in cliff config so that it doesn't require upstream (#4746)
+
+- [#4815](https://github.com/near/mpc/pull/4815)(@anodar): Update onboarding doc with updated full foreign chain config for mainnet (#4815)
+
+- [#4816](https://github.com/near/mpc/pull/4816)(@pbeza): Keep tokio's `test-util` feature out of production builds (#4816)
+
+- [#4825](https://github.com/near/mpc/pull/4825)(@anodar): Drop bitcoin support (#4825)
+
+- [#4840](https://github.com/near/mpc/pull/4840)(@barakeinav1): *(ci)* Ignore zip advisories RUSTSEC-2026-0367, RUSTSEC-2026-0368 and RUSTSEC-2026-0369 (#4840)
+
+- [#4856](https://github.com/near/mpc/pull/4856)(@dependabot[bot]): Bump the github-actions group across 1 directory with 4 updates (#4856)
+
+- [#4866](https://github.com/near/mpc/pull/4866)(@netrome): Ignore RUSTSEC-2026-0379 advisory (#4866)
+
+- [#4887](https://github.com/near/mpc/pull/4887)(@netrome): Add foreign tx validation report (#4887)
+
+- [#4880](https://github.com/near/mpc/pull/4880)(@anodar): Add tests from node image for distrusted certs (#4880)
+
+- [#4892](https://github.com/near/mpc/pull/4892)(@gilcu3): Upgrade debian images to properly fix ca certificate issue (#4892)
+
+- [#4877](https://github.com/near/mpc/pull/4877)(@dependabot[bot]): Bump the rust-minor-and-patch group across 1 directory with 8 updates (#4877)
+
+- [#4826](https://github.com/near/mpc/pull/4826)(@pbeza): Make the workflows pass zizmor's strictest audit (#4826)
+
+- [#4900](https://github.com/near/mpc/pull/4900)(@pbeza): Bump tokio to 1.54.1 for RUSTSEC-2026-0384 (#4900)
+
+- [#4902](https://github.com/near/mpc/pull/4902)(@gilcu3): *(contract)* [**breaking**] Remove support for latest_key_version (#4902)
+
+- [#4906](https://github.com/near/mpc/pull/4906)(@gilcu3): Tiny fix for the ci-other filter that went stale (#4906)
+
+- [#4907](https://github.com/near/mpc/pull/4907)(@anodar): Bump gas for cleanup_orphaned_node_migrations and clean_foreign_chain_data (#4907)
+
+- [#4925](https://github.com/near/mpc/pull/4925)(@gilcu3): *(contract)* Make default key event timeout blocks higher (#4925)
+
+- [#4922](https://github.com/near/mpc/pull/4922)(@gilcu3): Remove support for dev measurements (#4922)
+
+- [#4936](https://github.com/near/mpc/pull/4936)(@dependabot[bot]): Bump the github-actions group across 1 directory with 2 updates (#4936)
+
+- [#4937](https://github.com/near/mpc/pull/4937)(@dependabot[bot]): Bump libc from 0.2.190 to 0.2.191 in the rust-minor-and-patch group (#4937)
+
+- [#4940](https://github.com/near/mpc/pull/4940)(@dependabot[bot]): Bump rstest from 0.27.0 to 0.28.0 (#4940)
+
+- [#4938](https://github.com/near/mpc/pull/4938)(@dependabot[bot]): Bump lru from 0.18.5 to 0.19.0 (#4938)
+
+- [#4939](https://github.com/near/mpc/pull/4939)(@dependabot[bot]): Bump near-kit from 0.18.3 to 0.19.0 (#4939)
+
+- [#4935](https://github.com/near/mpc/pull/4935)(@haiyuechen-nearone): Bump nearcore to 2.14.0 (#4935)
+
+- [#4973](https://github.com/near/mpc/pull/4973)(@anodar): Relax quorum of rpc providers in contract migration (#4973)
+
+- [#4963](https://github.com/near/mpc/pull/4963)(@barakeinav1): Bump localnet genesis protocol version to 88 (#4963)
+
+
 ## [3.17.0] - 2026-10-12
 
 ### 🚀 Features

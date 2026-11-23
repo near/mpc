@@ -6,7 +6,7 @@ use near_sdk::near;
 use std::collections::BTreeSet;
 
 pub use near_mpc_contract_interface::types::{
-    MAX_PARTICIPANT_URL_BYTES, ParticipantId, ParticipantUrl,
+    MAX_PARTICIPANT_URL_BYTES, ParticipantCount, ParticipantId, ParticipantUrl,
 };
 
 pub mod hpke {
@@ -45,6 +45,10 @@ impl Participants {
     #[expect(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.participants.len()
+    }
+
+    pub fn count(&self) -> ParticipantCount {
+        ParticipantCount::from_len(self.len())
     }
 
     pub fn insert_with_id(

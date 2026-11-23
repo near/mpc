@@ -22,13 +22,11 @@ pub use frost_eddsa::*;
 pub use ot_based_ecdsa::*;
 pub use robust_ecdsa::*;
 
-use k256::AffinePoint;
 use std::{collections::HashMap, env, sync::LazyLock};
 
 use rand_core::SeedableRng;
 use threshold_signatures::{
     ReconstructionThreshold,
-    ecdsa::{self, Scalar},
     participants::Participant,
     protocol::Protocol,
     test_utils::{MockCryptoRng, Simulator},
@@ -75,20 +73,8 @@ pub struct PreparedPresig<PresignOutput, KeygenOutput> {
     pub protocols: Vec<(Participant, Box<dyn Protocol<Output = PresignOutput>>)>,
     pub key_packages: Vec<(Participant, KeygenOutput)>,
     pub participants: Vec<Participant>,
-    /// Per-participant RNG seed used to build each presign protocol; empty when
-    /// the protocol is built from deterministic inputs.
+    /// Per-participant RNG seed used to build each presign protocol.
     pub seeds: HashMap<Participant, u64>,
-}
-
-pub struct PreparedSig<RerandomizedPresignOutput> {
-    pub protocols: Vec<(
-        Participant,
-        Box<dyn Protocol<Output = ecdsa::SignatureOption>>,
-    )>,
-    pub index: usize,
-    pub presig: RerandomizedPresignOutput,
-    pub derived_pk: AffinePoint,
-    pub msg_hash: Scalar,
 }
 
 #[allow(clippy::cast_precision_loss)]

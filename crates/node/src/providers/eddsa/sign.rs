@@ -27,7 +27,7 @@ impl EddsaSignatureProvider {
 
         let keyshare = self.keyshare(sign_request.domain)?;
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
         let running_participants: Vec<_> = self
             .mpc_config
@@ -96,7 +96,7 @@ impl EddsaSignatureProvider {
 
         let keyshare = self.keyshare(sign_request.domain)?;
         let reconstruction_threshold: usize =
-            keyshare.reconstruction_threshold.inner().try_into()?;
+            keyshare.reconstruction_threshold.value().try_into()?;
         let reconstruction_threshold = ReconstructionThreshold::from(reconstruction_threshold);
 
         let participants = channel.participants().to_vec();

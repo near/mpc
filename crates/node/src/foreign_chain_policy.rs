@@ -137,7 +137,7 @@ fn resolve_participant_ids(
 /// request's chain, always reading the freshest supporters snapshot. A leader is
 /// only elected when a quorum of supporters is eligible, so an under-quorum
 /// request parks instead of burning attempts that cannot find a compatible
-/// presignature.
+/// triple pair.
 pub(crate) struct ForeignChainLeadersRefiner {
     supporters_receiver: watch::Receiver<SupportersByForeignChain>,
     /// [`foreign_tx_required_active_signers`] of the running domains, `None`
@@ -428,7 +428,6 @@ mod tests {
             }),
             payload_version: dtos::ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
-            entropy: [4; 32],
             timestamp_nanosec: 0,
             domain_id: mpc_primitives::domain::DomainId(0),
         }

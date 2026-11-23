@@ -1,10 +1,12 @@
 use near_account_id::AccountId;
+use near_crypto::Signature;
 use near_indexer_primitives::CryptoHash;
+use near_indexer_primitives::types::Nonce;
 
 use crate::errors::{ChainGatewayError, ChainGatewayOp};
 use crate::primitives::{FetchLatestFinalBlockInfo, SubmitSignedTransaction};
 use crate::transaction_sender::TransactionSigner;
-use near_contract_transport::FunctionCallArgs;
+use near_contract_transport::{BlockHeight, FunctionCallArgs};
 
 pub trait SubmitFunctionCall {
     fn submit_function_call_tx(
@@ -12,7 +14,17 @@ pub trait SubmitFunctionCall {
         signer: &TransactionSigner,
         receiver_id: AccountId,
         call: FunctionCallArgs,
-    ) -> impl Future<Output = Result<CryptoHash, ChainGatewayError>> + Send;
+    ) -> impl Future<Output = Result<SubmittedTxMetadata, ChainGatewayError>> + Send;
+}
+
+/// The metadata of a successfully built-and-submitted transaction.
+#[derive(Clone, Debug, PartialEq, Eq, derive_more::Display)]
+#[display("txid={tx_hash}  nonce={nonce}  block={block_height}  sig={signature}")]
+pub struct SubmittedTxMetadata {
+    pub tx_hash: CryptoHash,
+    pub nonce: Nonce,
+    pub signature: Signature,
+    pub block_height: BlockHeight,
 }
 
 impl<T> SubmitFunctionCall for T
@@ -24,7 +36,7 @@ where
         signer: &TransactionSigner,
         receiver_id: AccountId,
         call: FunctionCallArgs,
-    ) -> Result<CryptoHash, ChainGatewayError> {
+    ) -> Result<SubmittedTxMetadata, ChainGatewayError> {
         let method_name = call.method_name.clone();
         let info = self.fetch_latest_final_block_info().await.map_err(|err| {
             ChainGatewayError::FetchFinalBlock {
@@ -37,9 +49,12 @@ where
             }
         })?;
 
+        let block_height = info.observed_at;
         let transaction = signer.create_and_sign_function_call_tx(receiver_id.clone(), call, info);
 
         let tx_hash = transaction.get_hash();
+        let nonce = transaction.transaction.nonce().nonce();
+        let signature = transaction.signature.clone();
 
         tracing::info!(
             tx_hash = ?tx_hash,
@@ -58,7 +73,12 @@ where
                 },
                 message: err.to_string(),
             })?;
-        Ok(tx_hash)
+        Ok(SubmittedTxMetadata {
+            tx_hash,
+            nonce,
+            signature,
+            block_height,
+        })
     }
 }
 
@@ -67,7 +87,7 @@ mod tests {
     use crate::{
         errors::{ChainGatewayError, ChainGatewayOp},
         mock::{MockChainStateBuilder, MockError},
-        transaction_sender::{SubmitFunctionCall, TransactionSigner},
+        transaction_sender::{SubmitFunctionCall, SubmittedTxMetadata, TransactionSigner},
         types::LatestFinalBlockInfo,
     };
 
@@ -154,9 +174,18 @@ mod tests {
             .unwrap();
 
         // Then
+        let block_height = info.observed_at;
         let expected = signer_clone.create_and_sign_function_call_tx(receiver_id, call, info);
 
-        assert_eq!(expected.transaction.get_hash_and_size().0, res);
+        assert_eq!(
+            res,
+            SubmittedTxMetadata {
+                tx_hash: expected.transaction.get_hash_and_size().0,
+                nonce: expected.transaction.nonce().nonce(),
+                signature: expected.signature.clone(),
+                block_height,
+            }
+        );
 
         let found = mock_chain_state.signed_transactions();
         assert_eq!(found, vec![expected]);

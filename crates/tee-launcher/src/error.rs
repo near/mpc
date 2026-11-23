@@ -2,8 +2,11 @@ use launcher_interface::types::DockerSha256Digest;
 
 #[derive(thiserror::Error, Debug)]
 pub enum LauncherError {
-    #[error("EmitEvent failed while extending RTMR3: {0}")]
-    DstackEmitEventFailed(String),
+    #[error("failed to run dstack-util: {0}")]
+    DstackUtilSpawn(std::io::Error),
+
+    #[error("dstack-util extend failed ({}): {}", .0.status, String::from_utf8_lossy(&.0.stderr))]
+    DstackUtilExtendFailed(std::process::Output),
 
     #[error("MPC_HASH_OVERRIDE invalid: {0}")]
     InvalidHashOverride(String),
@@ -50,11 +53,10 @@ pub enum LauncherError {
         source: toml::de::Error,
     },
 
-    #[error("User config contains reserved key [{0}] — remove it from mpc_node_config")]
+    #[error(
+        "User config sets reserved key [{0}] to a value other than the launcher's; remove it from mpc_node_config"
+    )]
     ReservedConfigKey(String),
-
-    #[error("[{0}] is not allowed in TEE mode")]
-    TeeRestrictedConfigKey(String),
 
     #[error("Image pull failed: {0}")]
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),

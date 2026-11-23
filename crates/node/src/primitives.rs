@@ -2,14 +2,15 @@ use crate::network::wire_format::{MpcMessageKind, MpcTaskId};
 use anyhow::Context;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 use threshold_signatures::participants::Participant;
 
-/// A unique ID representing a resource (e.g., a triple/presignature/signature, or a channel).
+/// A unique ID representing a resource (e.g., a triple, or a channel).
 /// The ID shall be globally unique across all participants and across time.
 ///
 /// The ID does not need to be globally unique across different *types* of assets,
-/// as in, it is OK for a triple to have the same unique ID as a presignature.
+/// as in, it is OK for a triple to have the same unique ID as a channel.
 ///
 /// The uniqueness of the unique ID is based on some assumptions:
 ///  - Participants follow the correct unique ID generation algorithm;
@@ -224,9 +225,22 @@ pub struct PeerIndexerHeightMessage {
     pub message: IndexerHeightMessage,
 }
 
+pub struct PeerConnectedPeersInfo {
+    pub from: ParticipantId,
+    pub info: ConnectedPeersInfo,
+}
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct ConnectedPeersInfo {
+    /// Ourselves and every peer we are bidirectionally connected to, each with the latest indexer
+    /// height we know for it.
+    pub peers: BTreeMap<ParticipantId, u64>,
+}
+
 pub enum PeerMessage {
     Mpc(MpcPeerMessage),
     IndexerHeight(PeerIndexerHeightMessage),
+    ConnectedPeersInfo(PeerConnectedPeersInfo),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

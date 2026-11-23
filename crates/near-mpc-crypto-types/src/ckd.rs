@@ -73,7 +73,9 @@ pub struct CKDAppPublicKeyPV {
     pub pk2: Bls12381G2PublicKey,
 }
 
-/// CKD request with derived app_id.
+/// A CKD request as tracked by the contract, with the app id already derived
+/// from the caller's account id and derivation path via
+/// [`derive_app_id`](crate::kdf::derive_app_id).
 #[derive(
     Debug,
     Clone,

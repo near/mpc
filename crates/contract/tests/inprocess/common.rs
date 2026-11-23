@@ -2,7 +2,7 @@ use mpc_contract::{
     MpcContract,
     primitives::{
         participants::{ParticipantId, ParticipantInfo},
-        test_utils::bogus_tee_verifier_account_id,
+        test_utils::{bogus_genesis_hash, bogus_tee_verifier_account_id},
         thresholds::GovernanceThresholdParameters,
     },
 };
@@ -61,10 +61,11 @@ pub fn init_contract(
 
     MpcContract::init_running(
         domains,
-        1,
+        DomainId(1),
         keyset,
         parameters.clone().into(),
         bogus_tee_verifier_account_id(),
+        bogus_genesis_hash(),
         init_config,
     )
     .unwrap()

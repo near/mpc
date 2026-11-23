@@ -5,7 +5,7 @@ use super::queue::{
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::types::Request;
-use near_indexer_primitives::types::{BlockHeight, NumBlocks};
+use near_contract_transport::{BlockCount, BlockHeight};
 use std::collections::{BinaryHeap, HashSet};
 use std::fmt::Debug;
 use std::fmt::Write;
@@ -21,7 +21,7 @@ pub(super) struct CompletedRequest<RequestType, ChainRespondArgsType> {
     pub indexed_block_height: BlockHeight,
     /// The block height at which the request was responded to successfully,
     /// as well as the delay in wall time observed from the indexer.
-    pub completion_delay: Option<(NumBlocks, near_time::Duration)>,
+    pub completion_delay: Option<(BlockCount, near_time::Duration)>,
 }
 
 /// A buffer of completed requests, surfaced on the queue's debug
@@ -95,7 +95,7 @@ impl<RequestType: Request, ChainRespondArgsType> Debug
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let (leader, attempts) = {
             let progress = self.progress.lock().unwrap();
-            (progress.selected_leader, progress.attempts)
+            (progress.presumed_leader, progress.attempts)
         };
         write!(
             f,
@@ -132,10 +132,11 @@ impl<RequestType: Request, ChainRespondArgsType: ChainRespondArgs>
     ) -> String {
         let mut output = String::new();
         let current_leader = self.current_leader(eligible_leaders);
+        let presumed_leader = self.computation_progress.lock().unwrap().presumed_leader;
         write!(
             &mut output,
             "  {:>11} blk {:>10} -> {:<24} id: {} rx: {:<44} tries: {:<2}",
-            if current_leader == Some(me) {
+            if current_leader == Some(me) || presumed_leader == Some(me) {
                 "[leader]"
             } else {
                 ""
@@ -187,7 +188,7 @@ where
         let mut request_lines = Vec::new();
         let EligibleLeadersAndHeights {
             eligible_leaders,
-            maximum_height,
+            reference_height,
             ..
         } = self.eligible_leaders_and_heights();
         let online_participants = self.network_api.alive_participants();
@@ -202,11 +203,7 @@ where
                 self.my_participant_id,
                 &request_eligible_leaders,
             );
-            request_lines.push((
-                request.block_height.into(),
-                request.request.get_id(),
-                debug_line,
-            ));
+            request_lines.push((request.block_height, request.request.get_id(), debug_line));
         }
 
         for completed in &self.recently_completed_requests.requests {
@@ -241,7 +238,7 @@ where
             )?;
         }
 
-        writeln!(f, "Maximum block height known: {}", maximum_height)?;
+        writeln!(f, "Reference block height: {}", reference_height)?;
 
         writeln!(f, "Recent {}s:", RequestType::get_type())?;
         for (_, _, debug_line) in request_lines {
@@ -253,8 +250,9 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
-    use super::{CompletedRequest, CompletedRequests};
+    use super::{BlockCount, BlockHeight, CompletedRequest, CompletedRequests};
     use crate::types::{CKDRequest, SignatureRequest};
     use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
@@ -263,11 +261,14 @@ mod tests {
     use rand::seq::SliceRandom;
 
     #[test]
-    fn test_completed_ckd_requests() {
+    fn completed_requests__should_keep_the_latest_ckd_requests() {
+        // Given
         let mut completed =
             CompletedRequests::<CKDRequest, contract_args::CKDRespondArgs>::default();
         let mut indices = (0..200).collect::<Vec<_>>();
         indices.shuffle(&mut rand::thread_rng());
+
+        // When
         for i in indices {
             completed.add_completed_request(CompletedRequest {
                 request: CKDRequest {
@@ -275,37 +276,44 @@ mod tests {
                     receipt_id: CryptoHash(rand::random()),
                     app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey("bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6".parse().unwrap()),
                     app_id: [1u8; 32].into(),
-                    entropy: [0; 32],
                     timestamp_nanosec: 0,
                     domain_id: DomainId::legacy_ecdsa_id(),
                 },
                 progress: Default::default(),
-                indexed_block_height: i,
+                indexed_block_height: BlockHeight::new(i),
                 completion_delay: if rand::random::<bool>() {
                     None
                 } else {
                     Some((
-                        i + rand::random::<u64>() % 100,
+                        BlockCount::new(rand::random::<u64>() % 100),
                         near_time::Duration::milliseconds(100),
                     ))
                 },
             });
         }
+
+        // Then
         let mut kept_indices = completed
             .requests
             .iter()
             .map(|r| r.indexed_block_height)
             .collect::<Vec<_>>();
         kept_indices.sort_unstable();
-        assert_eq!(kept_indices, (100..200).collect::<Vec<_>>());
+        assert_eq!(
+            kept_indices,
+            (100..200).map(BlockHeight::new).collect::<Vec<_>>()
+        );
     }
 
     #[test]
-    fn test_completed_signature_requests() {
+    fn completed_requests__should_keep_the_latest_signature_requests() {
+        // Given
         let mut completed =
             CompletedRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::default();
         let mut indices = (0..200).collect::<Vec<_>>();
         indices.shuffle(&mut rand::thread_rng());
+
+        // When
         for i in indices {
             completed.add_completed_request(CompletedRequest {
                 request: SignatureRequest {
@@ -313,28 +321,32 @@ mod tests {
                     receipt_id: CryptoHash(rand::random()),
                     payload: Payload::from_legacy_ecdsa([0; 32]),
                     tweak: Tweak::new([0; 32]),
-                    entropy: Default::default(),
                     timestamp_nanosec: Default::default(),
                     domain: DomainId::legacy_ecdsa_id(),
                 },
                 progress: Default::default(),
-                indexed_block_height: i,
+                indexed_block_height: BlockHeight::new(i),
                 completion_delay: if rand::random::<bool>() {
                     None
                 } else {
                     Some((
-                        i + rand::random::<u64>() % 100,
+                        BlockCount::new(rand::random::<u64>() % 100),
                         near_time::Duration::milliseconds(100),
                     ))
                 },
             });
         }
+
+        // Then
         let mut kept_indices = completed
             .requests
             .iter()
             .map(|r| r.indexed_block_height)
             .collect::<Vec<_>>();
         kept_indices.sort_unstable();
-        assert_eq!(kept_indices, (100..200).collect::<Vec<_>>());
+        assert_eq!(
+            kept_indices,
+            (100..200).map(BlockHeight::new).collect::<Vec<_>>()
+        );
     }
 }

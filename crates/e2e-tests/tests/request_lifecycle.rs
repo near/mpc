@@ -88,7 +88,6 @@ async fn mpc_cluster__should_successfully_process_robust_ecdsa_requests() {
         c.threshold = 5;
         c.domains = vec![robust_ecdsa_domain(0, 3)];
         c.triples_to_buffer = 0;
-        c.presignatures_to_buffer = 6;
     })
     .await;
 

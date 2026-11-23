@@ -7,6 +7,7 @@ use crate::{
     views::{
         args::ViewArgs,
         deserialize::DeserializeAs,
+        errors::WaitError,
         observation::{ObservedState, SerializedObservation},
         view_call::ViewCall,
     },
@@ -75,16 +76,207 @@ pub trait WatchContractState {
     fn changed(
         &mut self,
     ) -> impl Future<Output = Result<(), TransportError<Self::ViewError>>> + Send;
+
+    /// Waits until the observed value satisfies `predicate` and returns that observation.
+    ///
+    /// Errors from [`latest()`](WatchContractState::latest) are treated as transient and skipped;
+    /// only [`changed()`](WatchContractState::changed) failing ends the wait early.
+    fn wait_for(
+        &mut self,
+        timeout: Duration,
+        mut predicate: impl FnMut(&Self::Value) -> bool + Send,
+    ) -> impl Future<Output = Result<ObservedState<Self::Value>, WaitError<Self::ViewError>>> + Send
+    where
+        Self: Send,
+    {
+        async move {
+            tokio::time::timeout(timeout, async {
+                loop {
+                    if let Ok(observed) = self.latest()
+                        && predicate(&observed.value)
+                    {
+                        return Ok(observed);
+                    }
+                    self.changed().await?;
+                }
+            })
+            .await
+            .map_err(|_elapsed| WaitError::TimedOut(timeout))?
+        }
+    }
 }
 
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::PollInterval;
-    use std::time::Duration;
+    use super::{PollInterval, WatchContractState};
+    use crate::{ObservedState, TransportError, WaitError};
+    use std::{collections::VecDeque, time::Duration};
+
+    type Observation = Result<ObservedState<&'static str>, TransportError<&'static str>>;
+
+    struct ScriptedWatch {
+        observations: VecDeque<Observation>,
+        closes: bool,
+    }
+
+    impl WatchContractState for ScriptedWatch {
+        type Value = &'static str;
+        type ViewError = &'static str;
+
+        fn latest(&mut self) -> Observation {
+            self.observations
+                .front()
+                .cloned()
+                .expect("script exhausted")
+        }
+
+        async fn changed(&mut self) -> Result<(), TransportError<&'static str>> {
+            if self.observations.len() > 1 {
+                self.observations.pop_front();
+                return Ok(());
+            }
+            if self.closes {
+                return Err(TransportError::MonitoringClosed);
+            }
+            std::future::pending().await
+        }
+    }
+
+    fn observed(observed_at: u64, value: &'static str) -> Observation {
+        Ok(ObservedState {
+            observed_at: observed_at.into(),
+            value,
+        })
+    }
 
     #[test]
     fn poll_interval_new__should_reject_zero() {
         assert!(PollInterval::new(Duration::ZERO).is_none());
+    }
+
+    #[tokio::test]
+    async fn wait_for__should_return_an_observation_that_already_satisfies_the_predicate() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [observed(1, "ready")].into(),
+            closes: true,
+        };
+
+        // When
+        let result = watch
+            .wait_for(Duration::from_secs(10), |value| *value == "ready")
+            .await;
+
+        // Then
+        assert_eq!(result, observed(1, "ready").map_err(WaitError::Transport));
+    }
+
+    #[tokio::test]
+    async fn wait_for__should_return_the_first_observation_satisfying_the_predicate() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [observed(1, "a"), observed(2, "b"), observed(3, "b")].into(),
+            closes: true,
+        };
+
+        // When
+        let result = watch
+            .wait_for(Duration::from_secs(10), |value| *value == "b")
+            .await;
+
+        // Then
+        assert_eq!(result, observed(2, "b").map_err(WaitError::Transport));
+    }
+
+    #[tokio::test]
+    async fn wait_for__should_skip_view_errors() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [
+                Err(TransportError::View("view failed")),
+                observed(2, "recovered"),
+            ]
+            .into(),
+            closes: true,
+        };
+
+        // When
+        let result = watch
+            .wait_for(Duration::from_secs(10), |value| *value == "recovered")
+            .await;
+
+        // Then
+        assert_eq!(
+            result,
+            observed(2, "recovered").map_err(WaitError::Transport)
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wait_for__should_keep_waiting_while_view_errors_persist() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [Err(TransportError::View("view failed"))].into(),
+            closes: false,
+        };
+        let timeout = Duration::from_secs(1);
+
+        // When
+        let result = watch.wait_for(timeout, |value| *value == "never").await;
+
+        // Then
+        assert_eq!(result, Err(WaitError::TimedOut(timeout)));
+    }
+
+    #[tokio::test]
+    async fn wait_for__should_accept_an_unbounded_timeout() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [observed(1, "a"), observed(2, "b")].into(),
+            closes: true,
+        };
+
+        // When
+        let result = watch.wait_for(Duration::MAX, |value| *value == "b").await;
+
+        // Then
+        assert_eq!(result, observed(2, "b").map_err(WaitError::Transport));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wait_for__should_time_out_when_the_predicate_never_holds() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [observed(1, "value")].into(),
+            closes: false,
+        };
+        let timeout = Duration::from_secs(1);
+
+        // When
+        let result = watch.wait_for(timeout, |value| *value == "never").await;
+
+        // Then
+        assert_eq!(result, Err(WaitError::TimedOut(timeout)));
+    }
+
+    #[tokio::test]
+    async fn wait_for__should_fail_when_the_subscription_closes() {
+        // Given
+        let mut watch = ScriptedWatch {
+            observations: [observed(1, "value")].into(),
+            closes: true,
+        };
+
+        // When
+        let result = watch
+            .wait_for(Duration::from_secs(10), |value| *value == "never")
+            .await;
+
+        // Then
+        assert_eq!(
+            result,
+            Err(WaitError::Transport(TransportError::MonitoringClosed))
+        );
     }
 }
