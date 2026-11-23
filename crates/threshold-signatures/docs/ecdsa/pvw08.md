@@ -32,16 +32,16 @@ The hash takes the identities of the two parties as the ordered pair $(\mathcal{
 
 **Round 1 (Receiver):**
 
-1.1 For $i \in [l]$, $\mathcal{R}$ samples $r_ i \overset{R}{\longleftarrow} \mathbb{F}_ q$.
+1.1 For $i \in [l]$, sample $r_ i \overset{R}{\longleftarrow} \mathbb{F}_ q$.
 
-1.2 For $i \in [l]$, $\mathcal{R}$ computes:
+1.2 For $i \in [l]$, compute:
 
 $$
 P_ i \gets r_ i \cdot G_ {b_ i} \qquad
 Q_ i \gets r_ i \cdot H_ {b_ i}
 $$
 
-1.3 $\star$ $\mathcal{R}$ sends $(P_ i, Q_ i)_ {i \in [l]}$ to $\mathcal{S}$.
+1.3 $\star$ send $(P_ i, Q_ i)_ {i \in [l]}$ to $\mathcal{S}$.
 
 **Round 1 (Sender):**
 
