@@ -395,6 +395,41 @@ mod tests {
         assert_eq!(report.counts_per_chain().len(), mainnets.len());
     }
 
+    #[tokio::test]
+    async fn probe_all_providers__should_report_each_chain_under_its_own_chain() {
+        // Given
+        let server = httpmock::MockServer::start_async().await;
+        mock_jsonrpc(&server, JsonRpcAnswer::Fingerprint(MAINNET)).await;
+        let mut config = single_chain(
+            ForeignChain::Starknet,
+            chain_config(
+                Some(MAINNET),
+                one_provider(PROVIDER_NAME, &server.base_url()),
+            ),
+        );
+        put_chain(
+            &mut config,
+            ForeignChain::Bitcoin,
+            chain_config(
+                Some(BITCOIN_MAINNET),
+                one_provider(PROVIDER_NAME, CLOSED_PORT_URL),
+            ),
+        );
+
+        // When
+        let report = probe_all_providers(&config, &InspectorFactory).await;
+
+        // Then
+        assert_eq!(
+            status_of(&report, ForeignChain::Starknet, PROVIDER_NAME),
+            ProviderStatus::Healthy
+        );
+        assert_eq!(
+            status_of(&report, ForeignChain::Bitcoin, PROVIDER_NAME),
+            ProviderStatus::Unreachable
+        );
+    }
+
     #[rstest]
     #[case::starknet_normalizes_the_reported_fingerprint(
         ForeignChain::Starknet,

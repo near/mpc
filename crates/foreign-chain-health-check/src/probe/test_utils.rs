@@ -1,5 +1,3 @@
-//! Fixtures for the probe's tests.
-
 use super::*;
 use foreign_chain_inspector::mock::{MockInspector, MockReply};
 use foreign_chain_inspector::{
@@ -72,7 +70,7 @@ pub(crate) const CLOSED_PORT_URL: &str = "http://127.0.0.1:9";
 pub(crate) const ANY_FINGERPRINT: &str = "any-fingerprint";
 pub(crate) const SUI_MAINNET: &str = sui::MAINNET_GENESIS_CHECKPOINT_DIGEST;
 pub(crate) const SUI_TESTNET: &str = sui::TESTNET_GENESIS_CHECKPOINT_DIGEST;
-/// Aptos providers reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
+/// An Aptos provider reports its chain id as a bare JSON number (`uint8`). The configured fingerprint is
 /// the same number as text.
 pub(crate) const APTOS_MAINNET: u64 = aptos::MAINNET_CHAIN_ID;
 pub(crate) const APTOS_TESTNET: u64 = aptos::TESTNET_CHAIN_ID;
@@ -85,7 +83,7 @@ pub(crate) const FOGO_MAINNET: &str = svm::FOGO_MAINNET_GENESIS_HASH;
 
 pub(crate) struct EvmMainnet {
     pub(crate) chain: ForeignChain,
-    pub(crate) chain_id: u64,
+    chain_id: u64,
 }
 
 impl EvmMainnet {
