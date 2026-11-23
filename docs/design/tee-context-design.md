@@ -1,5 +1,7 @@
 # TEE Context
 
+**Status:** Partially superseded. TODO(#2730): rewrite this document. The `TeeContext` described below was removed, and the crate now holds the MPC node's TEE state monitors (`TeeStateMonitors`), which poll the allowed image hashes, launcher compose hashes, OS measurements and the node's stored attestation. Attestation submission still lives in the MPC node.
+
 The TEE Context is a shared crate (`crates/tee-context`) for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node depends on both the MPC Context (for protocol orchestration) and the TEE Context (for attestation) as separate, parallel components. Other services (Archive Signer, Backup Service) use the TEE Context directly.
 
 ## Interface

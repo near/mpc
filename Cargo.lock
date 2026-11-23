@@ -6178,6 +6178,7 @@ dependencies = [
  "sha3 0.10.9",
  "socket2",
  "tee-authority",
+ "tee-context",
  "tempfile",
  "test-log",
  "test-port-allocator",
@@ -11209,16 +11210,13 @@ dependencies = [
 name = "tee-context"
 version = "3.19.0"
 dependencies = [
- "chain-gateway",
- "ed25519-dalek 2.2.0",
+ "backon",
  "mpc-primitives",
- "near-account-id",
  "near-contract-transport",
  "near-mpc-contract-interface",
- "serde_json",
- "thiserror 2.0.21",
+ "prometheus",
+ "rstest",
  "tokio",
- "tokio-util",
  "tracing",
 ]
 
