@@ -467,10 +467,10 @@ mod tests {
         gen_account_id, gen_participant_url, gen_participants, node_for,
     };
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
-    use crate::tee::proposal::{NodeImageHash, get_docker_compose_hash};
+    use crate::tee::proposal::NodeImageHash;
     use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
     use crate::tee::test_utils::{
-        NANOS_PER_SECOND, allow_launcher, dstack_fixture_node, set_block_secs,
+        MPC_NODE_COMPOSE, NANOS_PER_SECOND, allow_launcher, dstack_fixture_node, set_block_secs,
         whitelist_dstack_measurements,
     };
     use dtos::{
@@ -1051,9 +1051,7 @@ mod tests {
                 create_node(&account_id, &tls_public_key),
                 MpcMockAttestation::WithConstraints {
                     mpc_docker_image_hash: None,
-                    launcher_docker_compose_hash: Some(get_docker_compose_hash(
-                        &adopted, &mpc_hash, None,
-                    )),
+                    launcher_docker_compose_hash: Some(MPC_NODE_COMPOSE.hash(&adopted, &mpc_hash)),
                     expiry_timestamp_seconds: None,
                     expected_measurements: None,
                 },

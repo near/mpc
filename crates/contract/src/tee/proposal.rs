@@ -1,15 +1,17 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_attestation::attestation::UnixSeconds;
 use near_mpc_contract_interface::types::{self as dtos, LauncherVoteAction};
-use near_sdk::{env, log};
+use near_sdk::log;
 use std::time::Duration;
 
-use crate::primitives::{
-    proposal_hash::{Borsh, Identity, Sha256, ToProposalHash},
-    time::Timestamp,
+use crate::{
+    primitives::{
+        proposal_hash::{Borsh, Identity, Sha256, ToProposalHash},
+        time::Timestamp,
+    },
+    tee::launcher_compose::LauncherCompose,
 };
 
-use mpc_primitives::hash::GenesisHash;
 pub use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
 
 impl ToProposalHash for NodeImageHash {
@@ -21,20 +23,6 @@ impl ToProposalHash for LauncherVoteAction {
     type Serializer = Borsh;
     type Hasher = Sha256;
 }
-
-/// Docker Compose YAML template for the launcher. Compose hashes are derived on-chain as
-/// `sha256(template(launcher_hash, mpc_hash, contract_id, genesis_hash))`. Placeholders:
-/// - `{{LAUNCHER_IMAGE_HASH}}`: the launcher Docker image hash
-/// - `{{DEFAULT_IMAGE_DIGEST_HASH}}`: the MPC node Docker image hash
-/// - `{{MPC_CONTRACT_ID}}`: the account id of this contract
-/// - `{{NEAR_GENESIS_HASH}}`: the genesis hash of the chain this contract runs on, empty if it
-///   has none set
-///
-/// Attestation binds the launcher to this text only through its hash, so it must leave nothing
-/// for Docker Compose to resolve at start-up: no variable substitution, no environment variable
-/// without a value, no key such as `env_file` or `build` that makes Compose read guest files
-const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
-    include_str!("../../assets/launcher_docker_compose.yaml.template");
 
 /// An allowed Docker image configuration entry containing the MPC image hash
 /// and when it was added to the allowlist.
@@ -241,7 +229,7 @@ impl AllowedLauncherImages {
         &mut self,
         launcher_hash: LauncherImageHash,
         current_mpc_image_hashes: &[NodeImageHash],
-        genesis_hash: Option<&GenesisHash>,
+        compose: LauncherCompose,
         ttl: Duration,
     ) -> AllowedLauncherImageInsertion {
         if let Some(existing) = self
@@ -255,7 +243,7 @@ impl AllowedLauncherImages {
 
         let compose_hashes: Vec<LauncherDockerComposeHash> = current_mpc_image_hashes
             .iter()
-            .map(|mpc_hash| get_docker_compose_hash(&launcher_hash, mpc_hash, genesis_hash))
+            .map(|mpc_hash| compose.hash(&launcher_hash, mpc_hash))
             .collect();
 
         self.entries.push(AllowedLauncherImage::new(
@@ -310,11 +298,10 @@ impl AllowedLauncherImages {
     pub fn add_mpc_image_compose_hashes(
         &mut self,
         mpc_image_hash: &NodeImageHash,
-        genesis_hash: Option<&GenesisHash>,
+        compose: LauncherCompose,
     ) {
         for entry in &mut self.entries {
-            let compose_hash =
-                get_docker_compose_hash(&entry.launcher_hash, mpc_image_hash, genesis_hash);
+            let compose_hash = compose.hash(&entry.launcher_hash, mpc_image_hash);
             if !entry.compose_hashes.contains(&compose_hash) {
                 entry.compose_hashes.push(compose_hash);
             }
@@ -337,7 +324,7 @@ impl AllowedLauncherImages {
 
     /// Test-only: allows one more compose hash for an already-allowed launcher. The attestation
     /// fixture is captured from a CVM whose launcher compose carries a key-export service, so
-    /// [`get_docker_compose_hash`] cannot derive its hash.
+    /// [`LauncherCompose::hash`] cannot derive its hash.
     #[cfg(any(test, feature = "test-utils"))]
     pub(crate) fn allow_compose_hash(
         &mut self,
@@ -353,51 +340,21 @@ impl AllowedLauncherImages {
     }
 }
 
-/// Given a launcher image hash, MPC docker image hash and genesis hash, compute the launcher docker
-/// compose hash by filling the template with them and this contract's account id, and taking
-/// SHA-256.
-pub fn get_docker_compose_hash(
-    launcher_image_hash: &LauncherImageHash,
-    mpc_docker_image_hash: &NodeImageHash,
-    genesis_hash: Option<&GenesisHash>,
-) -> LauncherDockerComposeHash {
-    let filled_yaml = LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE
-        .replace("{{LAUNCHER_IMAGE_HASH}}", &launcher_image_hash.as_hex())
-        .replace(
-            "{{DEFAULT_IMAGE_DIGEST_HASH}}",
-            &mpc_docker_image_hash.as_hex(),
-        )
-        .replace("{{MPC_CONTRACT_ID}}", env::current_account_id().as_str())
-        .replace(
-            "{{NEAR_GENESIS_HASH}}",
-            &genesis_hash.map(ToString::to_string).unwrap_or_default(),
-        );
-    LauncherDockerComposeHash::from(env::sha256_array(filled_yaml))
-}
-
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
-    use serde_yaml::Value;
 
     use super::{
-        AllowedLauncherImageInsertion, AllowedLauncherImages, Duration, GenesisHash,
-        LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE, LauncherImageHash, LauncherVoteAction,
-        NodeImageHash, StoredDockerImageHashes, ToProposalHash, get_docker_compose_hash,
+        AllowedLauncherImageInsertion, AllowedLauncherImages, Duration, LauncherVoteAction,
+        StoredDockerImageHashes, ToProposalHash,
     };
-    use crate::{primitives::test_utils::bogus_genesis_hash, tee::test_utils::set_block_secs};
+    use crate::tee::test_utils::{
+        MPC_NODE_COMPOSE, dummy_code_hash, dummy_launcher_hash, set_block_secs,
+    };
     const TEST_TEE_UPGRADE_DEADLINE_DURATION: Duration = Duration::from_hours(10 * 24);
     const SECOND: Duration = Duration::from_secs(1);
     const NANOS_IN_SECOND: u64 = SECOND.as_nanos() as u64;
-
-    fn dummy_code_hash(val: u8) -> NodeImageHash {
-        NodeImageHash::from([val; 32])
-    }
-
-    fn dummy_launcher_hash(val: u8) -> LauncherImageHash {
-        LauncherImageHash::from([val; 32])
-    }
 
     #[test]
     fn test_insert_and_get() {
@@ -608,13 +565,13 @@ mod tests {
         let compose = |l| {
             mpc_hashes
                 .iter()
-                .map(move |m| get_docker_compose_hash(&l, m, None))
+                .map(move |m| MPC_NODE_COMPOSE.hash(&l, m))
                 .collect::<Vec<_>>()
         };
 
         // Add first launcher
         assert_eq!(
-            allowed.add_or_refresh(launcher_1, &mpc_hashes, None, BIG_TTL),
+            allowed.add_or_refresh(launcher_1, &mpc_hashes, MPC_NODE_COMPOSE, BIG_TTL),
             AllowedLauncherImageInsertion::Added
         );
         assert_eq!(allowed.launcher_hashes(), vec![launcher_1]);
@@ -623,7 +580,7 @@ mod tests {
 
         // Re-adding the same launcher refreshes it (no new entry)
         assert_eq!(
-            allowed.add_or_refresh(launcher_1, &mpc_hashes, None, BIG_TTL),
+            allowed.add_or_refresh(launcher_1, &mpc_hashes, MPC_NODE_COMPOSE, BIG_TTL),
             AllowedLauncherImageInsertion::Refreshed
         );
         assert_eq!(allowed.launcher_hashes(), vec![launcher_1]);
@@ -631,7 +588,7 @@ mod tests {
 
         // Add second launcher
         assert_eq!(
-            allowed.add_or_refresh(launcher_2, &mpc_hashes, None, BIG_TTL),
+            allowed.add_or_refresh(launcher_2, &mpc_hashes, MPC_NODE_COMPOSE, BIG_TTL),
             AllowedLauncherImageInsertion::Added
         );
         assert_eq!(allowed.launcher_hashes(), vec![launcher_1, launcher_2]);
@@ -656,16 +613,16 @@ mod tests {
         let launcher = dummy_launcher_hash(1);
         let mpc_hash_1 = dummy_code_hash(10);
 
-        allowed.add_or_refresh(launcher, &[mpc_hash_1], None, BIG_TTL);
+        allowed.add_or_refresh(launcher, &[mpc_hash_1], MPC_NODE_COMPOSE, BIG_TTL);
         assert_eq!(allowed.all_compose_hashes().len(), 1);
 
         // Add a new MPC image — should add one compose hash per launcher
         let mpc_hash_2 = dummy_code_hash(20);
-        allowed.add_mpc_image_compose_hashes(&mpc_hash_2, None);
+        allowed.add_mpc_image_compose_hashes(&mpc_hash_2, MPC_NODE_COMPOSE);
         assert_eq!(allowed.all_compose_hashes().len(), 2);
 
         // Adding the same MPC image again should not duplicate
-        allowed.add_mpc_image_compose_hashes(&mpc_hash_2, None);
+        allowed.add_mpc_image_compose_hashes(&mpc_hash_2, MPC_NODE_COMPOSE);
         assert_eq!(allowed.all_compose_hashes().len(), 2);
     }
 
@@ -680,9 +637,9 @@ mod tests {
         let mpc_hash = dummy_code_hash(10);
         let in_use = dummy_launcher_hash(1);
         let unused = dummy_launcher_hash(2);
-        let in_use_compose_hashes = [get_docker_compose_hash(&in_use, &mpc_hash, None)];
-        allowed.add_or_refresh(in_use, &[mpc_hash], None, ttl);
-        allowed.add_or_refresh(unused, &[mpc_hash], None, ttl);
+        let in_use_compose_hashes = [MPC_NODE_COMPOSE.hash(&in_use, &mpc_hash)];
+        allowed.add_or_refresh(in_use, &[mpc_hash], MPC_NODE_COMPOSE, ttl);
+        allowed.add_or_refresh(unused, &[mpc_hash], MPC_NODE_COMPOSE, ttl);
 
         // When
         set_block_secs(retention_end_secs);
@@ -707,7 +664,7 @@ mod tests {
         let launchers = vec![dummy_launcher_hash(1), dummy_launcher_hash(2)];
         for (offset_secs, launcher) in (0..).zip(&launchers) {
             set_block_secs(first_added_at_secs + offset_secs);
-            allowed.add_or_refresh(*launcher, &[mpc_hash], None, ttl);
+            allowed.add_or_refresh(*launcher, &[mpc_hash], MPC_NODE_COMPOSE, ttl);
         }
 
         // When
@@ -728,9 +685,9 @@ mod tests {
         let mpc_hashes = vec![dummy_code_hash(10)];
         let latest = dummy_launcher_hash(2);
         set_block_secs(1);
-        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, None, ttl);
+        allowed.add_or_refresh(dummy_launcher_hash(1), &mpc_hashes, MPC_NODE_COMPOSE, ttl);
         set_block_secs(latest_added_at_secs);
-        allowed.add_or_refresh(latest, &mpc_hashes, None, ttl);
+        allowed.add_or_refresh(latest, &mpc_hashes, MPC_NODE_COMPOSE, ttl);
 
         // When
         set_block_secs(latest_retention_end_secs);
@@ -756,12 +713,12 @@ mod tests {
         let re_voted = dummy_launcher_hash(1);
         let newest = dummy_launcher_hash(2);
         set_block_secs(added_at_secs);
-        allowed.add_or_refresh(re_voted, &mpc_hashes, None, ttl);
-        allowed.add_or_refresh(newest, &mpc_hashes, None, ttl);
+        allowed.add_or_refresh(re_voted, &mpc_hashes, MPC_NODE_COMPOSE, ttl);
+        allowed.add_or_refresh(newest, &mpc_hashes, MPC_NODE_COMPOSE, ttl);
 
         // When
         set_block_secs(retention_end_secs);
-        let insertion = allowed.add_or_refresh(re_voted, &mpc_hashes, None, ttl);
+        let insertion = allowed.add_or_refresh(re_voted, &mpc_hashes, MPC_NODE_COMPOSE, ttl);
         set_block_secs(retention_end_secs);
         allowed.remove_unused(&[], ttl);
         let kept_at_retention_end = allowed.launcher_hashes();
@@ -796,131 +753,5 @@ mod tests {
                 .parse()
                 .unwrap()
         );
-    }
-
-    #[test]
-    fn test_compose_hash_uses_both_hashes() {
-        let launcher_1 = dummy_launcher_hash(1);
-        let launcher_2 = dummy_launcher_hash(2);
-        let mpc_hash = dummy_code_hash(10);
-
-        let compose_1 = get_docker_compose_hash(&launcher_1, &mpc_hash, None);
-        let compose_2 = get_docker_compose_hash(&launcher_2, &mpc_hash, None);
-
-        // Different launcher hashes should produce different compose hashes
-        assert_ne!(compose_1, compose_2);
-    }
-
-    #[test]
-    fn get_docker_compose_hash__should_bind_the_compose_to_the_contract_account_and_its_chain() {
-        // Given
-        let launcher = dummy_launcher_hash(1);
-        let mpc_hash = dummy_code_hash(10);
-        let contract_id = "v1.signer";
-        let genesis_hash = bogus_genesis_hash();
-        let compose_hash_for = |account: &str, genesis_hash: Option<&GenesisHash>| {
-            testing_env!(
-                VMContextBuilder::new()
-                    .current_account_id(account.parse().unwrap())
-                    .build()
-            );
-            get_docker_compose_hash(&launcher, &mpc_hash, genesis_hash)
-        };
-
-        // When
-        let compose_hash = compose_hash_for(contract_id, Some(&genesis_hash));
-        let compose_hash_of_other_contract = compose_hash_for("other.near", Some(&genesis_hash));
-        let compose_hash_on_other_chain =
-            compose_hash_for(contract_id, Some(&GenesisHash::from([2; 32])));
-        let compose_hash_on_any_chain = compose_hash_for(contract_id, None);
-
-        // Then
-        assert_ne!(compose_hash, compose_hash_of_other_contract);
-        assert_ne!(compose_hash, compose_hash_on_other_chain);
-        assert_ne!(compose_hash, compose_hash_on_any_chain);
-    }
-
-    fn parsed_template() -> Value {
-        serde_yaml::from_str(LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE).unwrap()
-    }
-
-    fn key_paths(value: &Value, parent: &str) -> Vec<String> {
-        match value {
-            Value::Mapping(mapping) => mapping
-                .iter()
-                .flat_map(|(key, value)| {
-                    let path = format!("{parent}{}", key.as_str().unwrap());
-                    let nested_paths = key_paths(value, &format!("{path}."));
-                    std::iter::once(path).chain(nested_paths)
-                })
-                .collect(),
-            Value::Sequence(items) => items
-                .iter()
-                .flat_map(|item| key_paths(item, parent))
-                .collect(),
-            Value::Tagged(tagged) => key_paths(&tagged.value, parent),
-            _ => Vec::new(),
-        }
-    }
-
-    #[test]
-    fn launcher_docker_compose_template__should_not_use_variable_substitution() {
-        // Given
-        let template = LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE;
-
-        // When
-        let lines_with_substitution: Vec<&str> =
-            template.lines().filter(|line| line.contains('$')).collect();
-
-        // Then
-        assert_eq!(lines_with_substitution, Vec::<&str>::new());
-    }
-
-    #[test]
-    fn launcher_docker_compose_template__should_only_use_reviewed_keys() {
-        // Given
-        let template = parsed_template();
-
-        // When
-        let keys = key_paths(&template, "");
-
-        // Then
-        assert_eq!(
-            keys,
-            [
-                "version",
-                "services",
-                "services.launcher",
-                "services.launcher.image",
-                "services.launcher.container_name",
-                "services.launcher.environment",
-                "services.launcher.volumes",
-                "services.launcher.devices",
-                "services.launcher.security_opt",
-                "services.launcher.read_only",
-                "services.launcher.tmpfs",
-                "volumes",
-                "volumes.shared-volume",
-                "volumes.shared-volume.name",
-            ]
-        );
-    }
-
-    #[test]
-    fn launcher_docker_compose_template__should_not_inherit_environment_variables_from_compose() {
-        // Given
-        let template = parsed_template();
-
-        // When
-        let inherited_variables: Vec<&str> = template["services"]["launcher"]["environment"]
-            .as_sequence()
-            .unwrap()
-            .iter()
-            .map(|entry| entry.as_str().unwrap())
-            .filter(|entry| !entry.contains('='))
-            .collect();
-
-        // Then
-        assert_eq!(inherited_variables, Vec::<&str>::new());
     }
 }

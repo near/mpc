@@ -6,6 +6,7 @@ use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::state::ProtocolContractState;
+use crate::tee::launcher_compose::LauncherCompose;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, log, near};
@@ -42,7 +43,7 @@ impl MpcContract {
         if self.threshold()?.is_met_by(votes) {
             self.tee_state.whitelist_tee_proposal(
                 mpc_node_manifest_digest,
-                self.genesis_hash.as_ref(),
+                LauncherCompose::mpc_node(self.genesis_hash),
                 tee_upgrade_deadline_duration,
             );
         }
@@ -82,7 +83,7 @@ impl MpcContract {
         if self.threshold()?.is_met_by(votes) {
             let outcome = self.tee_state.add_launcher_image(
                 launcher_hash,
-                self.genesis_hash.as_ref(),
+                LauncherCompose::mpc_node(self.genesis_hash),
                 tee_upgrade_deadline_duration,
                 launcher_unused_ttl,
             );
@@ -258,13 +259,12 @@ impl MpcContract {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{Duration, MpcContract, ProtocolContractState};
+    use super::{Duration, LauncherCompose, MpcContract, ProtocolContractState};
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
     use crate::primitives::proposal_hash::ToProposalHash;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::proposal::get_docker_compose_hash;
     use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
     use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
@@ -846,7 +846,7 @@ mod tests {
 
         let compose_hashes = contract.allowed_launcher_compose_hashes();
         let compose_hash = |launcher, mpc_hash| {
-            get_docker_compose_hash(launcher, mpc_hash, contract.genesis_hash.as_ref())
+            LauncherCompose::mpc_node(contract.genesis_hash).hash(launcher, mpc_hash)
         };
         assert!(compose_hashes.contains(&compose_hash(&l1, &m1)));
         assert!(compose_hashes.contains(&compose_hash(&l1, &m2)));
