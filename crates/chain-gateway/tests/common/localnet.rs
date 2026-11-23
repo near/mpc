@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use chain_gateway::BlockEventStream;
 use chain_gateway::event_subscriber::block_events::BlockUpdate;
 use chain_gateway::event_subscriber::subscriber::BlockEventSubscriptions;
 use chain_gateway_test_contract::consts::VIEW_VALUE;
@@ -18,12 +19,15 @@ pub struct Localnet {
 }
 
 impl Localnet {
-    /// Takes the block update receiver from the observer, panics if already taken.
-    pub fn take_block_update_receiver(&mut self) -> tokio::sync::mpsc::Receiver<BlockUpdate> {
+    pub fn take_block_event_stream(&mut self) -> BlockEventStream {
         self.observer
-            .block_update_receiver
+            .block_event_stream
             .take()
-            .expect("block_update_receiver already taken")
+            .expect("block_event_stream already taken")
+    }
+
+    pub fn take_block_update_receiver(&mut self) -> tokio::sync::mpsc::Receiver<BlockUpdate> {
+        self.take_block_event_stream().updates
     }
 
     pub fn take_test_account(&mut self) -> TestAccount {

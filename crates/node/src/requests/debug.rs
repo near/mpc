@@ -250,6 +250,7 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{BlockCount, BlockHeight, CompletedRequest, CompletedRequests};
     use crate::types::{CKDRequest, SignatureRequest};
@@ -260,11 +261,14 @@ mod tests {
     use rand::seq::SliceRandom;
 
     #[test]
-    fn test_completed_ckd_requests() {
+    fn completed_requests__should_keep_the_latest_ckd_requests() {
+        // Given
         let mut completed =
             CompletedRequests::<CKDRequest, contract_args::CKDRespondArgs>::default();
         let mut indices = (0..200).collect::<Vec<_>>();
         indices.shuffle(&mut rand::thread_rng());
+
+        // When
         for i in indices {
             completed.add_completed_request(CompletedRequest {
                 request: CKDRequest {
@@ -272,7 +276,6 @@ mod tests {
                     receipt_id: CryptoHash(rand::random()),
                     app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey("bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6".parse().unwrap()),
                     app_id: [1u8; 32].into(),
-                    entropy: [0; 32],
                     timestamp_nanosec: 0,
                     domain_id: DomainId::legacy_ecdsa_id(),
                 },
@@ -288,6 +291,8 @@ mod tests {
                 },
             });
         }
+
+        // Then
         let mut kept_indices = completed
             .requests
             .iter()
@@ -301,11 +306,14 @@ mod tests {
     }
 
     #[test]
-    fn test_completed_signature_requests() {
+    fn completed_requests__should_keep_the_latest_signature_requests() {
+        // Given
         let mut completed =
             CompletedRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::default();
         let mut indices = (0..200).collect::<Vec<_>>();
         indices.shuffle(&mut rand::thread_rng());
+
+        // When
         for i in indices {
             completed.add_completed_request(CompletedRequest {
                 request: SignatureRequest {
@@ -313,7 +321,6 @@ mod tests {
                     receipt_id: CryptoHash(rand::random()),
                     payload: Payload::from_legacy_ecdsa([0; 32]),
                     tweak: Tweak::new([0; 32]),
-                    entropy: Default::default(),
                     timestamp_nanosec: Default::default(),
                     domain: DomainId::legacy_ecdsa_id(),
                 },
@@ -329,6 +336,8 @@ mod tests {
                 },
             });
         }
+
+        // Then
         let mut kept_indices = completed
             .requests
             .iter()

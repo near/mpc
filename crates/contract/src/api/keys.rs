@@ -86,7 +86,6 @@ mod tests {
     use crate::MpcContract;
     use crate::api::test_utils::{initializing_state, make_public_key_for_curve};
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_domain_registry, gen_threshold_params};
     use crate::state::ProtocolContractState;
@@ -166,7 +165,6 @@ mod tests {
             domains,
             Keyset::new(EpochId::new(5), keys),
             gen_threshold_params(30),
-            AddDomainsVotes::default(),
         );
         let contract =
             MpcContract::new_from_protocol_state(ProtocolContractState::Running(running));

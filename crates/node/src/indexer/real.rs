@@ -157,7 +157,7 @@ pub fn spawn_real_indexer(
             // at genesis, below the block tail it can never reach. Raced against
             // shutdown so a SIGTERM during state sync still tears down cleanly.
             if !await_sync_or_shutdown(
-                indexer_state.client.ensure_head_follows_tip(),
+                indexer_state.gateway.ensure_head_follows_tip(),
                 &shutdown_token,
             )
             .await
