@@ -22,6 +22,7 @@ use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
+use crate::nearcore_workarounds;
 use crate::node_config::NodeConfig;
 use crate::primitives::{
     FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction, view_when_synced,
@@ -202,6 +203,11 @@ impl ChainGateway {
         };
         Ok((chain_gateway, node_handle, stream))
     }
+
+    /// Can be removed once <https://github.com/near/nearcore/issues/16004> is resolved.
+    pub async fn ensure_head_follows_tip(&self) {
+        nearcore_workarounds::ensure_head_follows_tip(&self.client).await
+    }
 }
 
 type RunNodeResult = Result<(ChainGateway, Option<BlockEventStream>), ChainGatewayError>;
@@ -256,9 +262,11 @@ fn run_node(
             tracing::info!(
                 "chain-gateway waiting for node to finish syncing before streaming blocks."
             );
-            let synced =
-                await_sync_or_shutdown(chain_gateway.wait_for_full_sync(), shutdown.cancelled())
-                    .await;
+            let synced = await_sync_or_shutdown(
+                chain_gateway.ensure_head_follows_tip(),
+                shutdown.cancelled(),
+            )
+            .await;
             if !synced {
                 tracing::info!("shutdown requested before sync completed; exiting startup.");
                 let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {

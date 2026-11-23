@@ -9,6 +9,7 @@ pub mod transaction_sender;
 pub mod types;
 
 mod near_internals_wrapper;
+mod nearcore_workarounds;
 mod node_config;
 
 pub use chain_gateway::{BlockEventStream, ChainGateway, NodeHandle};
