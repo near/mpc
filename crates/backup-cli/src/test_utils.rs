@@ -1,4 +1,9 @@
+use std::time::Duration;
+
 use near_mpc_contract_interface::types::{EpochId, Keyset};
+
+/// Long enough that no passing test can hit it
+pub const TEST_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 const KEYSET_FIXTURE: &str = include_str!("../assets/current_keyset.json");
 

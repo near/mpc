@@ -1,7 +1,6 @@
 use chain_gateway::{ChainGateway, NodeConfig};
 use ed25519_dalek::VerifyingKey;
 use mpc_node_config::BackupServiceStartConfig;
-use near_account_id::AccountId;
 use near_contract_transport::{NearKitCaller, PollInterval};
 use near_kit::Near;
 use near_mpc_contract_interface::client::MpcContractHandle;
@@ -72,15 +71,22 @@ pub async fn run_command(args: cli::Args) {
                 open_node_client_and_storage(&home_dir, &subcommand_args.node).await;
 
             let Some(rpc_url) = subcommand_args.rpc_url else {
+                let shutdown = CancellationToken::new();
+                spawn_shutdown_on_signal(shutdown.clone());
+                let (chain_gateway, _near_node, _) =
+                    ChainGateway::start(NodeConfig::new(home_dir), None, shutdown.clone())
+                        .await
+                        .expect("failed to start the NEAR node");
                 return run_backup_service_through_embedded_node(
-                    home_dir,
-                    subcommand_args.mpc_contract_account_id,
+                    &MpcContractHandle::new(chain_gateway, subcommand_args.mpc_contract_account_id),
                     mpc_p2p_client,
                     key_shares_storage,
                     status_reporter,
                     Duration::from_secs(subcommand_args.poll_interval_seconds),
+                    shutdown,
                 )
-                .await;
+                .await
+                .expect("automatic backup service failed");
             };
 
             let request_timeout = Duration::from_secs(subcommand_args.node.request_timeout_seconds);
@@ -165,27 +171,19 @@ async fn open_node_client_and_storage(
     (mpc_p2p_client, keyshares_storage)
 }
 
-async fn run_backup_service_through_embedded_node(
-    home_dir: PathBuf,
-    mpc_contract_account_id: AccountId,
+pub(crate) async fn run_backup_service_through_embedded_node(
+    mpc_contract: &MpcContractHandle<ChainGateway>,
     mpc_p2p_client: impl ports::P2PClient,
     keyshares_storage: impl ports::KeyShareRepository,
     status: impl ports::ReportBackupStatus,
     retry_delay: Duration,
-) {
-    let shutdown = CancellationToken::new();
-    spawn_shutdown_on_signal(shutdown.clone());
-
-    let (chain_gateway, _near_node, _) =
-        ChainGateway::start(NodeConfig::new(home_dir), None, shutdown.clone())
-            .await
-            .expect("failed to start the NEAR node");
-    let mpc_contract = MpcContractHandle::new(chain_gateway, mpc_contract_account_id);
+    shutdown: CancellationToken,
+) -> anyhow::Result<()> {
     let Some(current_keyset) = shutdown
         .run_until_cancelled(mpc_contract.current_keyset().subscribe())
         .await
     else {
-        return;
+        return Ok(());
     };
     run_backup_service(
         mpc_p2p_client,
@@ -197,7 +195,6 @@ async fn run_backup_service_through_embedded_node(
         shutdown,
     )
     .await
-    .expect("automatic backup service failed");
 }
 
 /// Backs up keyshares whenever the contract's observed current keyset stops being covered by

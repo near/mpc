@@ -1137,6 +1137,12 @@ pub mod testing {
         pub const TRIPLE_BATCH_SIZE_TEST: TestPorts = TestPorts::mpc_node_tests(33);
         pub const FOREIGN_CHAIN_REREGISTRATION_TEST: TestPorts = TestPorts::mpc_node_tests(34);
         pub const SLOW_PEER_LINK_TEST: TestPorts = TestPorts::mpc_node_tests(35);
+        pub const BACKUP_CLI_CHAIN_LISTED_NODES_LISTED_KEY: TestPorts =
+            TestPorts::mpc_node_tests(36);
+        pub const BACKUP_CLI_CHAIN_LISTED_NODES_OTHER_KEY: TestPorts =
+            TestPorts::mpc_node_tests(37);
+        pub const BACKUP_CLI_CHAIN_LISTED_NODES_DESTINATION: TestPorts =
+            TestPorts::mpc_node_tests(38);
     }
 
     pub fn generate_test_p2p_configs(

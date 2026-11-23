@@ -58,3 +58,5 @@ mod tee;
 #[cfg(test)]
 mod tests;
 mod tracking;
+
+pub use indexer::participants::parse_participant_address;

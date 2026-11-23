@@ -6,7 +6,7 @@ use near_indexer_primitives::CryptoHash;
 use near_mpc_bounded_collections::NonEmptyVec;
 use serde::{Deserialize, Serialize};
 
-use crate::start::{NearInitConfig, default_pccs_endpoints, read_toml_file};
+use crate::start::{NearInitConfig, SecretsStartConfig, default_pccs_endpoints, read_toml_file};
 
 /// Configuration a launcher writes for a backup service. The launcher sets the `tee` section,
 /// the contract id and the genesis hash itself, the latter two from its measured compose file.
@@ -21,6 +21,11 @@ pub struct BackupServiceStartConfig {
     /// this chain.
     pub genesis_hash: CryptoHash,
     pub near_init: NearInitConfig,
+    /// [`SecretsStartConfig::backup_encryption_key_hex`] is required: it must be the key of the
+    /// account's MPC node, which encrypts keyshares in transit.
+    pub secrets: SecretsStartConfig,
+    /// Port the MPC nodes serve keyshares on. Their hosts and TLS keys come from the contract.
+    pub mpc_node_migration_port: u16,
     /// Address to serve `/health`, `/status`, `/metrics` and `/public_data` on.
     pub listen_address: SocketAddr,
     /// PCCS servers used to fetch TDX attestation collateral, as in
@@ -55,18 +60,26 @@ mod tests {
         let mpc_contract_id: AccountId = "v1.signer".parse().unwrap();
         let genesis_hash = CryptoHash([1; 32]);
         let tier3_public_addr: SocketAddr = "203.0.113.5:24567".parse().unwrap();
+        let secret_store_key_hex = "11".repeat(16);
+        let backup_encryption_key_hex = "22".repeat(32);
+        let mpc_node_migration_port = 8079;
         let listen_address: SocketAddr = "0.0.0.0:8080".parse().unwrap();
         let launcher_config = format!(
             r#"
                 account_id = "{account_id}"
                 mpc_contract_id = "{mpc_contract_id}"
                 genesis_hash = "{genesis_hash}"
+                mpc_node_migration_port = {mpc_node_migration_port}
                 listen_address = "{listen_address}"
 
                 [near_init]
                 chain_id = "mainnet"
                 download_genesis = true
                 tier3_public_addr = "{tier3_public_addr}"
+
+                [secrets]
+                secret_store_key_hex = "{secret_store_key_hex}"
+                backup_encryption_key_hex = "{backup_encryption_key_hex}"
 
                 [tee]
                 image_hash = "{image_hash}"
@@ -106,6 +119,11 @@ mod tests {
                 network_addr: None,
                 tier3_public_addr: Some(tier3_public_addr),
             },
+            secrets: SecretsStartConfig {
+                secret_store_key_hex,
+                backup_encryption_key_hex: Some(backup_encryption_key_hex),
+            },
+            mpc_node_migration_port,
             listen_address,
             pccs_endpoints: default_pccs_endpoints(),
         };

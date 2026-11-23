@@ -141,7 +141,7 @@ pub struct NearInitConfig {
 }
 
 /// Encryption keys needed at startup.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct SecretsStartConfig {
     /// Hex-encoded 16 byte AES key for local storage encryption.
     pub secret_store_key_hex: String,

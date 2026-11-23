@@ -115,7 +115,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 **Keyshare monitoring (continuous):**
 
-6. Backup service polls the contract for missing keyshares, and finds its MPC node's TLS key and URL with `participant_info(account_id)` instead of in host-controlled configuration.
+6. Backup service polls the contract for missing keyshares, and finds its MPC node's TLS key and URL with `participant_info(account_id)` instead of in host-controlled configuration. It fetches the keyshares via mTLS from the host of that URL, on the configured migration port, verifying that TLS key.
 7. MPC node looks up its operator's backup service with `attested_backup_service(account_id)`, which returns the TLS key from [`backup_services_info`][backup-services-info-field] only while its attestation in `backup_service_tee_state` is valid (see [Required Changes](#contract-methods)), then, once the contract lists the node's own TLS key for its account, sends encrypted keyshares over mTLS.
 
 **On restart:**
@@ -128,7 +128,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 1. **Operator trigger (manual)**: Operator calls [`start_node_migration(destination_node_info)`][start-node-migration].
 2. **Detection (automated)**: Backup service polls `attested_migration_destination(account_id)`, which returns the operator's ongoing migration only while the operator is a participant of the running state and the destination node passes the checks of `start_node_migration()` with a [`Dstack`][attestation-dstack] attestation (see [Required Changes](#contract-methods)).
-3. **Transfer**: Backup service connects to that destination via mTLS, verifying its TLS key, and sends encrypted keyshares.
+3. **Transfer**: Backup service connects via mTLS to the host of that destination's URL, on the migration port its configuration names, verifying the destination's TLS key from the view, and sends encrypted keyshares. A host-supplied port can only make the transfer fail.
 4. **Verification**: New node queries the contract to verify the backup service's attestation before saving keyshares.
 5. **Finalization**: New node calls [`conclude_node_migration(keyset)`][conclude-node-migration].
 

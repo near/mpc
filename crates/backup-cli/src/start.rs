@@ -1,12 +1,12 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use chain_gateway::{
     ChainGateway, NodeConfig,
     transaction_sender::{AccountCaller, TransactionSigner},
 };
 use mpc_node::{
-    config::{PersistentSecrets, ensure_near_initialized},
+    config::{PersistentSecrets, SecretsConfig, ensure_near_initialized},
     web::static_web_data,
 };
 use mpc_node_config::BackupServiceStartConfig;
@@ -23,13 +23,19 @@ use tee_context::{
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
-use crate::adapters::web;
+use crate::{
+    adapters::{
+        chain_listed_nodes::ChainListedNodes, keyshare_storage::KeyshareStorageAdapter, web,
+    },
+    backup::run_backup_service_through_embedded_node,
+    cli::{DEFAULT_POLL_INTERVAL_SECONDS, DEFAULT_REQUEST_TIMEOUT_SECONDS},
+};
 
 /// Starts the backup service a launcher configured, serves its keys and attestation on
-/// `/public_data`, and registers it on the contract every hour until the given
-/// [`CancellationToken`] is cancelled. Fails when the embedded NEAR node follows a chain other
-/// than the configured genesis hash's, or when the approved image hashes cannot be written for
-/// the launcher.
+/// `/public_data`, registers it on the contract every hour, and backs up the keyshares of its
+/// account's MPC node until the given [`CancellationToken`] is cancelled. Fails when the embedded
+/// NEAR node follows a chain other than the configured genesis hash's, or when the approved image
+/// hashes cannot be written for the launcher.
 pub async fn start_with_config_file(
     home_dir: PathBuf,
     config: BackupServiceStartConfig,
@@ -42,8 +48,16 @@ pub async fn start_with_config_file(
         .ensure_chain_matches(Some(config.genesis_hash))
         .await?;
 
-    let secrets = PersistentSecrets::generate_or_get_existing(&home_dir)?;
-    let keys = static_web_data(&secrets, None);
+    let secrets = SecretsConfig::from_parts(
+        &config.secrets.secret_store_key_hex,
+        PersistentSecrets::generate_or_get_existing(&home_dir)?,
+        config
+            .secrets
+            .backup_encryption_key_hex
+            .as_deref()
+            .context("the backup service needs its MPC node's backup encryption key")?,
+    )?;
+    let keys = static_web_data(&secrets.persistent_secrets, None);
     let tee_authority = TeeAuthority::new(config.tee.authority, config.pccs_endpoints)?;
     let attestation = generate_initial_attestation(
         &tee_authority,
@@ -53,9 +67,11 @@ pub async fn start_with_config_file(
     .await?;
     let (latest_attestation_sender, latest_attestation) = watch::channel(attestation);
 
+    let mpc_contract =
+        MpcContractHandle::new(chain_gateway.clone(), config.mpc_contract_id.clone());
     let (tee_state_monitors, tee) = TeeStateMonitors::new();
     tee_state_monitors.spawn(
-        MpcContractHandle::new(chain_gateway.clone(), config.mpc_contract_id.clone()),
+        mpc_contract.clone(),
         TeeService::BackupService,
         keys.near_p2p_public_key.clone(),
     );
@@ -69,7 +85,10 @@ pub async fn start_with_config_file(
         image_hash_shutdown_sender,
     ));
 
-    let signer = TransactionSigner::from_key(config.account_id, secrets.near_signer_key);
+    let signer = TransactionSigner::from_key(
+        config.account_id.clone(),
+        secrets.persistent_secrets.near_signer_key,
+    );
     tokio::spawn(run_periodic_attestation_submission(AttestationSubmitter {
         tee_authority,
         submitter: RegisterBackupService(Arc::new(MpcContractHandle::new(
@@ -83,7 +102,7 @@ pub async fn start_with_config_file(
     }));
 
     init_attestation_freshness_metrics();
-    let (_, status) = web::status_channel();
+    let (status_reporter, status) = web::status_channel();
     web::spawn_web_server(
         config.listen_address,
         status,
@@ -94,8 +113,25 @@ pub async fn start_with_config_file(
     )
     .await?;
 
+    let mpc_nodes = ChainListedNodes::new(
+        mpc_contract.clone(),
+        config.account_id,
+        config.mpc_node_migration_port,
+        secrets.persistent_secrets.p2p_private_key,
+        secrets.backup_encryption_key,
+        Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECONDS),
+    );
+    let keyshares_storage =
+        KeyshareStorageAdapter::new(home_dir, secrets.local_storage_aes_key).await?;
     tokio::select! {
-        () = shutdown.cancelled() => Ok(()),
+        result = run_backup_service_through_embedded_node(
+            &mpc_contract,
+            mpc_nodes,
+            keyshares_storage,
+            status_reporter,
+            Duration::from_secs(DEFAULT_POLL_INTERVAL_SECONDS),
+            shutdown,
+        ) => result,
         Some(()) = image_hash_shutdown.recv() => {
             Err(anyhow!(
                 "the approved image hashes watcher exited unexpectedly: {:?}",
