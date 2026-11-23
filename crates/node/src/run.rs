@@ -1,7 +1,7 @@
 use crate::{
     config::{
         PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
-        start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
+        start::{StartConfigExt, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -35,6 +35,7 @@ use std::{
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
+use tee_authority::tee_authority::TeeAuthority;
 use tee_context::{
     AllowedImageHashesFile, AttestationSubmitter, generate_initial_attestation,
     monitor_allowed_image_hashes, run_periodic_attestation_submission,
@@ -136,10 +137,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     // Generate attestation
-    let tee_authority = config
-        .tee
-        .clone()
-        .into_tee_authority(config.pccs_endpoints.clone())?;
+    let tee_authority =
+        TeeAuthority::new(config.tee.authority.clone(), config.pccs_endpoints.clone())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let keys = static_web_data(&persistent_secrets, None);
