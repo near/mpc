@@ -140,7 +140,7 @@ Individual services may add steps between "Start application container" and the 
 
 ## TEE Context
 
-The [TEE Context][tee-context-design] is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services.
+The [TEE Context][tee-context-design] is a shared crate managing the TEE attestation lifecycle. The [allowed image hashes watcher][allowed-hashes-watcher] already lives in the TEE Context crate. The MPC node still implements attestation submission in [`remote_attestation.rs`][remote-attestation]; it will be extracted into that crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services.
 
 [mpc-context]: ../archive/design/chain-gateway-design.md
 

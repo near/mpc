@@ -16,7 +16,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::tee::image_expiry_metrics;
+use crate::image_expiry_metrics;
 
 #[cfg(test)]
 use mockall::automock;
