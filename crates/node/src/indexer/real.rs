@@ -11,10 +11,6 @@ use super::{IndexerAPI, IndexerState};
 use crate::config::load_listening_blocks_file;
 use crate::home_paths::near_data_dir;
 use crate::indexer::configs::IndexerConfigExt;
-use crate::indexer::tee::{
-    monitor_allowed_docker_images, monitor_allowed_launcher_compose_hashes,
-    monitor_allowed_os_measurements, monitor_my_attestation,
-};
 use crate::indexer::tx_sender::{TransactionProcessorHandle, TransactionSender};
 use crate::types::LogTransaction;
 use chain_gateway::ChainGateway;
@@ -29,6 +25,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
+use tee_context::TeeStateMonitors;
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -79,11 +76,7 @@ pub fn spawn_real_indexer(
         oneshot::channel();
 
     let (block_update_sender, block_update_receiver) = mpsc::unbounded_channel();
-    let (allowed_docker_images_sender, allowed_docker_images_receiver) = watch::channel(vec![]);
-    let (allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
-        watch::channel(vec![]);
-    let (allowed_os_measurements_sender, allowed_os_measurements_receiver) = watch::channel(vec![]);
-    let (my_attestation_sender, my_attestation_receiver) = watch::channel(None);
+    let (tee_state_monitors, tee) = TeeStateMonitors::new();
 
     let my_near_account_id_clone = my_near_account_id.clone();
 
@@ -192,26 +185,10 @@ pub fn spawn_real_indexer(
 
             tokio::spawn(indexer_logger(Arc::clone(&indexer_state)));
 
-            tokio::spawn(monitor_allowed_docker_images(
-                allowed_docker_images_sender,
-                indexer_state.contract.clone(),
-            ));
-
-            tokio::spawn(monitor_allowed_launcher_compose_hashes(
-                allowed_launcher_compose_sender,
-                indexer_state.contract.clone(),
-            ));
-
-            tokio::spawn(monitor_allowed_os_measurements(
-                allowed_os_measurements_sender,
-                indexer_state.contract.clone(),
-            ));
-
-            tokio::spawn(monitor_my_attestation(
-                my_attestation_sender,
+            tee_state_monitors.spawn(
                 indexer_state.contract.clone(),
                 Ed25519PublicKey::from(&tls_public_key),
-            ));
+            );
 
             let foreign_chain_registrations =
                 monitor_foreign_chain_registrations(indexer_state.contract.clone()).await;
@@ -343,11 +320,8 @@ pub fn spawn_real_indexer(
         contract_state_receiver,
         block_update_receiver: Arc::new(Mutex::new(block_update_receiver)),
         txn_sender,
-        allowed_docker_images_receiver,
-        allowed_launcher_compose_receiver,
-        allowed_os_measurements_receiver,
+        tee,
         my_migration_info_receiver,
-        my_attestation_receiver,
         foreign_chain_supporters_receiver: foreign_chain_registrations.supporters,
         foreign_chain_whitelist_receiver,
         foreign_chains_configs_receiver: foreign_chain_registrations.configs,

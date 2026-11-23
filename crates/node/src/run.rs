@@ -245,7 +245,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let cancellation_token = CancellationToken::new();
 
-    let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+    let allowed_hashes_in_contract = indexer_api.tee.allowed_image_hashes.clone();
     let image_hash_storage =
         AllowedImageHashesFile::from(config.tee.latest_allowed_hash_file_path.clone());
 
@@ -369,10 +369,10 @@ where
         tx_sender: indexer_api.txn_sender.clone(),
         tls_public_key,
         account_public_key,
-        allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
-        allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        allowed_os_measurements: indexer_api.allowed_os_measurements_receiver.clone(),
-        stored_attestation: indexer_api.my_attestation_receiver.clone(),
+        allowed_image_hashes: indexer_api.tee.allowed_image_hashes.clone(),
+        allowed_launcher_compose_hashes: indexer_api.tee.allowed_launcher_compose_hashes.clone(),
+        allowed_os_measurements: indexer_api.tee.allowed_os_measurements.clone(),
+        stored_attestation: indexer_api.tee.stored_attestation.clone(),
     };
     tokio::spawn(run_periodic_attestation_submission(submitter));
 

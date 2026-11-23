@@ -39,6 +39,7 @@ use std::{
     assert_matches,
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
 };
+use tee_context::TeeStateMonitors;
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
@@ -1145,13 +1146,7 @@ impl FakeIndexerManager {
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
-        let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
-            watch::channel(vec![]);
-        let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
-            watch::channel(vec![]);
-        let (_allowed_os_measurements_sender, allowed_os_measurements_receiver) =
-            watch::channel(vec![]);
-        let (_my_attestation_sender, my_attestation_receiver) = watch::channel(None);
+        let (_tee_state_monitors, tee) = TeeStateMonitors::new();
 
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
@@ -1168,11 +1163,8 @@ impl FakeIndexerManager {
                 api_signature_request_receiver,
             )),
             txn_sender: mock_transaction_sender,
-            allowed_docker_images_receiver,
-            allowed_launcher_compose_receiver,
-            allowed_os_measurements_receiver,
+            tee,
             my_migration_info_receiver,
-            my_attestation_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             foreign_chain_whitelist_receiver: self.foreign_chain_whitelist_receiver.clone(),
             foreign_chains_configs_receiver: self.foreign_chains_configs_receiver.clone(),

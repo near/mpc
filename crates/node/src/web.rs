@@ -49,7 +49,7 @@ impl IntoResponse for AnyhowErrorWrapper {
 pub(crate) async fn metrics() -> String {
     // Ensure build info metric is always set before gathering metrics
     crate::metrics::init_build_info_metric();
-    crate::metrics::init_attestation_freshness_metrics();
+    tee_context::init_attestation_freshness_metrics();
 
     let metric_families = default_registry().gather();
     let mut buffer = vec![];
