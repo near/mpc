@@ -125,7 +125,7 @@ impl MpcContract {
         );
 
         let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants(),
+            ProtocolContractState::Running(state) => state.participants(),
             _ => {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
@@ -176,15 +176,14 @@ mod tests {
         basic_setup, basic_setup_with_protocol, destination_of, init_running_with_domain,
         make_public_key_for_curve, must_attest_new_node, must_get_attested_signer_key,
         participant_account_ids, prepay_and_attest_all_participants,
-        prepay_and_submit_mock_attestation,
+        prepay_and_submit_mock_attestation, vote_into_resharing,
     };
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_tee_verifier_account_id, gen_account_id,
-        gen_participant, gen_participants,
+        bogus_ed25519_near_public_key, bogus_genesis_hash, bogus_tee_verifier_account_id,
+        gen_account_id, gen_participant, gen_participants,
     };
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
@@ -688,12 +687,8 @@ mod tests {
             new_participants,
             GovernanceThreshold::new(3),
         );
-        contract.protocol_state = ProtocolContractState::Running(RunningContractState::new(
-            domains,
-            keyset,
-            new_params,
-            AddDomainsVotes::default(),
-        ));
+        contract.protocol_state =
+            ProtocolContractState::Running(RunningContractState::new(domains, keyset, new_params));
 
         // When: vote_reshared recomputes the cache, then clean_foreign_chain_data
         // prunes participant[2]'s stale storage entry.
@@ -729,19 +724,12 @@ mod tests {
         assert!(contract.get_available_foreign_chains().is_empty());
 
         // Transition to Resharing. Use the same participant set so mocked attestations remain valid.
-        let resharing = {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running state");
-            };
-            let proposal = ProposedGovernanceThresholdParameters::new(
-                state.parameters.clone(),
-                BTreeMap::new(),
-            );
-            state
-                .transition_to_resharing_no_checks(&proposal)
-                .expect("contract has at least one domain")
+        let ProtocolContractState::Running(ref state) = contract.protocol_state else {
+            panic!("expected Running state");
         };
-        contract.protocol_state = ProtocolContractState::Resharing(resharing);
+        let proposal =
+            ProposedGovernanceThresholdParameters::new(state.parameters.clone(), BTreeMap::new());
+        vote_into_resharing(&mut contract, &proposal);
 
         // When: the 3rd participant (from the old running set) registers during Resharing.
         register_foreign_chains_config_for(
@@ -840,6 +828,7 @@ mod tests {
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .unwrap();
@@ -903,21 +892,13 @@ mod tests {
         )
         .unwrap();
         let proposal = ProposedGovernanceThresholdParameters::new(proposed, BTreeMap::new());
-        let resharing = {
-            let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
-                panic!("expected Running state");
-            };
-            state
-                .transition_to_resharing_no_checks(&proposal)
-                .expect("contract has at least one domain")
-        };
-        contract.protocol_state = ProtocolContractState::Resharing(resharing);
         prepay_and_submit_mock_attestation(
             &mut contract,
             &joining,
             joining_info.tls_public_key.clone(),
         )
         .expect("the joining participant's attestation should be accepted");
+        vote_into_resharing(&mut contract, &proposal);
         let joining_pk = must_get_attested_signer_key(&contract, &joining_info.tls_public_key);
         let departing_pk = must_get_attested_signer_key(&contract, &departing_info.tls_public_key);
 

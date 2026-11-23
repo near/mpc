@@ -1,6 +1,6 @@
 [toolchain]
 # This needs to be at least as high as the nearcore's toolchain version.
-channel = "1.97.1"
+channel = "1.100.0"
 components = ["rustfmt", "clippy", "rust-analyzer", "rust-src"]
 targets = ["wasm32-unknown-unknown"]
 profile = "default"

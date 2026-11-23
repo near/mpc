@@ -146,13 +146,18 @@ pub fn spawn_real_indexer(
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
 
+            indexer_state
+                .ensure_chain_matches_contract(mpc_indexer_config.genesis_hash)
+                .await
+                .expect("the node must follow its contract's chain");
+
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 
             // Streaming before the node is synced pins the `LatestSynced` cursor
             // at genesis, below the block tail it can never reach. Raced against
             // shutdown so a SIGTERM during state sync still tears down cleanly.
             if !await_sync_or_shutdown(
-                indexer_state.client.ensure_head_follows_tip(),
+                indexer_state.gateway.ensure_head_follows_tip(),
                 &shutdown_token,
             )
             .await

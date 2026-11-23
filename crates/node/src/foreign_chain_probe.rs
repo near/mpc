@@ -1,6 +1,6 @@
 //! Periodic probe of every configured foreign-chain RPC provider, via
-//! [`foreign_chain_health_check::probe`], with the local config compared against the on chain
-//! provider whitelist.
+//! [`foreign_chain_health_check::probe`], with the local config compared and each chain judged
+//! against the on chain provider whitelist.
 
 use std::future::Future;
 
@@ -12,6 +12,7 @@ use tokio::sync::watch;
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
 use crate::tick::Tick;
 
+mod chain_health;
 mod report;
 #[cfg(test)]
 mod test_utils;
@@ -22,7 +23,8 @@ mod whitelist_diagnostics;
 /// nothing gates on the result.
 ///
 /// Each round logs a line per unhealthy provider and per difference between the local config and
-/// the whitelist, see [`whitelist_diagnostics`], then one summary line. The probe starts before the
+/// the whitelist, see [`whitelist_diagnostics`], and per chain that is not healthy, see
+/// [`ChainHealth`](chain_health::ChainHealth), then one summary line. The probe starts before the
 /// indexer has read the whitelist from the contract, so `whitelist_rx` holds `None` until then, and
 /// the summary says the whitelist is not read yet.
 pub async fn run_periodic_probe(
@@ -76,6 +78,17 @@ fn finish_round(
         .iter()
         .flatten()
         .for_each(whitelist_diagnostics::log_diagnostic);
+    let health_per_chain = whitelist
+        .map(|whitelist| chain_health::judge(report, local, whitelist))
+        .unwrap_or_default();
+    health_per_chain
+        .iter()
+        .for_each(|(chain, health)| chain_health::log_if_unhealthy(*chain, health));
+    let chain_health::Summary {
+        healthy_chains,
+        judged_chains,
+    } = chain_health::summarize(&health_per_chain);
+
     let whitelist_state = match whitelist_differences.map(|differences| differences.len()) {
         None => WHITELIST_NOT_READ.to_string(),
         Some(0) => WHITELIST_MATCHES.to_string(),
@@ -88,6 +101,8 @@ fn finish_round(
         unchecked,
         ?unchecked_chains,
         whitelist = whitelist_state,
+        healthy_chains,
+        judged_chains,
         "{ROUND_COMPLETE}"
     );
 }
@@ -130,8 +145,9 @@ mod tests {
     use super::*;
     use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
-        chain_config, empty_report, foreign_chains, gauges, mock_finish_round, mock_probe,
-        no_whitelist, row, whitelist_of,
+        ALCHEMY_URL, ProbedConfig, ProbedProvider, chain_config, empty_report, foreign_chains,
+        gauges, mock_finish_round, mock_probe, no_whitelist, polygon_with_report, row,
+        whitelist_of,
     };
     use crate::tick::MockTicker;
 
@@ -402,6 +418,31 @@ mod tests {
                 None => Ok(()),
             }
         });
+    }
+
+    #[traced_test]
+    #[rstest]
+    #[case::once_the_whitelist_is_read(
+        Some(whitelist_of(dtos::ForeignChain::Polygon, &["alchemy"], 1)),
+        "healthy_chains=1 judged_chains=1"
+    )]
+    #[case::not_before(None, "healthy_chains=0 judged_chains=0")]
+    fn finish_round__should_judge_each_chain_only_once_the_whitelist_is_read(
+        #[case] whitelist: Option<ForeignChainWhitelist>,
+        #[case] chain_counts: &str,
+    ) {
+        // Given
+        let ProbedConfig { local, report } = polygon_with_report(&[ProbedProvider {
+            name: "alchemy",
+            rpc_url: ALCHEMY_URL,
+            status: ProviderStatus::Healthy,
+        }]);
+
+        // When
+        finish_round(&report, &local, whitelist.as_ref());
+
+        // Then
+        assert!(logs_contain(chain_counts));
     }
 
     #[test]

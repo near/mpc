@@ -34,6 +34,8 @@ jobs:
       contents: read
       pull-requests: read # reads the diff, comments and reviews
       issues: read # reads the issues the pull request refers to
+    env:
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
     outputs:
       review: ${{ fromJSON(steps.claude-review.outputs.structured_output).review }}
 
@@ -85,9 +87,17 @@ jobs:
             echo "$DELIM"
           } >> "$GITHUB_ENV"
 
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Install sandbox dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bubblewrap socat
+
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@d535f5172dec02b204866b393d6b20b9b2aaf98d # v1.0.266
+        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc # v1.0.276
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API }}
           github_token: ${{ github.token }}

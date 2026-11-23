@@ -1,6 +1,6 @@
 #[cfg(target_os = "linux")]
 use super::jemalloc::{jemalloc_heap_flamegraph, jemalloc_heap_pprof};
-use super::pprof::collect_pprof;
+use super::pprof::{collect_pprof, write_flamegraph};
 
 use axum::body::Body;
 use axum::extract::{Path, State};
@@ -87,20 +87,19 @@ async fn pprof_flamegraph(Query(params): Query<PprofParameters>) -> impl IntoRes
 
     match pprof_report {
         Ok(report) => {
+            if report.data.is_empty() {
+                // No CPU samples were captured during the sampling window
+                // (all threads were sleeping in blocked libraries such as libc/pthread).
+                return StatusCode::NO_CONTENT.into_response();
+            }
+
             let mut svg_buffer = Vec::new();
-            let flamegraph_write = report.flamegraph(&mut svg_buffer);
-            if let Err(error) = flamegraph_write {
+            if let Err(error) = write_flamegraph(&report, &mut svg_buffer) {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     format!("Error generating flamegraph: {:#?}", error),
                 )
                     .into_response();
-            }
-
-            if svg_buffer.is_empty() {
-                // No CPU samples were captured during the sampling window
-                // (all threads were sleeping in blocked libraries such as libc/pthread).
-                return StatusCode::NO_CONTENT.into_response();
             }
 
             (

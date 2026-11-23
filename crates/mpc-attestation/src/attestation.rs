@@ -318,13 +318,6 @@ pub fn default_measurements() -> ExpectedMeasurements {
     include_measurements!("assets/tcb_info.json")
 }
 
-/// Returns the TCB measurements of the dev OS image that the `test-utils` fixture quote was taken
-/// on.
-#[cfg(any(test, feature = "test-utils"))]
-pub fn dev_measurements() -> ExpectedMeasurements {
-    include_measurements!("assets/tcb_info_dev.json")
-}
-
 /// Post-DCAP verification of a dstack [`TcbInfo`] at the `mpc-attestation` layer.
 ///
 /// [`TcbInfo`] comes from the lower `attestation` crates, which know nothing of
@@ -435,7 +428,7 @@ fn verify_dstack_mpc_hashes(
             .get_single_event(MPC_IMAGE_HASH_EVENT)?
             .event_payload;
 
-        // dstack-sdk's emit_event hex-encodes the payload; the launcher passes raw bytes.
+        // dstack's `TcbInfo` hex-encodes event payloads; the launcher measures the raw digest bytes.
         let mpc_image_hash_bytes: Vec<u8> = hex::decode(mpc_image_hash_payload).map_err(|err| {
             VerificationError::Custom(format!("provided mpc image is not hex encoded: {:?}", err))
         })?;

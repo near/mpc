@@ -46,7 +46,9 @@ pub trait MeshNetworkTransportSender: Send + Sync + 'static {
     ///
     /// For packets P = [p_0, p_1, p_2, ..., p_n] sent via this method to the same recipient
     /// for which this method returned Ok, it is guaranteed that the recipient will receive
-    /// P[0..i] for some 0 <= i <= n.
+    /// P[0..i] for some 0 <= i <= n. This holds separately for [`Packet::MpcMessage`]s and
+    /// for control packets (all other variants): a control packet may overtake MPC messages
+    /// queued before it.
     ///
     /// The connection_version is used to detect if the connection is broken, in which case
     /// such a guarantee is no longer possible. Without one, the packet is sent on whichever
@@ -218,19 +220,6 @@ impl MeshNetworkClient {
                 .connectivity(participant)
                 .peer_network_protocol_version()
         }
-    }
-
-    /// Requires a bidirectional connection, but ignores indexer height, so it is still not a full
-    /// liveness check: intersect with [`Self::all_alive_participant_ids`] when picking a
-    /// participant set.
-    pub fn participants_supporting(&self, required: NetworkProtocolVersion) -> Vec<ParticipantId> {
-        self.all_participant_ids()
-            .into_iter()
-            .filter(|participant| {
-                self.peer_network_protocol_version(*participant)
-                    .is_some_and(|version| version.supports(required))
-            })
-            .collect()
     }
 
     /// Returns the participant IDs of all nodes in the network that are currently alive.
@@ -1385,25 +1374,6 @@ mod tests {
 
     /// Just some big prime number
     static MOD: u64 = 1_000_000_007;
-
-    #[tokio::test]
-    async fn participants_supporting__should_include_self_and_peers_at_or_above_version() {
-        // Given
-        let me = ParticipantId::from_raw(1);
-        let peers = [2, 3, 4].map(ParticipantId::from_raw);
-        let participants = vec![me, peers[0], peers[1], peers[2]];
-        let versions = HashMap::from([
-            (peers[0], NetworkProtocolVersion::Jan2026),
-            (peers[1], NetworkProtocolVersion::Dec2025),
-        ]);
-        let (client, _) = new_test_client_with_versions(participants, me, versions);
-
-        // When
-        let supporting = client.participants_supporting(NetworkProtocolVersion::Jan2026);
-
-        // Then
-        assert_eq!(supporting, vec![me, peers[0]]);
-    }
 
     #[tokio::test]
     #[serial(network_live_connections)]

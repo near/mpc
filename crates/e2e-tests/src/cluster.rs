@@ -10,7 +10,9 @@ use ed25519_dalek::SigningKey;
 use near_contract_transport::{
     NearKitCaller, NearKitViewError, NearToken, Subscription, WatchContractState,
 };
+use near_indexer_primitives::CryptoHash;
 use near_kit::AccountId;
+use near_kit::SigningNear;
 use near_kit::transaction::ExecutedOptimistic;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use near_mpc_contract_interface::{
@@ -19,8 +21,8 @@ use near_mpc_contract_interface::{
         AccountId as ContractAccountId, Attestation, AuthScheme, BackupServiceInfo, BlockCount,
         CKDAppPublicKey, CKDRequestArgs, ChainEntry, ChainRouting, DestinationNodeInfo,
         DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, EpochId, ForeignChain,
-        ForeignChainsConfigs, GovernanceThreshold, GovernanceThresholdParameters, InitConfig,
-        MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, ParticipantUrl,
+        ForeignChainsConfigs, GenesisHash, GovernanceThreshold, GovernanceThresholdParameters,
+        InitConfig, MigrationInfo, MockAttestation, ParticipantId, ParticipantInfo, ParticipantUrl,
         Participants, Payload, ProposedGovernanceThresholdParameters, Protocol,
         ProtocolContractState, ProviderConfig, ProviderId, ReconstructionThreshold,
         SignRequestArgs, TeeVerifierCodeHash, Update,
@@ -50,12 +52,16 @@ pub const PARTICIPANT_ATTESTATIONS_TIMEOUT: Duration = Duration::from_mins(2);
 const CONTRACT_INIT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Account id for node `i`. Single source for the cluster's node naming.
-fn node_account(i: usize) -> String {
+fn node_account(i: usize) -> AccountId {
     format!("node{i}.{SANDBOX_ROOT_ACCOUNT}")
+        .parse()
+        .expect("node account must be a valid account id")
 }
 
-fn tee_verifier_account() -> String {
+fn tee_verifier_account() -> AccountId {
     format!("tee-verifier.{SANDBOX_ROOT_ACCOUNT}")
+        .parse()
+        .expect("tee-verifier account must be a valid account id")
 }
 
 // The default `key_event_timeout_blocks` is sized for mainnet (~600 ms
@@ -273,7 +279,7 @@ pub struct MpcCluster {
     pub sandbox: NearSandbox,
     pub blockchain: NearBlockchain,
     pub contract: DeployedContract,
-    pub mpc_contract_handle: MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    pub mpc_contract_handle: MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
     state_subscription: Subscription<ProtocolContractState, NearKitViewError>,
     migration_info_subscription: OnceCell<Subscription<MigrationInfo, NearKitViewError>>,
     pub nodes: Vec<MpcNodeState>,
@@ -323,9 +329,10 @@ impl MpcCluster {
         let blockchain = NearBlockchain::new(
             &sandbox.rpc_url(),
             &chain_id,
-            SANDBOX_ROOT_ACCOUNT,
+            SANDBOX_ROOT_ACCOUNT.parse()?,
             root_secret_key,
-        )?;
+        );
+        let genesis_hash = blockchain.genesis_hash().await?;
 
         let contract_key = generate_deterministic_key(255);
         let contract_account: AccountId = format!("mpc.{SANDBOX_ROOT_ACCOUNT}").parse()?;
@@ -373,7 +380,8 @@ impl MpcCluster {
                 threshold: config.threshold,
                 participant_indices: participant_indices.clone(),
                 init_format: config.init_format,
-                tee_verifier_account_id: tee_verifier_account().parse()?,
+                tee_verifier_account_id: tee_verifier_account(),
+                genesis_hash,
             },
         )
         .await?;
@@ -394,6 +402,7 @@ impl MpcCluster {
             &node_near_keys,
             &node_p2p_keys,
             &contract_account,
+            genesis_hash,
             test_dir.path(),
             &ports,
         )?;
@@ -612,20 +621,17 @@ impl MpcCluster {
             .filter(|(_, (node, _))| matches!(node, MpcNodeState::Running(_)))
             .map(|(i, (node, key))| {
                 let account = node.account_id().clone();
-                let client = self
-                    .blockchain
-                    .client_for(node.account_id().as_ref(), key)
-                    .with_context(|| format!("failed to get client for node {i} ({account})"))?;
+                let client = self.blockchain.client_for(node.account_id(), key);
                 let domains = domains.clone();
-                Ok(async move {
+                async move {
                     client
                         .call_mpc(self.contract_id())
                         .vote_add_domains(domains)
                         .await
                         .with_context(|| format!("node {i} ({account}) failed to vote_add_domains"))
-                })
+                }
             })
-            .collect::<anyhow::Result<Vec<_>>>()?;
+            .collect();
 
         futures::future::try_join_all(votes).await?;
 
@@ -643,7 +649,7 @@ impl MpcCluster {
         node_index: usize,
         next_domain_id: DomainId,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
+        self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .vote_cancel_keygen(next_domain_id)
             .await
@@ -661,18 +667,21 @@ impl MpcCluster {
             .await?;
 
         let state = self.get_contract_state().await?;
-        let (prospective_epoch_id, current_participants) = match &state {
+        let (prospective_epoch_id, current_parameters) = match &state {
             ProtocolContractState::Running(r) => {
                 let base = r
                     .previously_cancelled_resharing_epoch_id
                     .unwrap_or(r.keyset.epoch_id);
-                (EpochId(base.0 + 1), &r.parameters.participants)
+                (EpochId(base.0 + 1), &r.parameters)
             }
             _ => anyhow::bail!("cannot reshare: contract not in Running state"),
         };
 
-        let participants =
-            build_participants_from_nodes(new_participants, &self.nodes, current_participants);
+        let participants = build_participants_from_nodes(
+            new_participants,
+            &self.nodes,
+            &current_parameters.participants,
+        );
         let proposal = ProposedGovernanceThresholdParameters {
             parameters: GovernanceThresholdParameters {
                 threshold: GovernanceThreshold(new_threshold as u64),
@@ -682,7 +691,7 @@ impl MpcCluster {
         };
 
         tracing::info!(?prospective_epoch_id, new_threshold, "voting for resharing");
-        self.vote_resharing(current_participants, prospective_epoch_id, proposal)
+        self.vote_resharing(current_parameters, prospective_epoch_id, proposal)
             .await?;
 
         self.wait_for_state(VOTE_KEY_EVENT_TIMEOUT, |s| {
@@ -732,38 +741,36 @@ impl MpcCluster {
         Ok(())
     }
 
-    /// Vote for resharing from all running nodes: current participants first,
-    /// then candidates. The contract requires threshold participant votes
-    /// before candidates can vote.
+    /// Vote for resharing from the first running current participants, as many
+    /// as the governance threshold. The contract accepts the proposal at the
+    /// threshold, and only current participants can vote.
     async fn vote_resharing(
         &self,
-        current_participants: &Participants,
+        current_parameters: &GovernanceThresholdParameters,
         prospective_epoch_id: EpochId,
         proposal: ProposedGovernanceThresholdParameters,
     ) -> anyhow::Result<()> {
-        let current_accounts: std::collections::HashSet<_> = current_participants
+        let current_accounts: HashSet<&AccountId> = current_parameters
+            .participants
             .participants
             .iter()
-            .map(|(a, _, _)| a.to_string())
+            .map(|(a, _, _)| a)
             .collect();
+        let threshold = usize::try_from(current_parameters.threshold.0)?;
+        let voters = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| {
+                matches!(node, MpcNodeState::Running(_))
+                    && current_accounts.contains(node.account_id())
+            })
+            .map(|(i, _)| i)
+            .take(threshold);
 
-        let mut participants_first: Vec<usize> = Vec::new();
-        let mut candidates_second: Vec<usize> = Vec::new();
-        for (i, node) in self.nodes.iter().enumerate() {
-            if !matches!(node, MpcNodeState::Running(_)) {
-                continue;
-            }
-            let acct: &str = node.account_id().as_ref();
-            if current_accounts.contains(acct) {
-                participants_first.push(i);
-            } else {
-                candidates_second.push(i);
-            }
-        }
-
-        for i in participants_first.iter().chain(candidates_second.iter()) {
+        for i in voters {
             let outcome = self
-                .operator_client_for(*i)?
+                .operator_client_for(i)
                 .call_mpc(self.contract_id())
                 .vote_new_parameters(prospective_epoch_id, proposal.clone())
                 .await
@@ -787,7 +794,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
+        self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .vote_cancel_resharing()
             .await
@@ -878,7 +885,7 @@ impl MpcCluster {
     pub fn client_for(
         &self,
         account_id: &AccountId,
-    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
+    ) -> anyhow::Result<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
         let key = self
             .user_accounts
             .get(account_id)
@@ -890,13 +897,13 @@ impl MpcCluster {
                     .map(|(_, key)| key)
             })
             .with_context(|| format!("unknown account: {account_id}"))?;
-        self.blockchain.client_for(account_id.as_ref(), key)
+        Ok(self.blockchain.client_for(account_id, key))
     }
 
     pub fn contract_handle(
         &self,
         account_id: &AccountId,
-    ) -> MpcContractHandle<NearKitCaller<ExecutedOptimistic>> {
+    ) -> MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>> {
         self.client_for(account_id)
             .unwrap()
             .call_mpc(self.contract_id())
@@ -943,10 +950,10 @@ impl MpcCluster {
     pub fn operator_client_for(
         &self,
         node_index: usize,
-    ) -> anyhow::Result<NearKitCaller<ExecutedOptimistic>> {
+    ) -> NearKitCaller<SigningNear<ExecutedOptimistic>> {
         let node = &self.nodes[node_index];
         self.blockchain
-            .client_for(node.account_id().as_ref(), &self.operator_keys[node_index])
+            .client_for(node.account_id(), &self.operator_keys[node_index])
     }
 
     /// The node keeps running — indexing, participating in computations,
@@ -955,7 +962,7 @@ impl MpcCluster {
     pub async fn delete_node_signer_key(&self, node_index: usize) -> anyhow::Result<()> {
         self.blockchain
             .delete_access_key(
-                self.nodes[node_index].account_id().as_ref(),
+                self.nodes[node_index].account_id(),
                 &self.operator_keys[node_index],
                 self.node_keys[node_index].to_near_public_key(),
             )
@@ -968,7 +975,7 @@ impl MpcCluster {
         node_index: usize,
         backup_service_info: BackupServiceInfo,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
+        self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .register_backup_service(backup_service_info)
             .await
@@ -1038,16 +1045,19 @@ impl MpcCluster {
             chains.clone().try_into().expect("non-empty: checked above");
 
         for &idx in participant_indices {
-            let client = self
+            let outcome = self
                 .operator_client_for(idx)
-                .with_context(|| format!("whitelist_foreign_chains: node {idx}"))?;
-            client
                 .call_mpc(self.contract_id())
                 .vote_update_foreign_chain_providers(batch.clone())
                 .await
                 .with_context(|| {
                     format!("vote_update_foreign_chain_providers from node {idx} failed")
                 })?;
+            anyhow::ensure!(
+                outcome.is_success(),
+                "vote_update_foreign_chain_providers from node {idx} failed: {:?}",
+                outcome.failure_message()
+            );
         }
         Ok(())
     }
@@ -1055,9 +1065,9 @@ impl MpcCluster {
     /// Prepay one attestation-storage grant for a specific node's account, paid by its operator.
     pub async fn prepay_attestation_grant(&self, node_index: usize) -> anyhow::Result<()> {
         let fee = attestation_storage_fee(&self.mpc_contract_handle).await?;
-        let account_id = self.nodes[node_index].account_id().to_string().parse()?;
+        let account_id = self.nodes[node_index].account_id().clone();
         let outcome = self
-            .operator_client_for(node_index)?
+            .operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .prepay_attestation_storage(account_id, 1, fee)
             .await
@@ -1078,7 +1088,7 @@ impl MpcCluster {
         attestation: Attestation,
         tls_public_key: Ed25519PublicKey,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
+        self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .submit_participant_info(attestation, tls_public_key)
             .await
@@ -1091,7 +1101,7 @@ impl MpcCluster {
         node_index: usize,
         destination_node_info: DestinationNodeInfo,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
+        self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .start_node_migration(destination_node_info)
             .await
@@ -1103,7 +1113,7 @@ impl MpcCluster {
         &self,
         node_index: usize,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
+        self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .cancel_node_migration()
             .await
@@ -1116,7 +1126,7 @@ impl MpcCluster {
         node_index: usize,
         url: ParticipantUrl,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
-        self.operator_client_for(node_index)?
+        self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
             .update_participant_url(url)
             .await
@@ -1309,7 +1319,7 @@ async fn deploy_contract(
 ) -> anyhow::Result<DeployedContract> {
     tracing::info!(account = %contract_account, "deploying MPC contract");
     blockchain
-        .create_account_and_deploy(contract_account.as_ref(), 1000, contract_key, wasm)
+        .create_account_and_deploy(contract_account, 1000, contract_key, wasm)
         .await
 }
 
@@ -1337,6 +1347,7 @@ struct InitContractArgs {
     participant_indices: Vec<usize>,
     init_format: ContractInitFormat,
     tee_verifier_account_id: ContractAccountId,
+    genesis_hash: CryptoHash,
 }
 
 /// Prepays `attestation_grants[i]` attestation-storage grants for the account of node `i`.
@@ -1355,9 +1366,9 @@ async fn prepay_attestation_grants(
         let account = node_account(i);
         let deposit = NearToken::from_yoctonear(fee.as_yoctonear() * u128::from(grants));
         let outcome = blockchain
-            .client_for(&account, near_key)?
+            .client_for(&account, near_key)
             .call_mpc(contract.account_id())
-            .prepay_attestation_storage(account.parse()?, grants, deposit)
+            .prepay_attestation_storage(account, grants, deposit)
             .await
             .with_context(|| format!("failed to prepay attestation storage for node {i}"))?;
         anyhow::ensure!(
@@ -1371,7 +1382,7 @@ async fn prepay_attestation_grants(
 }
 
 async fn attestation_storage_fee(
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    mpc_contract_handle: &MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
 ) -> anyhow::Result<NearToken> {
     let config = mpc_contract_handle.config().await?.value;
     Ok(NearToken::from_millinear(u128::from(
@@ -1382,7 +1393,7 @@ async fn attestation_storage_fee(
 async fn init_contract(
     blockchain: &NearBlockchain,
     contract: &DeployedContract,
-    mpc_contract_handle: &MpcContractHandle<NearKitCaller<ExecutedOptimistic>>,
+    mpc_contract_handle: &MpcContractHandle<NearKitCaller<SigningNear<ExecutedOptimistic>>>,
     state_subscription: &Subscription<ProtocolContractState, NearKitViewError>,
     ports: &TestPorts,
     args: InitContractArgs,
@@ -1395,6 +1406,7 @@ async fn init_contract(
         participant_indices,
         init_format,
         tee_verifier_account_id,
+        genesis_hash,
     } = args;
 
     let participants = build_participants(&participant_indices, &p2p_keys, ports);
@@ -1416,7 +1428,12 @@ async fn init_contract(
     let outcome = match init_format {
         ContractInitFormat::Current => {
             mpc_contract_handle
-                .init(params, tee_verifier_account_id, Some(init_config))
+                .init(
+                    params,
+                    tee_verifier_account_id,
+                    GenesisHash::from(genesis_hash.0),
+                    Some(init_config),
+                )
                 .await?
         }
     };
@@ -1433,13 +1450,17 @@ async fn init_contract(
         let account = node_account(i);
         let pubkey =
             near_mpc_crypto_types::Ed25519PublicKey::from(p2p_keys[i].verifying_key().to_bytes());
-        blockchain
+        let outcome = blockchain
             .client_for(&account, &near_keys[i])
-            .unwrap()
             .call_mpc(contract.account_id())
             .submit_participant_info(Attestation::Mock(MockAttestation::Valid), pubkey)
             .await
             .with_context(|| format!("failed to submit attestation for node {i}"))?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "failed to submit attestation for node {i}: {:?}",
+            outcome.failure_message()
+        );
     }
 
     wait_for_contract_state(state_subscription, CONTRACT_INIT_TIMEOUT, |s| {
@@ -1475,13 +1496,12 @@ async fn deploy_and_trust_tee_verifier(
     // the deployed bytes.
     let expected_code_hash =
         TeeVerifierCodeHash::new(*near_kit::CryptoHash::hash(verifier_wasm).as_bytes());
-    let candidate: ContractAccountId = verifier_account.parse()?;
     for &i in participant_indices {
         let account = node_account(i);
-        let client = blockchain.client_for(&account, &operator_keys[i])?;
+        let client = blockchain.client_for(&account, &operator_keys[i]);
         let outcome = client
             .call_mpc(contract.account_id())
-            .vote_tee_verifier_change(candidate.clone(), expected_code_hash)
+            .vote_tee_verifier_change(verifier_account.clone(), expected_code_hash)
             .await
             .with_context(|| format!("node {i} failed to vote for the tee-verifier"))?;
         anyhow::ensure!(
@@ -1505,12 +1525,17 @@ async fn add_initial_domains(
 
     for &i in participant_indices {
         let account = node_account(i);
-        let client = blockchain.client_for(&account, &operator_keys[i])?;
-        client
+        let client = blockchain.client_for(&account, &operator_keys[i]);
+        let outcome = client
             .call_mpc(contract.account_id())
             .vote_add_domains(domains.to_vec())
             .await
             .with_context(|| format!("node {i} failed to vote add domains"))?;
+        anyhow::ensure!(
+            outcome.is_success(),
+            "node {i} failed to vote add domains: {:?}",
+            outcome.failure_message()
+        );
     }
 
     wait_for_contract_state(state_subscription, VOTE_KEY_EVENT_TIMEOUT, |s| {
@@ -1527,12 +1552,14 @@ async fn add_initial_domains(
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments)]
 fn start_mpc_nodes(
     config: &MpcClusterConfig,
     sandbox: &NearSandbox,
     near_keys: &[SigningKey],
     p2p_keys: &[SigningKey],
     contract_account: &AccountId,
+    genesis_hash: CryptoHash,
     test_dir: &Path,
     ports: &TestPorts,
 ) -> anyhow::Result<Vec<MpcNodeState>> {
@@ -1564,7 +1591,7 @@ fn start_mpc_nodes(
             node_index: i,
             home_dir: test_dir.join(format!("node{i}")),
             binary_path,
-            signer_account_id: node_account(i).parse()?,
+            signer_account_id: node_account(i),
             p2p_signing_key: p2p_keys[i].clone(),
             near_signer_key: near_keys[i].clone(),
             ports: NodePorts::from_allocator(ports, i),
@@ -1572,6 +1599,7 @@ fn start_mpc_nodes(
             triples_to_buffer: config.triples_to_buffer,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
+            near_genesis_hash: genesis_hash,
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config,
             tls_trust_roots: config.tls_trust_roots.clone(),
@@ -1599,6 +1627,7 @@ fn start_mpc_nodes(
             triples_to_buffer: 10,
             chain_id: chain_id.clone(),
             near_genesis_path: genesis_path.clone(),
+            near_genesis_hash: genesis_hash,
             near_boot_nodes: boot_nodes.clone(),
             foreign_chains_config: Default::default(),
             tls_trust_roots: config.tls_trust_roots.clone(),
@@ -1619,7 +1648,7 @@ async fn create_user_accounts(
         let key = generate_deterministic_key(200 + i);
         let account: AccountId = format!("user{i}.{SANDBOX_ROOT_ACCOUNT}").parse()?;
         blockchain
-            .create_account_with_keys(account.as_ref(), 100, std::slice::from_ref(&key))
+            .create_account_with_keys(&account, 100, std::slice::from_ref(&key))
             .await?;
         map.insert(account, key);
     }
@@ -1633,7 +1662,7 @@ fn build_participants(
 ) -> Participants {
     let mut list = Vec::new();
     for (participant_id, &i) in indices.iter().enumerate() {
-        let account_id: ContractAccountId = node_account(i).parse().unwrap();
+        let account_id = node_account(i);
         let pubkey = near_mpc_crypto_types::Ed25519PublicKey::from(&p2p_keys[i].verifying_key());
         list.push((
             account_id,

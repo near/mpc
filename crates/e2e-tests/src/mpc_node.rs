@@ -9,7 +9,7 @@ use mpc_node_config::{
     BlockArgs, CKDConfig, ChainId, ConfigFile, IndexerConfig, KeygenConfig, LogConfig, LogFormat,
     NearInitConfig, SecretsStartConfig, SignatureConfig, StartConfig, SyncMode, TripleConfig,
 };
-use near_indexer_primitives::types::Finality;
+use near_indexer_primitives::{CryptoHash, types::Finality};
 use near_kit::AccountId;
 use near_mpc_contract_interface::types::ParticipantUrl;
 use near_mpc_crypto_types::Ed25519PublicKey;
@@ -192,6 +192,7 @@ pub struct MpcNodeSetup {
     // NEAR chain info (from sandbox)
     chain_id: String,
     near_genesis_path: PathBuf,
+    near_genesis_hash: CryptoHash,
     near_boot_nodes: String,
 
     // Derived config values
@@ -238,6 +239,7 @@ impl MpcNodeSetup {
             mpc_contract_id: args.mpc_contract_id,
             chain_id: args.chain_id,
             near_genesis_path: args.near_genesis_path,
+            near_genesis_hash: args.near_genesis_hash,
             near_boot_nodes: args.near_boot_nodes,
             secret_store_key_hex,
             backup_encryption_key_hex,
@@ -472,6 +474,7 @@ impl MpcNodeSetup {
                     validate_genesis: true,
                     concurrency: std::num::NonZeroU16::new(1).unwrap(),
                     mpc_contract_id: mpc_contract,
+                    genesis_hash: Some(self.near_genesis_hash),
                     finality: Finality::None,
                     sync_mode: SyncMode::Block(BlockArgs { height: 0 }),
                     port_override: None,
@@ -517,6 +520,7 @@ pub struct MpcNodeSetupArgs {
     pub chain_id: String,
     /// Path to genesis.json on the host (copied from sandbox container).
     pub near_genesis_path: PathBuf,
+    pub near_genesis_hash: CryptoHash,
     /// Boot nodes string: `"ed25519:<pubkey>@127.0.0.1:<port>"`.
     pub near_boot_nodes: String,
     /// Foreign chains configuration for this node.
