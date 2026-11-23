@@ -236,7 +236,10 @@ async fn sign_responding_twice_to_a__should_be_rejected() -> anyhow::Result<()> 
 
     // Then
     assert!(
-        result.is_err(),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains(&errors::InvalidParameters::RequestNotFound.to_string()),
         "a completed request must not be resolved twice"
     );
 
@@ -460,7 +463,10 @@ async fn ckd_responding_twice_to_a__should_be_rejected() -> anyhow::Result<()> {
 
     // Then
     assert!(
-        result.is_err(),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains(&errors::InvalidParameters::RequestNotFound.to_string()),
         "a completed request must not be resolved twice"
     );
 

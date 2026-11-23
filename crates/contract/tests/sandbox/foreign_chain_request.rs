@@ -11,6 +11,7 @@ use crate::sandbox::common::{
     svm_extracted_values, ton_request,
 };
 use crate::sandbox::utils::transactions::CallMpcContract;
+use mpc_contract::errors;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
@@ -586,7 +587,10 @@ async fn verify_foreign_transaction_responding_twice_to_a__should_be_rejected() 
 
     // Then
     assert!(
-        late_result.is_err(),
+        late_result
+            .unwrap_err()
+            .to_string()
+            .contains(&errors::InvalidParameters::RequestNotFound.to_string()),
         "a completed request must not resolve twice"
     );
 }
