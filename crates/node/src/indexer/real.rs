@@ -130,6 +130,10 @@ pub fn spawn_real_indexer(
             .expect("near node has started");
 
             let gateway = ChainGateway::from_near_node(&near_node, &near_config);
+            gateway
+                .ensure_chain_matches(mpc_indexer_config.genesis_hash)
+                .await
+                .expect("the node must follow its contract's chain");
             let indexer = Indexer::from_near_node(near_indexer_config, near_config, &near_node);
 
             let indexer_state = Arc::new(IndexerState::new(
@@ -137,11 +141,6 @@ pub fn spawn_real_indexer(
                 near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
-
-            indexer_state
-                .ensure_chain_matches_contract(mpc_indexer_config.genesis_hash)
-                .await
-                .expect("the node must follow its contract's chain");
 
             tracing::info!("Indexer waiting for node to finish syncing before streaming blocks.");
 

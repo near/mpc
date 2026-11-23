@@ -160,6 +160,18 @@ impl ChainGateway {
         }
     }
 
+    /// Fails if a [`CryptoHash`] is expected and the node follows a chain with another genesis
+    pub async fn ensure_chain_matches(
+        &self,
+        expected_genesis_hash: Option<CryptoHash>,
+    ) -> Result<(), ChainGatewayError> {
+        let genesis_hash = self
+            .genesis_hash()
+            .await
+            .map_err(ChainGatewayError::Status)?;
+        ensure_chain_matches_contract(expected_genesis_hash, genesis_hash)
+    }
+
     /// Spawns a NEAR node with [`NodeConfig`].
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
@@ -225,6 +237,19 @@ impl ChainGateway {
         self.client
             .knows_producer(&crate::account_id_compat::to_near_internal(account_id))
             .await
+    }
+}
+
+fn ensure_chain_matches_contract(
+    expected_genesis_hash: Option<CryptoHash>,
+    genesis_hash: CryptoHash,
+) -> Result<(), ChainGatewayError> {
+    match expected_genesis_hash {
+        Some(expected) if expected != genesis_hash => Err(ChainGatewayError::ChainMismatch {
+            expected,
+            actual: genesis_hash,
+        }),
+        _ => Ok(()),
     }
 }
 
@@ -347,10 +372,14 @@ async fn await_sync_or_shutdown(
 #[expect(non_snake_case)]
 mod tests {
     use super::{
-        MAX_POLLS_PER_BLOCK, MIN_CHAIN_GATEWAY_POLL_INTERVAL, await_sync_or_shutdown, poll_interval,
+        CryptoHash, MAX_POLLS_PER_BLOCK, MIN_CHAIN_GATEWAY_POLL_INTERVAL, await_sync_or_shutdown,
+        ensure_chain_matches_contract, poll_interval,
     };
+    use rstest::rstest;
     use std::future::pending;
     use std::time::Duration;
+
+    const GENESIS_HASH: CryptoHash = CryptoHash([1; 32]);
 
     #[test]
     fn poll_interval__should_fit_max_polls_within_a_block() {
@@ -402,5 +431,20 @@ mod tests {
 
         // Then
         assert!(!synced);
+    }
+
+    #[rstest]
+    #[case::same_chain(Some(GENESIS_HASH), true)]
+    #[case::other_chain(Some(CryptoHash([2; 32])), false)]
+    #[case::no_expected_chain(None, true)]
+    fn ensure_chain_matches_contract__should_reject_a_chain_other_than_the_expected_one(
+        #[case] expected_genesis_hash: Option<CryptoHash>,
+        #[case] accepted: bool,
+    ) {
+        // When
+        let result = ensure_chain_matches_contract(expected_genesis_hash, GENESIS_HASH);
+
+        // Then
+        assert_eq!(result.is_ok(), accepted);
     }
 }
