@@ -36,7 +36,7 @@ use crate::method_names::{
     GENESIS_HASH, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
     GET_TEE_ACCOUNTS, INIT, INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO,
-    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES,
+    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PARTICIPANT_INFO,
     PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
     REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
@@ -57,9 +57,9 @@ use crate::types::{
     ForeignChainsConfigs, GenesisHash, GovernanceThresholdParameters,
     GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
     LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
-    ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState,
-    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation,
-    TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
+    ParticipantInfo, ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters,
+    ProtocolContractState, PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse,
+    StoredAttestation, TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
     VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -697,6 +697,15 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         self.view(ViewArgs::no_args(CURRENT_KEYSET))
     }
 
+    /// The account's TLS key and URL among the participants holding [`Self::current_keyset`];
+    /// `None` if the account is not one of them. Its JSON format stays stable across contract
+    /// versions.
+    pub fn participant_info(&self, account_id: AccountId) -> ViewCall<C, Option<ParticipantInfo>> {
+        let args = serde_json::to_vec(&AccountIdArgs::new(account_id))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(PARTICIPANT_INFO, args))
+    }
+
     pub fn config(&self) -> ViewCall<C, Config> {
         self.view(ViewArgs::no_args(CONFIG))
     }
@@ -1231,6 +1240,7 @@ mod tests {
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;
         let _ = handle.current_keyset().await;
+        let _ = handle.participant_info("alice.near".parse().unwrap()).await;
         let _ = handle.config().await;
         let _ = handle.genesis_hash().await;
         let _ = handle.get_tee_accounts().await;

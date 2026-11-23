@@ -47,9 +47,18 @@ impl ProtocolContractState {
     }
     /// While resharing, the keyset being reshared.
     pub fn current_keyset(&self) -> Option<&Keyset> {
+        self.current_running_state()
+            .map(RunningContractState::keyset)
+    }
+    /// The participants holding the shares of [`Self::current_keyset`].
+    pub fn current_participants(&self) -> Option<&Participants> {
+        self.current_running_state()
+            .map(RunningContractState::participants)
+    }
+    fn current_running_state(&self) -> Option<&RunningContractState> {
         match self {
-            ProtocolContractState::Running(state) => Some(&state.keyset),
-            ProtocolContractState::Resharing(state) => Some(state.previous_keyset()),
+            ProtocolContractState::Running(state) => Some(state),
+            ProtocolContractState::Resharing(state) => Some(&state.previous_running_state),
             ProtocolContractState::NotInitialized | ProtocolContractState::Initializing(_) => None,
         }
     }

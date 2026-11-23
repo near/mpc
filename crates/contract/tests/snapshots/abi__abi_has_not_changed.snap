@@ -848,6 +848,36 @@ expression: abi
         }
       },
       {
+        "name": "participant_info",
+        "doc": " The account's TLS key and URL among the participants holding [`MpcContract::current_keyset`];\n `None` if the account is not one of them.\n\n Like [`MpcContract::current_keyset`], the backup-cli depends on this view's JSON output\n staying stable across contract versions.",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/ParticipantInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "prepay_attestation_storage",
         "doc": " Buys `grants` attestation-storage grants for `account_id`.\n\n Permissionless, which is what lets an operator fund a node whose function-call key\n cannot attach a deposit. Requires exactly the fee times `grants`; no refunds, no\n withdrawal.",
         "kind": "call",

@@ -116,7 +116,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 **Keyshare monitoring (continuous):**
 
-6. Backup service polls the contract for missing keyshares.
+6. Backup service polls the contract for missing keyshares, and finds its MPC node's TLS key and URL with `participant_info(account_id)` instead of in host-controlled configuration.
 7. MPC node looks up its operator's backup service with `attested_backup_service(account_id)`, which returns the TLS key from [`backup_services_info`][backup-services-info-field] only while its attestation in `backup_service_tee_state` is valid (see [Required Changes](#contract-methods)), then, once the contract lists the node's own TLS key for its account, sends encrypted keyshares over mTLS.
 
 **On restart:**
@@ -149,6 +149,7 @@ The contract needs the following changes, most of them in the [migration service
   - `allowed_backup_service_launcher_compose_hashes()`
   - `allowed_backup_service_launcher_image_hashes()` and `allowed_backup_service_os_measurements()`, so that the remove votes and the measurement seed below can be checked
   - `get_backup_service_attestation(tls_public_key)`, like [`get_attestation()`][get-attestation] for MPC nodes, so the backup service can check its own stored attestation
+  - `participant_info(account_id)`: the account's TLS key and URL among the participants holding the current keyset, which the backup service reads from the same state as the keyset, so it reaches only the node the contract lists for its account
   - `reverify_backup_services(max_scan)`: removes backup service entries that fail re-verification and returns their grants, like [`clean_invalid_attestations()`][clean-invalid-attestations] does for MPC nodes, and drops their keys from `backup_services_info`
 - **Resharing cleanup**: when operators leave the participant set, `clean_backup_service_tee_status()`, which runs next to [`clean_tee_status()`][clean-tee-status] with gas of its own, drops their votes from `backup_service_tee_state`; their entries stay until `reverify_backup_services()` removes them, as MPC node entries do. [`cleanup_orphaned_node_migrations()`][cleanup-orphaned-node-migrations], which runs after the same resharing, must keep a departed operator's key in `backup_services_info` while `backup_service_tee_state` still holds an entry under it, so a returning operator's new entry still replaces the old one.
 - **Launcher retention**: [`remove_unused_launchers()`][remove-unused-launchers] counts only the launchers of participants' own nodes, so `backup_service_tee_state` needs its own rule; otherwise every backup service launcher except the newest is dropped once its retention period passes, which invalidates backup services still running an older one.

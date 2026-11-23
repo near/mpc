@@ -51,6 +51,10 @@ method:   current_keyset
 args:     {}
 
 contract: mpc.near
+method:   participant_info
+args:     {"account_id":"alice.near"}
+
+contract: mpc.near
 method:   config
 args:     {}
 
