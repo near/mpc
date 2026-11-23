@@ -485,23 +485,23 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        basic_setup, destination_of, init_running_with_domain, initializing_state,
-        prepay_and_attest_all_participants, prepay_and_submit_mock_attestation, resharing_state,
-        running_contract_called_by_participant_via_forwarder, running_state,
+        basic_setup, destination_of, freshly_initialized_contract, init_running_with_domain,
+        initializing_state, prepare_dstack_verification, prepay_and_attest_all_participants,
+        prepay_and_submit_mock_attestation, resharing_state,
+        running_contract_called_by_participant_via_forwarder, running_state, verified_verdict,
+        with_dstack_fixture_participant,
     };
     use crate::config::Config;
     use crate::dto_mapping::IntoContractType;
-    use crate::primitives::participants::{ParticipantInfo, Participants};
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key, bogus_genesis_hash, bogus_tee_verifier_account_id, create_node,
-        gen_account_id, gen_participant_url, gen_participants, node_for,
+        bogus_ed25519_public_key, create_node, gen_account_id, gen_participants, node_for,
     };
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
+    use crate::tee::attested_service::AttestedService;
     use crate::tee::proposal::NodeImageHash;
     use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeState};
     use crate::tee::test_utils::{
-        MPC_NODE_COMPOSE, NANOS_PER_SECOND, allow_launcher, dstack_fixture_node, set_block_secs,
-        whitelist_dstack_measurements,
+        MPC_NODE_COMPOSE, NANOS_PER_SECOND, allow_launcher, set_block_secs,
     };
     use dtos::{
         Attestation, Curve, DomainConfig, DomainId, Ed25519PublicKey, MockAttestation, Protocol,
@@ -519,10 +519,7 @@ mod tests {
     use rand::rngs::OsRng;
     use rstest::rstest;
     use std::assert_matches;
-    use test_utils::attestation::{
-        VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
-        launcher_image_hash, measurements, mock_expiring_at, mock_tcb_info, verified_report,
-    };
+    use test_utils::attestation::mock_expiring_at;
 
     #[test]
     #[should_panic(expected = "Caller must be the signer account")]
@@ -535,13 +532,6 @@ mod tests {
             Attestation::Mock(MockAttestation::Valid),
             bogus_ed25519_public_key(),
         );
-    }
-
-    fn verified_verdict() -> VerificationResultWithCollateralDates {
-        VerificationResultWithCollateralDates::Verified {
-            report: verified_report(),
-            collateral_dates: collateral_dates(),
-        }
     }
 
     fn must_store_expired_node(contract: &mut MpcContract, node: dtos::NodeInfo) {
@@ -655,38 +645,8 @@ mod tests {
 
     fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
         let mut contract = MpcContract::new_from_protocol_state(running_state());
-        let context = prepare_dstack_verification(&mut contract);
+        let context = prepare_dstack_verification(&mut contract, AttestedService::MpcNode);
         (contract, context)
-    }
-
-    /// Sets a block time at which the dstack fixture is valid, with the contract as caller, and
-    /// readies `contract` to store the fixture's node.
-    fn prepare_dstack_verification(contract: &mut MpcContract) -> VerificationContext {
-        let contract_account_id = env::current_account_id();
-        let context = VMContextBuilder::new()
-            .current_account_id(contract_account_id.clone())
-            .predecessor_account_id(contract_account_id)
-            .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
-            .build();
-        testing_env!(context);
-
-        whitelist_dstack_measurements(
-            &mut contract.tee_state,
-            image_digest(),
-            launcher_image_hash(),
-            measurements(),
-            Some(launcher_compose_digest()),
-        );
-
-        let node = dstack_fixture_node();
-        // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
-        contract
-            .available_attestation_grants
-            .insert(node.account_id.clone(), 1);
-        VerificationContext {
-            node,
-            tcb_info: mock_tcb_info(),
-        }
     }
 
     /// The deposit must be exactly `fee × grants`, which is what makes a remainder — and so a
@@ -822,21 +782,11 @@ mod tests {
     #[test]
     fn resolve_verification__should_resume_requests_when_the_last_participant_attests() {
         // Given
-        let fixture_node = dstack_fixture_node();
         let attested_participants = gen_participants(2);
-        let mut participants = attested_participants.clone();
-        participants
-            .insert(
-                fixture_node.account_id,
-                ParticipantInfo {
-                    url: gen_participant_url(2),
-                    tls_public_key: fixture_node.tls_public_key,
-                },
-            )
-            .unwrap();
+        let participants = with_dstack_fixture_participant(&attested_participants);
         let mut contract = freshly_initialized_contract(&participants, 2);
         contract.tee_state = TeeState::with_mocked_participant_attestations(&attested_participants);
-        let context = prepare_dstack_verification(&mut contract);
+        let context = prepare_dstack_verification(&mut contract, AttestedService::MpcNode);
 
         // When
         let result = contract.resolve_verification(context, Ok(verified_verdict()));
@@ -845,25 +795,6 @@ mod tests {
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement
         assert!(matches!(result, PromiseOrValue::Value(())));
         assert!(contract.accept_requests);
-    }
-
-    /// A contract fresh from [`MpcContract::init`]: no participant has attested yet.
-    fn freshly_initialized_contract(
-        participants: &Participants,
-        governance_threshold: u64,
-    ) -> MpcContract {
-        let parameters = GovernanceThresholdParameters::new(
-            participants.clone(),
-            GovernanceThreshold::new(governance_threshold),
-        )
-        .unwrap();
-        MpcContract::init(
-            (&parameters).into_dto_type(),
-            bogus_tee_verifier_account_id(),
-            bogus_genesis_hash(),
-            None,
-        )
-        .unwrap()
     }
 
     #[rstest]

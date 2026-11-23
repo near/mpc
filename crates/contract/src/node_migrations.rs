@@ -1,12 +1,17 @@
 use std::collections::BTreeMap;
 
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo};
+use near_mpc_contract_interface::types::{
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo,
+};
 use near_sdk::{near, store::IterableMap};
 
 use crate::{
     storage_keys::StorageKey,
-    tee::{attested_service::AttestedService, tee_state::TeeState},
+    tee::{
+        attested_service::AttestedService,
+        tee_state::{Node, TeeState},
+    },
 };
 
 #[near(serializers=[borsh])]
@@ -43,6 +48,36 @@ impl NodeMigrations {
     }
     pub fn set_backup_service_info(&mut self, account_id: AccountId, info: BackupServiceInfo) {
         self.backup_services_info.insert(account_id, info);
+    }
+
+    /// The account's attested backup service: the node it owns under its indexed TLS key. A
+    /// soft-launch key has no such node, and may even name another account's node.
+    pub(crate) fn backup_service_of(&self, account_id: &AccountId) -> Option<&Node> {
+        let info = self.backup_services_info.get(account_id)?;
+        self.backup_service_tee_state
+            .node_of(account_id, &info.public_key)
+    }
+
+    /// Indexes the account's backup service under the TLS key. `replaced` must be the TLS key
+    /// of [`Self::backup_service_of`] before the new node was stored; its node is removed unless
+    /// the new node took its place.
+    pub(crate) fn set_backup_service(
+        &mut self,
+        account_id: AccountId,
+        tls_public_key: Ed25519PublicKey,
+        replaced: Option<&Ed25519PublicKey>,
+    ) {
+        if let Some(replaced) = replaced
+            && *replaced != tls_public_key
+        {
+            self.backup_service_tee_state.nodes.remove(replaced);
+        }
+        self.backup_services_info.insert(
+            account_id,
+            BackupServiceInfo {
+                public_key: tls_public_key,
+            },
+        );
     }
 
     pub fn set_destination_node_info(
