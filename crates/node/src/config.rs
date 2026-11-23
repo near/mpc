@@ -12,6 +12,8 @@ use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
 
 pub(crate) mod start;
 
+pub use start::ensure_near_initialized;
+
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];
 
