@@ -197,6 +197,7 @@ mod tests {
     use crate::config::{ParticipantInfo, ParticipantsConfig};
     use crate::tracking::start_root_task;
     use ed25519_dalek::SigningKey;
+    use rstest::rstest;
     use std::time::Duration;
 
     fn make_signing_key(seed: u8) -> SigningKey {
@@ -454,64 +455,32 @@ mod tests {
         assert!(refined.is_empty());
     }
 
-    #[test]
-    fn foreign_chain_leaders_refiner__should_intersect_supporters_with_eligible() {
+    #[rstest]
+    #[case::intersect_supporters_with_eligible(&[1, 2], 1, &[0, 1], &[1])]
+    #[case::allow_nobody_when_eligible_supporters_below_quorum(&[1, 2, 3], 2, &[0, 1], &[])]
+    #[case::allow_supporters_when_eligible_quorum_is_met(&[1, 2, 3], 2, &[0, 1, 2], &[1, 2])]
+    fn foreign_chain_leaders_refiner__should_allow_eligible_supporters_only_at_quorum(
+        #[case] supporters: &[u32],
+        #[case] quorum: u64,
+        #[case] eligible: &[u32],
+        #[case] expected: &[u32],
+    ) {
         // Given
         let supporters = SupportersByForeignChain::from([(
             dtos::ForeignChain::Bitcoin,
-            participant_set(&[1, 2]),
+            participant_set(supporters),
         )]);
         let (_sender, receiver) = watch::channel(supporters);
-        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(1));
+        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(quorum));
 
         // When
         let refined = refiner.refine(
             &bitcoin_verify_foreign_tx_request(),
-            &participant_set(&[0, 1]),
+            &participant_set(eligible),
         );
 
         // Then
-        assert_eq!(refined, participant_set(&[1]));
-    }
-
-    #[test]
-    fn foreign_chain_leaders_refiner__should_allow_nobody_when_eligible_supporters_below_quorum() {
-        // Given: three supporters, quorum 2, but only one supporter is eligible.
-        let supporters = SupportersByForeignChain::from([(
-            dtos::ForeignChain::Bitcoin,
-            participant_set(&[1, 2, 3]),
-        )]);
-        let (_sender, receiver) = watch::channel(supporters);
-        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(2));
-
-        // When
-        let refined = refiner.refine(
-            &bitcoin_verify_foreign_tx_request(),
-            &participant_set(&[0, 1]),
-        );
-
-        // Then
-        assert!(refined.is_empty());
-    }
-
-    #[test]
-    fn foreign_chain_leaders_refiner__should_allow_supporters_when_eligible_quorum_is_met() {
-        // Given: three supporters, quorum 2, two of them eligible.
-        let supporters = SupportersByForeignChain::from([(
-            dtos::ForeignChain::Bitcoin,
-            participant_set(&[1, 2, 3]),
-        )]);
-        let (_sender, receiver) = watch::channel(supporters);
-        let refiner = ForeignChainLeadersRefiner::new(receiver, Some(2));
-
-        // When
-        let refined = refiner.refine(
-            &bitcoin_verify_foreign_tx_request(),
-            &participant_set(&[0, 1, 2]),
-        );
-
-        // Then
-        assert_eq!(refined, participant_set(&[1, 2]));
+        assert_eq!(refined, participant_set(expected));
     }
 
     #[test]

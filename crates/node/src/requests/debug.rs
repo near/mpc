@@ -252,30 +252,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::{BlockCount, BlockHeight, CompletedRequest, CompletedRequests};
-    use crate::types::{CKDRequest, SignatureRequest};
+    use crate::indexer::types::ChainRespondArgs;
+    use crate::types::{CKDRequest, Request, SignatureRequest};
     use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::call_args as contract_args;
-    use near_mpc_contract_interface::types::{Payload, Tweak};
+    use near_mpc_contract_interface::types::{CKDAppPublicKey, Payload, Tweak};
     use rand::seq::SliceRandom;
 
-    #[test]
-    fn test_completed_ckd_requests() {
-        let mut completed =
-            CompletedRequests::<CKDRequest, contract_args::CKDRespondArgs>::default();
+    fn assert_oldest_requests_are_evicted<
+        RequestType: Request,
+        ChainRespondArgsType: ChainRespondArgs,
+    >(
+        make_request: impl Fn() -> RequestType,
+    ) {
+        let mut completed = CompletedRequests::<RequestType, ChainRespondArgsType>::default();
         let mut indices = (0..200).collect::<Vec<_>>();
         indices.shuffle(&mut rand::thread_rng());
         for i in indices {
             completed.add_completed_request(CompletedRequest {
-                request: CKDRequest {
-                    id: CryptoHash(rand::random()),
-                    receipt_id: CryptoHash(rand::random()),
-                    app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey("bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6".parse().unwrap()),
-                    app_id: [1u8; 32].into(),
-                    entropy: [0; 32],
-                    timestamp_nanosec: 0,
-                    domain_id: DomainId::legacy_ecdsa_id(),
-                },
+                request: make_request(),
                 progress: Default::default(),
                 indexed_block_height: BlockHeight::new(i),
                 completion_delay: if rand::random::<bool>() {
@@ -301,43 +297,36 @@ mod tests {
     }
 
     #[test]
+    fn test_completed_ckd_requests() {
+        assert_oldest_requests_are_evicted::<CKDRequest, contract_args::CKDRespondArgs>(|| {
+            CKDRequest {
+                id: CryptoHash(rand::random()),
+                receipt_id: CryptoHash(rand::random()),
+                app_public_key: CKDAppPublicKey::AppPublicKey(
+                    "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+                        .parse()
+                        .unwrap(),
+                ),
+                app_id: [1u8; 32].into(),
+                entropy: [0; 32],
+                timestamp_nanosec: 0,
+                domain_id: DomainId::legacy_ecdsa_id(),
+            }
+        });
+    }
+
+    #[test]
     fn test_completed_signature_requests() {
-        let mut completed =
-            CompletedRequests::<SignatureRequest, contract_args::SignatureRespondArgs>::default();
-        let mut indices = (0..200).collect::<Vec<_>>();
-        indices.shuffle(&mut rand::thread_rng());
-        for i in indices {
-            completed.add_completed_request(CompletedRequest {
-                request: SignatureRequest {
-                    id: CryptoHash(rand::random()),
-                    receipt_id: CryptoHash(rand::random()),
-                    payload: Payload::from_legacy_ecdsa([0; 32]),
-                    tweak: Tweak::new([0; 32]),
-                    entropy: Default::default(),
-                    timestamp_nanosec: Default::default(),
-                    domain: DomainId::legacy_ecdsa_id(),
-                },
-                progress: Default::default(),
-                indexed_block_height: BlockHeight::new(i),
-                completion_delay: if rand::random::<bool>() {
-                    None
-                } else {
-                    Some((
-                        BlockCount::new(rand::random::<u64>() % 100),
-                        near_time::Duration::milliseconds(100),
-                    ))
-                },
-            });
-        }
-        let mut kept_indices = completed
-            .requests
-            .iter()
-            .map(|r| r.indexed_block_height)
-            .collect::<Vec<_>>();
-        kept_indices.sort_unstable();
-        assert_eq!(
-            kept_indices,
-            (100..200).map(BlockHeight::new).collect::<Vec<_>>()
+        assert_oldest_requests_are_evicted::<SignatureRequest, contract_args::SignatureRespondArgs>(
+            || SignatureRequest {
+                id: CryptoHash(rand::random()),
+                receipt_id: CryptoHash(rand::random()),
+                payload: Payload::from_legacy_ecdsa([0; 32]),
+                tweak: Tweak::new([0; 32]),
+                entropy: Default::default(),
+                timestamp_nanosec: Default::default(),
+                domain: DomainId::legacy_ecdsa_id(),
+            },
         );
     }
 }
