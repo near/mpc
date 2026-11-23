@@ -13,6 +13,9 @@ use crate::start::{NearInitConfig, default_pccs_endpoints, read_toml_file};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BackupServiceStartConfig {
     pub tee: TeeConfig,
+    /// The operator's account. The service registers under it with the account key it generates,
+    /// which the operator adds to this account.
+    pub account_id: AccountId,
     pub mpc_contract_id: AccountId,
     /// Genesis hash of the chain the MPC contract runs on. The embedded NEAR node must follow
     /// this chain.
@@ -48,12 +51,14 @@ mod tests {
         let dstack_endpoint = PathBuf::from("/var/run/dstack.sock");
         let image_hash: DockerSha256Digest = format!("sha256:{}", "ab".repeat(32)).parse().unwrap();
         let latest_allowed_hash_file_path = PathBuf::from("/mnt/shared/image-digest.bin");
+        let account_id: AccountId = "operator.near".parse().unwrap();
         let mpc_contract_id: AccountId = "v1.signer".parse().unwrap();
         let genesis_hash = CryptoHash([1; 32]);
         let tier3_public_addr: SocketAddr = "203.0.113.5:24567".parse().unwrap();
         let listen_address: SocketAddr = "0.0.0.0:8080".parse().unwrap();
         let launcher_config = format!(
             r#"
+                account_id = "{account_id}"
                 mpc_contract_id = "{mpc_contract_id}"
                 genesis_hash = "{genesis_hash}"
                 listen_address = "{listen_address}"
@@ -85,6 +90,7 @@ mod tests {
                 image_hash,
                 latest_allowed_hash_file_path,
             },
+            account_id,
             mpc_contract_id,
             genesis_hash,
             near_init: NearInitConfig {

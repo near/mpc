@@ -1,6 +1,6 @@
 # TEE Context
 
-The TEE Context is a shared crate (`crates/tee-context`) for the TEE attestation lifecycle. It keeps the contract's TEE state up to date, writes the approved image hashes to disk for the [Launcher][launcher-pattern], and regenerates and submits the service's attestation every hour, so that each service gets these tasks without reimplementing them. The MPC node uses it, and the Backup Service is meant to use it too.
+The TEE Context is a shared crate (`crates/tee-context`) for the TEE attestation lifecycle. It keeps the contract's TEE state up to date, writes the approved image hashes to disk for the [Launcher][launcher-pattern], and regenerates and submits the service's attestation every hour, so that each service gets these tasks without reimplementing them. The MPC node and the Backup Service use it.
 
 [launcher-pattern]: securing-mpc-with-tee/securing-mpc-with-tee.md#launcher-pattern
 
@@ -98,7 +98,7 @@ pub async fn run_periodic_attestation_submission<S: SubmitAttestation, A: Genera
 
 The monitors read the views of the given `TeeService`, listed in [Backup Service Attestation Data](backup-service-attestation-data.md#tee-context).
 
-Submission is a port because each service signs with its own key and calls its own contract method. The MPC node implements it by sending `submit_participant_info` through its transaction sender, which holds the only signer of the node's access key: a second signer would keep its own nonce counter and race the node's other transactions.
+Submission is a port because each service signs with its own key and calls its own contract method. The MPC node implements it by sending `submit_participant_info` through its transaction sender, which holds the only signer of the node's access key: a second signer would keep its own nonce counter and race the node's other transactions. The Backup Service implements it by calling `register_backup_service` with no deposit, signed by the account key it generated inside the TEE, which nothing else signs with.
 
 Each hourly round:
 

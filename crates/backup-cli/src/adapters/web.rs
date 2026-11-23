@@ -5,7 +5,7 @@ use axum::{Json, Router, routing::get};
 pub use mpc_node::web::PublicData;
 use near_mpc_contract_interface::types::EpochId;
 use node_types::http_server::StaticWebData;
-use prometheus::{Encoder as _, IntGauge, Registry, TextEncoder};
+use prometheus::{Encoder as _, IntGauge, Registry, TextEncoder, proto::MetricFamily};
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::sync::watch;
@@ -65,8 +65,10 @@ async fn serve_public_data(State(public_data): State<PublicData>) -> Json<Static
     Json(public_data.current())
 }
 
+/// Serves the backup gauges followed by the default registry, where the embedded NEAR node and
+/// the TEE attestation lifecycle register their metrics.
 async fn serve_metrics(State(status): State<BackupStatusReceiver>) -> String {
-    render_metrics(&status.0.borrow())
+    render_metrics(&status.0.borrow()) + &encode(&prometheus::gather())
 }
 
 /// Renders the Prometheus exposition of `status`. The gauges are absent until the first
@@ -92,9 +94,13 @@ fn render_metrics(status: &BackupStatus) -> String {
         }
     }
 
+    encode(&registry.gather())
+}
+
+fn encode(metric_families: &[MetricFamily]) -> String {
     let mut buffer = vec![];
     TextEncoder::new()
-        .encode(&registry.gather(), &mut buffer)
+        .encode(metric_families, &mut buffer)
         .expect("encoding into an in-memory buffer cannot fail");
     String::from_utf8(buffer).expect("the text encoder produces UTF-8")
 }
@@ -185,6 +191,30 @@ mod tests {
         assert_eq!(
             response.last_backup.map(|b| b.epoch_id),
             Some(EpochId::new(5))
+        );
+    }
+
+    #[tokio::test]
+    async fn serve_metrics__should_append_the_default_registry_to_the_backup_gauges() {
+        // Given
+        let status = status_after_a_backup();
+        let (_, status_receiver) = watch::channel(status.clone());
+        let default_registry_gauge = "backup_cli_test_default_registry_gauge";
+        register_gauge(
+            prometheus::default_registry(),
+            default_registry_gauge,
+            "Registered by a test",
+            1,
+        );
+
+        // When
+        let metrics = serve_metrics(State(BackupStatusReceiver(status_receiver))).await;
+
+        // Then
+        assert!(metrics.starts_with(&render_metrics(&status)), "{metrics}");
+        assert!(
+            metrics.contains(&format!("{default_registry_gauge} 1")),
+            "{metrics}"
         );
     }
 
