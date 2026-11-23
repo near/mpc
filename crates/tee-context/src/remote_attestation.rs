@@ -71,6 +71,46 @@ pub struct AttestationSubmitter<S, A> {
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
     pub tee: TeeStateReceivers,
+    /// Publishes each attestation the task generates, whether or not the contract accepts it.
+    pub latest_attestation: watch::Sender<Option<Attestation>>,
+}
+
+/// Generates the attestation to serve until the first periodic round replaces it. Returns
+/// [`None`] when the collateral cannot be fetched, which the periodic rounds retry, and fails on
+/// any other generation error.
+pub async fn generate_initial_attestation(
+    tee_authority: &impl GenerateAttestation,
+    tls_public_key: &Ed25519PublicKey,
+    account_public_key: &Ed25519PublicKey,
+) -> anyhow::Result<Option<Attestation>> {
+    match generate_attestation(tee_authority, tls_public_key, account_public_key).await {
+        Ok(attestation) => {
+            tracing::info!("TEE attestation generated successfully");
+            Ok(Some(attestation))
+        }
+        Err(AttestationError::CollateralFetch(error)) => {
+            tracing::error!(
+                %error,
+                "TEE attestation failed; continuing without attestation and retrying periodically",
+            );
+            Ok(None)
+        }
+        Err(error) => Err(anyhow::Error::new(error).context("TEE attestation failed")),
+    }
+}
+
+async fn generate_attestation(
+    tee_authority: &impl GenerateAttestation,
+    tls_public_key: &Ed25519PublicKey,
+    account_public_key: &Ed25519PublicKey,
+) -> Result<Attestation, AttestationError> {
+    let report_data: ReportData =
+        ReportDataV1::new(*tls_public_key.as_bytes(), *account_public_key.as_bytes()).into();
+    let result = tee_authority.generate_attestation(report_data).await;
+    MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+        .with_label_values(&[outcome_label(result.is_ok())])
+        .inc();
+    result
 }
 
 /// Submits the given attestation and TLS public key through the provided [`SubmitAttestation`],
@@ -169,16 +209,13 @@ fn validate_remote_attestation(
 
 impl<S: SubmitAttestation, A: GenerateAttestation> AttestationSubmitter<S, A> {
     async fn generate_attestation(&self) -> Option<Attestation> {
-        let report_data: ReportData = ReportDataV1::new(
-            *self.tls_public_key.as_bytes(),
-            *self.account_public_key.as_bytes(),
+        match generate_attestation(
+            &self.tee_authority,
+            &self.tls_public_key,
+            &self.account_public_key,
         )
-        .into();
-        let result = self.tee_authority.generate_attestation(report_data).await;
-        MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-            .with_label_values(&[outcome_label(result.is_ok())])
-            .inc();
-        match result {
+        .await
+        {
             Ok(attestation) => Some(attestation),
             Err(error @ AttestationError::CollateralFetch(_)) => {
                 tracing::warn!(%error, "TEE attestation collateral fetch failed");
@@ -271,6 +308,9 @@ async fn periodic_attestation_submission<S: SubmitAttestation, A: GenerateAttest
         let Some(attestation) = generated else {
             continue;
         };
+        submitter
+            .latest_attestation
+            .send_replace(Some(attestation.clone()));
         let submission = submitter.submit_attestation(attestation);
         if submission.timeout_at(deadline).await.is_err() {
             record_round_timeout(MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION);
@@ -317,9 +357,12 @@ mod tests {
     };
     use rand::SeedableRng;
     use rstest::rstest;
-    use std::sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+    use std::{
+        assert_matches,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+        },
     };
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
     use tick::testing::MockTicker;
@@ -436,6 +479,7 @@ mod tests {
                 allowed_os_measurements,
                 stored_attestation: stored_attestation_receiver,
             },
+            latest_attestation: watch::Sender::new(None),
         };
         TestSetup {
             submitter,
@@ -576,6 +620,24 @@ mod tests {
         assert_eq!(attempts_before_the_next_tick, 1);
         assert_eq!(generator.attempts(), 2);
         assert_eq!(setup.sender().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn periodic_attestation_submission__should_publish_each_generated_attestation() {
+        // Given
+        let setup = test_setup();
+
+        // When
+        run_future_once(periodic_attestation_submission(
+            setup.submitter.clone(),
+            MockTicker::new(1),
+        ));
+
+        // Then
+        assert_matches!(
+            *setup.submitter.latest_attestation.borrow(),
+            Some(Attestation::Mock(_))
+        );
     }
 
     #[tokio::test(start_paused = true)]

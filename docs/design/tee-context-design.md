@@ -68,7 +68,18 @@ pub struct AttestationSubmitter<S, A> {
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
     pub tee: TeeStateReceivers,
+    /// Publishes each attestation the task generates, whether or not the contract accepts it.
+    pub latest_attestation: watch::Sender<Option<Attestation>>,
 }
+
+/// Generates the attestation to serve until the first periodic round replaces it. Returns
+/// [`None`] when the collateral cannot be fetched, which the periodic rounds retry, and fails on
+/// any other generation error.
+pub async fn generate_initial_attestation(
+    tee_authority: &impl GenerateAttestation,
+    tls_public_key: &Ed25519PublicKey,
+    account_public_key: &Ed25519PublicKey,
+) -> anyhow::Result<Option<Attestation>>;
 
 /// Regenerates and submits the attestation every hour. Never returns.
 pub async fn run_periodic_attestation_submission<S: SubmitAttestation, A: GenerateAttestation>(
@@ -80,7 +91,7 @@ Submission is a port because each service signs with its own key and calls its o
 
 Each hourly round:
 
-1. Generates an attestation whose report data binds the TLS public key and the account public key.
+1. Generates an attestation whose report data binds the TLS public key and the account public key, and publishes it on `latest_attestation`.
 2. Checks it against the allowed image hashes, launcher compose hashes and OS measurements in `TeeStateReceivers`. A failed check is logged as a warning and the attestation is submitted anyway: the contract runs the authoritative check, and the local view of the allowed lists may be stale.
 3. Submits it, retrying with exponential backoff until `stored_attestation` holds an attestation that can be the submitted one. A stored mock attestation does not confirm a submitted Dstack attestation.
 4. Abandons a stage still running at the end of the round. The next round starts over with a fresh attestation.
@@ -91,9 +102,13 @@ The attestation lifecycle metrics (`mpc_tee_attestation_*`, `mpc_attestation_*` 
 
 ## Usage
 
-The MPC node wires the crate up as follows:
+The MPC node wires the crate up as follows, and serves the attestation in `latest_attestation_receiver` on `/public_data`:
 
 ```rust
+let attestation =
+    generate_initial_attestation(&tee_authority, &tls_public_key, &account_public_key).await?;
+let (latest_attestation, latest_attestation_receiver) = watch::channel(attestation);
+
 let (tee_state_monitors, tee) = TeeStateMonitors::new();
 tee_state_monitors.spawn(contract, tls_public_key.clone());
 
@@ -111,5 +126,6 @@ tokio::spawn(run_periodic_attestation_submission(AttestationSubmitter {
     tls_public_key,
     account_public_key,
     tee,
+    latest_attestation,
 }));
 ```

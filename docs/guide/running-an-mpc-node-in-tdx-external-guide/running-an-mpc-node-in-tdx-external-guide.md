@@ -2040,7 +2040,7 @@ If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubl
 
 #### Check the platform's TCB status
 
-`verify` judges the attestation against the collateral the node embedded at boot, which can be days old. To see where the host stands against what Intel demands *today*, use the sibling subcommand:
+`verify` judges the attestation against the collateral embedded in the node's latest attestation, which can be an hour old, or older while the node syncs or fails to regenerate it. To see where the host stands against what Intel demands *today*, use the sibling subcommand:
 
 ```bash
 attestation-cli tcb-status --url http://<IP>:8080/public_data

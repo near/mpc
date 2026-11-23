@@ -1,4 +1,4 @@
-use crate::config::SecretsConfig;
+use crate::config::PersistentSecrets;
 use crate::indexer::migrations::ContractMigrationInfo;
 use crate::tracking::TaskHandle;
 use axum::body::Body;
@@ -67,7 +67,7 @@ struct WebServerState {
     /// Receiver for contract state
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
-    static_web_data: StaticWebData,
+    public_data: PublicData,
     node_config: NodeConfigResponse,
     nearcore_config: serde_json::Value,
     /// In-memory log behind the `/debug/recent_transactions` handler.
@@ -266,45 +266,39 @@ async fn third_party_licenses() -> Html<&'static str> {
     Html(include_str!("../../../third-party-licenses/licenses.html"))
 }
 
-struct PublicKeys {
-    near_signer_public_key: Ed25519PublicKey,
-    near_p2p_public_key: Ed25519PublicKey,
-}
-
-fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
-    let near_signer_public_key = Ed25519PublicKey::from(
-        &secrets_config
-            .persistent_secrets
-            .near_signer_key
-            .verifying_key(),
-    );
-    let near_p2p_public_key = Ed25519PublicKey::from(
-        &secrets_config
-            .persistent_secrets
-            .p2p_private_key
-            .verifying_key(),
-    );
-    PublicKeys {
-        near_signer_public_key,
-        near_p2p_public_key,
-    }
-}
-
 pub fn static_web_data(
-    value: &SecretsConfig,
+    persistent_secrets: &PersistentSecrets,
     tee_participant_info: Option<Attestation>,
 ) -> StaticWebData {
-    let public_keys = get_public_keys(value);
-
     StaticWebData {
-        near_signer_public_key: public_keys.near_signer_public_key,
-        near_p2p_public_key: public_keys.near_p2p_public_key,
+        near_signer_public_key: Ed25519PublicKey::from(
+            &persistent_secrets.near_signer_key.verifying_key(),
+        ),
+        near_p2p_public_key: Ed25519PublicKey::from(
+            &persistent_secrets.p2p_private_key.verifying_key(),
+        ),
         tee_participant_info,
     }
 }
 
-async fn public_data(state: State<WebServerState>) -> Json<StaticWebData> {
-    state.static_web_data.clone().into()
+/// The public keys and the latest attestation a service serves on `/public_data`
+#[derive(Clone)]
+pub struct PublicData {
+    pub keys: StaticWebData,
+    pub latest_attestation: watch::Receiver<Option<Attestation>>,
+}
+
+impl PublicData {
+    pub fn current(&self) -> StaticWebData {
+        StaticWebData {
+            tee_participant_info: self.latest_attestation.borrow().clone(),
+            ..self.keys.clone()
+        }
+    }
+}
+
+async fn serve_public_data(state: State<WebServerState>) -> Json<StaticWebData> {
+    Json(state.public_data.current())
 }
 
 /// Starts the web server. This is an async function that returns a future.
@@ -318,7 +312,7 @@ pub async fn start_web_server(
     root_task_handle: Arc<OnceLock<Arc<TaskHandle>>>,
     debug_request_sender: broadcast::Sender<DebugRequest>,
     bind_address: SocketAddr,
-    static_web_data: StaticWebData,
+    public_data: PublicData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
     config: ConfigFile,
@@ -345,13 +339,13 @@ pub async fn start_web_server(
         )
         .route("/licenses", axum::routing::get(third_party_licenses))
         .route("/health", axum::routing::get(|| async { "OK" }))
-        .route("/public_data", axum::routing::get(public_data))
+        .route("/public_data", axum::routing::get(serve_public_data))
         .with_state(WebServerState {
             root_task_handle,
             debug_request_sender,
             protocol_state_receiver,
             migration_state_receiver,
-            static_web_data,
+            public_data,
             node_config: NodeConfigResponse::from(config),
             nearcore_config,
             recent_transactions,
@@ -374,6 +368,8 @@ pub async fn start_web_server(
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use ed25519_dalek::SigningKey;
+    use mpc_attestation::attestation::MockAttestation;
     use mpc_node_config::foreign_chains::{
         ForeignChainConfig, ForeignChainProviderConfig, ProviderCredentials, RpcProviderName,
     };
@@ -382,6 +378,7 @@ mod tests {
     };
     use near_indexer_primitives::types::Finality;
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use rand::{SeedableRng as _, rngs::StdRng};
     use std::collections::BTreeMap;
     use std::net::Ipv4Addr;
     use std::num::NonZeroU64;
@@ -634,5 +631,31 @@ mod tests {
                 "JSON response must not contain `{needle}`, got: {json}"
             );
         }
+    }
+
+    #[test]
+    fn public_data_current__should_return_the_keys_and_the_latest_attestation() {
+        // Given
+        let mut rng = StdRng::seed_from_u64(42);
+        let secrets = PersistentSecrets {
+            p2p_private_key: SigningKey::generate(&mut rng),
+            near_signer_key: SigningKey::generate(&mut rng),
+        };
+        let (latest_attestation_sender, latest_attestation) = watch::channel(None);
+        let public_data = PublicData {
+            keys: static_web_data(&secrets, None),
+            latest_attestation,
+        };
+        let attestation = Attestation::Mock(MockAttestation::Valid);
+        latest_attestation_sender.send_replace(Some(attestation.clone()));
+
+        // When
+        let current = public_data.current();
+
+        // Then
+        assert_eq!(
+            serde_json::to_value(current).unwrap(),
+            serde_json::to_value(static_web_data(&secrets, Some(attestation))).unwrap()
+        );
     }
 }
