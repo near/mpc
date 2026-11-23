@@ -1,8 +1,6 @@
 use alloc::vec::Vec;
-#[cfg(feature = "local-verify")]
-pub use attestation::attestation::VerifiedQuote;
 pub use attestation::attestation::{
-    AcceptedDstackAttestation, DstackAttestation, VerificationError,
+    AcceptedDstackAttestation, DstackAttestation, VerificationError, VerifiedQuote,
 };
 use attestation::{
     AppCompose, ReportData, TcbInfo,

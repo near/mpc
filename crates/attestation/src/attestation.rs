@@ -13,14 +13,12 @@ use core::fmt;
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256, Sha384};
-use tee_verifier_interface::{TDReport10, TcbStatus, VerifiedReport};
+use tee_verifier_interface::{CollateralDates, TDReport10, TcbStatus, VerifiedReport};
 
 #[cfg(feature = "local-verify")]
 use crate::dcap_conversions::{IntoDcapType as _, IntoInterfaceType as _};
 #[cfg(feature = "local-verify")]
 use dcap_qvl::{QuotePolicy, verify::QuoteVerifier};
-#[cfg(feature = "local-verify")]
-use tee_verifier_interface::CollateralDates;
 
 /// Expected TCB status for a successfully verified TEE quote.
 const EXPECTED_QUOTE_STATUS: &str = "UpToDate";
@@ -42,7 +40,6 @@ pub struct DstackAttestation {
     pub tcb_info: TcbInfo,
 }
 
-#[cfg(feature = "local-verify")]
 #[derive(Clone, Debug)]
 pub struct VerifiedQuote {
     pub report: VerifiedReport,

@@ -6,7 +6,7 @@ use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeValidationResult};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
-use mpc_attestation::attestation::{Attestation, DstackAttestation};
+use mpc_attestation::attestation::{Attestation, VerifiedQuote};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{
     AccountId, Gas, NearToken, Promise, PromiseError, PromiseOrValue, env, ext_contract, log, near,
@@ -32,7 +32,7 @@ impl MpcContract {
         self.grants_for(&account_id)
     }
 
-    fn grants_for(&self, account_id: &AccountId) -> u32 {
+    pub(crate) fn grants_for(&self, account_id: &AccountId) -> u32 {
         self.available_attestation_grants
             .get(account_id)
             .copied()
@@ -108,38 +108,21 @@ impl MpcContract {
     ) -> Result<PromiseOrValue<()>, Error> {
         let proposed_participant_attestation =
             proposed_participant_attestation.try_into_contract_type()?;
-
-        let account_key = env::signer_account_pk();
-        let account_id = Self::assert_caller_is_signer();
+        let node = Self::signer_node_info(tls_public_key)?;
 
         log!(
             "submit_participant_info: signer={}, proposed_participant_attestation={:?}, account_key={:?}",
-            account_id,
+            node.account_id,
             proposed_participant_attestation,
-            account_key
+            env::signer_account_pk()
         );
-
-        // The node always signs submissions with an Ed25519 key
-        // (`near_signer_key`), so the signer key here is Ed25519 in practice.
-        // Reject non-Ed25519 signer keys rather than silently storing a value
-        // the node's later transactions could never match.
-        let account_public_key = dtos::Ed25519PublicKey::try_from(&account_key).map_err(|_| {
-            InvalidParameters::InvalidTeeRemoteAttestation {
-                reason: "signer account key must be Ed25519".to_string(),
-            }
-        })?;
-
-        let node = dtos::NodeInfo {
-            account_id: account_id.clone(),
-            tls_public_key,
-            account_public_key,
-        };
 
         // Before any verification: an ungranted or unauthorised submission stops here.
         self.assert_attestation_submission_allowed(&node.account_id, &node.tls_public_key)?;
 
         match proposed_participant_attestation {
             Attestation::Mock(mock) => {
+                let account_id = node.account_id.clone();
                 let tee_upgrade_deadline_duration =
                     Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
                 let is_new_node = self.tee_state.verify_and_store_mock(
@@ -155,9 +138,43 @@ impl MpcContract {
                 Ok(PromiseOrValue::Value(()))
             }
             Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
-                self.submit_dstack_attestation(node, attestation),
+                self.verify_quote(attestation.quote, attestation.collateral)
+                    .then(
+                        self.resolve_callback()
+                            .resolve_verification(VerificationContext {
+                                node,
+                                tcb_info: attestation.tcb_info,
+                            }),
+                    ),
             )),
         }
+    }
+
+    /// The calling node, identified by the transaction's signer and its access key.
+    ///
+    /// Panics if the call was forwarded, since the signer key then does not belong to the
+    /// caller.
+    pub(crate) fn signer_node_info(
+        tls_public_key: dtos::Ed25519PublicKey,
+    ) -> Result<dtos::NodeInfo, Error> {
+        let account_key = env::signer_account_pk();
+        let account_id = Self::assert_caller_is_signer();
+
+        // The node always signs submissions with an Ed25519 key
+        // (`near_signer_key`), so the signer key here is Ed25519 in practice.
+        // Reject non-Ed25519 signer keys rather than silently storing a value
+        // the node's later transactions could never match.
+        let account_public_key = dtos::Ed25519PublicKey::try_from(&account_key).map_err(|_| {
+            InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: "signer account key must be Ed25519".to_string(),
+            }
+        })?;
+
+        Ok(dtos::NodeInfo {
+            account_id,
+            tls_public_key,
+            account_public_key,
+        })
     }
 
     /// Read from `config()` by operators; deliberately not its own view.
@@ -183,7 +200,14 @@ impl MpcContract {
             return Err(AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into());
         }
         let is_reattestation = self.tee_state.node_of(account_id, tls_public_key).is_some();
-        if !is_reattestation && self.grants_for(account_id) == 0 {
+        if !is_reattestation {
+            self.assert_grant_available(account_id)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn assert_grant_available(&self, account_id: &AccountId) -> Result<(), Error> {
+        if self.grants_for(account_id) == 0 {
             return Err(InvalidParameters::NoAttestationStorageGrant {
                 account_id: account_id.to_string(),
             }
@@ -193,7 +217,7 @@ impl MpcContract {
     }
 
     /// Consumes one grant for `account_id`.
-    fn consume_attestation_storage_grant(&mut self, account_id: &AccountId) {
+    pub(crate) fn consume_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let remaining = self
             .grants_for(account_id)
             .checked_sub(1)
@@ -226,7 +250,7 @@ impl MpcContract {
         }
     }
 
-    fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
+    pub(crate) fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let available = self.grants_for(account_id);
         // Checked, not saturating: at `u32::MAX` a returned grant would be dropped silently.
         let Some(returned) = available.checked_add(1) else {
@@ -237,26 +261,17 @@ impl MpcContract {
             .insert(account_id.clone(), returned);
     }
 
-    /// Async [`Attestation::Dstack`] submission: spawns a promise calling
-    /// `verify_quote_with_collateral_dates` on the trusted verifier contract, with
-    /// [`Self::resolve_verification`] chained as its callback.
-    fn submit_dstack_attestation(
-        &mut self,
-        node: dtos::NodeInfo,
-        attestation: DstackAttestation,
-    ) -> Promise {
+    /// Asks the trusted verifier contract to verify the quote against the collateral.
+    pub(crate) fn verify_quote(&self, quote: QuoteBytes, collateral: Collateral) -> Promise {
         ext_tee_verifier::ext(self.tee_verifier_account_id.clone())
             .with_static_gas(Gas::from_tgas(self.config.verifier_tera_gas))
             .with_unused_gas_weight(0)
-            .verify_quote_with_collateral_dates(attestation.quote, attestation.collateral)
-            .then(
-                Self::ext_self()
-                    .with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
-                    .resolve_verification(VerificationContext {
-                        node,
-                        tcb_info: attestation.tcb_info,
-                    }),
-            )
+            .verify_quote_with_collateral_dates(quote, collateral)
+    }
+
+    /// Callback receipt with the gas to resolve a [`Self::verify_quote`] verdict.
+    pub(crate) fn resolve_callback(&self) -> MpcContractExt {
+        Self::ext_self().with_static_gas(Gas::from_tgas(self.config.resolve_verification_tera_gas))
     }
 
     pub fn get_attestation(
@@ -374,11 +389,24 @@ impl MpcContract {
         let account_id = context.node.account_id.clone();
         log!("resolve_verification: account_id={account_id}");
 
-        let attestation_result = match result {
+        let attestation_result = Self::quote_verdict(&account_id, result).and_then(|quote| {
+            self.verify_post_dcap_and_store(context, &quote.report, &quote.collateral_dates)
+        });
+        self.fail_submission_on_err(attestation_result)
+    }
+
+    pub(crate) fn quote_verdict(
+        account_id: &AccountId,
+        result: Result<VerificationResultWithCollateralDates, PromiseError>,
+    ) -> Result<VerifiedQuote, Error> {
+        match result {
             Ok(VerificationResultWithCollateralDates::Verified {
                 report,
                 collateral_dates,
-            }) => self.verify_post_dcap_and_store(context, &report, &collateral_dates),
+            }) => Ok(VerifiedQuote {
+                report,
+                collateral_dates,
+            }),
             Ok(VerificationResultWithCollateralDates::Rejected(reason)) => {
                 log!("verifier rejected quote for {account_id}: {reason}");
                 Err(TeeError::QuoteRejected {
@@ -391,9 +419,11 @@ impl MpcContract {
                 log!("verifier did not answer for {account_id}: {promise_err:?}");
                 Err(TeeError::VerifierUnavailable.into())
             }
-        };
+        }
+    }
 
-        match attestation_result {
+    pub(crate) fn fail_submission_on_err(&self, result: Result<(), Error>) -> PromiseOrValue<()> {
+        match result {
             Ok(()) => PromiseOrValue::Value(()),
             Err(err) => {
                 // Fail the submitter's transaction from a separate receipt so any prior state
