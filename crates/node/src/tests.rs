@@ -39,7 +39,7 @@ use crate::primitives::ParticipantId;
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::recent_transactions::SharedRecentTransactions;
-use crate::web::{start_web_server, static_web_data};
+use crate::web::{PublicData, start_web_server, static_web_data};
 use aes_gcm::aead::Generate;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
@@ -119,13 +119,17 @@ impl OneNodeTestConfig {
                 let (_, dummy_protocol_state_receiver) =
                     watch::channel(ProtocolContractState::NotInitialized);
                 let (_, dummy_migration_state_receiver) = watch::channel((0, Default::default()));
+                let (_, dummy_latest_attestation_receiver) = watch::channel(None);
                 // The fake indexer never records, so the buffer stays empty.
                 // TODO(#3522): wire it into the fake indexer and assert on it.
                 let web_server = start_web_server(
                     root_task.into(),
                     debug_request_sender.clone(),
                     self.config.web_ui,
-                    static_web_data(&self.secrets, None),
+                    PublicData {
+                        keys: static_web_data(&self.secrets.persistent_secrets, None),
+                        latest_attestation: dummy_latest_attestation_receiver,
+                    },
                     dummy_protocol_state_receiver,
                     dummy_migration_state_receiver,
                     self.config.clone(),
