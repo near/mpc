@@ -1,12 +1,11 @@
 use std::fmt;
 
 use chain_gateway::event_subscriber::block_events::BlockContext;
+use chain_gateway::transaction_sender::SubmittedTxMetadata;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
 use near_contract_transport::BlockHeight;
-use near_crypto::Signature;
 use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::{BlockHeight as NearBlockHeight, Nonce};
 use near_mpc_contract_interface::types::{Ed25519PublicKey, Payload, Tweak};
 use near_mpc_crypto_types::kdf::derive_tweak;
 use near_time::Utc;
@@ -314,18 +313,6 @@ pub struct SignerContext {
     pub method: &'static str,
 }
 
-#[expect(rustdoc::private_intra_doc_links)]
-/// The metadata of a successfully built-and-submitted transaction, captured in
-/// [`crate::indexer::tx_sender`].
-#[derive(Clone, Debug, PartialEq, Eq, derive_more::Display)]
-#[display("txid={tx_hash}  nonce={nonce}  block={block_height}  sig={signature}")]
-pub struct SubmittedTxMetadata {
-    pub tx_hash: CryptoHash,
-    pub nonce: Nonce,
-    pub signature: Signature,
-    pub block_height: NearBlockHeight,
-}
-
 impl SubmittedTransaction {
     /// A record for a transaction that was successfully built and routed, with
     /// its observed on-chain [`SubmittedTransactionStatus`]. `submitted_at` is
@@ -384,6 +371,7 @@ pub trait LogTransaction: Clone + Send + Sync + 'static {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use near_crypto::Signature;
     use rstest::rstest;
     use serde::de::DeserializeOwned;
     use std::str::FromStr;
@@ -397,7 +385,7 @@ mod tests {
                 tx_hash: CryptoHash::default(),
                 nonce: 7,
                 signature: Signature::empty(near_crypto::KeyType::ED25519),
-                block_height: 42,
+                block_height: 42.into(),
             }),
             signer_account_id: AccountId::from_str("responder.near").unwrap(),
             signer_public_key: Ed25519PublicKey::from([7u8; 32]),
