@@ -80,6 +80,12 @@ impl Participants {
         &self.participants
     }
 
+    pub fn tls_keys(&self) -> impl Iterator<Item = (&AccountId, &Ed25519PublicKey)> {
+        self.participants
+            .iter()
+            .map(|(account_id, _, info)| (account_id, &info.tls_public_key))
+    }
+
     pub fn next_id(&self) -> ParticipantId {
         self.next_id
     }

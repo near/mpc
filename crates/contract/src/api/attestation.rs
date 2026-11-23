@@ -296,7 +296,7 @@ impl MpcContract {
         let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
 
         self.tee_state
-            .remove_unused_launchers(participants, launcher_unused_ttl);
+            .remove_unused_launchers(participants.tls_keys(), launcher_unused_ttl);
 
         match self
             .tee_state

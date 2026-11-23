@@ -300,21 +300,18 @@ impl TeeState {
         self.allowed_launcher_images.all_compose_hashes()
     }
 
-    /// Removes the launchers no participant in `current_participants` uses once their TTL has
-    /// passed, after restamping the ones they do use. Pass the running participants: a launcher
-    /// used only by a participant missing here can be removed, which invalidates that
-    /// participant's attestation.
-    pub(crate) fn remove_unused_launchers(
+    /// Removes the launchers no node in use attests with once their TTL has passed, after
+    /// restamping the ones they do use. Each node in use is an account with its TLS public key,
+    /// such as [`Participants::tls_keys`] of the running participants: a launcher used only by a
+    /// node missing here can be removed, which invalidates that node's attestation.
+    pub(crate) fn remove_unused_launchers<'a>(
         &mut self,
-        current_participants: &Participants,
+        nodes_in_use: impl IntoIterator<Item = (&'a AccountId, &'a Ed25519PublicKey)>,
         ttl: Duration,
     ) {
-        let in_use: Vec<LauncherDockerComposeHash> = current_participants
-            .participants()
-            .iter()
-            .filter_map(|(account_id, _, participant_info)| {
-                self.node_of(account_id, &participant_info.tls_public_key)
-            })
+        let in_use: Vec<LauncherDockerComposeHash> = nodes_in_use
+            .into_iter()
+            .filter_map(|(account_id, tls_public_key)| self.node_of(account_id, tls_public_key))
             .filter_map(|node| node.attestation.launcher_compose_hash())
             .collect();
         self.allowed_launcher_images.remove_unused(&in_use, ttl);
@@ -818,7 +815,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![adopted]);
@@ -855,7 +852,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), used);
@@ -886,7 +883,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
@@ -904,7 +901,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
@@ -1262,7 +1259,7 @@ mod tests {
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
         allow_launcher(&mut tee_state, newest, mpc_hash, LAUNCHER_TTL);
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // When
         let result = submit_mock(&mut tee_state, &node, launcher_mock(&removed, &mpc_hash));
