@@ -10,7 +10,7 @@ use crate::sandbox::common::{
     starknet_extracted_values, starknet_request, sui_extracted_values, sui_request,
     svm_extracted_values, ton_request,
 };
-use crate::sandbox::utils::transactions::CallMpcContract;
+use crate::sandbox::utils::{sign_utils::verify_timeout, transactions::CallMpcContract};
 use mpc_contract::errors;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
@@ -676,7 +676,7 @@ async fn verify_foreign_transaction_timing_out_b__should_clear_its_pending_entry
         .unwrap();
 
     // Then
-    assert!(status_b.await.unwrap().is_failure());
+    verify_timeout(status_b).await.unwrap();
 
     let pending_b: Option<dtos::YieldIndex> = setup
         .contract
