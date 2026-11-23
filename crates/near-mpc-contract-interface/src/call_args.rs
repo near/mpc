@@ -68,6 +68,11 @@ pub struct VoteMpcNodeManifestDigestArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteBackupServiceCodeHashArgs {
+    pub code_hash: NodeImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteLauncherHashArgs {
     pub launcher_hash: LauncherImageHash,
 }

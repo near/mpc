@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 /// Votes `chain` into the on-chain RPC whitelist with the signing threshold of participants.
 pub(super) fn whitelist_chain(contract: &mut MpcContract, chain: dtos::ForeignChain) {
     let batch = NonEmptyBTreeMap::new(chain, ::test_utils::contract_types::dummy_chain_entry());
-    let threshold = contract.threshold().unwrap().value() as usize;
+    let threshold = usize::try_from(contract.protocol_state.threshold().unwrap().value()).unwrap();
     let participants = participant_account_ids(contract);
     assert!(
         participants.len() >= threshold,

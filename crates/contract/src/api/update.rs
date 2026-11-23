@@ -2,12 +2,13 @@
 //! approved, plus sweeping votes from departed participants.
 
 use crate::api::common::refund_to;
+use crate::api::tee_measurements::AttestedServiceMut;
 use crate::config::Config;
 use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::primitives::proposal_hash::{ProposalHash, ToProposalHash};
-use crate::tee::launcher_compose::LauncherCompose;
+use crate::tee::attested_service::AttestedService;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::deposits::SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
@@ -160,10 +161,16 @@ impl MpcContract {
             && let Some(genesis_hash) = self.config.migration_genesis_hash
         {
             self.genesis_hash = Some(genesis_hash);
-            self.tee_state.add_compose_hashes(
-                LauncherCompose::mpc_node(Some(genesis_hash)),
-                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
-            );
+            let tee_upgrade_deadline_duration =
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+            for service in [AttestedService::MpcNode, AttestedService::BackupService] {
+                let AttestedServiceMut {
+                    tee_state,
+                    launcher_compose,
+                    ..
+                } = self.attested_service_mut(service);
+                tee_state.add_compose_hashes(launcher_compose, tee_upgrade_deadline_duration);
+            }
         }
     }
 }
@@ -182,6 +189,7 @@ mod tests {
     };
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::Environment;
+    use crate::tee::launcher_compose::LauncherCompose;
     use mpc_primitives::hash::GenesisHash;
     use near_sdk::mock::MockAction;
     use near_sdk::test_utils::get_created_receipts;
@@ -602,7 +610,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case::mpc_node(
+        AttestedService::MpcNode,
+        LauncherCompose::mpc_node,
+        MpcContract::allowed_launcher_compose_hashes
+    )]
+    #[case::backup_service(
+        AttestedService::BackupService,
+        LauncherCompose::backup_service,
+        MpcContract::allowed_backup_service_launcher_compose_hashes
+    )]
     fn update_config__should_take_the_migration_genesis_hash_and_allow_its_compose_hashes_only_if_unset(
+        #[case] service: AttestedService,
+        #[case] launcher_compose: fn(Option<GenesisHash>) -> LauncherCompose,
+        #[case] allowed_compose_hashes: fn(&MpcContract) -> Vec<dtos::LauncherDockerComposeHash>,
         #[values(None, Some(GenesisHash::MAINNET))] genesis_hash: Option<GenesisHash>,
         #[values(None, Some(bogus_genesis_hash()))] migration_genesis_hash: Option<GenesisHash>,
     ) {
@@ -612,8 +633,8 @@ mod tests {
         let forever = Duration::MAX;
         let mut contract = MpcContract::new_from_protocol_state(running_state());
         contract.genesis_hash = genesis_hash;
-        let compose = LauncherCompose::mpc_node(genesis_hash);
-        let tee_state = &mut contract.tee_state;
+        let compose = launcher_compose(genesis_hash);
+        let tee_state = contract.attested_service_mut(service).tee_state;
         tee_state.whitelist_tee_proposal(image, compose, forever);
         tee_state.add_launcher_image(launcher, compose, forever, forever);
         let config = dtos::Config {
@@ -626,10 +647,10 @@ mod tests {
 
         // Then
         let expected = genesis_hash.or(migration_genesis_hash);
-        let compose_hash = |hash| LauncherCompose::mpc_node(hash).hash(&launcher, &image);
+        let compose_hash = |hash| launcher_compose(hash).hash(&launcher, &image);
         assert_eq!(contract.genesis_hash, expected);
         assert_eq!(
-            BTreeSet::from_iter(contract.allowed_launcher_compose_hashes()),
+            BTreeSet::from_iter(allowed_compose_hashes(&contract)),
             BTreeSet::from([compose_hash(genesis_hash), compose_hash(expected)]),
         );
     }

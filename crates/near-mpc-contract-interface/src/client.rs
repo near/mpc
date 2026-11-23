@@ -828,9 +828,9 @@ mod tests {
         ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GenesisHash,
         GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
         K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
-        MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
-        ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
+        MockAttestation, MrtdHash, NodeImageHash, ParticipantId, ParticipantInfo, Participants,
+        Payload, ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
+        PublicKey, ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
         SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
         VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
         VerifyForeignTransactionResponse,
@@ -929,6 +929,7 @@ mod tests {
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
         };
+        let code_hash = NodeImageHash::from([7u8; 32]);
         let launcher_hash = LauncherImageHash::from([7u8; 32]);
         let measurement = ExpectedMeasurements {
             mrtd: MrtdHash::from([7u8; 48]),
@@ -1106,7 +1107,27 @@ mod tests {
             .await
             .unwrap();
         handle
-            .vote_remove_os_measurement(measurement)
+            .vote_remove_os_measurement(measurement.clone())
+            .await
+            .unwrap();
+        handle
+            .vote_backup_service_code_hash(code_hash)
+            .await
+            .unwrap();
+        handle
+            .vote_add_backup_service_launcher_hash(launcher_hash)
+            .await
+            .unwrap();
+        handle
+            .vote_remove_backup_service_launcher_hash(launcher_hash)
+            .await
+            .unwrap();
+        handle
+            .vote_add_backup_service_os_measurement(measurement.clone())
+            .await
+            .unwrap();
+        handle
+            .vote_remove_backup_service_os_measurement(measurement)
             .await
             .unwrap();
         handle
@@ -1171,6 +1192,7 @@ mod tests {
             .unwrap();
         handle.verify_tee().await.unwrap();
         handle.clean_tee_status().await.unwrap();
+        handle.clean_backup_service_tee_status().await.unwrap();
         handle.clean_invalid_attestations(7).await.unwrap();
 
         // Then

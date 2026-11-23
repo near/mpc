@@ -24,6 +24,13 @@ pub const VOTE_ADD_LAUNCHER_HASH: &str = "vote_add_launcher_hash";
 pub const VOTE_REMOVE_LAUNCHER_HASH: &str = "vote_remove_launcher_hash";
 pub const VOTE_ADD_OS_MEASUREMENT: &str = "vote_add_os_measurement";
 pub const VOTE_REMOVE_OS_MEASUREMENT: &str = "vote_remove_os_measurement";
+pub const VOTE_BACKUP_SERVICE_CODE_HASH: &str = "vote_backup_service_code_hash";
+pub const VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH: &str = "vote_add_backup_service_launcher_hash";
+pub const VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH: &str =
+    "vote_remove_backup_service_launcher_hash";
+pub const VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT: &str = "vote_add_backup_service_os_measurement";
+pub const VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT: &str =
+    "vote_remove_backup_service_os_measurement";
 pub const VOTE_CANCEL_KEYGEN: &str = "vote_cancel_keygen";
 pub const VOTE_CANCEL_RESHARING: &str = "vote_cancel_resharing";
 pub const VOTE_ABORT_KEY_EVENT_INSTANCE: &str = "vote_abort_key_event_instance";
@@ -54,6 +61,7 @@ pub const START_NODE_MIGRATION: &str = "start_node_migration";
 pub const CANCEL_NODE_MIGRATION: &str = "cancel_node_migration";
 pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
+pub const CLEAN_BACKUP_SERVICE_TEE_STATUS: &str = "clean_backup_service_tee_status";
 pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
 
 // Callbacks (used in promise_yield_create and indexed by the node)

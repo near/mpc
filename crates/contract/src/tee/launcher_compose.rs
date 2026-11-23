@@ -17,6 +17,11 @@ use near_sdk::env;
 const LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
     include_str!("../../assets/launcher_docker_compose.yaml.template");
 
+/// The MPC node template plus a `LAUNCHED_SERVICE` line naming the service for the launcher to
+/// start. The line also keeps the compose hashes of the two services apart
+const BACKUP_SERVICE_LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE: &str =
+    include_str!("../../assets/backup_service_launcher_docker_compose.yaml.template");
+
 #[derive(Clone, Copy)]
 pub struct LauncherCompose {
     template: &'static str,
@@ -27,6 +32,13 @@ impl LauncherCompose {
     pub const fn mpc_node(genesis_hash: Option<GenesisHash>) -> Self {
         Self {
             template: LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE,
+            genesis_hash,
+        }
+    }
+
+    pub const fn backup_service(genesis_hash: Option<GenesisHash>) -> Self {
+        Self {
+            template: BACKUP_SERVICE_LAUNCHER_DOCKER_COMPOSE_YAML_TEMPLATE,
             genesis_hash,
         }
     }
@@ -103,6 +115,42 @@ mod tests {
         assert_ne!(compose_hash, compose_hash_of_other_contract);
         assert_ne!(compose_hash, compose_hash_on_other_chain);
         assert_ne!(compose_hash, compose_hash_on_any_chain);
+    }
+
+    #[test]
+    fn launcher_compose__should_differ_between_services() {
+        // Given
+        let launcher = dummy_launcher_hash(1);
+        let image = dummy_code_hash(10);
+        let genesis_hash = Some(bogus_genesis_hash());
+
+        // When
+        let mpc_node_compose_hash = LauncherCompose::mpc_node(genesis_hash).hash(&launcher, &image);
+        let backup_service_compose_hash =
+            LauncherCompose::backup_service(genesis_hash).hash(&launcher, &image);
+
+        // Then
+        assert_ne!(mpc_node_compose_hash, backup_service_compose_hash);
+    }
+
+    #[test]
+    fn backup_service_template__should_add_only_the_service_line_to_the_mpc_node_template() {
+        // Given
+        let platform_line = "      - PLATFORM=TEE\n";
+        let mpc_node_template = LauncherCompose::mpc_node(None).template;
+
+        // When
+        let backup_service_template = LauncherCompose::backup_service(None).template;
+
+        // Then
+        assert_eq!(
+            backup_service_template,
+            mpc_node_template.replacen(
+                platform_line,
+                &format!("{platform_line}      - LAUNCHED_SERVICE=backup-service\n"),
+                1,
+            )
+        );
     }
 
     fn parsed_template() -> Value {

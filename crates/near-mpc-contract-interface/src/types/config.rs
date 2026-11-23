@@ -42,7 +42,8 @@ pub struct InitConfig {
     pub fail_on_timeout_tera_gas: Option<u64>,
     /// Prepaid gas for a `fail_attestation_submission` call.
     pub fail_attestation_submission_tera_gas: Option<u64>,
-    /// Prepaid gas for a `clean_tee_status` call.
+    /// Prepaid gas for each of the `clean_tee_status` and `clean_backup_service_tee_status`
+    /// calls.
     pub clean_tee_status_tera_gas: Option<u64>,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
     pub clean_invalid_attestations_tera_gas: Option<u64>,
@@ -103,7 +104,8 @@ pub struct Config {
     pub fail_on_timeout_tera_gas: u64,
     /// Prepaid gas for a `fail_attestation_submission` call.
     pub fail_attestation_submission_tera_gas: u64,
-    /// Prepaid gas for a `clean_tee_status` call.
+    /// Prepaid gas for each of the `clean_tee_status` and `clean_backup_service_tee_status`
+    /// calls.
     pub clean_tee_status_tera_gas: u64,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
     pub clean_invalid_attestations_tera_gas: u64,

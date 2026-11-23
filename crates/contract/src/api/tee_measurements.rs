@@ -5,8 +5,11 @@
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedAccountId;
+use crate::primitives::thresholds::GovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
+use crate::tee::attested_service::AttestedService;
 use crate::tee::launcher_compose::LauncherCompose;
+use crate::tee::tee_state::TeeState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, log, near};
@@ -24,31 +27,7 @@ impl MpcContract {
             env::signer_account_id(),
             mpc_node_manifest_digest,
         );
-        self.voter_or_panic();
-
-        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
-
-        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
-        let votes = self
-            .tee_state
-            .vote_mpc_node_manifest_digest(mpc_node_manifest_digest, voter)
-            .count_participants(threshold_parameters.participants());
-        log!("total votes for proposal: {}", votes);
-
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-
-        // If the vote threshold is met and the new Docker hash is allowed by the TEE's RTMR3,
-        // update the state
-        if self.threshold()?.is_met_by(votes) {
-            self.tee_state.whitelist_tee_proposal(
-                mpc_node_manifest_digest,
-                LauncherCompose::mpc_node(self.genesis_hash),
-                tee_upgrade_deadline_duration,
-            );
-        }
-
-        Ok(())
+        self.vote_image_hash(AttestedService::MpcNode, mpc_node_manifest_digest)
     }
 
     /// Vote to add a new launcher image hash to the allowed set. Requires threshold votes.
@@ -64,7 +43,10 @@ impl MpcContract {
             env::signer_account_id(),
             launcher_hash,
         );
-        self.vote_launcher(dtos::LauncherVoteAction::Add(launcher_hash))
+        self.vote_launcher(
+            AttestedService::MpcNode,
+            dtos::LauncherVoteAction::Add(launcher_hash),
+        )
     }
 
     /// Vote to remove a launcher image hash from the allowed set. Requires ALL participants
@@ -79,7 +61,10 @@ impl MpcContract {
             env::signer_account_id(),
             launcher_hash,
         );
-        self.vote_launcher(dtos::LauncherVoteAction::Remove(launcher_hash))
+        self.vote_launcher(
+            AttestedService::MpcNode,
+            dtos::LauncherVoteAction::Remove(launcher_hash),
+        )
     }
 
     /// Vote to add a new OS measurement set to the allowed list. Requires threshold votes.
@@ -93,7 +78,10 @@ impl MpcContract {
             env::signer_account_id(),
             measurement,
         );
-        self.vote_measurement(dtos::MeasurementVoteAction::Add(measurement))
+        self.vote_measurement(
+            AttestedService::MpcNode,
+            dtos::MeasurementVoteAction::Add(measurement),
+        )
     }
 
     /// Vote to remove an OS measurement set from the allowed list. Requires ALL participants
@@ -108,7 +96,10 @@ impl MpcContract {
             env::signer_account_id(),
             measurement,
         );
-        self.vote_measurement(dtos::MeasurementVoteAction::Remove(measurement))
+        self.vote_measurement(
+            AttestedService::MpcNode,
+            dtos::MeasurementVoteAction::Remove(measurement),
+        )
     }
 
     /// Returns pending OS measurement votes, may include former participants' votes
@@ -151,33 +142,110 @@ impl MpcContract {
         (&self.tee_state.votes).into_dto_type()
     }
 
-    /// Private endpoint to drop votes cast by non-participants after resharing.
-    /// Attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].
+    /// Private endpoint to drop MPC node votes cast by non-participants after resharing.
+    /// [`MpcContract::clean_backup_service_tee_status`] drops the backup service ones, and
+    /// attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].
     #[private]
     #[handle_result]
     pub fn clean_tee_status(&mut self) -> Result<(), Error> {
         log!("clean_tee_status: signer={}", env::signer_account_id());
-
-        let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.participants(),
-            _ => {
-                return Err(InvalidState::ProtocolStateNotRunning.into());
-            }
-        };
-
-        self.tee_state.clean_non_participant_votes(participants);
-        Ok(())
+        self.clean_non_participant_tee_votes(AttestedService::MpcNode)
     }
 }
 
+pub(crate) struct AttestedServiceMut<'a> {
+    pub(crate) parameters: &'a GovernanceThresholdParameters,
+    pub(crate) tee_state: &'a mut TeeState,
+    pub(crate) launcher_compose: LauncherCompose,
+}
+
 impl MpcContract {
-    fn vote_launcher(&mut self, action: dtos::LauncherVoteAction) -> Result<(), Error> {
+    pub(crate) fn attested_service_mut(
+        &mut self,
+        service: AttestedService,
+    ) -> AttestedServiceMut<'_> {
+        let (tee_state, launcher_compose) = match service {
+            AttestedService::MpcNode => (
+                &mut self.tee_state,
+                LauncherCompose::mpc_node(self.genesis_hash),
+            ),
+            AttestedService::BackupService => (
+                &mut self.node_migrations.backup_service_tee_state,
+                LauncherCompose::backup_service(self.genesis_hash),
+            ),
+        };
+        AttestedServiceMut {
+            parameters: self.protocol_state.threshold_parameters_or_panic(),
+            tee_state,
+            launcher_compose,
+        }
+    }
+
+    pub(crate) fn clean_non_participant_tee_votes(
+        &mut self,
+        service: AttestedService,
+    ) -> Result<(), Error> {
+        if !matches!(self.protocol_state, ProtocolContractState::Running(_)) {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        }
+        let AttestedServiceMut {
+            parameters,
+            tee_state,
+            ..
+        } = self.attested_service_mut(service);
+        tee_state.clean_non_participant_votes(parameters.participants());
+        Ok(())
+    }
+
+    pub(crate) fn vote_image_hash(
+        &mut self,
+        service: AttestedService,
+        image_hash: dtos::NodeImageHash,
+    ) -> Result<(), Error> {
         self.voter_or_panic();
-        let parameters = self.protocol_state.threshold_parameters_or_panic();
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        let AttestedServiceMut {
+            parameters,
+            tee_state,
+            launcher_compose,
+        } = self.attested_service_mut(service);
 
         let voter = AuthenticatedAccountId::new(parameters.participants())?;
-        let votes = self
-            .tee_state
+        let votes = tee_state
+            .vote_mpc_node_manifest_digest(image_hash, voter)
+            .count_participants(parameters.participants());
+        log!("total votes for proposal: {}", votes);
+
+        if parameters.threshold().is_met_by(votes) {
+            tee_state.whitelist_tee_proposal(
+                image_hash,
+                launcher_compose,
+                tee_upgrade_deadline_duration,
+            );
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn vote_launcher(
+        &mut self,
+        service: AttestedService,
+        action: dtos::LauncherVoteAction,
+    ) -> Result<(), Error> {
+        self.voter_or_panic();
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        let launcher_hash_unused_ttl =
+            Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
+        let AttestedServiceMut {
+            parameters,
+            tee_state,
+            launcher_compose,
+        } = self.attested_service_mut(service);
+
+        let voter = AuthenticatedAccountId::new(parameters.participants())?;
+        let votes = tee_state
             .vote_launcher(&action, voter)
             .count_participants(parameters.participants());
         log!("total launcher votes for action: {}", votes);
@@ -185,18 +253,18 @@ impl MpcContract {
         match action {
             dtos::LauncherVoteAction::Add(launcher_hash) => {
                 if parameters.threshold().is_met_by(votes) {
-                    let outcome = self.tee_state.add_launcher_image(
+                    let outcome = tee_state.add_launcher_image(
                         launcher_hash,
-                        LauncherCompose::mpc_node(self.genesis_hash),
-                        Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
-                        Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
+                        launcher_compose,
+                        tee_upgrade_deadline_duration,
+                        launcher_hash_unused_ttl,
                     );
                     log!("launcher hash {:?}: {:?}", outcome, launcher_hash);
                 }
             }
             dtos::LauncherVoteAction::Remove(launcher_hash) => {
                 if votes >= parameters.participants().count() {
-                    let removed = self.tee_state.remove_launcher_image(&launcher_hash);
+                    let removed = tee_state.remove_launcher_image(&launcher_hash);
                     log!("launcher hash remove result: {}", removed);
                 }
             }
@@ -205,13 +273,20 @@ impl MpcContract {
         Ok(())
     }
 
-    fn vote_measurement(&mut self, action: dtos::MeasurementVoteAction) -> Result<(), Error> {
+    pub(crate) fn vote_measurement(
+        &mut self,
+        service: AttestedService,
+        action: dtos::MeasurementVoteAction,
+    ) -> Result<(), Error> {
         self.voter_or_panic();
-        let parameters = self.protocol_state.threshold_parameters_or_panic();
+        let AttestedServiceMut {
+            parameters,
+            tee_state,
+            ..
+        } = self.attested_service_mut(service);
 
         let voter = AuthenticatedAccountId::new(parameters.participants())?;
-        let votes = self
-            .tee_state
+        let votes = tee_state
             .vote_measurement(&action, voter)
             .count_participants(parameters.participants());
         log!("total measurement votes for action: {}", votes);
@@ -219,13 +294,13 @@ impl MpcContract {
         match action {
             dtos::MeasurementVoteAction::Add(measurement) => {
                 if parameters.threshold().is_met_by(votes) {
-                    let added = self.tee_state.add_measurement(measurement);
+                    let added = tee_state.add_measurement(measurement);
                     log!("OS measurement add result: {}", added);
                 }
             }
             dtos::MeasurementVoteAction::Remove(measurement) => {
                 if votes >= parameters.participants().count() {
-                    let removed = self.tee_state.remove_measurement(&measurement);
+                    let removed = tee_state.remove_measurement(&measurement);
                     log!("OS measurement remove result: {}", removed);
                 }
             }

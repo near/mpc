@@ -195,6 +195,20 @@ expression: abi
         }
       },
       {
+        "name": "clean_backup_service_tee_status",
+        "doc": " Private endpoint to drop backup service votes cast by non-participants after resharing.\n It runs in its own promise, apart from [`MpcContract::clean_tee_status`], so that the\n votes of each service get the whole gas budget.",
+        "kind": "call",
+        "modifiers": [
+          "private"
+        ],
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "clean_foreign_chain_data",
         "doc": " Private endpoint to clean up foreign chain policy votes and node configurations\n for non-participants after resharing.",
         "kind": "call",
@@ -236,7 +250,7 @@ expression: abi
       },
       {
         "name": "clean_tee_status",
-        "doc": " Private endpoint to drop votes cast by non-participants after resharing.\n Attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].",
+        "doc": " Private endpoint to drop MPC node votes cast by non-participants after resharing.\n [`MpcContract::clean_backup_service_tee_status`] drops the backup service ones, and\n attestation cleanup is handled separately by [`MpcContract::clean_invalid_attestations`].",
         "kind": "call",
         "modifiers": [
           "private"
@@ -2350,6 +2364,50 @@ expression: abi
         }
       },
       {
+        "name": "vote_add_backup_service_launcher_hash",
+        "doc": " Votes to allow a backup service launcher image hash. Once the threshold is reached, the\n backup service compose hashes are derived for it against every allowed backup service\n image hash.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "$ref": "#/definitions/LauncherImageHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_add_backup_service_os_measurement",
+        "doc": " Votes to allow an OS measurement set for backup services. Requires threshold votes.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ExpectedMeasurements"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
         "name": "vote_add_domains",
         "doc": " Propose adding a new set of domains for the MPC network.\n Once every participant has voted for the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
         "kind": "call",
@@ -2407,6 +2465,28 @@ expression: abi
               "name": "measurement",
               "type_schema": {
                 "$ref": "#/definitions/ExpectedMeasurements"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_backup_service_code_hash",
+        "doc": " Votes to allow a backup service image hash. Once the threshold is reached, the backup\n service compose hashes are derived for it against every allowed backup service launcher.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "code_hash",
+              "type_schema": {
+                "$ref": "#/definitions/DockerImageHash"
               }
             }
           ]
@@ -2539,6 +2619,50 @@ expression: abi
               "name": "public_key",
               "type_schema": {
                 "$ref": "#/definitions/PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_backup_service_launcher_hash",
+        "doc": " Votes to remove a backup service launcher image hash. Requires every participant's vote,\n since this invalidates the attestations of backup services running that launcher.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "launcher_hash",
+              "type_schema": {
+                "$ref": "#/definitions/LauncherImageHash"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
+          }
+        }
+      },
+      {
+        "name": "vote_remove_backup_service_os_measurement",
+        "doc": " Votes to remove an OS measurement set for backup services. Requires every participant's\n vote.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "measurement",
+              "type_schema": {
+                "$ref": "#/definitions/ExpectedMeasurements"
               }
             }
           ]
@@ -3325,7 +3449,7 @@ expression: abi
               "minimum": 0.0
             },
             "clean_tee_status_tera_gas": {
-              "description": "Prepaid gas for a `clean_tee_status` call.",
+              "description": "Prepaid gas for each of the `clean_tee_status` and `clean_backup_service_tee_status` calls.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -4013,7 +4137,7 @@ expression: abi
               "minimum": 0.0
             },
             "clean_tee_status_tera_gas": {
-              "description": "Prepaid gas for a `clean_tee_status` call.",
+              "description": "Prepaid gas for each of the `clean_tee_status` and `clean_backup_service_tee_status` calls.",
               "type": [
                 "integer",
                 "null"

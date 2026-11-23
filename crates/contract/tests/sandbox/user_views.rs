@@ -102,8 +102,8 @@ async fn vote_update_foreign_chain_providers__should_apply_chain_state_after_thr
         },
     );
 
-    // Gating matches the protocol signing threshold (`self.threshold()?.value()` in
-    // the contract). Sandbox setup uses 10 participants with a 60% threshold = 6.
+    // Gating matches the protocol signing threshold. Sandbox setup uses 10 participants
+    // with a 60% threshold = 6.
     // First 5 votes — should not yet apply.
     for (i, account) in mpc_signer_accounts.iter().take(5).enumerate() {
         let result = account
