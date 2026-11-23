@@ -320,7 +320,7 @@ impl TeeState {
     /// Casts a vote for adding or removing a launcher image hash.
     pub fn vote_launcher(
         &mut self,
-        action: LauncherVoteAction,
+        action: &LauncherVoteAction,
         voter: AuthenticatedAccountId,
     ) -> &VoterSet<AuthenticatedAccountId> {
         self.launcher_votes.vote(voter, action.to_proposal_hash())
@@ -357,7 +357,7 @@ impl TeeState {
     /// Casts a vote for adding or removing an OS measurement.
     pub fn vote_measurement(
         &mut self,
-        action: MeasurementVoteAction,
+        action: &MeasurementVoteAction,
         voter: AuthenticatedAccountId,
     ) -> &VoterSet<AuthenticatedAccountId> {
         self.measurement_votes
@@ -1223,7 +1223,7 @@ mod tests {
         // P0 votes for a launcher hash and an OS measurement
         let voter = authenticate_account_as(&account_ids[0], &all_participants);
         let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
-        tee_state.vote_launcher(launcher_action, voter.clone());
+        tee_state.vote_launcher(&launcher_action, voter.clone());
         let measurement_action = MeasurementVoteAction::Add(ExpectedMeasurements {
             mrtd: MrtdHash::from([0xCC; 48]),
             rtmr0: Rtmr0Hash::from([0xCC; 48]),
@@ -1231,7 +1231,7 @@ mod tests {
             rtmr2: Rtmr2Hash::from([0xCC; 48]),
             key_provider_event_digest: KeyProviderEventDigest::from([0xCC; 48]),
         });
-        tee_state.vote_measurement(measurement_action, voter);
+        tee_state.vote_measurement(&measurement_action, voter);
 
         assert_eq!(tee_state.launcher_votes.all().len(), 1);
         assert_eq!(tee_state.measurement_votes.all().len(), 1);
