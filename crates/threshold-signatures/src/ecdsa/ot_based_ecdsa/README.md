@@ -21,7 +21,7 @@ See [`triples/README.md`](triples/README.md) for the full OT pipeline.
 
 ### `sign.rs`
 
-The signing protocol, with one function per scheme. `sign` runs three rounds over one channel, consuming two Beaver triples once the message hash is known. Rounds 1 and 2 produce `R` and the shares `k_i`, `sigma_i`, which stay local to the run. The key-derivation tweak is applied locally between rounds 2 and 3. In round 3 the designated coordinator aggregates partial signatures into the final ECDSA `Signature`. Nothing binds `R`, which `triple0` alone determines, to the message, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
+The signing protocol, with one function per scheme. `sign` runs three rounds over one channel, consuming two Beaver triples once the message hash is known. Rounds 1 and 2 produce `R` and the shares `k_i`, `sigma_i`, which stay local to the run. The key-derivation tweak is applied locally in round 2. In round 3 the designated coordinator aggregates partial signatures into the final ECDSA `Signature`. Nothing binds `R`, which `triple0` alone determines, to the message, so each triple, not just the pair, must be used at most once. See the [specification](../../../docs/ecdsa/ot_based_ecdsa/signing.md).
 
 `sign_two_rounds` merges rounds 1 and 2 into one and is not wire-compatible with `sign`. See the [two-round scheme](../../../docs/ecdsa/ot_based_ecdsa/signing.md#two-round-signing).
 

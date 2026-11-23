@@ -1,5 +1,6 @@
 use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
+use zeroize::Zeroizing;
 
 use crate::ReconstructionThreshold;
 use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
@@ -15,15 +16,15 @@ use crate::protocol::{
     internal::{Comms, SharedChannel, make_protocol},
 };
 
-/// Maximum incoming buffer entries for the coordinator: the two waitpoints before signing
-/// plus the signature-share waitpoint.
+/// Maximum incoming buffer entries for the coordinator: the round 1 and round 2 broadcast
+/// waitpoints plus the signature-share waitpoint.
 pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 3;
-/// Maximum incoming buffer entries for non-coordinator participants: the two waitpoints
-/// before signing.
+/// Maximum incoming buffer entries for non-coordinator participants: the round 1 and round 2
+/// broadcast waitpoints.
 #[cfg(test)]
 pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 2;
-/// Maximum incoming buffer entries for the coordinator of [`sign_two_rounds`]: the waitpoint
-/// before signing plus the signature-share waitpoint.
+/// Maximum incoming buffer entries for the coordinator of [`sign_two_rounds`]: the round 1
+/// broadcast waitpoint plus the signature-share waitpoint.
 pub(crate) const OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 2;
 /// Maximum incoming buffer entries for non-coordinator participants of [`sign_two_rounds`].
 #[cfg(test)]
@@ -169,7 +170,7 @@ async fn do_sign(
     // Spec 1.1
     let lambda_me = participants.lagrange::<Secp256K1Sha256>(me)?;
 
-    let k_prime_i = lambda_me * k_i;
+    let k_prime_i = Zeroizing::new(lambda_me * k_i);
     let e_i: Scalar = lambda_me * e_i;
 
     let a_prime_i = lambda_me * a_i;
@@ -210,7 +211,7 @@ async fn do_sign(
     // Round 2
     // alphai = ki' + ai'
     // Spec 2.1
-    let alpha_i: Scalar = k_prime_i + a_prime_i;
+    let alpha_i: Scalar = *k_prime_i + a_prime_i;
     // betai = xi' + bi'
     let beta_i: Scalar = x_prime_i + b_prime_i;
 
@@ -251,9 +252,9 @@ async fn do_sign(
         e_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
     let big_r: AffinePoint = (big_d * e_inv).into();
 
-    // sigmai = alpha*xi - beta*ai + ci + tweak*ki
+    // The tweak multiplies the unlinearized ki.
     // Spec 2.7
-    let sigma_i = alpha * private_share - (beta * a_i - c_i) + tweak.value() * k_i;
+    let sigma_i = Zeroizing::new(alpha * private_share - (beta * a_i - c_i) + tweak.value() * k_i);
     chan.yield_point().await;
 
     // Round 3
@@ -263,12 +264,12 @@ async fn do_sign(
 
     // Linearize sigmai
     // Spec 3.2
-    let sigma_i = lambda_me * sigma_i;
+    let sigma_i = Zeroizing::new(lambda_me * *sigma_i);
 
     // Compute si = h * ki + Rx * sigmai
     // Spec 3.3
     let r = x_coordinate(&big_r);
-    let s_i = msg_hash * k_i + r * sigma_i;
+    let s_i = msg_hash * *k_i + r * *sigma_i;
 
     let wait2 = chan.next_waitpoint();
     if me != coordinator {
@@ -369,7 +370,7 @@ async fn do_sign_two_rounds(
     // Spec 1.1
     let lambda_me = participants.lagrange::<Secp256K1Sha256>(me)?;
 
-    let k_prime_i = lambda_me * k_i;
+    let k_prime_i = Zeroizing::new(lambda_me * k_i);
     let e_i: Scalar = lambda_me * e_i;
 
     let a_prime_i = lambda_me * a_i;
@@ -381,7 +382,7 @@ async fn do_sign_two_rounds(
 
     // alphai = ki' + ai'
     // Spec 1.2
-    let alpha_i: Scalar = k_prime_i + a_prime_i;
+    let alpha_i: Scalar = *k_prime_i + a_prime_i;
     // betai = xi' + bi'
     let beta_i: Scalar = x_prime_i + b_prime_i;
 
@@ -438,9 +439,9 @@ async fn do_sign_two_rounds(
         e_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
     let big_r: AffinePoint = (big_d * e_inv).into();
 
-    // sigmai = alpha*xi - beta*ai + ci + tweak*ki
+    // The tweak multiplies the unlinearized ki.
     // Spec 1.8
-    let sigma_i = alpha * private_share - (beta * a_i - c_i) + tweak.value() * k_i;
+    let sigma_i = Zeroizing::new(alpha * private_share - (beta * a_i - c_i) + tweak.value() * k_i);
     chan.yield_point().await;
 
     // Round 2
@@ -450,12 +451,12 @@ async fn do_sign_two_rounds(
 
     // Linearize sigmai
     // Spec 2.2
-    let sigma_i = lambda_me * sigma_i;
+    let sigma_i = Zeroizing::new(lambda_me * *sigma_i);
 
     // Compute si = h * ki + Rx * sigmai
     // Spec 2.3
     let r = x_coordinate(&big_r);
-    let s_i = msg_hash * k_i + r * sigma_i;
+    let s_i = msg_hash * *k_i + r * *sigma_i;
 
     let wait1 = chan.next_waitpoint();
     if me != coordinator {

@@ -80,7 +80,7 @@ $$
 5. $\bullet$ The coordinator waits to receive $s_j$ from every party.
 6. The coordinator sums the received elements $s \gets \sum_j s_j$.
 7. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
-8. $\blacktriangle$ The coordinator *asserts* that $(R, s)$ is a valid ECDSA signature for $h$.
+8. $\blacktriangle$ The coordinator *asserts* that $(R, s)$ is a valid ECDSA signature for $h$ under the derived public key $X + \epsilon \cdot G$.
 
 **Output:** the signature $(R, s)$, known only to the coordinator.
 
@@ -144,7 +144,7 @@ $$
 5. $\bullet$ The coordinator waits to receive $s_j$ from every party.
 6. The coordinator sums the received elements $s \gets \sum_j s_j$.
 7. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
-8. $\blacktriangle$ The coordinator *asserts* that $(R, s)$ is a valid ECDSA signature for $h$.
+8. $\blacktriangle$ The coordinator *asserts* that $(R, s)$ is a valid ECDSA signature for $h$ under the derived public key $X + \epsilon \cdot G$.
 
 **Output:** the signature $(R, s)$, known only to the coordinator.
 
