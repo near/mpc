@@ -201,6 +201,28 @@ args = [
   "--locked",
 ]
 
+# Its own output directory keeps this WASM, which accepts mock attestations,
+# out of the default one that reproducible builds write and that releases,
+# deployments and the other E2E tests read
+[tasks.build-mpc-contract-mock-attestation-optimized]
+description = "Build the mpc-contract WASM with mock attestations used by the E2E tests"
+condition = { env_not_set = ["E2E_SKIP_BUILD"] }
+command = "cargo"
+args = [
+  "near",
+  "build",
+  "non-reproducible-wasm",
+  "--no-abi",
+  "--profile=release-contract",
+  "--features",
+  "mock-attestation",
+  "--out-dir",
+  "target/near/mpc_contract_mock",
+  "--manifest-path",
+  "crates/contract/Cargo.toml",
+  "--locked",
+]
+
 [tasks.build-tee-verifier-optimized]
 description = "Build the tee-verifier WASM for localnet and the E2E tests"
 condition = { env_not_set = ["E2E_SKIP_BUILD"] }
@@ -253,6 +275,7 @@ private = true
 dependencies = [
   "build-mpc-node-network-hardship-simulation",
   "build-mpc-contract-optimized",
+  "build-mpc-contract-mock-attestation-optimized",
   "build-tee-verifier-optimized",
   "build-test-parallel-contract-optimized",
   "build-backup-cli",
@@ -273,6 +296,7 @@ args = [
 
 [tasks._run-e2e-logic.env]
 MPC_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/mpc_contract/mpc_contract.wasm"
+MPC_CONTRACT_MOCK_ATTESTATION_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/mpc_contract_mock/mpc_contract.wasm"
 MPC_PARALLEL_CONTRACT_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/test_parallel_contract/test_parallel_contract.wasm"
 MPC_TEE_VERIFIER_WASM = "${CARGO_MAKE_WORKING_DIRECTORY}/target/near/tee_verifier/tee_verifier.wasm"
 
