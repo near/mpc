@@ -264,7 +264,6 @@ async fn handle_message(
                 height: streamer_message.block.header.height.into(),
                 prev_hash: streamer_message.block.header.prev_hash,
                 last_final_block: streamer_message.block.header.last_final_block,
-                entropy: streamer_message.block.header.random_value.into(),
                 timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
             },
             signature_requests,

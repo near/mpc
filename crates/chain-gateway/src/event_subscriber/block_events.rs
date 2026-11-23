@@ -2,7 +2,7 @@ use derive_more::{Deref, From};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
 
-use crate::{event_subscriber::recent_blocks_tracker::BlockStatusHandle, types::BlockEntropy};
+use crate::event_subscriber::recent_blocks_tracker::BlockStatusHandle;
 use near_contract_transport::BlockHeight;
 
 /// The BlockUpdate returned by the Chain indexer.
@@ -21,7 +21,6 @@ pub struct BlockContext {
     pub height: BlockHeight,
     pub prev_hash: CryptoHash,
     pub last_final_block: CryptoHash,
-    pub entropy: BlockEntropy,
     pub timestamp_nanosec: u64,
 }
 
