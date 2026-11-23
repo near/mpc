@@ -71,9 +71,9 @@ Once verified, the attestation is stored in a new field on [`NodeMigrations`][no
 
 ```rust
 pub struct NodeMigrations {
-    backup_services_info: IterableMap<AccountId, Ed25519PublicKey>,
+    backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
-    pub backup_service_tee_state: TeeState,
+    pub(crate) backup_service_tee_state: TeeState,
 }
 ```
 
@@ -147,6 +147,7 @@ The contract needs the following changes, most of them in the [migration service
   - `vote_add_backup_service_os_measurement(measurement)` and `vote_remove_backup_service_os_measurement(measurement)`, like [`vote_add_os_measurement()`][vote-add-os-measurement] and [`vote_remove_os_measurement()`][vote-remove-os-measurement], so the allowed measurements follow dstack OS upgrades
   - `allowed_backup_service_code_hashes()`
   - `allowed_backup_service_launcher_compose_hashes()`
+  - `allowed_backup_service_launcher_image_hashes()` and `allowed_backup_service_os_measurements()`, so that the remove votes and the measurement seed below can be checked
   - `reverify_backup_services(max_scan)`: removes backup service entries that fail re-verification and returns their grants, like [`clean_invalid_attestations()`][clean-invalid-attestations] does for MPC nodes, and drops their keys from `backup_services_info`
 - **Resharing cleanup**: when operators leave the participant set, [`clean_tee_status()`][clean-tee-status] should also drop their votes from `backup_service_tee_state`; their entries stay until `reverify_backup_services()` removes them, as MPC node entries do. [`cleanup_orphaned_node_migrations()`][cleanup-orphaned-node-migrations], which runs after the same resharing, must keep a departed operator's key in `backup_services_info` while `backup_service_tee_state` still holds an entry under it, so a returning operator's new entry still replaces the old one.
 - **Launcher retention**: [`remove_unused_launchers()`][remove-unused-launchers] counts only the launchers of participants' own nodes, so `backup_service_tee_state` needs its own rule; otherwise every backup service launcher except the newest is dropped once its retention period passes, which invalidates backup services still running an older one.
@@ -157,7 +158,7 @@ The contract needs the following changes, most of them in the [migration service
 [`DstackVerify::verify()`][dstack-verify] can be reused as-is: it takes the allowed image hashes, compose hashes and measurements as arguments, which [`verify_and_store_dstack()`][verify-and-store-dstack] fills from the [`TeeState`][tee-state] it is called on. It relies on two things:
 
 - It reads the Docker image hash from the [`"mpc-image-digest"` event][mpc-image-hash-event-usage], so the backup service launcher must measure its image hash into RTMR3 under that name, as the [MPC node launcher][launcher-image-hash-event] does.
-- It rejects every attestation while one of those allowed lists is empty, and a new `TeeState` starts with all three empty. The backup service votes listed under [Contract Methods](#contract-methods) fill all three. For MPC nodes, the measurements were also [seeded during a contract migration][seed-measurements], and the backup service `TeeState` should be seeded the same way, leaving the measurement votes for dstack OS upgrades.
+- It rejects every attestation while one of those allowed lists is empty, and a new `TeeState` starts with all three empty. The backup service votes listed under [Contract Methods](#contract-methods) fill all three. For MPC nodes, the measurements were also [seeded during a contract migration][seed-measurements]. The migration that adds the backup service `TeeState` seeds its measurements with the MPC nodes' current ones, leaving the measurement votes for dstack OS upgrades. RTMR0 depends on the CVM's vCPU count and memory, so the seed admits only backup service CVMs sized like MPC nodes; a CVM of another size needs a measurement vote.
 
 The allowed compose hashes also need a backup service template. [`LauncherCompose::hash()`](../../crates/contract/src/tee/launcher_compose.rs) fills in the MPC launcher compose template, including the contract's own account id as [`MPC_CONTRACT_ID`][mpc-contract-id], which the MPC node launcher takes from this measured compose rather than from its user config. The backup service template needs the contract id too, and the genesis hash of the chain the contract runs on, which [#5101](https://github.com/near/mpc/issues/5101) adds to the MPC node template. The backup service takes both from its measured compose rather than its user config, so its embedded NEAR node reads only this contract and refuses to follow another chain. Its launcher also fixes the home directory, so the embedded node stays on the chain its disk started on.
 

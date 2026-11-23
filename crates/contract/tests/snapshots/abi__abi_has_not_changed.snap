@@ -33,6 +33,62 @@ expression: abi
         }
       },
       {
+        "name": "allowed_backup_service_code_hashes",
+        "doc": " Returns the allowed backup service image hashes with their eviction expiry, newest first.\n The expiry depends on [`dtos::Config::tee_upgrade_deadline_duration_seconds`], as for\n MPC nodes.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/AllowedMpcDockerImageHash"
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_backup_service_launcher_compose_hashes",
+        "doc": " Returns the allowed backup service launcher compose hashes.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LauncherDockerComposeHash"
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_backup_service_launcher_image_hashes",
+        "doc": " Returns the allowed backup service launcher image hashes.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/LauncherImageHash"
+            }
+          }
+        }
+      },
+      {
+        "name": "allowed_backup_service_os_measurements",
+        "doc": " Returns the OS measurement sets a backup service may run on.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/ExpectedMeasurements"
+            }
+          }
+        }
+      },
+      {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
         "kind": "view",

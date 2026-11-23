@@ -2,6 +2,7 @@
 
 pub mod attestation;
 pub mod authorization;
+pub mod backup_service;
 pub mod ckd;
 pub mod common;
 pub mod foreign_chain;

@@ -229,7 +229,7 @@ The following attestation methods must be uniform across all governance contract
 | `get_tee_accounts()` | View | Query all stored nodes, including those of non-participants |
 | `get_available_foreign_chains()` | View | Query foreign chains accepted by `verify_foreign_transaction` |
 
-> **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
+> **Backup Service:** The contract keeps a separate `TeeState` for the Backup Service, whose allowlists the `allowed_backup_service_code_hashes()`, `allowed_backup_service_launcher_compose_hashes()`, `allowed_backup_service_launcher_image_hashes()` and `allowed_backup_service_os_measurements()` views list. It does not yet have votes to fill them, and `register_backup_service` still stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add both.
 
 [backup-tee-methods]: ../archive/design/migration-service.md#backup-service-tee-methods
 

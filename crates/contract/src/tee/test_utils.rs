@@ -9,15 +9,17 @@ use crate::primitives::test_utils::{gen_account_id, gen_seed};
 use crate::tee::launcher_compose::LauncherCompose;
 use crate::tee::tee_state::TeeState;
 use mpc_attestation::attestation::ExpectedMeasurements;
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use mpc_primitives::hash::{
+    KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash, NodeImageHash,
+    Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+};
 use near_account_id::AccountId;
+use near_mpc_contract_interface::types as dtos;
 use near_sdk::borsh::{self, BorshDeserialize};
 use near_sdk::{BlockHeight, NearToken, PublicKey, test_utils::VMContextBuilder, testing_env};
 use rand::Rng;
 use std::time::Duration;
 
-#[cfg(test)]
-use near_mpc_contract_interface::types as dtos;
 #[cfg(test)]
 use test_utils::attestation::{account_key, p2p_tls_key};
 
@@ -185,6 +187,16 @@ pub(crate) fn dummy_code_hash(val: u8) -> NodeImageHash {
 #[cfg(test)]
 pub(crate) fn dummy_launcher_hash(val: u8) -> LauncherImageHash {
     LauncherImageHash::from([val; 32])
+}
+
+pub fn make_measurement(byte: u8) -> dtos::ExpectedMeasurements {
+    dtos::ExpectedMeasurements {
+        mrtd: MrtdHash::from([byte; 48]),
+        rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
+        rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
+        rtmr2: Rtmr2Hash::from([byte.wrapping_add(3); 48]),
+        key_provider_event_digest: KeyProviderEventDigest::from([byte.wrapping_add(4); 48]),
+    }
 }
 
 #[cfg(test)]

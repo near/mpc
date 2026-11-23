@@ -93,3 +93,9 @@ pub const MPC_NODE_MANIFEST_DIGEST_VOTES: &str = "mpc_node_manifest_digest_votes
 pub const OS_MEASUREMENT_VOTES: &str = "os_measurement_votes";
 pub const ALLOWED_OS_MEASUREMENTS: &str = "allowed_os_measurements";
 pub const MIGRATION_INFO: &str = "migration_info";
+pub const ALLOWED_BACKUP_SERVICE_CODE_HASHES: &str = "allowed_backup_service_code_hashes";
+pub const ALLOWED_BACKUP_SERVICE_LAUNCHER_COMPOSE_HASHES: &str =
+    "allowed_backup_service_launcher_compose_hashes";
+pub const ALLOWED_BACKUP_SERVICE_LAUNCHER_IMAGE_HASHES: &str =
+    "allowed_backup_service_launcher_image_hashes";
+pub const ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS: &str = "allowed_backup_service_os_measurements";

@@ -4,25 +4,40 @@ use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo};
 use near_sdk::{near, store::IterableMap};
 
-use crate::storage_keys::StorageKey;
+use crate::{
+    storage_keys::StorageKey,
+    tee::{attested_service::AttestedService, tee_state::TeeState},
+};
 
 #[near(serializers=[borsh])]
 #[derive(Debug)]
 pub struct NodeMigrations {
     backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
     ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
+    pub(crate) backup_service_tee_state: TeeState,
 }
 
 impl Default for NodeMigrations {
     fn default() -> Self {
-        Self {
-            backup_services_info: IterableMap::new(StorageKey::BackupServicesInfo),
-            ongoing_migrations: IterableMap::new(StorageKey::NodeMigrations),
-        }
+        Self::new(
+            IterableMap::new(StorageKey::BackupServicesInfo),
+            IterableMap::new(StorageKey::NodeMigrations),
+        )
     }
 }
 
 impl NodeMigrations {
+    pub(crate) fn new(
+        backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
+        ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
+    ) -> Self {
+        Self {
+            backup_services_info,
+            ongoing_migrations,
+            backup_service_tee_state: TeeState::new(AttestedService::BackupService),
+        }
+    }
+
     pub(crate) fn backup_services_info(&self) -> &IterableMap<AccountId, BackupServiceInfo> {
         &self.backup_services_info
     }
@@ -86,17 +101,93 @@ impl NodeMigrations {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
 
-    use std::collections::BTreeMap;
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        time::Duration,
+    };
 
-    use near_mpc_contract_interface::types::BackupServiceInfo;
+    use mpc_attestation::attestation::MockAttestation;
+    use near_mpc_contract_interface::types::{self as dtos, BackupServiceInfo};
+    use near_sdk::{MockedBlockchain, mock::with_mocked_blockchain};
 
     use crate::{
         api::test_utils::destination_of,
         node_migrations::NodeMigrations,
-        primitives::test_utils::{bogus_ed25519_public_key, gen_account_id, node_for},
+        primitives::{
+            key_state::AuthenticatedAccountId,
+            test_utils::{
+                authenticate_account_as, bogus_ed25519_public_key, gen_account_id,
+                gen_participants, node_for,
+            },
+        },
+        tee::{
+            tee_state::TeeState,
+            test_utils::{dummy_code_hash, dummy_launcher_hash, make_measurement},
+        },
     };
+
+    #[test]
+    fn node_migrations__should_keep_the_backup_service_tee_state_apart_from_mpc_nodes() {
+        // Given
+        let participants = gen_participants(1);
+        let (account_id, _, _) = &participants.participants()[0];
+        let voter = authenticate_account_as(account_id, &participants);
+        let node = node_for(account_id);
+        let mpc_node_keys = storage_keys_written_by(|| {
+            write_storage_keyed_collections(&mut TeeState::default(), &voter, node.clone())
+        });
+
+        // When
+        let backup_service_keys = storage_keys_written_by(|| {
+            write_storage_keyed_collections(
+                &mut NodeMigrations::default().backup_service_tee_state,
+                &voter,
+                node.clone(),
+            )
+        });
+
+        // Then
+        assert!(!mpc_node_keys.is_empty());
+        assert_eq!(backup_service_keys.len(), mpc_node_keys.len());
+        assert_eq!(
+            mpc_node_keys
+                .intersection(&backup_service_keys)
+                .collect::<Vec<_>>(),
+            Vec::<&Vec<u8>>::new()
+        );
+    }
+
+    /// Collections write to storage only once dropped, so the closure must drop what it writes to.
+    fn storage_keys_written_by(write: impl FnOnce()) -> BTreeSet<Vec<u8>> {
+        with_mocked_blockchain(MockedBlockchain::take_storage);
+        write();
+        with_mocked_blockchain(MockedBlockchain::take_storage)
+            .into_keys()
+            .collect()
+    }
+
+    fn write_storage_keyed_collections(
+        tee_state: &mut TeeState,
+        voter: &AuthenticatedAccountId,
+        node: dtos::NodeInfo,
+    ) {
+        let proposal = 1;
+        tee_state.vote_mpc_node_manifest_digest(dummy_code_hash(proposal), voter.clone());
+        tee_state.vote_launcher(
+            &dtos::LauncherVoteAction::Add(dummy_launcher_hash(proposal)),
+            voter.clone(),
+        );
+        tee_state.vote_measurement(
+            &dtos::MeasurementVoteAction::Add(make_measurement(proposal)),
+            voter.clone(),
+        );
+        tee_state
+            .verify_and_store_mock(node, MockAttestation::Valid, Duration::MAX)
+            .unwrap();
+    }
 
     #[test]
     fn test_set_backup_service_info() {

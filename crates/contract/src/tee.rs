@@ -1,3 +1,4 @@
+pub mod attested_service;
 pub mod launcher_compose;
 pub mod measurements;
 pub mod proposal;

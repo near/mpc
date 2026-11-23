@@ -5,6 +5,8 @@
 //! backend implementing [`CallContract`]. Backends implementing
 //! [`ViewContract`] get the typed view methods.
 
+mod backup_service;
+
 use near_contract_transport::{
     CallContract, FunctionCallArgs, Json, NearGas, NearToken, ViewArgs, ViewCall, ViewContract,
 };
@@ -1211,6 +1213,12 @@ mod tests {
         let _ = handle.genesis_hash().await;
         let _ = handle.get_tee_accounts().await;
         let _ = handle.migration_info().await;
+        let _ = handle.allowed_backup_service_code_hashes().await;
+        let _ = handle
+            .allowed_backup_service_launcher_compose_hashes()
+            .await;
+        let _ = handle.allowed_backup_service_launcher_image_hashes().await;
+        let _ = handle.allowed_backup_service_os_measurements().await;
         let _ = handle.get_available_foreign_chains().await;
         let _ = handle.get_foreign_chains_configs().await;
         let _ = handle.allowed_foreign_chain_providers().await;

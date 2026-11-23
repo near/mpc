@@ -127,14 +127,10 @@ impl MpcContract {
     /// date. Note that the expiration depends on the contract configuration
     /// (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).
     pub fn allowed_docker_image_hashes(&self) -> Vec<dtos::AllowedMpcDockerImageHash> {
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-
-        let mut entries = self
-            .tee_state
-            .get_allowed_mpc_docker_images(tee_upgrade_deadline_duration);
-        entries.reverse();
-        entries
+        self.tee_state
+            .get_allowed_mpc_docker_images(Duration::from_secs(
+                self.config.tee_upgrade_deadline_duration_seconds,
+            ))
     }
 
     pub fn allowed_launcher_compose_hashes(&self) -> Vec<dtos::LauncherDockerComposeHash> {
@@ -249,7 +245,7 @@ mod tests {
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
+    use crate::tee::test_utils::make_measurement;
     use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
@@ -838,16 +834,6 @@ mod tests {
         assert!(compose_hashes.contains(&compose_hash(&l2, &m2)));
         assert!(compose_hashes.contains(&compose_hash(&l2, &m3)));
         assert!(!compose_hashes.contains(&compose_hash(&l2, &m1)));
-    }
-
-    fn make_measurement(byte: u8) -> dtos::ExpectedMeasurements {
-        dtos::ExpectedMeasurements {
-            mrtd: MrtdHash::from([byte; 48]),
-            rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
-            rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
-            rtmr2: Rtmr2Hash::from([byte.wrapping_add(3); 48]),
-            key_provider_event_digest: KeyProviderEventDigest::from([byte.wrapping_add(4); 48]),
-        }
     }
 
     /// Tests that adding an OS measurement requires threshold votes and that
