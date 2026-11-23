@@ -541,7 +541,7 @@ mod tests {
     };
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_expiring_at, mock_tcb_info, verified_report,
+        launcher_image_hash, measurements, mock_expiring_at, mock_tcb_info, verified_report,
     };
 
     #[test]
@@ -1082,6 +1082,7 @@ mod tests {
             &mut tee_state,
             image_digest(),
             launcher_image_hash(),
+            measurements(),
             Some(launcher_compose_digest()),
         );
         (tee_state, dstack_fixture_node())
