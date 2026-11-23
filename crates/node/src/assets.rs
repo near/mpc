@@ -440,7 +440,7 @@ where
         Ok(removed_from_cold_queue)
     }
 
-    pub fn available(&self) -> anyhow::Result<usize> {
+    pub fn available(&self) -> anyhow::Result<usize, anyhow::Error> {
         Ok(self.hot_receiver.len()
             + self
                 .cold_queue

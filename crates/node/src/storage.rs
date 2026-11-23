@@ -18,7 +18,7 @@ impl SignRequestStorage {
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &SignatureRequest) -> anyhow::Result<()> {
+    pub fn add(&self, request: &SignatureRequest) -> anyhow::Result<(), anyhow::Error> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::SignRequest, &key)?.is_some() {
             return Err(anyhow::anyhow!("signature request already exists"));
@@ -77,7 +77,7 @@ impl CKDRequestStorage {
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &CKDRequest) -> anyhow::Result<()> {
+    pub fn add(&self, request: &CKDRequest) -> anyhow::Result<(), anyhow::Error> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::CKDRequest, &key)?.is_some() {
             return Err(anyhow::anyhow!("CKD request already exists"));
@@ -136,7 +136,7 @@ impl VerifyForeignTransactionRequestStorage {
 
     /// If given request is already in the database, returns false.
     /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &VerifyForeignTxRequest) -> anyhow::Result<()> {
+    pub fn add(&self, request: &VerifyForeignTxRequest) -> anyhow::Result<(), anyhow::Error> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::VerifyForeignTxRequest, &key)?.is_some() {
             return Err(anyhow::anyhow!("verification request already exists"));
@@ -201,36 +201,6 @@ mod tests {
         storage::{CKDRequestStorage, SignRequestStorage},
         types::SignatureRequest,
     };
-
-    fn signature_request() -> SignatureRequest {
-        SignatureRequest {
-            id: CryptoHash(rand::random()),
-            // All other fields are irrelevant for the test.
-            receipt_id: CryptoHash([0; 32]),
-            entropy: [0; 32],
-            payload: Payload::from_legacy_ecdsa([0; 32]),
-            timestamp_nanosec: 0,
-            tweak: Tweak::new([0; 32]),
-            domain: DomainId::legacy_ecdsa_id(),
-        }
-    }
-
-    fn cdk_request() -> CKDRequest {
-        CKDRequest {
-            id: CryptoHash(rand::random()),
-            // All other fields are irrelevant for the test.
-            receipt_id: CryptoHash([0; 32]),
-            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
-                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
-                    .parse()
-                    .unwrap(),
-            ),
-            app_id: [1u8; 32].into(),
-            entropy: [0; 32],
-            timestamp_nanosec: 0,
-            domain_id: DomainId::legacy_ecdsa_id(),
-        }
-    }
 
     #[tokio::test]
     async fn test_sig_request_storage() {
