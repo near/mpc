@@ -15,6 +15,8 @@ counters tell you whether that is working:
 | `mpc_blocks_indexed_total` | received blocks kept for processing, after skipping ones the node has already seen | should move together with the counter above. |
 | `mpc_finalized_blocks_indexed_total` | processed blocks that reached finality on NEAR | should grow steadily a few seconds behind the two counters above. If it freezes while they keep growing, finality is stalling. |
 | `mpc_block_updates_dropped_total` | block updates the node dropped, including signature requests it will never process | should stay flat. Every increase is user requests the cluster may never answer. |
+| `mpc_indexer_latest_block_height` | height of the last block the block streamer saw, with or without requests in it | should track the NEAR head. If it stalls while `near_block_height_head`, the embedded NEAR node's own head height, keeps advancing, the streamer is wedged and requests go unseen even though contract state reads fine. |
+| `mpc_indexer_latest_block_timestamp_seconds` | NEAR block time of the last block the block streamer saw | reference time for the attestation metrics below. |
 | `mpc_num_fail_on_timeout_indexed` | requests the MPC contract marked as failed because no answer arrived in time | should be near zero. A sustained rate means this node, or the whole cluster, is too slow to answer. May overcount when NEAR has many forks. |
 | `mpc_failover_leader_attempts_total` | attempts this node started as a failover leader because no response landed within the leader failover slot. Labelled by `request_type` and `rank` (1-3, how many leaders before it are presumed broken) | should stay at zero. A sustained rate means some node accepts requests as leader but fails to answer them; high ranks mean several such nodes at once. |
 
@@ -39,13 +41,15 @@ These gauges say whether that happened:
 ## Attestation freshness
 
 The node runs in trusted hardware and proves this by submitting an attestation
-on chain. If it stops doing so, the contract eventually drops the node from the
-participant set. These gauges tell you how much runway is left:
+on chain. If it stops doing so, the attestation eventually expires and the
+contract stops accepting signature requests until the node attests again or a
+vote removes it from the participant set. These gauges tell you how much runway
+is left:
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |
-| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to being dropped. |
-| `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node is already out. `-1` means an attestation is stored that carries no expiry. |
+| `mpc_attestation_last_landed_timestamp_seconds` | when the contract last accepted an attestation for this node, measured in NEAR block time | should be under an hour old; the node resubmits hourly. A sustained gap starts the countdown to the attestation expiring. |
+| `mpc_attestation_expiry_timestamp_seconds` | when the attestation stored for this node expires, measured in NEAR block time | subtract `mpc_indexer_latest_block_timestamp_seconds` for the remaining runway. `0` means nothing is stored and the node already counts as unattested. `-1` means an attestation is stored that carries no expiry. |
 
 ## Foreign chain RPC providers
 
@@ -130,7 +134,7 @@ answer with the chain's `expected_network_fingerprint` from your config:
 
 | Metric | What it tracks |
 | --- | --- |
-| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain |
+| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain, whitelisted or not |
 | `mpc_foreign_chain_rpc_providers_healthy` | providers that passed the latest probe |
 
 `healthy` should equal `configured`. Anything less is a provider the probe
@@ -148,6 +152,8 @@ Each round logs:
 * A line for each difference from the whitelist. A difference you must fix is
   a warning or an error. Two differences are normal and are logged as info: a
   chain that is not whitelisted yet, and an extra provider.
+* A warning or an error for each chain that is not healthy, once the whitelist
+  is read.
 * One `foreign chain probe round complete` line at the end, with these fields:
 
 | Field | What it tells you |
@@ -157,9 +163,36 @@ Each round logs:
 | `unchecked` | providers of a chain that has no probe |
 | `unchecked_chains` | the chains that have no probe |
 | `whitelist` | `not read yet`, `matches the local config`, or the number of differences logged above |
+| `healthy_chains` | chains judged healthy |
+| `judged_chains` | chains judged, `0` until the whitelist is read |
 
 The whitelist is `not read yet` until the node has synced and read it from the
 contract.
+
+Once the whitelist is read, each round judges every whitelisted chain in your
+config. First it checks the quorum, which needs no probe:
+
+* A voted quorum the node cannot enforce is logged as an error. The contract
+  rejects such votes, so this should never happen.
+* A chain with fewer whitelisted providers configured than its quorum gets a
+  warning. The node does not serve that chain.
+
+A chain that passes these checks is judged further only when it has a probe and
+sets an `expected_network_fingerprint`. It is healthy when all of these hold:
+
+* All of its whitelisted providers passed the probe.
+* No configured provider serves another network. Such a provider fails every
+  verify request on its chain, whitelisted or not, because the verdicts of all
+  configured providers must agree.
+
+When some whitelisted providers fail the probe, the warning says whether the
+others still reach the quorum. If they do not, every verify request on that
+chain fails.
+
+A configured provider counts for a whitelisted provider only when its URL host,
+scheme, port, path, chain routing and auth all match the voted entry. When two
+configured providers match one whitelisted provider, only the first by name
+counts. The second one cannot stand in when the first one fails.
 
 ### Whitelist and quorum
 
@@ -190,6 +223,10 @@ rate(mpc_blocks_received_from_indexer_total[1m]) < 0.5  for 15m
 
 # Warn: block updates are being dropped. Each one is data the node will never see.
 increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
+
+# Page: the block streamer is stuck while the embedded NEAR node keeps up with the chain,
+# so requests go unseen.
+near_block_height_head - mpc_indexer_latest_block_height > 100  for 5m
 
 # Warn: requests fail for lack of an answer in time. Cross check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m

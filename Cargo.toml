@@ -159,7 +159,7 @@ httpmock = "0.9.0"
 humantime = "2.3.0"
 hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
-inferno = "0.12"
+inferno = { version = "0.12", default-features = false }
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.15.0"
 # Must stay on the `tikv-jemalloc-sys` version that nearcore's rocksdb pulls in
@@ -185,7 +185,7 @@ near-crypto-public = { version = "0.38.1", package = "near-crypto" }
 near-gas = "0.3.6"
 near-jsonrpc-client = "0.23.0"
 near-jsonrpc-primitives = "0.38.1"
-near-kit = { version = "0.20.0", default-features = false, features = ["rpc"] }
+near-kit = { version = "0.31.1", default-features = false, features = ["rpc"] }
 near-primitives = "0.38.1"
 near-sandbox = "0.4.0"
 near-sdk = { version = "5.30.1", features = ["unstable"] }
@@ -193,10 +193,7 @@ near-token = "0.3.4"
 near-workspaces = { version = "0.24.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
-pprof = { version = "0.15.0", features = [
-    "cpp",
-    "flamegraph",
-], default-features = false }
+pprof = { version = "0.15.0", features = ["cpp"], default-features = false }
 # Same `tikv-jemalloc-sys` constraint as `jemalloc_pprof`.
 pprof_util = "0.8"
 proc-macro2 = "1.0"
@@ -294,6 +291,10 @@ unexpected_cfgs = { level = "allow", check-cfg = [
 ] }
 
 [workspace.lints.clippy]
+# TODO(#5198): remove once on Rust 1.101. Clippy 1.99 and 1.100 flag
+# `derive_more::Constructor` output as redundant field names
+# (rust-lang/rust-clippy#17525).
+redundant_field_names = "allow"
 assertions_on_result_states = "warn"
 allow_attributes = "warn"
 mod_module_files = "deny"

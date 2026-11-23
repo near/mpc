@@ -1,8 +1,8 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error, InvalidParameters, VoteError};
-use crate::primitives::participants::IdentifiesParticipant;
+use crate::errors::{DomainError, Error, InvalidParameters};
+use crate::primitives::participants::{IdentifiesParticipant, ParticipantInfo, Participants};
 use crate::primitives::{
     domain::{
         AddDomainsVotes, DomainRegistry, validate_domain_purpose,
@@ -12,6 +12,7 @@ use crate::primitives::{
     threshold_votes::GovernanceThresholdParametersVotes,
     thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
 };
+use near_account_id::AccountId;
 use near_mpc_contract_interface::types::DomainConfig;
 use near_sdk::near;
 use std::collections::BTreeSet;
@@ -21,7 +22,7 @@ use std::collections::BTreeSet;
 /// Proposals can be submitted to modify the state:
 ///  - vote_add_domains, upon threshold agreement, transitions into the
 ///    Initializing state to generate keys for new domains.
-///  - vote_new_parameters, upon threshold agreement, transitions into the
+///  - vote_new_parameters, upon governance threshold agreement, transitions into the
 ///    Resharing state to reshare keys for new participants and also change the
 ///    threshold if desired.
 #[near(serializers=[borsh])]
@@ -60,44 +61,6 @@ impl RunningContractState {
         }
     }
 
-    pub fn transition_to_resharing_no_checks(
-        &mut self,
-        proposal: &ProposedGovernanceThresholdParameters,
-    ) -> Option<ResharingContractState> {
-        if let Some(first_domain) = self.domains.get_domain_by_index(0) {
-            let epoch_id = self.prospective_epoch_id();
-
-            Some(ResharingContractState {
-                previous_running_state: RunningContractState::new(
-                    self.domains.clone(),
-                    self.keyset.clone(),
-                    self.parameters.clone(),
-                    self.add_domains_votes.clone(),
-                ),
-                reshared_keys: Vec::new(),
-                resharing_key: KeyEvent::new(
-                    epoch_id,
-                    first_domain.clone(),
-                    proposal.parameters().clone(),
-                ),
-                cancellation_requests: BTreeSet::new(),
-                per_domain_thresholds: proposal.per_domain_thresholds().clone(),
-            })
-        } else {
-            // New parameters were proposed, but we have no keys, so directly
-            // transition into Running state but bump the EpochId. With no
-            // domains the per-domain threshold updates have nothing to apply to
-            // and are dropped.
-            *self = RunningContractState::new(
-                self.domains.clone(),
-                Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
-                proposal.parameters().clone(),
-                self.add_domains_votes.clone(),
-            );
-            None
-        }
-    }
-
     /// Casts a vote for `proposal` to the current state, propagating any errors.
     /// Returns ResharingContractState if the proposal is accepted.
     pub fn vote_new_parameters(
@@ -116,10 +79,54 @@ impl RunningContractState {
             .into());
         }
 
-        if self.process_new_parameters_proposal(proposal, votes)? {
-            return Ok(self.transition_to_resharing_no_checks(proposal));
+        if !self.process_new_parameters_proposal(proposal, votes)? {
+            return Ok(None);
         }
-        Ok(None)
+        let Some(first_domain) = self.domains.get_domain_by_index(0) else {
+            // New parameters were proposed, but we have no keys, so directly
+            // transition into Running state but bump the EpochId. With no
+            // domains the per-domain threshold updates have nothing to apply to
+            // and are dropped.
+            *self = RunningContractState::new(
+                self.domains.clone(),
+                Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
+                proposal.parameters().clone(),
+                self.add_domains_votes.clone(),
+            );
+            return Ok(None);
+        };
+        Ok(Some(ResharingContractState {
+            previous_running_state: RunningContractState::new(
+                self.domains.clone(),
+                self.keyset.clone(),
+                self.parameters.clone(),
+                self.add_domains_votes.clone(),
+            ),
+            reshared_keys: Vec::new(),
+            resharing_key: KeyEvent::new(
+                self.prospective_epoch_id(),
+                first_domain.clone(),
+                proposal.parameters().clone(),
+            ),
+            cancellation_requests: BTreeSet::new(),
+            per_domain_thresholds: proposal.per_domain_thresholds().clone(),
+        }))
+    }
+
+    pub fn participants(&self) -> &Participants {
+        self.parameters.participants()
+    }
+
+    pub fn keyset(&self) -> &Keyset {
+        &self.keyset
+    }
+
+    pub fn update_participant_info(
+        &mut self,
+        account_id: AccountId,
+        new_info: ParticipantInfo,
+    ) -> Result<(), Error> {
+        self.parameters.update_info(account_id, new_info)
     }
 
     pub fn prospective_epoch_id(&self) -> EpochId {
@@ -136,9 +143,9 @@ impl RunningContractState {
     }
 
     /// Casts a vote for `proposal`, removing any previous votes by [`env::signer_account_id()`](near_sdk::env::signer_account_id).
-    /// Fails if the proposal is invalid or the signer is not a proposed participant.
-    /// Returns true if all participants of the proposed parameters voted for it; pending votes
-    /// are then cleared.
+    /// Fails if the proposal is invalid or the signer is not a current participant.
+    /// Returns true once the current participants' governance threshold voted for it; pending
+    /// votes are then cleared.
     pub(super) fn process_new_parameters_proposal(
         &self,
         proposal: &ProposedGovernanceThresholdParameters,
@@ -184,20 +191,12 @@ impl RunningContractState {
             proposal.threshold(),
         )?;
 
-        // ensure the signer is a proposed participant
-        let candidate = AuthenticatedAccountId::new(proposal.participants())?;
-
-        // If the signer is not a participant of the current epoch, they can only vote after
-        // `threshold` participant of the current epoch have casted their vote to admit them.
-        if AuthenticatedAccountId::new(self.parameters.participants()).is_err() {
-            let n_votes = votes.n_votes(proposal, self.parameters.participants());
-            if !self.parameters.threshold().is_met_by(n_votes) {
-                return Err(VoteError::VoterPending.into());
-            }
-        }
+        // As in every other governance vote, the current participants decide: accounts the
+        // proposal would add have no vote, and those it would remove keep theirs.
+        let voter = AuthenticatedAccountId::new(self.parameters.participants())?;
 
         // finally, vote.
-        let accepted = votes.vote(proposal, candidate);
+        let accepted = votes.vote(proposal, voter, &self.parameters);
         if accepted {
             votes.clear();
         }
@@ -260,10 +259,8 @@ pub mod running_tests {
     use rstest::rstest;
 
     use super::RunningContractState;
-    use crate::errors::{Error, InvalidState, InvalidThreshold, VoteError};
+    use crate::errors::{Error, InvalidState, InvalidThreshold};
     use crate::primitives::domain::AddDomainsVotes;
-    use crate::primitives::participants::ParticipantCount;
-    use crate::primitives::participants::Participants;
     use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_proposed_threshold_params};
     use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
     use crate::primitives::thresholds::{
@@ -271,8 +268,8 @@ pub mod running_tests {
     };
     use crate::state::key_event::tests::Environment;
     use crate::state::test_utils::{
-        RunningStateParams, gen_running_state, gen_running_state_with_params,
-        gen_valid_params_proposal,
+        RunningStateParams, account_ids, gen_running_state, gen_running_state_with_params,
+        gen_valid_params_proposal, threshold_voters,
     };
     use near_mpc_contract_interface::types::{
         DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -297,20 +294,6 @@ pub mod running_tests {
         let first_participant = state.parameters.participants().participants()[0].0.clone();
         Environment::new(None, Some(first_participant), None);
         state
-    }
-
-    /// Returns a participant present in both the current and proposed sets.
-    fn overlapping_signer(
-        state: &RunningContractState,
-        proposal: &ProposedGovernanceThresholdParameters,
-    ) -> AccountId {
-        proposal
-            .participants()
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .find(|account_id| state.parameters.participants().is_participant(account_id))
-            .expect("proposal must retain at least one current participant")
     }
 
     /// Builds a one-domain proposal for the next domain id.
@@ -360,21 +343,10 @@ pub mod running_tests {
         // Assert that disagreeing proposals do not reach consensus.
         // Generate an extra proposal for the next step.
         let mut proposals = Vec::new();
-        for i in 0..participants.participants().len() + 1 {
-            loop {
-                let proposal = gen_valid_params_proposal(&state.parameters);
-                if proposals.contains(&proposal) {
-                    continue;
-                }
-                if i < participants.participants().len()
-                    && !proposal
-                        .participants()
-                        .is_participant(&participants.participants()[i].0)
-                {
-                    continue;
-                }
-                proposals.push(proposal.clone());
-                break;
+        while proposals.len() < participants.participants().len() + 1 {
+            let proposal = gen_valid_params_proposal(&state.parameters);
+            if !proposals.contains(&proposal) {
+                proposals.push(proposal);
             }
         }
         for (i, (account_id, _, _)) in participants.participants().iter().enumerate() {
@@ -391,48 +363,26 @@ pub mod running_tests {
         let proposal = proposals.last().unwrap().clone();
 
         let original_epoch_id = state.keyset.epoch_id;
+        let has_domains = !state.domains.domains().is_empty();
         let mut resharing = None;
-        // existing participants vote
-        let mut n_votes = 0;
-        for (account_id, _, _) in participants.participants().iter() {
-            if !proposal.participants().is_participant(account_id) {
-                continue;
-            }
-            n_votes += 1;
+        // existing participants vote until their governance threshold is met
+        let voters = threshold_voters(&state.parameters);
+        for account_id in &voters {
             env.set_signer(account_id);
             let res = state
                 .vote_new_parameters(state.keyset.epoch_id.next(), &proposal, &mut votes)
                 .unwrap();
-            if n_votes < proposal.participants().len() || num_domains == 0 {
+            if Some(account_id) != voters.last() || !has_domains {
                 assert!(res.is_none());
             } else {
                 resharing = Some(res.unwrap());
             }
         }
-        // candidates vote
-        for (account_id, _, _) in proposal.participants().participants().iter() {
-            if participants.is_participant(account_id) {
-                continue;
-            }
-            n_votes += 1;
-            env.set_signer(account_id);
-            let res = state
-                .vote_new_parameters(state.keyset.epoch_id.next(), &proposal, &mut votes)
-                .unwrap();
-            if n_votes < proposal.participants().len() || num_domains == 0 {
-                assert!(res.is_none());
-            } else {
-                resharing = Some(res.unwrap());
-            }
-        }
-        if num_domains == 0 {
+        if !has_domains {
             // If there are no domains, we should transition directly to Running with a higher
             // epoch ID, not resharing.
             assert_eq!(state.keyset.epoch_id, original_epoch_id.next());
-            assert_eq!(
-                votes.n_votes(&proposal, proposal.participants()),
-                ParticipantCount::new(0)
-            );
+            assert!(votes.is_empty());
             assert_eq!(state.add_domains_votes, AddDomainsVotes::default());
         } else {
             let resharing = resharing.unwrap();
@@ -593,7 +543,6 @@ pub mod running_tests {
         // Given
         let mut state = setup(1, None);
         let proposal = gen_valid_params_proposal(&state.parameters);
-        Environment::new(None, Some(overlapping_signer(&state, &proposal)), None);
 
         // When voting with an empty per_domain_thresholds map (legacy shape)
         let res = state.vote_new_parameters(
@@ -643,21 +592,13 @@ pub mod running_tests {
         added: Vec<AccountId>,
     }
 
-    fn account_ids(participants: &Participants) -> Vec<AccountId> {
-        participants
-            .participants()
-            .iter()
-            .map(|(account_id, _, _)| account_id.clone())
-            .collect()
-    }
+    const NUM_PARTICIPANTS: usize = 5;
+    const GOVERNANCE_THRESHOLD: u64 = 3;
+    const NUM_REPLACED: usize = 2;
+    const NUM_RETAINED: usize = NUM_PARTICIPANTS - NUM_REPLACED;
 
     /// Proposal that replaces the last current participants with added ones.
     fn gen_participants_update() -> ParticipantsUpdate {
-        const NUM_PARTICIPANTS: usize = 5;
-        const GOVERNANCE_THRESHOLD: u64 = 3;
-        const NUM_REPLACED: usize = 2;
-        const NUM_RETAINED: usize = NUM_PARTICIPANTS - NUM_REPLACED;
-
         let state = gen_running_state_with_params(RunningStateParams {
             num_domains: 1,
             num_participants: NUM_PARTICIPANTS,
@@ -683,19 +624,18 @@ pub mod running_tests {
     }
 
     #[test]
-    fn process_new_parameters_proposal__should_reject_current_participants_left_out_of_the_proposal()
-     {
+    fn process_new_parameters_proposal__should_reject_votes_from_added_participants() {
         // Given
         let ParticipantsUpdate {
             state,
             proposal,
-            removed,
+            added,
             ..
         } = gen_participants_update();
         let mut env = Environment::new(None, None, None);
         let mut votes = GovernanceThresholdParametersVotes::default();
 
-        for voter in &removed {
+        for voter in &added {
             env.set_signer(voter);
 
             // When
@@ -707,97 +647,37 @@ pub mod running_tests {
                 Error::InvalidState(InvalidState::NotParticipant { account_id }) if account_id == *voter
             );
         }
+        assert!(votes.is_empty());
     }
 
+    const NO_REMOVED_VOTERS: usize = 0;
+
     #[rstest]
-    #[case::no_old_votes(0)]
-    #[case::one_old_vote(1)]
-    #[case::one_below_threshold(2)]
-    fn process_new_parameters_proposal__should_defer_added_participants_until_threshold_old_participants_voted(
-        #[case] n_old_votes: u64,
+    #[case::retained_participants_only(NO_REMOVED_VOTERS)]
+    #[case::removed_participants_first(NUM_REPLACED)]
+    fn process_new_parameters_proposal__should_return_true_once_threshold_current_participants_voted(
+        #[case] num_removed_voters: usize,
     ) {
         // Given
         let ParticipantsUpdate {
             state,
             proposal,
             retained,
-            added,
+            removed,
             ..
         } = gen_participants_update();
-        assert!(
-            n_old_votes < state.parameters.threshold().value(),
-            "case must stay below the fixture's threshold"
-        );
-        let mut env = Environment::new(None, None, None);
-        let mut votes = GovernanceThresholdParametersVotes::default();
-        for old in retained.iter().take(n_old_votes as usize) {
-            env.set_signer(old);
-            state
-                .process_new_parameters_proposal(&proposal, &mut votes)
-                .unwrap();
-        }
-
-        for voter in &added {
-            env.set_signer(voter);
-
-            // When
-            let result = state.process_new_parameters_proposal(&proposal, &mut votes);
-
-            // Then
-            assert_matches!(result.unwrap_err(), Error::Vote(VoteError::VoterPending));
-        }
-    }
-
-    #[test]
-    fn process_new_parameters_proposal__should_admit_added_participants_once_threshold_old_participants_voted()
-     {
-        // Given
-        let ParticipantsUpdate {
-            state,
-            proposal,
-            retained,
-            added,
-            ..
-        } = gen_participants_update();
-        let threshold = state.parameters.threshold().value();
-        let mut env = Environment::new(None, None, None);
-        let mut votes = GovernanceThresholdParametersVotes::default();
-        for old in retained.iter().take(threshold as usize) {
-            env.set_signer(old);
-            state
-                .process_new_parameters_proposal(&proposal, &mut votes)
-                .unwrap();
-        }
-
-        for voter in &added {
-            env.set_signer(voter);
-
-            // When
-            let result = state.process_new_parameters_proposal(&proposal, &mut votes);
-
-            // Then
-            assert_matches!(result, Ok(_));
-        }
-    }
-
-    #[test]
-    fn process_new_parameters_proposal__should_return_true_only_once_every_proposed_participant_voted()
-     {
-        // Given
-        let ParticipantsUpdate {
-            state,
-            proposal,
-            retained,
-            added,
-            ..
-        } = gen_participants_update();
+        let voters: Vec<AccountId> = removed
+            .into_iter()
+            .take(num_removed_voters)
+            .chain(retained)
+            .take(usize::try_from(state.parameters.threshold().value()).unwrap())
+            .collect();
         let mut env = Environment::new(None, None, None);
         let mut votes = GovernanceThresholdParametersVotes::default();
 
         // When
-        let accepted: Vec<bool> = retained
+        let accepted: Vec<bool> = voters
             .iter()
-            .chain(&added)
             .map(|voter| {
                 env.set_signer(voter);
                 state
@@ -807,9 +687,8 @@ pub mod running_tests {
             .collect();
 
         // Then
-        let mut expected = vec![false; retained.len() + added.len()];
-        *expected.last_mut().unwrap() = true;
-        assert_eq!(accepted, expected);
+        assert_eq!(accepted, [false, false, true]);
+        assert!(votes.is_empty());
     }
 
     /// `reconstruction_threshold: None` means the GovernanceThreshold (the
@@ -921,7 +800,6 @@ pub mod running_tests {
             }),
         );
         let proposal = gen_valid_params_proposal(&state.parameters);
-        Environment::new(None, Some(overlapping_signer(&state, &proposal)), None);
 
         // When voting with an update raising t from the fixture default 2 to 3
         let domain_id = state.domains.domains()[0].id;
@@ -993,7 +871,6 @@ pub mod running_tests {
             "fixture must contain at least two CaitSith domains"
         );
         let proposal = gen_valid_params_proposal(&state.parameters);
-        Environment::new(None, Some(overlapping_signer(&state, &proposal)), None);
 
         // When an update raises only one CaitSith domain's threshold
         let caitsith_id = state

@@ -1,8 +1,10 @@
+#[cfg(test)]
+use crate::primitives::test_utils::bogus_ed25519_public_key;
 use crate::{
     dto_mapping::IntoInterfaceType,
     primitives::{
         key_state::AuthenticatedAccountId,
-        participants::Participants,
+        participants::{ParticipantId, ParticipantInfo, Participants},
         proposal_hash::ToProposalHash,
         time::Timestamp,
         votes::{VoterSet, Votes},
@@ -20,7 +22,7 @@ use mpc_attestation::{
     attestation::{self, AcceptedAttestation, DstackVerify, MockAttestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
 };
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
+use mpc_primitives::hash::{GenesisHash, LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::types::{
     self as dtos, AccountId, Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction,
     MeasurementVoteAction,
@@ -43,9 +45,9 @@ pub enum AttestationSubmissionError {
 pub enum TeeValidationResult {
     /// All participants are valid
     Full,
-    /// Only a subset of the participants have a valid attestation.
+    /// Some participants lack a valid attestation.
     Partial {
-        participants_with_valid_attestation: Participants,
+        participants_with_invalid_attestation: Vec<(AccountId, ParticipantId, ParticipantInfo)>,
     },
 }
 
@@ -57,7 +59,8 @@ pub struct TeeState {
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
     /// Invariant: each TLS key a participant uses (its current one and, during a node migration,
-    /// the destination one) maps to a node owned by that participant. Joining the participant set
+    /// the destination one) maps to a node owned by that participant, except that an initial
+    /// participant has no node until its first attestation. Joining the participant set
     /// and migrating require such a node, and [`crate::MpcContract::clean_invalid_attestations`]
     /// never removes it. This lets [`Self::assert_tls_key_claimable`] decide whether an account
     /// may store a node under a TLS key by looking only at this map, so code that changes how
@@ -94,15 +97,15 @@ impl Default for TeeState {
 }
 
 impl TeeState {
-    /// Creates a [`TeeState`] with an initial set of participants that will receive a valid mocked attestation.
+    /// Creates a [`TeeState`] in which every participant has a valid mock attestation, signed
+    /// with a random signer public key.
+    #[cfg(test)]
     pub(crate) fn with_mocked_participant_attestations(participants: &Participants) -> Self {
         let mut tee_state = Self::default();
 
         for (account_id, _, participant_info) in participants.participants() {
             let tls_public_key = participant_info.tls_public_key.clone();
-            // TODO(#1087): the participant set carries no signer key, so the TLS key stands
-            // in for it and the participant fails every signer-key check until its node attests
-            let signer_public_key = tls_public_key.clone();
+            let signer_public_key = bogus_ed25519_public_key();
             tee_state.nodes.insert(
                 tls_public_key.clone(),
                 Node {
@@ -209,13 +212,13 @@ impl TeeState {
     }
 
     /// Evicts expired entries from the allowed docker-image set, then reverifies stored
-    /// participant attestations, reporting whether all still pass or, if not, which subset
-    /// does (an attestation fails when e.g. its MPC image hash is no longer allowed, or a
-    /// certificate expired).
+    /// participant attestations, reporting whether all still pass or, if not, which
+    /// participants fail (an attestation fails when e.g. its MPC image hash is no longer
+    /// allowed, or a certificate expired).
     ///
     /// The attestations themselves are not pruned here; reclaiming them is
     /// [`crate::MpcContract::clean_invalid_attestations`]'s job.
-    pub fn reverify_and_cleanup_participants(
+    pub fn reverify_participants(
         &mut self,
         participants: &Participants,
         tee_upgrade_deadline_duration: Duration,
@@ -223,11 +226,12 @@ impl TeeState {
         self.allowed_docker_image_hashes
             .cleanup_expired_hashes(tee_upgrade_deadline_duration);
 
-        let participants_with_valid_attestation: Vec<_> = participants
+        let participants_with_invalid_attestation: Vec<_> = participants
             .participants()
             .iter()
             .filter(|(account_id, _, participant_info)| {
-                self.node_of(account_id, &participant_info.tls_public_key)
+                !self
+                    .node_of(account_id, &participant_info.tls_public_key)
                     .is_some_and(|node| {
                         self.has_valid_attestation(node, tee_upgrade_deadline_duration)
                     })
@@ -235,15 +239,12 @@ impl TeeState {
             .cloned()
             .collect();
 
-        if participants_with_valid_attestation.len() != participants.len() {
-            let participants_with_valid_attestation =
-                Participants::init(participants.next_id(), participants_with_valid_attestation);
-
-            TeeValidationResult::Partial {
-                participants_with_valid_attestation,
-            }
-        } else {
+        if participants_with_invalid_attestation.is_empty() {
             TeeValidationResult::Full
+        } else {
+            TeeValidationResult::Partial {
+                participants_with_invalid_attestation,
+            }
         }
     }
 
@@ -276,12 +277,13 @@ impl TeeState {
     pub fn whitelist_tee_proposal(
         &mut self,
         tee_proposal: NodeImageHash,
+        genesis_hash: Option<&GenesisHash>,
         tee_upgrade_deadline_duration: Duration,
     ) {
         self.votes.clear();
         // Add compose hashes for the new MPC image across all allowed launcher images
         self.allowed_launcher_images
-            .add_mpc_image_compose_hashes(&tee_proposal);
+            .add_mpc_image_compose_hashes(&tee_proposal, genesis_hash);
         self.allowed_docker_image_hashes
             .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
@@ -292,7 +294,8 @@ impl TeeState {
 
     /// Removes the launchers no participant in `current_participants` uses once their TTL has
     /// passed, after restamping the ones they do use. Pass the running participants: a launcher
-    /// used only by a participant missing here can be removed, which kicks that participant.
+    /// used only by a participant missing here can be removed, which invalidates that
+    /// participant's attestation.
     pub(crate) fn remove_unused_launchers(
         &mut self,
         current_participants: &Participants,
@@ -323,6 +326,7 @@ impl TeeState {
     pub fn add_launcher_image(
         &mut self,
         launcher_hash: LauncherImageHash,
+        genesis_hash: Option<&GenesisHash>,
         tee_upgrade_deadline_duration: Duration,
         ttl: Duration,
     ) -> AllowedLauncherImageInsertion {
@@ -330,8 +334,12 @@ impl TeeState {
         let mpc_image_hashes = self
             .allowed_docker_image_hashes
             .get_image_hashes(tee_upgrade_deadline_duration);
-        self.allowed_launcher_images
-            .add_or_refresh(launcher_hash, &mpc_image_hashes, ttl)
+        self.allowed_launcher_images.add_or_refresh(
+            launcher_hash,
+            &mpc_image_hashes,
+            genesis_hash,
+            ttl,
+        )
     }
 
     /// Removes a launcher image from the allowed set. Clears launcher votes.
@@ -418,7 +426,8 @@ impl TeeState {
     }
 
     /// Fails if another account's node is stored under the TLS key. Checking only the stored node
-    /// is enough because of the invariant on [`Self::nodes`].
+    /// is enough because of the invariant on [`Self::nodes`]; attestation submission covers its
+    /// exception for initial participants by also checking the participant set.
     pub(crate) fn assert_tls_key_claimable(
         &self,
         account_id: &AccountId,
@@ -514,7 +523,8 @@ mod tests {
     use crate::tee::{
         proposal::get_docker_compose_hash,
         test_utils::{
-            dstack_fixture_node, set_block_secs, set_block_timestamp, whitelist_dstack_measurements,
+            allow_launcher, dstack_fixture_node, set_block_secs, set_block_timestamp,
+            whitelist_dstack_measurements,
         },
     };
     use mpc_attestation::attestation::MockAttestation;
@@ -762,8 +772,7 @@ mod tests {
         let mut tee_state = TeeState::with_mocked_participant_attestations(&participants);
 
         // When
-        let validation_result =
-            tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
+        let validation_result = tee_state.reverify_participants(&participants, TEST_GRACE_PERIOD);
 
         // Then
         assert_matches!(validation_result, TeeValidationResult::Full);
@@ -781,7 +790,7 @@ mod tests {
     fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
         MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(get_docker_compose_hash(launcher, mpc_hash)),
+            launcher_docker_compose_hash: Some(get_docker_compose_hash(launcher, mpc_hash, None)),
             expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
             expected_measurements: None,
         }
@@ -797,12 +806,8 @@ mod tests {
         let mpc_hash = NodeImageHash::from([10u8; 32]);
         let adopted = LauncherImageHash::from([1u8; 32]);
         let unused = LauncherImageHash::from([2u8; 32]);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(adopted, &[mpc_hash], LAUNCHER_TTL);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(unused, &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, adopted, mpc_hash, LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, unused, mpc_hash, LAUNCHER_TTL);
         submit_mock(
             &mut tee_state,
             &create_node(&account_id, &participant_info.tls_public_key),
@@ -817,7 +822,7 @@ mod tests {
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![adopted]);
         assert_matches!(
-            tee_state.reverify_and_cleanup_participants(&participants, Duration::MAX),
+            tee_state.reverify_participants(&participants, Duration::MAX),
             TeeValidationResult::Full
         );
     }
@@ -837,9 +842,7 @@ mod tests {
         for ((account_id, _, participant_info), launcher) in
             participants.participants().iter().zip(&used)
         {
-            tee_state
-                .allowed_launcher_images
-                .add_or_refresh(*launcher, &[mpc_hash], LAUNCHER_TTL);
+            allow_launcher(&mut tee_state, *launcher, mpc_hash, LAUNCHER_TTL);
             submit_mock(
                 &mut tee_state,
                 &create_node(account_id, &participant_info.tls_public_key),
@@ -847,9 +850,7 @@ mod tests {
             )
             .unwrap();
         }
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(unused, &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, unused, mpc_hash, LAUNCHER_TTL);
 
         // When
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
@@ -868,14 +869,10 @@ mod tests {
         let old = LauncherImageHash::from([1u8; 32]);
         let newest = LauncherImageHash::from([2u8; 32]);
         set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(old, &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, old, mpc_hash, LAUNCHER_TTL);
         submit_mock(&mut tee_state, &node, launcher_mock(&old, &mpc_hash)).unwrap();
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, newest, mpc_hash, LAUNCHER_TTL);
         (tee_state, newest)
     }
 
@@ -913,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn reverify_and_cleanup_participants__should_not_remove_lapsed_launchers() {
+    fn reverify_participants__should_not_remove_lapsed_launchers() {
         // Given
         let mut tee_state = TeeState::default();
         let mpc_hash = NodeImageHash::from([10u8; 32]);
@@ -922,17 +919,13 @@ mod tests {
             LauncherImageHash::from([2u8; 32]),
         ];
         set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(launchers[0], &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, launchers[0], mpc_hash, LAUNCHER_TTL);
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(launchers[1], &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, launchers[1], mpc_hash, LAUNCHER_TTL);
 
         // When
         set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
-        let _ = tee_state.reverify_and_cleanup_participants(&gen_participants(1), Duration::MAX);
+        let _ = tee_state.reverify_participants(&gen_participants(1), Duration::MAX);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), launchers);
@@ -946,14 +939,13 @@ mod tests {
         let mut tee_state = TeeState::with_mocked_participant_attestations(&attested);
 
         // When
-        let validation_result =
-            tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
+        let validation_result = tee_state.reverify_participants(&participants, TEST_GRACE_PERIOD);
 
         // Then
         assert_matches!(
             validation_result,
-            TeeValidationResult::Partial { participants_with_valid_attestation }
-                if participants_with_valid_attestation == attested
+            TeeValidationResult::Partial { participants_with_invalid_attestation }
+                if participants_with_invalid_attestation == [participants.participants()[2].clone()]
         );
     }
 
@@ -972,19 +964,18 @@ mod tests {
         set_block_timestamp((expiry_time_secs + 1) * 1_000_000_000);
 
         // When
-        let validation_result =
-            tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
+        let validation_result = tee_state.reverify_participants(&participants, TEST_GRACE_PERIOD);
 
         // Then
         assert_matches!(
             validation_result,
-            TeeValidationResult::Partial { participants_with_valid_attestation }
-                if participants_with_valid_attestation == attested
+            TeeValidationResult::Partial { participants_with_invalid_attestation }
+                if participants_with_invalid_attestation == [participants.participants()[2].clone()]
         );
     }
 
     #[test]
-    fn reverify_and_cleanup_participants__should_reject_a_participant_whose_tls_key_is_attested_to_another_account()
+    fn reverify_participants__should_reject_a_participant_whose_tls_key_is_attested_to_another_account()
      {
         // Given
         let participants = gen_participants(3);
@@ -995,14 +986,13 @@ mod tests {
         submit_mock(&mut tee_state, &imposter, MockAttestation::Valid).unwrap();
 
         // When
-        let validation_result =
-            tee_state.reverify_and_cleanup_participants(&participants, TEST_GRACE_PERIOD);
+        let validation_result = tee_state.reverify_participants(&participants, TEST_GRACE_PERIOD);
 
         // Then
         assert_matches!(
             validation_result,
-            TeeValidationResult::Partial { participants_with_valid_attestation }
-                if participants_with_valid_attestation == attested
+            TeeValidationResult::Partial { participants_with_invalid_attestation }
+                if participants_with_invalid_attestation == [participants.participants()[2].clone()]
         );
     }
 
@@ -1266,13 +1256,9 @@ mod tests {
         let newest = LauncherImageHash::from([2u8; 32]);
         let mut tee_state = TeeState::default();
         set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(removed, &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, removed, mpc_hash, LAUNCHER_TTL);
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
-        tee_state
-            .allowed_launcher_images
-            .add_or_refresh(newest, &[mpc_hash], LAUNCHER_TTL);
+        allow_launcher(&mut tee_state, newest, mpc_hash, LAUNCHER_TTL);
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
         tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
 

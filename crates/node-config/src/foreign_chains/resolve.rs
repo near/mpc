@@ -147,15 +147,12 @@ pub(super) fn resolve_foreign_chains(
     let mut config = node_config.clone();
     let mut diagnostics = Vec::new();
     let node_config_rpc_urls: BTreeSet<&str> = node_config
-        .iter_chains()
+        .into_iter()
         .flat_map(|(_, chain)| chain.providers.values())
         .map(|provider| provider.rpc_url.as_str())
         .collect();
 
-    for (chain, embedded_chain) in embedded
-        .into_iter()
-        .flat_map(ForeignChainsConfig::iter_chains)
-    {
+    for (chain, embedded_chain) in embedded.into_iter().flatten() {
         let node_chain = find_chain(node_config, chain);
         let mut providers: BTreeMap<_, _> = node_chain
             .map(|c| c.providers.clone().into())
@@ -231,23 +228,21 @@ fn included<'a>(
     node_config: &'a ForeignChainsConfig,
     resolved: &'a ForeignChainsConfig,
 ) -> impl Iterator<Item = ResolutionDiagnostic> + 'a {
-    resolved
-        .iter_chains()
-        .flat_map(move |(chain, chain_config)| {
-            let node_chain = find_chain(node_config, chain);
-            chain_config.providers.keys().map(move |name| {
-                let source = if node_chain.is_some_and(|c| c.providers.contains_key(name)) {
-                    PairSource::NodeConfig
-                } else {
-                    PairSource::Embedded
-                };
-                ResolutionDiagnostic::Included {
-                    chain,
-                    provider: name.clone(),
-                    source,
-                }
-            })
+    resolved.into_iter().flat_map(move |(chain, chain_config)| {
+        let node_chain = find_chain(node_config, chain);
+        chain_config.providers.keys().map(move |name| {
+            let source = if node_chain.is_some_and(|c| c.providers.contains_key(name)) {
+                PairSource::NodeConfig
+            } else {
+                PairSource::Embedded
+            };
+            ResolutionDiagnostic::Included {
+                chain,
+                provider: name.clone(),
+                source,
+            }
         })
+    })
 }
 
 fn find_chain(

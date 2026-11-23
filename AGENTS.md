@@ -118,6 +118,9 @@ fn <system_under_test>__should_<test_assertion>() {
 
 See `docs/development/engineering-standards.md` for the full rationale and additional testing conventions.
 
+### Test Duplication
+Keep test code small without weakening coverage, assertions or readability. When tests run the same steps on different inputs or expected outcomes, write one `rstest` test with named cases (`#[case::scenario(...)]`, or `#[values(...)]` for cross-products) instead of near-identical copies. Reuse existing test helpers and fixtures before adding new ones, and extract setup or assertions that several tests repeat. Keep tests separate when their steps differ: a case argument that switches control flow inside the test body means the cases belong in separate tests.
+
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
