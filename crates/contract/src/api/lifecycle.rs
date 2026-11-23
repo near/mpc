@@ -167,15 +167,21 @@ impl MpcContract {
     /// is deployed. This function should be changed every time state is changed to do the proper
     /// migrate flow.
     ///
-    /// If nothing is changed, then this function will just return the current state, taking the
-    /// genesis hash from the config if it has none. If it fails to read the state, then it will
-    /// return an error.
+    /// If nothing is changed, then this function will just return the current state. If it fails
+    /// to read the state, then it will return an error.
+    ///
+    /// Takes the genesis hash from the config if the contract has none.
     #[private]
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
+        let mut state = Self::read_state_for_migration()?;
+        state.genesis_hash = state.genesis_hash.or(state.config.migration_genesis_hash);
+        Ok(state)
+    }
 
+    fn read_state_for_migration() -> Result<Self, Error> {
         match try_state_read::<v3_19_0_state::MpcContract>() {
             Ok(Some(state)) => return Ok(state.into()),
             Ok(None) => return Err(InvalidState::ContractStateIsMissing.into()),
@@ -185,10 +191,7 @@ impl MpcContract {
         };
 
         match try_state_read::<Self>() {
-            Ok(Some(mut state)) => {
-                state.genesis_hash = state.genesis_hash.or(state.config.migration_genesis_hash);
-                Ok(state)
-            }
+            Ok(Some(state)) => Ok(state),
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }

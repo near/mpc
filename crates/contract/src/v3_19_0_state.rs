@@ -12,8 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
-    self as dtos, BlockCount, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest,
-    YieldIndex,
+    self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
     AccountId, env,
@@ -140,7 +139,7 @@ impl From<MpcContract> for crate::MpcContract {
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(test, derive(Default))]
 struct OldConfig {
-    key_event_timeout_blocks: BlockCount,
+    key_event_timeout_blocks: dtos::BlockCount,
     tee_upgrade_deadline_duration_seconds: u64,
     apply_contract_update_tera_gas: u64,
     sign_call_gas_attachment_requirement_tera_gas: u64,
@@ -213,6 +212,7 @@ mod tests {
     use crate::storage_keys::StorageKey;
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rstest::rstest;
+    use test_utils::contract_types::dummy_config;
 
     fn old_contract(protocol_state: OldProtocolContractState) -> MpcContract {
         MpcContract {
@@ -266,6 +266,21 @@ mod tests {
             migrated.protocol_state,
             ProtocolContractState::Running(running)
         );
+    }
+
+    #[test]
+    fn config_from__should_keep_every_3_19_0_value() {
+        // Given
+        let config = Config::from(dummy_config(1));
+        let bytes = borsh::to_vec(&config).unwrap();
+        let (_migration_genesis_hash, old_layout) = bytes.split_last().unwrap();
+        let old_config = OldConfig::try_from_slice(old_layout).unwrap();
+
+        // When
+        let migrated = Config::from(old_config);
+
+        // Then
+        assert_eq!(migrated, config);
     }
 
     #[rstest]
