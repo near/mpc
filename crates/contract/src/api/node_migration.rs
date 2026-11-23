@@ -274,7 +274,7 @@ impl MpcContract {
     }
 }
 
-fn assert_migration_destination_allowed(
+pub(crate) fn assert_migration_destination_allowed(
     participants: &Participants,
     tee_state: &TeeState,
     account_id: &AccountId,

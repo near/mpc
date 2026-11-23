@@ -652,9 +652,11 @@ mod tests {
         );
     }
 
-    fn dstack_verification_setup() -> (MpcContract, VerificationContext) {
+    fn dstack_verification_setup(
+        whitelisted: AttestedService,
+    ) -> (MpcContract, VerificationContext) {
         let mut contract = MpcContract::new_from_protocol_state(running_state());
-        let context = prepare_dstack_verification(&mut contract, AttestedService::MpcNode);
+        let context = prepare_dstack_verification(&mut contract, whitelisted);
         (contract, context)
     }
 
@@ -722,7 +724,7 @@ mod tests {
     #[test]
     fn resolve_verification__should_consume_one_grant_when_the_entry_is_new() {
         // Given: the setup prepays one grant for alice.near.
-        let (mut contract, context) = dstack_verification_setup();
+        let (mut contract, context) = dstack_verification_setup(AttestedService::MpcNode);
         let account_id = context.node.account_id.clone();
         assert_eq!(contract.available_attestation_grants(account_id.clone()), 1);
 
@@ -745,7 +747,7 @@ mod tests {
     #[test]
     fn resolve_verification__should_store_nothing_when_the_grant_was_spent_before_the_callback() {
         // Given: the grant reserved at submit time is gone by the time the callback runs.
-        let (mut contract, context) = dstack_verification_setup();
+        let (mut contract, context) = dstack_verification_setup(AttestedService::MpcNode);
         let account_id = context.node.account_id.clone();
         contract.available_attestation_grants.remove(&account_id);
 
@@ -761,7 +763,7 @@ mod tests {
     #[test]
     fn resolve_verification__should_store_on_verified_verdict() {
         // Given
-        let (mut contract, context) = dstack_verification_setup();
+        let (mut contract, context) = dstack_verification_setup(AttestedService::MpcNode);
         let node = context.node.clone();
 
         // When
@@ -773,14 +775,21 @@ mod tests {
         assert_eq!(contract.get_tee_accounts(), vec![node]);
     }
 
-    #[test]
-    fn resolve_verification__should_return_fail_promise_and_store_nothing_on_verifier_unavailable()
-    {
+    #[rstest]
+    #[case::verifier_unavailable(AttestedService::MpcNode, Err(PromiseError::Failed))]
+    #[case::only_backup_service_allowlists_match(
+        AttestedService::BackupService,
+        Ok(verified_verdict())
+    )]
+    fn resolve_verification__should_return_fail_promise_and_store_nothing(
+        #[case] whitelisted: AttestedService,
+        #[case] verdict: Result<VerificationResultWithCollateralDates, PromiseError>,
+    ) {
         // Given
-        let (mut contract, context) = dstack_verification_setup();
+        let (mut contract, context) = dstack_verification_setup(whitelisted);
 
         // When
-        let result = contract.resolve_verification(context, Err(PromiseError::Failed));
+        let result = contract.resolve_verification(context, verdict);
 
         // Then
         // assert_matches! requires Debug, which PromiseOrValue doesn't implement

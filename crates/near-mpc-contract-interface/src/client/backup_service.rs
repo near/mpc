@@ -9,15 +9,16 @@ use crate::{
     method_names::{
         ALLOWED_BACKUP_SERVICE_CODE_HASHES, ALLOWED_BACKUP_SERVICE_LAUNCHER_COMPOSE_HASHES,
         ALLOWED_BACKUP_SERVICE_LAUNCHER_IMAGE_HASHES, ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS,
-        ATTESTED_BACKUP_SERVICE, CLEAN_BACKUP_SERVICE_TEE_STATUS, GET_BACKUP_SERVICE_ATTESTATION,
-        REGISTER_BACKUP_SERVICE, REVERIFY_BACKUP_SERVICES, VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH,
-        VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT, VOTE_BACKUP_SERVICE_CODE_HASH,
-        VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH, VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT,
+        ATTESTED_BACKUP_SERVICE, ATTESTED_MIGRATION_DESTINATION, CLEAN_BACKUP_SERVICE_TEE_STATUS,
+        GET_BACKUP_SERVICE_ATTESTATION, REGISTER_BACKUP_SERVICE, REVERIFY_BACKUP_SERVICES,
+        VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH, VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT,
+        VOTE_BACKUP_SERVICE_CODE_HASH, VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH,
+        VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT,
     },
     types::{
-        AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, Ed25519PublicKey,
-        ExpectedMeasurements, LauncherDockerComposeHash, LauncherImageHash, NodeImageHash,
-        StoredAttestation,
+        AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, DestinationNodeInfo,
+        Ed25519PublicKey, ExpectedMeasurements, LauncherDockerComposeHash, LauncherImageHash,
+        NodeImageHash, StoredAttestation,
     },
 };
 
@@ -172,5 +173,17 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
         let args = serde_json::to_vec(&GetAttestationArgs::new(tls_public_key))
             .expect("plain-data args; JSON serialization cannot fail");
         self.view(ViewArgs::new(GET_BACKUP_SERVICE_ATTESTATION, args))
+    }
+
+    /// The account's ongoing migration while its backup service may send keyshares to the
+    /// destination node, which then holds a valid Dstack attestation; `None` otherwise. Its JSON
+    /// format stays stable across contract versions.
+    pub fn attested_migration_destination(
+        &self,
+        account_id: AccountId,
+    ) -> ViewCall<C, Option<DestinationNodeInfo>> {
+        let args = serde_json::to_vec(&AccountIdArgs::new(account_id))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(ATTESTED_MIGRATION_DESTINATION, args))
     }
 }

@@ -187,6 +187,36 @@ expression: abi
         }
       },
       {
+        "name": "attested_migration_destination",
+        "doc": " Returns the account's ongoing migration while its backup service may send keyshares to the\n destination node: the account is a participant of the running state, and the destination\n passes the checks of [`MpcContract::start_node_migration`] with a Dstack attestation.\n Deployed contracts never return a destination with a mock attestation, which MPC nodes may\n still submit.\n\n The backup service depends on this view's JSON output staying stable across contract\n versions.",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/DestinationNodeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "available_attestation_grants",
         "kind": "view",
         "params": {
@@ -4406,7 +4436,7 @@ expression: abi
               "minimum": 0.0
             },
             "resolve_verification_tera_gas": {
-              "description": "Prepaid gas for the `resolve_verification` callback.",
+              "description": "Prepaid gas for each of the `resolve_verification` and `resolve_backup_service_verification` callbacks.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
@@ -5107,7 +5137,7 @@ expression: abi
               "minimum": 0.0
             },
             "resolve_verification_tera_gas": {
-              "description": "Prepaid gas for the `resolve_verification` callback.",
+              "description": "Prepaid gas for each of the `resolve_verification` and `resolve_backup_service_verification` callbacks.",
               "type": [
                 "integer",
                 "null"

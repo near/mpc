@@ -56,9 +56,9 @@ use rstest::rstest;
 use std::time::Duration;
 use tee_verifier_interface::VerificationResult;
 use test_utils::attestation::{
-    VALID_ATTESTATION_TIMESTAMP, account_secret_key, collateral, collateral_dates, image_digest,
-    launcher_compose_digest, launcher_image_hash, measurements, mock_dto_dstack_attestation,
-    p2p_tls_key, quote,
+    VALID_ATTESTATION_TIMESTAMP, account_key, account_secret_key, collateral, collateral_dates,
+    image_digest, launcher_compose_digest, launcher_image_hash, measurements,
+    mock_dto_dstack_attestation, p2p_tls_key, quote,
 };
 use tokio_util::time::FutureExt as _;
 
@@ -691,6 +691,36 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
             .expect("the contract should accept requests once every participant has attested");
 }
 
+struct OperatorWithFixtureKey {
+    setup: SandboxTestSetup,
+    operator: Account,
+    /// The operator signing with the fixture's account key, which the fixture quote binds.
+    fixture_key_signer: Account,
+}
+
+/// Trusts the pinned-clock verifier, whitelists the fixture's hashes for `service`, and gives the
+/// first participant one grant and the fixture's account key as a function-call key.
+async fn operator_with_fixture_key(service: AttestedService) -> OperatorWithFixtureKey {
+    let setup = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_pinned_clock()
+        .build()
+        .await;
+    deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
+    whitelist_fixture_dstack_hashes(&setup, service, Some(launcher_compose_digest())).await;
+    let operator = setup.mpc_signer_accounts[0].clone();
+    let fixture_key_signer =
+        add_function_call_key(&operator, &setup.contract, fixture_account_secret_key())
+            .await
+            .unwrap();
+    prepay_grant_from_separate_payer(&setup, &operator).await;
+    OperatorWithFixtureKey {
+        setup,
+        operator,
+        fixture_key_signer,
+    }
+}
+
 #[rstest]
 #[case::signed_with_the_attested_key(true, mock_dto_dstack_attestation(), true)]
 #[case::signed_with_another_key(false, mock_dto_dstack_attestation(), false)]
@@ -702,29 +732,16 @@ async fn register_backup_service__should_index_only_a_dstack_attestation_signed_
     #[case] registered: bool,
 ) {
     // Given
-    let setup = SandboxTestSetup::builder()
-        .with_protocols(ALL_PROTOCOLS)
-        .with_pinned_clock()
-        .build()
-        .await;
-    deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
-    whitelist_fixture_dstack_hashes(
-        &setup,
-        AttestedService::BackupService,
-        Some(launcher_compose_digest()),
-    )
-    .await;
-    let operator = &setup.mpc_signer_accounts[0];
-    let attested_signer =
-        add_function_call_key(operator, &setup.contract, fixture_account_secret_key())
-            .await
-            .unwrap();
+    let OperatorWithFixtureKey {
+        setup,
+        operator,
+        fixture_key_signer,
+    } = operator_with_fixture_key(AttestedService::BackupService).await;
     let submitter = if signs_with_the_attested_key {
-        attested_signer
+        fixture_key_signer
     } else {
         operator.clone()
     };
-    prepay_grant_from_separate_payer(&setup, operator).await;
     let backup_service_info = dtos::BackupServiceInfo {
         public_key: p2p_tls_key().into(),
     };
@@ -755,6 +772,60 @@ async fn register_backup_service__should_index_only_a_dstack_attestation_signed_
             registered.then_some(backup_service_info),
             u32::from(!registered)
         )
+    );
+}
+
+#[rstest]
+#[case::dstack(mock_dto_dstack_attestation(), true)]
+#[case::mock(dtos::Attestation::Mock(dtos::MockAttestation::Valid), false)]
+#[tokio::test]
+async fn attested_migration_destination__should_return_only_a_dstack_attested_destination(
+    #[case] attestation: dtos::Attestation,
+    #[case] returned: bool,
+) {
+    // Given
+    let OperatorWithFixtureKey {
+        setup,
+        operator,
+        fixture_key_signer,
+    } = operator_with_fixture_key(AttestedService::MpcNode).await;
+    let destination = dtos::DestinationNodeInfo {
+        signer_account_pk: account_key().into(),
+        destination_node_info: dtos::ParticipantInfo {
+            url: gen_participant_info().url,
+            tls_public_key: p2p_tls_key().into(),
+        },
+    };
+    let submission = submit_participant_info(
+        &fixture_key_signer,
+        &setup.contract,
+        &attestation,
+        &p2p_tls_key().into(),
+    )
+    .await
+    .unwrap();
+    let migration_start = operator
+        .call_mpc(setup.contract.id())
+        .start_node_migration(destination.clone())
+        .await
+        .unwrap();
+
+    // When
+    let attested_destination = setup
+        .contract
+        .attested_migration_destination(operator.id().clone())
+        .await
+        .unwrap()
+        .value;
+
+    // Then
+    assert_eq!(
+        (
+            submission.failures().is_empty(),
+            migration_start.is_success(),
+            attested_destination
+        ),
+        (true, true, returned.then_some(destination))
     );
 }
 

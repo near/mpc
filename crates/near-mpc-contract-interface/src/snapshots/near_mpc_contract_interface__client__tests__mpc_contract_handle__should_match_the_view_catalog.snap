@@ -95,6 +95,10 @@ method:   get_backup_service_attestation
 args:     {"tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}
 
 contract: mpc.near
+method:   attested_migration_destination
+args:     {"account_id":"alice.near"}
+
+contract: mpc.near
 method:   get_available_foreign_chains
 args:     {}
 

@@ -1,0 +1,11 @@
+---
+source: crates/contract/src/api/backup_service.rs
+expression: destination
+---
+{
+  "signer_account_pk": "ed25519:HPKo187fDatZwk5gXvj2iWiTb1b9dAJG3GaHq6uexZ2J",
+  "destination_node_info": {
+    "url": "https://www.near0.com",
+    "tls_public_key": "ed25519:9izgpf8BcUCRT7Zi3oQafnJVYpfjifbE94e3NVJ8a8X8"
+  }
+}

@@ -1245,6 +1245,9 @@ mod tests {
         let _ = handle
             .get_backup_service_attestation(&Ed25519PublicKey::from([7u8; 32]))
             .await;
+        let _ = handle
+            .attested_migration_destination("alice.near".parse().unwrap())
+            .await;
         let _ = handle.get_available_foreign_chains().await;
         let _ = handle.get_foreign_chains_configs().await;
         let _ = handle.allowed_foreign_chain_providers().await;

@@ -111,3 +111,4 @@ pub const ALLOWED_BACKUP_SERVICE_LAUNCHER_IMAGE_HASHES: &str =
 pub const ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS: &str = "allowed_backup_service_os_measurements";
 pub const ATTESTED_BACKUP_SERVICE: &str = "attested_backup_service";
 pub const GET_BACKUP_SERVICE_ATTESTATION: &str = "get_backup_service_attestation";
+pub const ATTESTED_MIGRATION_DESTINATION: &str = "attested_migration_destination";

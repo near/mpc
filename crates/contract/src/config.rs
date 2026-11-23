@@ -39,7 +39,8 @@ pub(crate) const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 8;
 const DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS: u64 = 5;
 /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the TEE verifier.
 const DEFAULT_VERIFIER_TERA_GAS: u64 = 200;
-/// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
+/// Prepaid gas for each of the [`crate::MpcContract::resolve_verification`] and
+/// [`crate::MpcContract::resolve_backup_service_verification`] callbacks. Carries the bulk of the
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
 /// Default TTL after which an unused launcher image hash is evicted.
@@ -86,7 +87,8 @@ pub(crate) struct Config {
     pub(crate) remove_non_participant_tee_verifier_votes_tera_gas: u64,
     /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub(crate) verifier_tera_gas: u64,
-    /// Prepaid gas for the `resolve_verification` callback.
+    /// Prepaid gas for each of the [`crate::MpcContract::resolve_verification`] and
+    /// [`crate::MpcContract::resolve_backup_service_verification`] callbacks.
     pub(crate) resolve_verification_tera_gas: u64,
     /// TTL for unused launcher hashes; see
     /// [`near_mpc_contract_interface::types::Config::launcher_hash_unused_ttl_seconds`].
