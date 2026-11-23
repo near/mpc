@@ -134,20 +134,17 @@ pub trait NetworkFingerprintInspector {
     fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint;
 }
 
-/// Combines multiple inspectors that target the same chain into a single inspector.
+/// Combines the inspectors of one chain into one, and queries them concurrently.
 ///
-/// All inner inspectors are queried concurrently, and [`FanOut::extract_with_quorum`] judges the
-/// answers that arrive before its deadline. Every [`Verdict`] reached must be identical; any
-/// disagreement returns [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors and
-/// providers that do not answer in time are tolerated as long as the [`RpcQuorum`] is met, so a
-/// single unavailable or hanging RPC does not take the whole node out of signing. On the other
-/// hand, a provider that answers a different verdict or different values before the deadline
-/// will cause a mismatch and fail the whole extraction. When no inspector reached a verdict, the
-/// first error is propagated, or [`ForeignChainInspectionError::SubQuorum`] when none answered.
+/// [`FanOut::extract_with_quorum`] judges the answers that arrive before its deadline. Errors and
+/// late providers are tolerated while the [`RpcQuorum`] is met, so one unavailable or hanging RPC
+/// does not take the node out of signing. Any [`Verdict`] that differs, values included, fails
+/// the extraction with [`ForeignChainInspectionError::InspectorResponseMismatch`]. Without a
+/// verdict, the first error is returned, or [`ForeignChainInspectionError::SubQuorum`] when no
+/// provider answered.
 ///
-/// With a recorder set through [`FanOut::measuring`], every provider call is observed once the
-/// provider returns, or by dropping its timer if the deadline passes or the future is dropped
-/// first.
+/// With a recorder set through [`FanOut::measuring`], each provider call is observed when it
+/// returns, or when its timer drops at the deadline or with the future.
 #[derive(Clone)]
 pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
@@ -219,10 +216,9 @@ where
     Inspector::ExtractedValue: Send + 'static + Clone + PartialEq + Eq + Hash + std::fmt::Debug,
     Recorder: TimeProviderCall + Clone + 'static,
 {
-    /// Waits until every provider returned or `timeout` passed, whichever comes first, then
-    /// abandons the providers still pending and judges the answers that arrived. It does not stop
-    /// at the quorum, so a disagreeing answer that arrives before the deadline still vetoes the
-    /// verdict.
+    /// Waits for every provider until `timeout`, not only until the quorum agrees, so a
+    /// disagreeing answer before the deadline still vetoes. Providers still pending at the
+    /// deadline are dropped and cannot veto.
     pub async fn extract_with_quorum(
         &self,
         quorum: &RpcQuorum,
@@ -294,13 +290,14 @@ where
             }
         };
         if tokio::time::timeout(timeout, all_returned).await.is_err() {
-            tracing::warn!(
-                pending = ?pending.values().collect::<Vec<_>>(),
-                ?timeout,
-                "fan-out: providers did not answer before the deadline and were abandoned",
-            );
+            for provider in pending.values() {
+                tracing::warn!(
+                    %provider,
+                    ?timeout,
+                    "fan-out inspector did not answer before the deadline, its check is dropped",
+                );
+            }
         }
-        // Aborting drops each pending call's timer, which records the call as abandoned.
         join_set.abort_all();
 
         let Some(verdict) = verdicts.first().map(|(_, verdict)| verdict.clone()) else {
