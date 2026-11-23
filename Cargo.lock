@@ -6141,7 +6141,6 @@ dependencies = [
  "launcher-interface",
  "lru 0.19.0",
  "mappings",
- "mockall",
  "mpc-attestation",
  "mpc-contract",
  "mpc-node-config",
@@ -11211,12 +11210,21 @@ name = "tee-context"
 version = "3.19.0"
 dependencies = [
  "backon",
+ "derive_more 2.1.1",
+ "durable-fs",
+ "itertools 0.15.0",
+ "launcher-interface",
+ "mockall",
  "mpc-primitives",
  "near-contract-transport",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "prometheus",
  "rstest",
+ "serde_json",
+ "thiserror 2.0.21",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 

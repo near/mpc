@@ -37,15 +37,13 @@ use std::{
     time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
+use tee_context::{AllowedImageHashesFile, monitor_allowed_image_hashes};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
-use crate::tee::{
-    AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
-};
+use crate::tee::remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission};
 
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
 

@@ -6,14 +6,23 @@ license = { workspace = true }
 
 [dependencies]
 backon = { workspace = true }
+derive_more = { workspace = true }
+durable-fs = { workspace = true }
+itertools = { workspace = true }
+launcher-interface = { workspace = true }
 mpc-primitives = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
 prometheus = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+mockall = { workspace = true }
 rstest = { workspace = true }
 
 [lints]
