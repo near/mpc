@@ -310,7 +310,6 @@ async fn test_repropose_resharing() -> anyhow::Result<()> {
         prospective_epoch_id.0,
         &proposal,
         &persistent_participants,
-        &[],
     )
     .await
     .unwrap();
@@ -388,7 +387,6 @@ async fn setup_resharing_state(
         prospective_epoch_id.0,
         &proposal,
         &mpc_signer_accounts,
-        &new_accounts,
     )
     .await
     .unwrap();
@@ -615,7 +613,6 @@ async fn test_cancelled_epoch_cannot_be_reused(
         _worker,
         contract,
         persistent_participants,
-        new_participant_accounts,
         threshold_parameters,
         initial_running_state,
         ..
@@ -667,7 +664,6 @@ async fn test_cancelled_epoch_cannot_be_reused(
         prospective_epoch_id.0,
         &threshold_parameters,
         &persistent_participants,
-        &new_participant_accounts,
     )
     .await
     .unwrap();
@@ -736,7 +732,6 @@ async fn test_successful_resharing_after_cancellation_clears_cancelled_epoch_id(
         prospective_epoch_id.0,
         &threshold_parameters,
         &persistent_participants,
-        &new_participant_accounts,
     )
     .await
     .unwrap();

@@ -346,7 +346,7 @@ mod tests {
 
         // Then
         let published = published_inspection_series();
-        for (chain, _) in config.iter_chains() {
+        for (chain, _) in config.into_iter() {
             for index in 0..2 {
                 let series = (chain.label().to_string(), format!("p{index}"));
                 assert!(published.contains(&series), "{series:?} was not published");

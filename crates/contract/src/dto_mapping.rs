@@ -27,13 +27,7 @@ use crate::{
         thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
         votes::Votes,
     },
-    state::{
-        ProtocolContractState,
-        initializing::InitializingContractState,
-        key_event::{KeyEvent, KeyEventInstance},
-        resharing::ResharingContractState,
-        running::RunningContractState,
-    },
+    state::key_event::{KeyEvent, KeyEventInstance},
     tee::tee_state::Node,
 };
 
@@ -624,8 +618,9 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
 mod test_conversions {
     use super::{
         GovernanceThresholdParameters, IntoContractType, IntoInterfaceType, Keyset,
-        ParticipantInfo, ProposedGovernanceThresholdParameters, ProtocolContractState, dtos,
+        ParticipantInfo, ProposedGovernanceThresholdParameters, dtos,
     };
+    use crate::state::ProtocolContractState;
 
     impl From<ProtocolContractState> for dtos::ProtocolContractState {
         fn from(state: ProtocolContractState) -> Self {
@@ -816,13 +811,14 @@ impl IntoInterfaceType<dtos::ProposedGovernanceThresholdParameters>
 
 impl IntoInterfaceType<dtos::AddDomainsVotes> for &AddDomainsVotes {
     fn into_dto_type(self) -> dtos::AddDomainsVotes {
-        dtos::AddDomainsVotes {
-            proposal_by_account: self
-                .proposal_by_account
-                .iter()
-                .map(|(participant, domains)| (participant.into_dto_type(), domains.clone()))
+        dtos::AddDomainsVotes(
+            self.all()
+                .into_iter()
+                .map(|(proposal, voters)| {
+                    (proposal, voters.iter().map(|v| v.into_dto_type()).collect())
+                })
                 .collect(),
-        }
+        )
     }
 }
 
@@ -957,77 +953,6 @@ impl IntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
             parameters: self.proposed_parameters().into_dto_type(),
             instance: self.instance().as_ref().map(|i| i.into_dto_type()),
             next_attempt_id: self.next_attempt_id(),
-        }
-    }
-}
-
-// --- Contract state types ---
-
-impl IntoInterfaceType<dtos::InitializingContractState> for &InitializingContractState {
-    fn into_dto_type(self) -> dtos::InitializingContractState {
-        dtos::InitializingContractState {
-            domains: (&self.domains).into_dto_type(),
-            epoch_id: self.epoch_id,
-            generated_keys: self
-                .generated_keys
-                .iter()
-                .map(|k| k.into_dto_type())
-                .collect(),
-            generating_key: (&self.generating_key).into_dto_type(),
-            cancel_votes: self
-                .cancel_votes
-                .iter()
-                .map(|p| p.into_dto_type())
-                .collect(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::RunningContractState> for &RunningContractState {
-    fn into_dto_type(self) -> dtos::RunningContractState {
-        dtos::RunningContractState {
-            domains: (&self.domains).into_dto_type(),
-            keyset: (&self.keyset).into_dto_type(),
-            parameters: (&self.parameters).into_dto_type(),
-            add_domains_votes: (&self.add_domains_votes).into_dto_type(),
-            previously_cancelled_resharing_epoch_id: self.previously_cancelled_resharing_epoch_id,
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::ResharingContractState> for &ResharingContractState {
-    fn into_dto_type(self) -> dtos::ResharingContractState {
-        dtos::ResharingContractState {
-            previous_running_state: (&self.previous_running_state).into_dto_type(),
-            reshared_keys: self
-                .reshared_keys
-                .iter()
-                .map(|k| k.into_dto_type())
-                .collect(),
-            resharing_key: (&self.resharing_key).into_dto_type(),
-            cancellation_requests: self
-                .cancellation_requests
-                .iter()
-                .map(|a| a.into_dto_type())
-                .collect(),
-            per_domain_thresholds: self.per_domain_thresholds.clone(),
-        }
-    }
-}
-
-impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
-    fn into_dto_type(self) -> dtos::ProtocolContractState {
-        match self {
-            ProtocolContractState::NotInitialized => dtos::ProtocolContractState::NotInitialized,
-            ProtocolContractState::Initializing(state) => {
-                dtos::ProtocolContractState::Initializing(state.into_dto_type())
-            }
-            ProtocolContractState::Running(state) => {
-                dtos::ProtocolContractState::Running(state.into_dto_type())
-            }
-            ProtocolContractState::Resharing(state) => {
-                dtos::ProtocolContractState::Resharing(state.into_dto_type())
-            }
         }
     }
 }

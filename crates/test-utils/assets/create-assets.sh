@@ -49,6 +49,9 @@ jq -j '.tee_participant_info.Dstack.tcb_info.app_compose | fromjson | .docker_co
 # Extract expected digest
 printf "%s" "$(grep 'DEFAULT_IMAGE_DIGEST' "$OUTPUT_DIR/launcher_image_compose.yaml" | grep -o '[a-f0-9]\{64\}')" > "$OUTPUT_DIR/mpc_image_digest.txt"
 
+# The crate embeds collateral.json at compile time; `collateral_fixture` fills it in later.
+[ -f "$OUTPUT_DIR/collateral.json" ] || : > "$OUTPUT_DIR/collateral.json"
+
 echo "Extraction complete. Files written to '$OUTPUT_DIR':"
 ls -la "$OUTPUT_DIR"
 

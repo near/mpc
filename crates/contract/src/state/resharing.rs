@@ -52,10 +52,9 @@ impl ResharingContractState {
         self.resharing_key.epoch_id()
     }
 
-    /// Casts a vote for a re-proposal. Requires the signer to be a participant of the prospective epoch.
-    /// Returns a new [`ResharingContractState`] if all participants of the re-proposal voted for the re-proposal.
-    /// Note that transitioning to a new state implicitly requires `threshold` number of votes from participants of the
-    /// previous running state.
+    /// Casts a vote for a re-proposal. Requires the signer to be a participant of the previous running state.
+    /// Returns a new [`ResharingContractState`] once the previous running state's governance threshold of its
+    /// participants voted for the re-proposal.
     pub fn vote_new_parameters(
         &self,
         prospective_epoch_id: EpochId,
@@ -79,7 +78,6 @@ impl ResharingContractState {
                     self.previous_running_state.domains.clone(),
                     self.previous_running_state.keyset.clone(),
                     self.previous_running_state.parameters.clone(),
-                    self.previous_running_state.add_domains_votes.clone(),
                 ),
                 reshared_keys: Vec::new(),
                 resharing_key: KeyEvent::new(
@@ -160,7 +158,6 @@ impl ResharingContractState {
                     new_domains,
                     Keyset::new(self.prospective_epoch_id(), self.reshared_keys.clone()),
                     self.resharing_key.proposed_parameters().clone(),
-                    self.previous_running_state.add_domains_votes.clone(),
                 )));
             }
         }
@@ -217,7 +214,6 @@ pub mod tests {
     };
     use crate::{
         primitives::{
-            domain::AddDomainsVotes,
             key_state::{AttemptId, KeyEventId},
             test_utils::gen_account_id,
             threshold_votes::GovernanceThresholdParametersVotes,
@@ -228,6 +224,7 @@ pub mod tests {
         },
         state::test_utils::{
             RunningStateParams, gen_resharing_state, gen_running_state_with_params,
+            threshold_voters,
         },
     };
     use near_account_id::AccountId;
@@ -371,7 +368,6 @@ pub mod tests {
         assert_eq!(running_state.keyset.domains, state.reshared_keys);
         assert_eq!(running_state.keyset.domains.len(), num_domains);
         assert_eq!(running_state.domains, state.previous_running_state.domains);
-        assert_eq!(running_state.add_domains_votes, AddDomainsVotes::default());
     }
 
     #[rstest]
@@ -479,8 +475,8 @@ pub mod tests {
 
         // Repropose with new_params_1.
         let mut new_state = None;
-        for (account, _, _) in new_params_1.participants().participants() {
-            env.set_signer(account);
+        for account in threshold_voters(&state.previous_running_state.parameters) {
+            env.set_signer(&account);
             assert!(new_state.is_none());
             new_state = state
                 .vote_new_parameters(state.prospective_epoch_id().next(), &proposed_1, &mut votes)
@@ -553,8 +549,8 @@ pub mod tests {
         // threshold-update validation in `process_new_parameters_proposal`).
         let prospective_epoch_id = running.prospective_epoch_id();
         let mut state = None;
-        for (account, _, _) in proposal.participants().participants() {
-            env.set_signer(account);
+        for account in threshold_voters(&current_params) {
+            env.set_signer(&account);
             state = running
                 .vote_new_parameters(prospective_epoch_id, &proposal, &mut votes)
                 .unwrap();
@@ -623,8 +619,8 @@ pub mod tests {
         // Drive the proposal to acceptance via the real vote path.
         let prospective_epoch_id = running.prospective_epoch_id();
         let mut state = None;
-        for (account, _, _) in proposal.participants().participants() {
-            env.set_signer(account);
+        for account in threshold_voters(&current_params) {
+            env.set_signer(&account);
             state = running
                 .vote_new_parameters(prospective_epoch_id, &proposal, &mut votes)
                 .unwrap();

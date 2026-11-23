@@ -1,13 +1,18 @@
+#![expect(non_snake_case)]
+
 use std::time::Duration;
 
 use super::common::localnet::Localnet;
 use crate::common::{accounts::TestAccount, localnet::LocalnetBuilder};
 use chain_gateway::{
+    BlockEventStream,
     event_subscriber::{
+        IndexerStats,
         block_events::{
             BlockEventId, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
             ReceiverFunctionCallData,
         },
+        metrics::{MPC_INDEXER_LATEST_BLOCK_HEIGHT, MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS},
         subscriber::{BlockEventSubscription, BlockEventSubscriptions},
     },
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
@@ -35,6 +40,7 @@ struct ExecutorFunctionCallTest {
     contract_id: near_account_id::AccountId,
     localnet: Localnet,
     receiver: tokio::sync::mpsc::Receiver<BlockUpdate>,
+    progress: tokio::sync::watch::Receiver<IndexerStats>,
     set_value_in_promise_event_id: BlockEventId,
 }
 
@@ -55,12 +61,16 @@ async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
         .build()
         .await;
     let test_account = localnet.take_test_account();
-    let receiver = localnet.take_block_update_receiver();
+    let BlockEventStream {
+        updates: receiver,
+        progress,
+    } = localnet.take_block_event_stream();
     ExecutorFunctionCallTest {
         test_account,
         contract_id,
         localnet,
         receiver,
+        progress,
         set_value_in_promise_event_id,
     }
 }
@@ -69,13 +79,14 @@ async fn setup_executor_function_call_filter() -> ExecutorFunctionCallTest {
 /// [`BlockEventSubscriptions`] filtering for executor function calls.
 /// Ensures happy path: successful calls are tracked.
 #[tokio::test]
-async fn test_event_subscriber_executor_function_call_success_success_calls_are_tracked() {
+async fn block_event_stream__should_emit_an_update_when_the_call_succeeds_with_a_promise() {
     // Given: A subscription for tracking executions on contract_id.[`SET_VALUE_IN_PROMISE`]
     let ExecutorFunctionCallTest {
         test_account,
         contract_id,
         localnet,
         mut receiver,
+        progress: _,
         set_value_in_promise_event_id,
     } = setup_executor_function_call_filter().await;
     let observer_gw = &localnet.observer.chain_gateway;
@@ -120,13 +131,14 @@ async fn test_event_subscriber_executor_function_call_success_success_calls_are_
 
 /// Ensures failure path: if spawning the promise fails, no executor event is logged.
 #[tokio::test]
-async fn test_event_subscriber_executor_function_call_success_failure_calls_are_ignored() {
+async fn block_event_stream__should_advance_progress_without_updates_when_the_promise_fails() {
     // Given: A subscription for tracking executions on contract_id.[`SET_VALUE_IN_PROMISE`]
     let ExecutorFunctionCallTest {
         test_account,
         contract_id,
         localnet,
         mut receiver,
+        mut progress,
         set_value_in_promise_event_id: _,
     } = setup_executor_function_call_filter().await;
     let observer_gw = &localnet.observer.chain_gateway;
@@ -147,12 +159,20 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
         .subscribe()
         .await;
 
-    watch_value
+    let observed_end_marker = watch_value
         .wait_for(EVENT_TIMEOUT, |value| value == end_marker)
         .await
         .unwrap();
 
     drop(watch_value);
+    tokio::time::timeout(
+        EVENT_TIMEOUT,
+        progress
+            .wait_for(|stats| stats.last_processed_block_height > observed_end_marker.observed_at),
+    )
+    .await
+    .expect("expected the streamer to pass the end marker's block before timeout")
+    .expect("expected the streamer to stay alive");
     // close the localnet, such that we no longer get events
     localnet.shutdown().await;
 
@@ -160,6 +180,10 @@ async fn test_event_subscriber_executor_function_call_success_failure_calls_are_
     receiver
         .try_recv()
         .expect_err("expected channel to be empty");
+    let observed_at = i64::try_from(u64::from(observed_end_marker.observed_at))
+        .expect("block height must fit in i64");
+    assert!(MPC_INDEXER_LATEST_BLOCK_HEIGHT.get() > observed_at);
+    assert!(MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS.get() > 0);
 }
 
 struct ReceiverFunctionCallTest {
@@ -210,7 +234,9 @@ async fn setup_receiver_function_call_filter_with_buffer(
 #[rstest]
 #[case::successful_calls_will_be_logged(true)]
 #[case::failed_calls_will_be_logged(false)]
-async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
+async fn block_event_stream__should_report_whether_a_receiver_function_call_succeeded(
+    #[case] expect_success: bool,
+) {
     // Given: A subscription for tracking calls to the private contract_id.PRIVATE_SET
     let ReceiverFunctionCallTest {
         test_account: _,
@@ -253,7 +279,7 @@ async fn test_event_subscriber_receiver(#[case] expect_success: bool) {
 /// Ensures [`ReceiverFunctionCall`] for private methods called by non-contract
 /// are registered but have an error (NEAR rejects: predecessor != contract).
 #[tokio::test]
-async fn test_event_subscriber_receiver_error_if_non_private_call() {
+async fn block_event_stream__should_report_failure_when_another_account_calls_a_private_method() {
     // Given: A subscription for tracking calls to the private contract_id.PRIVATE_SET
     let ReceiverFunctionCallTest {
         test_account,
@@ -301,7 +327,7 @@ async fn test_event_subscriber_receiver_error_if_non_private_call() {
 #[case::buffer_fits_both_updates(2, 2)]
 #[case::buffer_drops_second_update_when_full(1, 1)]
 #[tokio::test]
-async fn test_event_subscriber_channel_buffer_handles_backpressure(
+async fn block_event_stream__should_drop_updates_when_the_buffer_is_full(
     #[case] buffer_size: usize,
     #[case] expected_received: usize,
 ) {
@@ -348,7 +374,7 @@ async fn test_event_subscriber_channel_buffer_handles_backpressure(
 /// Synchronisation: the state viewer only reports finalised contract state, so once
 /// it sees the value change, the block whose handle we hold is necessarily final too.
 #[tokio::test]
-async fn test_block_status_handle_becomes_final() {
+async fn block_status_handle__should_eventually_report_finality() {
     // Given
     let ExecutorFunctionCallTest {
         test_account,
