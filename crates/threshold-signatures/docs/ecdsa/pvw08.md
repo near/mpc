@@ -118,8 +118,3 @@ and extracts each $b_ i$.
 Against a corrupt sender it programs a decryption-mode string with known
 $\log_ {G_ 0} G_ 1$ and extracts both messages.
 DDH makes the two strings indistinguishable.
-
-**String lifetime.** Each run derives its own string, which serves all $\ell$ transfers.
-A repeated $\mathsf{sid}$ would reuse a string for the same ordered pair
-$(\mathcal{S}, \mathcal{R})$.
-PVW08 covers such a reuse, but the protocol does not rely on it.
