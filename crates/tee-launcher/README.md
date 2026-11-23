@@ -1,6 +1,6 @@
 # TEE Launcher (Rust)
 
-Secure launcher for initializing and attesting a Docker-based MPC node inside a TEE-enabled environment (e.g., Intel TDX via dstack).
+Secure launcher for initializing and attesting a Docker-based MPC node or backup service inside a TEE-enabled environment (e.g., Intel TDX via dstack).
 
 This is the production launcher.
 
@@ -11,8 +11,8 @@ This is the production launcher.
 3. Pulls the image directly by manifest digest (`docker pull <image>@sha256:<digest>`)
 4. In TEE mode: extends RTMR3 with the manifest digest by running the guest's `dstack-util extend`
    (dstack 0.6 removed `EmitEvent`)
-5. Writes the MPC node config to a shared volume
-6. Launches the MPC container via `docker compose up -d`
+5. Writes the config of the launched service to a shared volume
+6. Launches the service's container via `docker compose up -d`
 
 ## CLI Arguments
 
@@ -25,6 +25,7 @@ All arguments are read from environment variables (set via docker-compose `envir
 | `DEFAULT_IMAGE_DIGEST` | Yes | Fallback `sha256:...` digest when the approved-hashes file is absent |
 | `MPC_CONTRACT_ID` | Yes | Account id of the MPC contract the node serves |
 | `NEAR_GENESIS_HASH` | Yes | Genesis hash of the chain the MPC contract runs on |
+| `LAUNCHED_SERVICE` | No | `mpc-node` (default) or `backup-service`, which the contract's backup service launcher compose template sets |
 
 ## Configuration (TOML)
 
@@ -56,11 +57,15 @@ port_mappings = [
 |-------|----------|-------------|
 | `image_reference` | Yes | Docker image reference. A tag can be included to identify the configured version (e.g., `"nearone/mpc-node:testnet-release"`), but the manifest digest determines the actual image pulled. Include registry prefix for non-Docker Hub registries. |
 | `mpc_hash_override` | No | Force a specific `sha256:` digest (must appear in approved list) |
-| `port_mappings` | Yes | Port mappings forwarded to the MPC container (`{ host, container }` pairs) |
+| `port_mappings` | Yes | Port mappings forwarded to the service's container (`{ host, container }` pairs) |
 
 ### `[mpc_node_config]`
 
-Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section, `home_dir`, `node.indexer.mpc_contract_id` and `node.indexer.genesis_hash`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that sets any of them to a different value is rejected.
+Required when `LAUNCHED_SERVICE` is unset or `mpc-node`. Arbitrary TOML table passed through to the MPC node. The launcher adds the `tee` section, `home_dir`, `node.indexer.mpc_contract_id` and `node.indexer.genesis_hash`, then writes the result to `/mnt/shared/mpc-config.toml`, which the container reads on startup. A user config that sets any of them to a different value is rejected.
+
+### `[backup_service_config]`
+
+Required when `LAUNCHED_SERVICE` is `backup-service`. The launcher adds the `tee` section, `mpc_contract_id` and `genesis_hash`, rejects a user config that sets any of them to a different value, and writes the result to `/mnt/shared/backup-service-config.toml`. It starts the container with `/app/backup-cli --home-dir /data start-with-config-file /mnt/shared/backup-service-config.toml`. See [`backup-service-user-config.toml`](../../deployment/cvm-deployment/backup-service-user-config.toml) for an example.
 
 ## Supported Registries
 
@@ -92,8 +97,9 @@ Priority order:
 | Path | Description |
 |------|-------------|
 | `/tapp/user_config` | TOML configuration file |
-| `/mnt/shared/image-digest.bin` | JSON file with approved image hashes (written by the MPC node) |
+| `/mnt/shared/image-digest.bin` | JSON file with approved image hashes (written by the launched service) |
 | `/mnt/shared/mpc-config.toml` | MPC node config (written by the launcher) |
+| `/mnt/shared/backup-service-config.toml` | Backup service config (written by the launcher) |
 | `/var/run/dstack.sock` | dstack unix socket (TEE mode only) |
 | `/usr/local/bin/dstack-util` | The guest's `dstack-util`, mounted from `/usr/bin/dstack-util` (TEE mode, dstack 0.6+) |
 | `/run/log/dstack/` | dstack runtime event log, written by `dstack-util extend` (TEE mode, dstack 0.6+) |

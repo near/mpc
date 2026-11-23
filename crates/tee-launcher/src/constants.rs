@@ -1,4 +1,3 @@
-pub const MPC_CONTAINER_NAME: &str = "mpc-node";
 pub const IMAGE_DIGEST_FILE: &str = "/mnt/shared/image-digest.bin";
 pub const DSTACK_UNIX_SOCKET: &str = "/var/run/dstack.sock";
 pub const DSTACK_USER_CONFIG_FILE: &str = "/tapp/user_config";
@@ -10,3 +9,4 @@ pub const MPC_HOME_DIR: &str = "/data";
 /// Path on the shared volume where the launcher writes the MPC config and the
 /// MPC container reads it.  Both containers mount `shared-volume` at `/mnt/shared`.
 pub const MPC_CONFIG_SHARED_PATH: &str = "/mnt/shared/mpc-config.toml";
+pub const BACKUP_SERVICE_CONFIG_SHARED_PATH: &str = "/mnt/shared/backup-service-config.toml";

@@ -3,9 +3,9 @@ use std::process::Command;
 
 use launcher_interface::types::DockerSha256Digest;
 
-use crate::constants::{DSTACK_UNIX_SOCKET, MPC_CONFIG_SHARED_PATH, MPC_CONTAINER_NAME};
+use crate::constants::DSTACK_UNIX_SOCKET;
 use crate::error::LauncherError;
-use crate::types::{Platform, PortMapping};
+use crate::types::{Platform, PortMapping, Service};
 
 const COMPOSE_TEMPLATE: &str = include_str!("../assets/mpc-node-docker-compose.template.yml");
 const COMPOSE_TEE_TEMPLATE: &str =
@@ -13,6 +13,7 @@ const COMPOSE_TEE_TEMPLATE: &str =
 
 pub fn render_compose_file(
     platform: Platform,
+    service: Service,
     port_mappings: &[PortMapping],
     image_name: &str,
     manifest_digest: &DockerSha256Digest,
@@ -27,12 +28,18 @@ pub fn render_compose_file(
         .map(PortMapping::docker_compose_value)
         .collect();
     let ports_json = serde_json::to_string(&ports).expect("port list is serializable");
+    let command = service
+        .command()
+        .iter()
+        .map(|arg| serde_json::to_string(arg).expect("a string is serializable"))
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let rendered = template
         .replace("{{IMAGE_NAME}}", image_name)
         .replace("{{MANIFEST_DIGEST}}", &manifest_digest.to_string())
-        .replace("{{CONTAINER_NAME}}", MPC_CONTAINER_NAME)
-        .replace("{{MPC_CONFIG_SHARED_PATH}}", MPC_CONFIG_SHARED_PATH)
+        .replace("{{CONTAINER_NAME}}", service.container_name())
+        .replace("{{COMMAND}}", &command)
         .replace("{{DSTACK_UNIX_SOCKET}}", DSTACK_UNIX_SOCKET)
         .replace("{{PORTS}}", &ports_json);
 
@@ -48,15 +55,22 @@ pub fn render_compose_file(
     Ok(file)
 }
 
-pub fn launch_mpc_container(
+pub fn launch_container(
     platform: Platform,
+    service: Service,
     manifest_digest: &DockerSha256Digest,
     image_name: &str,
     port_mappings: &[PortMapping],
 ) -> Result<(), LauncherError> {
-    tracing::info!(?manifest_digest, "launching MPC node");
+    tracing::info!(?service, ?manifest_digest, "launching service");
 
-    let compose_file = render_compose_file(platform, port_mappings, image_name, manifest_digest)?;
+    let compose_file = render_compose_file(
+        platform,
+        service,
+        port_mappings,
+        image_name,
+        manifest_digest,
+    )?;
     let compose_path = compose_file.path().display().to_string();
 
     // The compose file pins a stable top-level project `name`, so the
@@ -81,202 +95,128 @@ pub fn launch_mpc_container(
         });
     }
 
-    tracing::info!("MPC launched successfully.");
+    tracing::info!(?service, "service launched");
     Ok(())
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use std::num::NonZeroU16;
 
-    use launcher_interface::types::DockerSha256Digest;
+    use rstest::rstest;
 
     use super::*;
 
-    const SAMPLE_IMAGE_NAME: &str = "nearone/mpc-node";
+    const IMAGE_NAME: &str = "nearone/mpc-node";
+    const MANIFEST_DIGEST: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const MPC_NODE_COMMAND: &str =
+        r#"command: ["/app/mpc-node", "start-with-config-file", "/mnt/shared/mpc-config.toml"]"#;
 
-    fn render(
-        platform: Platform,
-        port_mappings: &[PortMapping],
-        digest: &DockerSha256Digest,
-    ) -> String {
-        let file = render_compose_file(platform, port_mappings, SAMPLE_IMAGE_NAME, digest).unwrap();
-        std::fs::read_to_string(file.path()).unwrap()
-    }
-
-    fn digest(hex_char: char) -> DockerSha256Digest {
+    #[rstest]
+    #[case::tee(
+        Platform::Tee,
         format!(
-            "sha256:{}",
-            std::iter::repeat_n(hex_char, 64).collect::<String>()
+            r#"name: mpc-node
+
+services:
+  mpc-node:
+    image: "{IMAGE_NAME}@{MANIFEST_DIGEST}"
+    container_name: "mpc-node"
+    restart: on-failure
+    security_opt:
+      - no-new-privileges:true
+    ports: ["11780:11780"]
+    environment:
+      - "DSTACK_ENDPOINT=/var/run/dstack.sock"
+    volumes:
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared
+      - mpc-data:/data
+      - "/var/run/dstack.sock:/var/run/dstack.sock"
+    {MPC_NODE_COMMAND}
+
+volumes:
+  shared-volume:
+    name: shared-volume
+  mpc-data:
+    name: mpc-data
+"#
         )
-        .parse()
-        .unwrap()
+    )]
+    #[case::non_tee(
+        Platform::NonTee,
+        format!(
+            r#"name: mpc-node
+
+services:
+  mpc-node:
+    image: "{IMAGE_NAME}@{MANIFEST_DIGEST}"
+    container_name: "mpc-node"
+    restart: on-failure
+    security_opt:
+      - no-new-privileges:true
+    ports: ["11780:11780"]
+    volumes:
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared
+      - mpc-data:/data
+    {MPC_NODE_COMMAND}
+
+volumes:
+  shared-volume:
+    name: shared-volume
+  mpc-data:
+    name: mpc-data
+"#
+        )
+    )]
+    fn render_compose_file__should_render_the_mpc_node(
+        #[case] platform: Platform,
+        #[case] expected: String,
+    ) {
+        // When
+        let rendered = render(platform, Service::MpcNode);
+
+        // Then
+        assert_eq!(rendered, expected);
     }
 
-    fn sample_digest() -> DockerSha256Digest {
-        digest('a')
+    #[rstest]
+    fn render_compose_file__should_change_only_the_name_and_command_for_the_backup_service(
+        #[values(Platform::Tee, Platform::NonTee)] platform: Platform,
+    ) {
+        // When
+        let rendered = render(platform, Service::BackupService);
+
+        // Then
+        let expected = render(platform, Service::MpcNode)
+            .replace(
+                r#"container_name: "mpc-node""#,
+                r#"container_name: "backup-service""#,
+            )
+            .replace(
+                MPC_NODE_COMMAND,
+                r#"command: ["/app/backup-cli", "--home-dir", "/data", "start-with-config-file", "/mnt/shared/backup-service-config.toml"]"#,
+            );
+        assert_eq!(rendered, expected);
     }
 
-    fn empty_port_mappings() -> Vec<PortMapping> {
-        vec![]
-    }
-
-    fn port_mappings_with_port() -> Vec<PortMapping> {
-        vec![PortMapping {
+    fn render(platform: Platform, service: Service) -> String {
+        let port_mappings = [PortMapping {
             host: NonZeroU16::new(11780).unwrap(),
             container: NonZeroU16::new(11780).unwrap(),
-        }]
-    }
-
-    #[test]
-    fn tee_mode_includes_dstack_env_and_volume() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::Tee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains(&format!("DSTACK_ENDPOINT={DSTACK_UNIX_SOCKET}")));
-        assert!(rendered.contains(&format!("{DSTACK_UNIX_SOCKET}:{DSTACK_UNIX_SOCKET}")));
-    }
-
-    #[test]
-    fn nontee_mode_excludes_dstack() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(!rendered.contains("DSTACK_ENDPOINT"));
-        assert!(!rendered.contains(DSTACK_UNIX_SOCKET));
-    }
-
-    #[test]
-    fn includes_security_opts_and_required_volumes() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("no-new-privileges:true"));
-        assert!(rendered.contains("/tapp:/tapp:ro"));
-        assert!(rendered.contains("shared-volume:/mnt/shared"));
-        assert!(rendered.contains("mpc-data:/data"));
-        assert!(rendered.contains(&format!("container_name: \"{MPC_CONTAINER_NAME}\"")));
-    }
-
-    #[test]
-    fn tee_mode_includes_restart_on_failure() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::Tee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("restart: on-failure"));
-    }
-
-    #[test]
-    fn nontee_mode_includes_restart_on_failure() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("restart: on-failure"));
-    }
-
-    #[test]
-    fn mounts_config_file_read_only() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then — config is on the shared volume, referenced in the command
-        assert!(rendered.contains(MPC_CONFIG_SHARED_PATH));
-    }
-
-    #[test]
-    fn includes_start_with_config_file_command() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("/app/mpc-node"));
-        assert!(rendered.contains(MPC_CONFIG_SHARED_PATH));
-    }
-
-    #[test]
-    fn image_is_set() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains(&format!("image: \"{SAMPLE_IMAGE_NAME}@{digest}\"")));
-    }
-
-    #[test]
-    fn includes_ports() {
-        // given
-        let port_mappings = port_mappings_with_port();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(rendered.contains("11780:11780"));
-    }
-
-    #[test]
-    fn no_env_section_in_nontee_mode() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::NonTee, &port_mappings, &digest);
-
-        // then
-        assert!(!rendered.contains("environment:"));
-    }
-
-    #[test]
-    fn includes_stable_project_name() {
-        // given
-        let port_mappings = empty_port_mappings();
-        let digest = sample_digest();
-
-        // when
-        let rendered = render(Platform::Tee, &port_mappings, &digest);
-
-        // then — a stable top-level project name keeps Compose reusing the
-        // container across restarts instead of recreating it (which would wipe
-        // its logs)
-        assert!(rendered.contains("name: mpc-node"));
+        }];
+        let manifest_digest: DockerSha256Digest = MANIFEST_DIGEST.parse().unwrap();
+        let file = render_compose_file(
+            platform,
+            service,
+            &port_mappings,
+            IMAGE_NAME,
+            &manifest_digest,
+        )
+        .unwrap();
+        std::fs::read_to_string(file.path()).unwrap()
     }
 }

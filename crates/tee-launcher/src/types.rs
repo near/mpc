@@ -7,6 +7,11 @@ use near_account_id::AccountId;
 use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 
+use crate::{
+    constants::{BACKUP_SERVICE_CONFIG_SHARED_PATH, MPC_CONFIG_SHARED_PATH, MPC_HOME_DIR},
+    error::LauncherError,
+};
+
 /// CLI arguments parsed from environment variables via clap.
 #[derive(Parser, Debug)]
 #[command(name = "tee-launcher")]
@@ -30,6 +35,10 @@ pub struct CliArgs {
     /// Genesis hash of the chain the MPC contract runs on
     #[arg(long, env = "NEAR_GENESIS_HASH")]
     pub near_genesis_hash: GenesisHash,
+
+    /// Service to launch: `mpc-node` or `backup-service`
+    #[arg(long, env = "LAUNCHED_SERVICE", value_enum, default_value_t)]
+    pub launched_service: Service,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -46,13 +55,73 @@ pub enum Platform {
     NonTee,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum Service {
+    #[default]
+    MpcNode,
+    BackupService,
+}
+
+impl Service {
+    pub fn container_name(self) -> &'static str {
+        match self {
+            Self::MpcNode => "mpc-node",
+            Self::BackupService => "backup-service",
+        }
+    }
+
+    /// Where the launcher writes the service's config, on the volume both containers mount
+    pub fn config_path(self) -> &'static str {
+        match self {
+            Self::MpcNode => MPC_CONFIG_SHARED_PATH,
+            Self::BackupService => BACKUP_SERVICE_CONFIG_SHARED_PATH,
+        }
+    }
+
+    pub fn command(self) -> &'static [&'static str] {
+        match self {
+            Self::MpcNode => &[
+                "/app/mpc-node",
+                "start-with-config-file",
+                MPC_CONFIG_SHARED_PATH,
+            ],
+            Self::BackupService => &[
+                "/app/backup-cli",
+                "--home-dir",
+                MPC_HOME_DIR,
+                "start-with-config-file",
+                BACKUP_SERVICE_CONFIG_SHARED_PATH,
+            ],
+        }
+    }
+}
+
 /// Typed representation of the dstack user config file (`/tapp/user_config`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub launcher_config: LauncherConfig,
-    /// MPC node configuration table. The launcher adds its reserved keys, serializes the
-    /// result to TOML and mounts it into the container for the MPC node to read on startup.
-    pub mpc_node_config: toml::Table,
+    /// MPC node configuration table, required to launch an MPC node. The launcher adds its
+    /// reserved keys, serializes the result to TOML and mounts it into the container for the MPC
+    /// node to read on startup.
+    pub mpc_node_config: Option<toml::Table>,
+    /// Backup service configuration table, required to launch a backup service. The launcher
+    /// handles it as it does [`Config::mpc_node_config`].
+    pub backup_service_config: Option<toml::Table>,
+}
+
+impl Config {
+    /// Splits off the configuration table of the [`Service`] to launch.
+    pub fn into_parts(
+        self,
+        service: Service,
+    ) -> Result<(LauncherConfig, toml::Table), LauncherError> {
+        let service_config = match service {
+            Service::MpcNode => self.mpc_node_config,
+            Service::BackupService => self.backup_service_config,
+        };
+        let service_config = service_config.ok_or(LauncherError::MissingServiceConfig(service))?;
+        Ok((self.launcher_config, service_config))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,8 +175,11 @@ impl PortMapping {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use std::{assert_matches, num::NonZeroU16};
+
+    use rstest::rstest;
 
     use super::*;
 
@@ -187,7 +259,7 @@ some_opaque_field = true
         let config = result.unwrap();
         assert_eq!(config.launcher_config.image_reference, "nearone/mpc-node");
         assert_eq!(
-            config.mpc_node_config["some_opaque_field"].as_bool(),
+            config.mpc_node_config.unwrap()["some_opaque_field"].as_bool(),
             Some(true)
         );
     }
@@ -227,25 +299,64 @@ arbitrary_key = "arbitrary_value"
         let config: Config = toml::from_str(toml_str).unwrap();
 
         // when — re-serialize the opaque table (what the launcher writes to disk)
-        let serialized = toml::to_string(&config.mpc_node_config).unwrap();
+        let serialized = toml::to_string(&config.mpc_node_config.unwrap()).unwrap();
 
         // then
         assert!(serialized.contains("arbitrary_key"));
     }
 
-    #[test]
-    fn config_rejects_missing_required_field() {
-        // given - mpc_node_config is missing
-        let toml_str = r#"
+    #[rstest]
+    #[case::mpc_node(Service::MpcNode, "[backup_service_config]")]
+    #[case::backup_service(Service::BackupService, "[mpc_node_config]")]
+    fn config_into_parts__should_require_the_config_of_the_launched_service(
+        #[case] service: Service,
+        #[case] other_service_config: &str,
+    ) {
+        // Given
+        let config: Config = toml::from_str(&format!(
+            r#"
 [launcher_config]
 image_reference = "nearone/mpc-node"
 port_mappings = []
-"#;
 
-        // when
-        let result = toml::from_str::<Config>(toml_str);
+{other_service_config}
+"#
+        ))
+        .unwrap();
 
-        // then
-        assert_matches!(result, Err(e) if e.to_string().contains("mpc_node_config"));
+        // When
+        let result = config.into_parts(service);
+
+        // Then
+        assert_matches!(result, Err(LauncherError::MissingServiceConfig(missing)) if missing == service);
+    }
+
+    #[rstest]
+    #[case::unset(&[], Service::MpcNode)]
+    #[case::backup_service(&["--launched-service", "backup-service"], Service::BackupService)]
+    fn cli_args__should_launch_the_mpc_node_unless_the_backup_service_is_selected(
+        #[case] launched_service_args: &[&str],
+        #[case] expected: Service,
+    ) {
+        // Given
+        let args = [
+            "tee-launcher",
+            "--platform",
+            "TEE",
+            "--docker-content-trust",
+            "1",
+            "--default-image-digest",
+            &format!("sha256:{}", "a".repeat(64)),
+            "--mpc-contract-id",
+            "v1.signer",
+            "--near-genesis-hash",
+            &GenesisHash::MAINNET.to_string(),
+        ];
+
+        // When
+        let cli_args = CliArgs::try_parse_from(args.iter().chain(launched_service_args)).unwrap();
+
+        // Then
+        assert_eq!(cli_args.launched_service, expected);
     }
 }

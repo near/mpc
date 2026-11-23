@@ -2,40 +2,48 @@ use launcher_interface::types::TeeConfig;
 use mpc_primitives::hash::GenesisHash;
 use near_account_id::AccountId;
 
-use crate::{constants::MPC_HOME_DIR, error::LauncherError};
+use crate::{constants::MPC_HOME_DIR, error::LauncherError, types::Service};
 
-/// Inject the launcher-controlled keys into the user-provided MPC node config: the `tee`
-/// section, the contract id and its chain's genesis hash measured into the launcher compose, and
-/// the home directory, so that the node always starts from the chain data already on the disk.
+/// Inject the launcher-controlled keys into the user-provided config of the [`Service`] it
+/// launches: the `tee` section and the contract id and its chain's genesis hash measured into the
+/// launcher compose. For an MPC node it also sets the home directory, so that the node always
+/// starts from the chain data already on the disk; a backup service gets it on its command line.
 /// Fails if the user config sets any of them to a different value. Equal values are accepted so
 /// that a user config written for an older launcher keeps working.
-pub fn intercept_node_config(
-    mut node_config: toml::Table,
+pub fn intercept_service_config(
+    service: Service,
+    mut service_config: toml::Table,
     tee_config: &TeeConfig,
     mpc_contract_id: &AccountId,
     genesis_hash: &GenesisHash,
 ) -> Result<toml::Table, LauncherError> {
     insert_reserved(
-        &mut node_config,
+        &mut service_config,
         &[],
         "tee",
         toml::Value::try_from(tee_config).expect("tee config serializes to TOML"),
     )?;
-    insert_reserved(&mut node_config, &[], "home_dir", MPC_HOME_DIR.into())?;
+    let chain_parents: &[&str] = match service {
+        Service::MpcNode => {
+            insert_reserved(&mut service_config, &[], "home_dir", MPC_HOME_DIR.into())?;
+            &["node", "indexer"]
+        }
+        Service::BackupService => &[],
+    };
     insert_reserved(
-        &mut node_config,
-        &["node", "indexer"],
+        &mut service_config,
+        chain_parents,
         "mpc_contract_id",
         mpc_contract_id.as_str().into(),
     )?;
     insert_reserved(
-        &mut node_config,
-        &["node", "indexer"],
+        &mut service_config,
+        chain_parents,
         "genesis_hash",
         genesis_hash.to_string().into(),
     )?;
 
-    Ok(node_config)
+    Ok(service_config)
 }
 
 fn insert_reserved(
@@ -106,6 +114,8 @@ mod tests {
 
     use super::*;
 
+    const MPC_CONTRACT_ID: &str = "v1.signer";
+
     fn digest(hex_char: char) -> DockerSha256Digest {
         format!(
             "sha256:{}",
@@ -130,43 +140,62 @@ mod tests {
     }
 
     fn intercept(
+        service: Service,
         config: toml::Table,
         tee_config: &TeeConfig,
     ) -> Result<toml::Table, LauncherError> {
-        intercept_node_config(
+        intercept_service_config(
+            service,
             config,
             tee_config,
-            &"v1.signer".parse().unwrap(),
+            &MPC_CONTRACT_ID.parse().unwrap(),
             &GenesisHash::MAINNET,
         )
     }
 
-    #[test]
-    fn intercept_node_config__should_add_the_reserved_keys_and_keep_the_user_config() {
-        // Given
-        let config: toml::Table = toml::from_str(
-            r#"
-            port = 8080
-            node.indexer.sync_mode = "Latest"
-            "#,
-        )
-        .unwrap();
-
-        // When
-        let result = intercept(config, &sample_tee_config()).unwrap();
-
-        // Then
-        let mut expected: toml::Table = toml::from_str(&format!(
+    #[rstest]
+    #[case::mpc_node(
+        Service::MpcNode,
+        r#"
+        port = 8080
+        node.indexer.sync_mode = "Latest"
+        "#,
+        format!(
             r#"
             port = 8080
             home_dir = "/data"
             node.indexer.sync_mode = "Latest"
-            node.indexer.mpc_contract_id = "v1.signer"
+            node.indexer.mpc_contract_id = "{MPC_CONTRACT_ID}"
             node.indexer.genesis_hash = "{}"
             "#,
             GenesisHash::MAINNET
-        ))
-        .unwrap();
+        )
+    )]
+    #[case::backup_service(
+        Service::BackupService,
+        "mpc_node_migration_port = 8079",
+        format!(
+            r#"
+            mpc_node_migration_port = 8079
+            mpc_contract_id = "{MPC_CONTRACT_ID}"
+            genesis_hash = "{}"
+            "#,
+            GenesisHash::MAINNET
+        )
+    )]
+    fn intercept_service_config__should_add_the_reserved_keys_and_keep_the_user_config(
+        #[case] service: Service,
+        #[case] user_config: &str,
+        #[case] expected_without_tee: String,
+    ) {
+        // Given
+        let config: toml::Table = toml::from_str(user_config).unwrap();
+
+        // When
+        let result = intercept(service, config, &sample_tee_config()).unwrap();
+
+        // Then
+        let mut expected: toml::Table = toml::from_str(&expected_without_tee).unwrap();
         expected.insert(
             "tee".into(),
             toml::Value::try_from(sample_tee_config()).unwrap(),
@@ -175,16 +204,37 @@ mod tests {
     }
 
     #[rstest]
-    #[case::tee_table(r#"tee.type = "Local""#, "tee")]
-    #[case::tee_value(r#"tee = "sneaky""#, "tee")]
-    #[case::home_dir(r#"home_dir = "/tmp""#, "home_dir")]
+    #[case::tee_table(Service::MpcNode, r#"tee.type = "Local""#, "tee")]
+    #[case::tee_value(Service::MpcNode, r#"tee = "sneaky""#, "tee")]
+    #[case::home_dir(Service::MpcNode, r#"home_dir = "/tmp""#, "home_dir")]
     #[case::contract_id(
+        Service::MpcNode,
         r#"node.indexer.mpc_contract_id = "other.near""#,
         "node.indexer.mpc_contract_id"
     )]
-    #[case::genesis_hash(r#"node.indexer.genesis_hash = "other""#, "node.indexer.genesis_hash")]
-    #[case::non_table_parent(r#"node.indexer = "sneaky""#, "node.indexer.mpc_contract_id")]
-    fn intercept_node_config__should_reject_a_user_config_that_sets_a_reserved_key(
+    #[case::genesis_hash(
+        Service::MpcNode,
+        r#"node.indexer.genesis_hash = "other""#,
+        "node.indexer.genesis_hash"
+    )]
+    #[case::non_table_parent(
+        Service::MpcNode,
+        r#"node.indexer = "sneaky""#,
+        "node.indexer.mpc_contract_id"
+    )]
+    #[case::backup_service_tee(Service::BackupService, r#"tee.type = "Local""#, "tee")]
+    #[case::backup_service_contract_id(
+        Service::BackupService,
+        r#"mpc_contract_id = "other.near""#,
+        "mpc_contract_id"
+    )]
+    #[case::backup_service_genesis_hash(
+        Service::BackupService,
+        r#"genesis_hash = "other""#,
+        "genesis_hash"
+    )]
+    fn intercept_service_config__should_reject_a_user_config_that_sets_a_reserved_key(
+        #[case] service: Service,
         #[case] user_config: &str,
         #[case] reserved_key: &str,
     ) {
@@ -192,27 +242,31 @@ mod tests {
         let config: toml::Table = toml::from_str(user_config).unwrap();
 
         // When
-        let result = intercept(config, &sample_tee_config());
+        let result = intercept(service, config, &sample_tee_config());
 
         // Then
         assert_matches!(result, Err(LauncherError::ReservedConfigKey(key)) if key == reserved_key);
     }
 
     #[rstest]
-    #[case::home_dir(r#"home_dir = "/data""#)]
-    #[case::contract_id(r#"node.indexer.mpc_contract_id = "v1.signer""#)]
-    fn intercept_node_config__should_accept_a_reserved_key_set_to_the_launcher_value(
-        #[case] user_config: &str,
+    #[case::home_dir(Service::MpcNode, "home_dir", MPC_HOME_DIR)]
+    #[case::contract_id(Service::MpcNode, "node.indexer.mpc_contract_id", MPC_CONTRACT_ID)]
+    #[case::backup_service_contract_id(Service::BackupService, "mpc_contract_id", MPC_CONTRACT_ID)]
+    fn intercept_service_config__should_accept_a_reserved_key_set_to_the_launcher_value(
+        #[case] service: Service,
+        #[case] reserved_key: &str,
+        #[case] launcher_value: &str,
     ) {
         // Given
-        let config: toml::Table = toml::from_str(user_config).unwrap();
+        let config: toml::Table =
+            toml::from_str(&format!(r#"{reserved_key} = "{launcher_value}""#)).unwrap();
         let tee_config = sample_tee_config();
 
         // When
-        let result = intercept(config, &tee_config).unwrap();
+        let result = intercept(service, config, &tee_config).unwrap();
 
         // Then
-        let without_the_key = intercept(toml::Table::new(), &tee_config).unwrap();
+        let without_the_key = intercept(service, toml::Table::new(), &tee_config).unwrap();
         assert_eq!(result, without_the_key);
     }
 
@@ -229,7 +283,7 @@ mod tests {
         };
 
         // when
-        let result = intercept(config, &tee).unwrap();
+        let result = intercept(Service::MpcNode, config, &tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -248,7 +302,7 @@ mod tests {
         };
 
         // when
-        let result = intercept(config, &tee).unwrap();
+        let result = intercept(Service::MpcNode, config, &tee).unwrap();
 
         // then — Local variant is a unit variant; just verify the key exists
         assert!(result.contains_key("tee"));
@@ -270,7 +324,7 @@ mod tests {
         };
 
         // when
-        let result = intercept(config, &tee).unwrap();
+        let result = intercept(Service::MpcNode, config, &tee).unwrap();
 
         // then
         let tee_table = result["tee"].as_table().unwrap();
@@ -287,7 +341,7 @@ mod tests {
         let config: toml::Table = toml::from_str("port = 8080").unwrap();
 
         // when
-        let result = intercept(config, &sample_tee_config()).unwrap();
+        let result = intercept(Service::MpcNode, config, &sample_tee_config()).unwrap();
         let toml_str = toml::to_string(&result).unwrap();
 
         // then — the output can be parsed back
