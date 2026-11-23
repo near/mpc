@@ -10,10 +10,9 @@ license.workspace = true
 bench = false
 
 [features]
-test-utils = ["average", "rand", "rand_chacha"]
+test-utils = ["rand", "rand_chacha"]
 
 [dependencies]
-average = { workspace = true, optional = true }
 blstrs.workspace = true
 borsh.workspace = true
 derive_more = { workspace = true, features = ["deref_mut"] }
