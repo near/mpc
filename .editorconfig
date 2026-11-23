@@ -22,7 +22,7 @@ end_of_line = unset
 # Test fixtures consumed byte-exact via include_str! (see create-assets.sh
 # and crates/attestation/tests/app_compose.rs). Adding a final newline breaks
 # string equality and hex/key parsing.
-[crates/test-utils/assets/{app_compose.json,app_compose_with_services.json,mpc_image_digest.txt,*.pub}]
+[crates/test-utils/assets/{app_compose_with_services.json,*/app_compose.json,*/mpc_image_digest.txt,*/*.pub}]
 insert_final_newline = false
 
 # Binary borsh fixture (a real DCAP quote+collateral) exercised byte-exact by the

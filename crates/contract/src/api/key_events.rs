@@ -31,7 +31,8 @@ impl MpcContract {
     ///  - Returns Ok(()), with one of the following changes:
     ///    - A vote has been collected but we don't have enough votes yet.
     ///    - This vote is for a public key that disagrees from an earlier voted public key, causing
-    ///      the attempt to abort; another call to `start` is then necessary.
+    ///      the attempt to abort; another call to [`Self::start_keygen_instance`] is then
+    ///      necessary.
     ///    - Everyone has now voted for the same public key; the state transitions into generating a
     ///      key for the next domain.
     ///    - Same as the last case, except that all domains have a generated key now, and the state
@@ -108,6 +109,9 @@ impl MpcContract {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
             self.parameters_votes.clear();
+            let participants = self.protocol_state.active_participants();
+            self.add_domains_votes
+                .retain_votes(|p| participants.is_participant(p));
             self.recompute_available_foreign_chains();
 
             // Spawn a promise to clean up votes from non-participants.

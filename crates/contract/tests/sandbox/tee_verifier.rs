@@ -27,7 +27,6 @@ use crate::sandbox::{
         sign_utils::DomainResponseTest,
     },
 };
-use mpc_attestation::attestation::dev_measurements;
 use mpc_contract::{
     MpcContract,
     errors::TeeError,
@@ -52,7 +51,8 @@ use std::time::Duration;
 use tee_verifier_interface::VerificationResult;
 use test_utils::attestation::{
     VALID_ATTESTATION_TIMESTAMP, account_secret_key, collateral, collateral_dates, image_digest,
-    launcher_compose_digest, launcher_image_hash, mock_dto_dstack_attestation, p2p_tls_key, quote,
+    launcher_compose_digest, launcher_image_hash, measurements, mock_dto_dstack_attestation,
+    p2p_tls_key, quote,
 };
 use tokio_util::time::FutureExt as _;
 
@@ -89,8 +89,13 @@ async fn whitelist_fixture_dstack_hashes(
         .unwrap()
         .remove(MpcContract::state_key())
         .expect("the contract must have a STATE entry");
-    let patched =
-        whitelist_dstack_in_state(&state, image_digest(), launcher_image_hash(), compose_hash);
+    let patched = whitelist_dstack_in_state(
+        &state,
+        image_digest(),
+        launcher_image_hash(),
+        measurements(),
+        compose_hash,
+    );
     setup
         .worker
         .patch_state(setup.contract.id(), MpcContract::state_key(), &patched)
@@ -472,7 +477,7 @@ async fn submit_participant_info__should_store_attestation_on_verified_quote() {
     let dtos::VerifiedAttestation::Dstack(stored) = stored.attestation else {
         panic!("expected a stored Dstack attestation");
     };
-    let matched = dev_measurements();
+    let matched = measurements();
     let expected = dtos::VerifiedDstackAttestation {
         mpc_image_hash: image_digest(),
         launcher_compose_hash: launcher_compose_digest(),

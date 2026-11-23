@@ -1,12 +1,11 @@
 use std::fmt;
 
 use chain_gateway::event_subscriber::block_events::BlockContext;
+use chain_gateway::transaction_sender::SubmittedTxMetadata;
 use mpc_primitives::domain::DomainId;
 use near_account_id::AccountId;
 use near_contract_transport::BlockHeight;
-use near_crypto::Signature;
 use near_indexer_primitives::CryptoHash;
-use near_indexer_primitives::types::{BlockHeight as NearBlockHeight, Nonce};
 use near_mpc_contract_interface::types::{Ed25519PublicKey, Payload, Tweak};
 use near_mpc_crypto_types::kdf::derive_tweak;
 use near_time::Utc;
@@ -63,7 +62,6 @@ pub type RequestId = CryptoHash;
 pub trait Request {
     fn get_id(&self) -> RequestId;
     fn get_receipt_id(&self) -> CryptoHash;
-    fn get_entropy(&self) -> [u8; 32];
     fn get_timestamp_nanosec(&self) -> u64;
     fn get_domain_id(&self) -> DomainId;
     fn get_foreign_chain(&self) -> Option<dtos::ForeignChain>;
@@ -80,7 +78,6 @@ pub struct CKDRequest {
     pub receipt_id: CryptoHash,
     pub app_public_key: dtos::CKDAppPublicKey,
     pub app_id: dtos::CkdAppId,
-    pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain_id: DomainId,
 }
@@ -101,7 +98,6 @@ impl FromChain<CKDRequestFromChain> for CKDRequest {
             receipt_id,
             app_public_key: request.app_public_key,
             app_id: request.app_id,
-            entropy: block.entropy.clone().into(),
             timestamp_nanosec: block.timestamp_nanosec,
             domain_id: request.domain_id,
         }
@@ -118,7 +114,6 @@ pub struct SignatureRequest {
     pub receipt_id: CryptoHash,
     pub payload: Payload,
     pub tweak: Tweak,
-    pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain: DomainId,
 }
@@ -136,7 +131,6 @@ impl FromChain<SignatureRequestFromChain> for SignatureRequest {
             receipt_id,
             payload: request.payload,
             tweak: derive_tweak(&predecessor_id, &request.path),
-            entropy: block.entropy.clone().into(),
             timestamp_nanosec: block.timestamp_nanosec,
             domain: request.domain_id,
         }
@@ -164,7 +158,6 @@ pub struct VerifyForeignTxRequest {
     pub request: dtos::ForeignChainRpcRequest,
     pub payload_version: dtos::ForeignTxPayloadVersion,
     pub expected_payload_hash: Option<dtos::Hash256>,
-    pub entropy: [u8; 32],
     pub timestamp_nanosec: u64,
     pub domain_id: DomainId,
 }
@@ -180,7 +173,6 @@ impl FromChain<VerifyForeignTxRequestFromChain> for VerifyForeignTxRequest {
             id: verify_foreign_tx_id,
             receipt_id,
             domain_id: request.domain_id,
-            entropy: block.entropy.clone().into(),
             payload_version: request.payload_version,
             expected_payload_hash: request.expected_payload_hash,
             request: request.request,
@@ -196,10 +188,6 @@ impl Request for CKDRequest {
 
     fn get_receipt_id(&self) -> CryptoHash {
         self.receipt_id
-    }
-
-    fn get_entropy(&self) -> [u8; 32] {
-        self.entropy
     }
 
     fn get_timestamp_nanosec(&self) -> u64 {
@@ -228,10 +216,6 @@ impl Request for SignatureRequest {
         self.receipt_id
     }
 
-    fn get_entropy(&self) -> [u8; 32] {
-        self.entropy
-    }
-
     fn get_timestamp_nanosec(&self) -> u64 {
         self.timestamp_nanosec
     }
@@ -256,10 +240,6 @@ impl Request for VerifyForeignTxRequest {
 
     fn get_receipt_id(&self) -> CryptoHash {
         self.receipt_id
-    }
-
-    fn get_entropy(&self) -> [u8; 32] {
-        self.entropy
     }
 
     fn get_timestamp_nanosec(&self) -> u64 {
@@ -333,18 +313,6 @@ pub struct SignerContext {
     pub method: &'static str,
 }
 
-#[expect(rustdoc::private_intra_doc_links)]
-/// The metadata of a successfully built-and-submitted transaction, captured in
-/// [`crate::indexer::tx_sender`].
-#[derive(Clone, Debug, PartialEq, Eq, derive_more::Display)]
-#[display("txid={tx_hash}  nonce={nonce}  block={block_height}  sig={signature}")]
-pub struct SubmittedTxMetadata {
-    pub tx_hash: CryptoHash,
-    pub nonce: Nonce,
-    pub signature: Signature,
-    pub block_height: NearBlockHeight,
-}
-
 impl SubmittedTransaction {
     /// A record for a transaction that was successfully built and routed, with
     /// its observed on-chain [`SubmittedTransactionStatus`]. `submitted_at` is
@@ -403,6 +371,9 @@ pub trait LogTransaction: Clone + Send + Sync + 'static {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use near_crypto::Signature;
+    use rstest::rstest;
+    use serde::de::DeserializeOwned;
     use std::str::FromStr;
 
     /// A submitted (Executed) transaction whose hash is fixed
@@ -414,7 +385,7 @@ mod tests {
                 tx_hash: CryptoHash::default(),
                 nonce: 7,
                 signature: Signature::empty(near_crypto::KeyType::ED25519),
-                block_height: 42,
+                block_height: 42.into(),
             }),
             signer_account_id: AccountId::from_str("responder.near").unwrap(),
             signer_public_key: Ed25519PublicKey::from([7u8; 32]),
@@ -452,5 +423,67 @@ mod tests {
         // Then
         let expected = "  2023-11-14 22:13:20.0 +00:00:00  SubmitFailed  method=respond                   signer=responder.near key=ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx  (not submitted)";
         assert_eq!(rendered, expected);
+    }
+
+    /// Requests as release 3.19.0 stored them in the database, including the
+    /// `entropy` key that later releases no longer write.
+    const SIGNATURE_REQUEST_STORED_BY_3_19: &str = r#"{
+        "id": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+        "receipt_id": "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR",
+        "payload": {"Ecdsa": "0303030303030303030303030303030303030303030303030303030303030303"},
+        "tweak": [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+        "entropy": [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        "timestamp_nanosec": 6,
+        "domain": 0
+    }"#;
+    const CKD_REQUEST_STORED_BY_3_19: &str = r#"{
+        "id": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+        "receipt_id": "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR",
+        "app_public_key": {"AppPublicKey": "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"},
+        "app_id": [3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3],
+        "entropy": [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        "timestamp_nanosec": 6,
+        "domain_id": 0
+    }"#;
+    const VERIFY_FOREIGN_TX_REQUEST_STORED_BY_3_19: &str = r#"{
+        "id": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+        "receipt_id": "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR",
+        "request": {"Bitcoin": {
+            "tx_id": "0303030303030303030303030303030303030303030303030303030303030303",
+            "confirmations": 2,
+            "extractors": ["BlockHash"]
+        }},
+        "payload_version": 1,
+        "expected_payload_hash": "0404040404040404040404040404040404040404040404040404040404040404",
+        "entropy": [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5],
+        "timestamp_nanosec": 6,
+        "domain_id": 0
+    }"#;
+
+    #[rstest]
+    #[case::signature(SIGNATURE_REQUEST_STORED_BY_3_19, reserialize_as::<SignatureRequest>)]
+    #[case::ckd(CKD_REQUEST_STORED_BY_3_19, reserialize_as::<CKDRequest>)]
+    #[case::verify_foreign_tx(
+        VERIFY_FOREIGN_TX_REQUEST_STORED_BY_3_19,
+        reserialize_as::<VerifyForeignTxRequest>
+    )]
+    fn request_deserialization__should_drop_only_the_entropy_stored_by_3_19(
+        #[case] stored: &str,
+        #[case] reserialize: fn(&str) -> serde_json::Value,
+    ) {
+        // Given
+        let mut expected: serde_json::Value = serde_json::from_str(stored).unwrap();
+        expected.as_object_mut().unwrap().remove("entropy").unwrap();
+
+        // When
+        let reserialized = reserialize(stored);
+
+        // Then
+        assert_eq!(reserialized, expected);
+    }
+
+    fn reserialize_as<T: Serialize + DeserializeOwned>(json: &str) -> serde_json::Value {
+        let request: T = serde_json::from_str(json).unwrap();
+        serde_json::to_value(request).unwrap()
     }
 }

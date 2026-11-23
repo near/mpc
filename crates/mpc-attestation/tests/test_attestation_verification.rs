@@ -6,13 +6,13 @@ use attestation::attestation::VerificationError;
 use attestation::{ExpectedMeasurements, Measurements};
 use mpc_attestation::attestation::{
     AcceptedAttestation, Attestation, MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation,
-    VerifiedAttestation, dev_measurements,
+    VerifiedAttestation,
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
+use rstest::rstest;
 use std::assert_matches;
 use test_utils::attestation::{
-    VALID_ATTESTATION_TIMESTAMP, account_key, collateral_dates, image_digest,
-    launcher_compose_digest, mock_dstack_attestation, p2p_tls_key,
+    AttestationFixture, DSTACK_0_5_8, DSTACK_0_6_5, account_key, p2p_tls_key,
 };
 
 #[test]
@@ -55,16 +55,18 @@ fn invalid_mock_attestation_fails_verification() {
     );
 }
 
-#[test]
-fn validated_dstack_attestation_can_be_reverified() {
+#[rstest]
+fn validated_dstack_attestation_can_be_reverified(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     // given
-    let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let attestation = fixture.dstack_attestation();
+    let tls_key = fixture.p2p_tls_key();
+    let account_key = fixture.account_key();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-    let timestamp_s = VALID_ATTESTATION_TIMESTAMP;
-    let allowed_mpc_hashes = [image_digest()];
-    let allowed_launcher_hashes = [launcher_compose_digest()];
+    let timestamp_s = fixture.valid_timestamp;
+    let allowed_mpc_hashes = [fixture.image_digest()];
+    let allowed_launcher_hashes = [fixture.launcher_compose_digest()];
 
     let validated = attestation
         .verify_locally(
@@ -72,33 +74,35 @@ fn validated_dstack_attestation_can_be_reverified() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &[dev_measurements()],
+            &[fixture.measurements],
         )
         .expect("Initial verification failed")
         .attestation;
 
     // when
     let re_verification_result = validated.re_verify(
-        collateral_dates().earliest_expiration_date,
+        fixture.collateral_dates().earliest_expiration_date,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
-        &[dev_measurements()],
+        &[fixture.measurements],
     );
 
     // then
     assert_matches!(re_verification_result, Ok(()));
 }
 
-#[test]
-fn validated_dstack_attestation_fails_reverification_when_expired() {
+#[rstest]
+fn validated_dstack_attestation_fails_reverification_when_expired(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     // given
-    let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let attestation = fixture.dstack_attestation();
+    let tls_key = fixture.p2p_tls_key();
+    let account_key = fixture.account_key();
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
-    let timestamp_s = VALID_ATTESTATION_TIMESTAMP;
-    let allowed_mpc_hashes = [image_digest()];
-    let allowed_launcher_hashes = [launcher_compose_digest()];
+    let timestamp_s = fixture.valid_timestamp;
+    let allowed_mpc_hashes = [fixture.image_digest()];
+    let allowed_launcher_hashes = [fixture.launcher_compose_digest()];
 
     let validated = attestation
         .verify_locally(
@@ -106,17 +110,17 @@ fn validated_dstack_attestation_fails_reverification_when_expired() {
             timestamp_s,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &[dev_measurements()],
+            &[fixture.measurements],
         )
         .expect("Initial verification failed")
         .attestation;
 
     // when
     let re_verification_result = validated.re_verify(
-        collateral_dates().earliest_expiration_date + 1,
+        fixture.collateral_dates().earliest_expiration_date + 1,
         &allowed_mpc_hashes,
         &allowed_launcher_hashes,
-        &[dev_measurements()],
+        &[fixture.measurements],
     );
 
     // then
@@ -142,16 +146,18 @@ fn validated_mock_attestation_passes_reverification() {
     assert_matches!(validated.re_verify(100, &[], &[], &[]), Ok(()));
 }
 
-#[test]
-fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
-    let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+#[rstest]
+fn validated_dstack_attestation_fails_reverification_with_rotated_hashes(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
+    let attestation = fixture.dstack_attestation();
+    let tls_key = fixture.p2p_tls_key();
+    let account_key = fixture.account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
-    let creation_time = VALID_ATTESTATION_TIMESTAMP;
+    let creation_time = fixture.valid_timestamp;
 
-    let allowed_mpc_hashes = [image_digest()];
-    let allowed_launcher_hashes = [launcher_compose_digest()];
+    let allowed_mpc_hashes = [fixture.image_digest()];
+    let allowed_launcher_hashes = [fixture.launcher_compose_digest()];
 
     // 1. Initial verify succeeds with the "old" allowed list
     let validated = attestation
@@ -160,7 +166,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &[dev_measurements()],
+            &[fixture.measurements],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -172,7 +178,7 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
         creation_time,
         &new_allowed_mpc_docker_image_hashes,
         &allowed_launcher_hashes,
-        &[dev_measurements()],
+        &[fixture.measurements],
     );
 
     assert_matches!(
@@ -182,16 +188,18 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes() {
     );
 }
 
-#[test]
-fn validated_dstack_attestation_fails_reverification_with_removed_measurements() {
+#[rstest]
+fn validated_dstack_attestation_fails_reverification_with_removed_measurements(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     // given
-    let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let attestation = fixture.dstack_attestation();
+    let tls_key = fixture.p2p_tls_key();
+    let account_key = fixture.account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
-    let creation_time = VALID_ATTESTATION_TIMESTAMP;
-    let allowed_mpc_hashes = [image_digest()];
-    let allowed_launcher_hashes = [launcher_compose_digest()];
+    let creation_time = fixture.valid_timestamp;
+    let allowed_mpc_hashes = [fixture.image_digest()];
+    let allowed_launcher_hashes = [fixture.launcher_compose_digest()];
 
     let validated = attestation
         .verify_locally(
@@ -199,7 +207,7 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &[dev_measurements()],
+            &[fixture.measurements],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -226,16 +234,18 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements()
     assert_matches!(result, Err(VerificationError::MeasurementsNotAllowed));
 }
 
-#[test]
-fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
+#[rstest]
+fn validated_dstack_attestation_fails_reverification_with_empty_measurements(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     // given
-    let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let attestation = fixture.dstack_attestation();
+    let tls_key = fixture.p2p_tls_key();
+    let account_key = fixture.account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
-    let creation_time = VALID_ATTESTATION_TIMESTAMP;
-    let allowed_mpc_hashes = [image_digest()];
-    let allowed_launcher_hashes = [launcher_compose_digest()];
+    let creation_time = fixture.valid_timestamp;
+    let allowed_mpc_hashes = [fixture.image_digest()];
+    let allowed_launcher_hashes = [fixture.launcher_compose_digest()];
 
     let validated = attestation
         .verify_locally(
@@ -243,7 +253,7 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &[dev_measurements()],
+            &[fixture.measurements],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -260,16 +270,18 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements() {
     assert_matches!(result, Err(VerificationError::EmptyMeasurementsList));
 }
 
-#[test]
-fn validated_dstack_attestation_passes_reverification_with_superset_measurements() {
+#[rstest]
+fn validated_dstack_attestation_passes_reverification_with_superset_measurements(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     // given
-    let attestation = mock_dstack_attestation();
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let attestation = fixture.dstack_attestation();
+    let tls_key = fixture.p2p_tls_key();
+    let account_key = fixture.account_key();
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
-    let creation_time = VALID_ATTESTATION_TIMESTAMP;
-    let allowed_mpc_hashes = [image_digest()];
-    let allowed_launcher_hashes = [launcher_compose_digest()];
+    let creation_time = fixture.valid_timestamp;
+    let allowed_mpc_hashes = [fixture.image_digest()];
+    let allowed_launcher_hashes = [fixture.launcher_compose_digest()];
 
     let validated = attestation
         .verify_locally(
@@ -277,7 +289,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
             creation_time,
             &allowed_mpc_hashes,
             &allowed_launcher_hashes,
-            &[dev_measurements()],
+            &[fixture.measurements],
         )
         .expect("Initial verification should succeed")
         .attestation;
@@ -291,7 +303,7 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
         },
         key_provider_event_digest: [0xEE; 48],
     };
-    let mut superset: Vec<ExpectedMeasurements> = vec![dev_measurements()];
+    let mut superset: Vec<ExpectedMeasurements> = vec![fixture.measurements];
     superset.push(extra_measurement);
 
     // when

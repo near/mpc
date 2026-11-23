@@ -198,7 +198,7 @@ of MTA easier.
 
 Protocol `MTA`:
 
-Let $\kappa = \lceil \lg q \rceil + \lambda$.
+Let $\kappa = \lceil \log_2 q \rceil + \lambda$.
 
 The parties have, in a previous phase, have generated correlated randomness
 of the following form:
@@ -213,12 +213,12 @@ $$
 $$
 
 1. $\mathcal{S}$ samples random $\delta_1, \ldots, \delta_\kappa \xleftarrow{R} \mathbb{F}_q$.
-2. $\star$ $\mathcal{S}$ sends $(-a + \delta_i + v_i^0, a + \delta_i + v_i^1)$ to $\mathcal{R}$.
+2. $\star$ $\mathcal{S}$ sends $(a + \delta_i + v_i^0, -a + \delta_i + v_i^1)$ to $\mathcal{R}$.
 3. $\bullet$ $\mathcal{R}$ waits to receive $(c^0_i, c^1_i)$ from $\mathcal{S}$, and
 sets $m_i \gets c^{t_i}_i - v_i^{t_i}$
 4. $\mathcal{R}$ samples $s \xleftarrow{R} \mathbb{F}_2^\lambda$, and
 extends this into $\chi_2, \ldots, \chi_\kappa \gets \text{PRG}(s)$.
-$\mathcal{S}$ then sets $\chi_ 1 \gets (-1)^{t_ 1}(b - \sum_{i \in [2\ldots \kappa]} \chi_ i \cdot (-1)^{t_ i})$.
+$\mathcal{R}$ then sets $\chi_ 1 \gets (-1)^{t_ 1}(b - \sum_{i \in [2\ldots \kappa]} \chi_ i \cdot (-1)^{t_ i})$.
 (This makes it so that $b = \langle \chi_ i,  (-1)^{t_ i} \rangle$)
 5. $\mathcal{R}$ saves $\beta = \langle \chi_ i, m_ i \rangle$.
 6. $\star$ $\mathcal{R}$ sends $s$ and $\chi_ 1$ to $\mathcal{S}$.
@@ -262,7 +262,7 @@ In parallel, for each order pair of parties $P_i < P_j$,
 with $\mathcal{S} = P_i$, being the sender, and $\mathcal{R} = P_j$
 being the receiver.
 
-Let $\kappa = \lceil q \rceil + \lambda$.
+Let $\kappa = \lceil \log_2 q \rceil + \lambda$.
 
 1. $\mathcal{S}$ and $\mathcal{R}$ run `Random-OT-Extension` with $\text{sid}$ and a batch size of $2 \kappa$.
 $\mathcal{S}$ receives $v_i^0, v_i^1$, and $\mathcal{R}$ receives $t_i$ and $v_i^{t_i}$.

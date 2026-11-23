@@ -71,6 +71,19 @@ impl ProbeReport {
         &self.rows
     }
 
+    /// The rows of `chain` whose provider was checked against the chain's expected network
+    /// fingerprint.
+    pub fn probed_rows(&self, chain: ForeignChain) -> Vec<&ProviderHealth> {
+        self.rows
+            .iter()
+            .filter(|row| {
+                row.chain == chain
+                    && row.status.was_probed()
+                    && row.status != ProviderStatus::MissingExpectedFingerprint
+            })
+            .collect()
+    }
+
     pub fn counts_per_chain(&self) -> BTreeMap<ForeignChain, ProviderCounts> {
         let mut counts: BTreeMap<ForeignChain, ProviderCounts> = BTreeMap::new();
         for row in &self.rows {
@@ -96,7 +109,7 @@ pub async fn probe_all_providers<InspectorFactory>(
 where
     InspectorFactory: BuildInspectors,
 {
-    let probe_attempts = config.iter_chains().map(|(chain, chain_config)| {
+    let probe_attempts = config.into_iter().map(|(chain, chain_config)| {
         let timeout = chain_config.timeout_duration();
         async move {
             probe_chain(chain, chain_config, |provider| {
@@ -1271,5 +1284,40 @@ mod tests {
         let rendered = format!("{report:?}");
         assert!(!rendered.contains("super-secret"), "{rendered}");
         assert!(!rendered.contains("127.0.0.1"), "{rendered}");
+    }
+
+    #[test]
+    fn probed_rows__should_keep_only_the_rows_of_the_chain_checked_against_a_fingerprint() {
+        // Given
+        let row = |chain, provider: &str, status| ProviderHealth {
+            chain,
+            provider: ProviderId(provider.to_owned()),
+            status,
+        };
+        let report = ProbeReport::from(vec![
+            row(ForeignChain::Ethereum, "healthy", ProviderStatus::Healthy),
+            row(ForeignChain::Ethereum, "down", ProviderStatus::Unreachable),
+            row(
+                ForeignChain::Ethereum,
+                "unchecked",
+                ProviderStatus::MissingExpectedFingerprint,
+            ),
+            row(
+                ForeignChain::Ethereum,
+                "no_inspector",
+                ProviderStatus::ProbeNotImplemented,
+            ),
+            row(ForeignChain::Base, "other_chain", ProviderStatus::Healthy),
+        ]);
+
+        // When
+        let probed: Vec<&str> = report
+            .probed_rows(ForeignChain::Ethereum)
+            .into_iter()
+            .map(|row| row.provider.0.as_str())
+            .collect();
+
+        // Then
+        assert_eq!(probed, ["healthy", "down"]);
     }
 }

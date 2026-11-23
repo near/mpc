@@ -4,9 +4,9 @@ use super::tx_signer::TransactionSigner;
 use crate::metrics;
 use crate::types::{
     LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
-    SubmittedTxMetadata,
 };
 use chain_gateway::primitives::FetchLatestFinalBlockInfo;
+use chain_gateway::transaction_sender::SubmittedTxMetadata;
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
 use near_contract_transport::ViewContract;
@@ -145,7 +145,7 @@ async fn submit_tx(
         tx_hash,
         nonce,
         signature,
-        block_height: block.observed_at.into(),
+        block_height: block.observed_at,
     })
 }
 

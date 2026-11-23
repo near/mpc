@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template): rendered with the launcher and MPC node manifest digests and the contract account id before deployment (see below)
+* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template): rendered with the launcher and MPC node manifest digests, the contract account id and the localnet's genesis hash before deployment (see below)
 * [frodo.toml](../../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../../deployment/localnet/tee/frodo.env)/ [sam.env](../../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
@@ -88,7 +88,8 @@ Set the launcher and MPC node manifest digests in the env file
 (`LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`). `deploy-launcher.sh`
 renders the contract template at deploy time, substituting these digests
 into the `image:` and `DEFAULT_IMAGE_DIGEST` fields, and the env file's
-`MPC_CONTRACT_ID` into the `MPC_CONTRACT_ID` field.
+`MPC_CONTRACT_ID` and `NEAR_GENESIS_HASH` (read from the localnet) into the
+fields of the same name.
 
 Example values:
 
@@ -204,6 +205,7 @@ export FRODO_P2P_KEY=$(curl -s localhost:18081/public_data | jq -r '.near_p2p_pu
 export SAM_P2P_KEY=$(curl -s localhost:18082/public_data | jq -r '.near_p2p_public_key')
 
 export MPC_HOST=$MACHINE_IP
+export NEAR_GENESIS_HASH=$(curl -s localhost:3030/status | jq -r .genesis_hash)
 ```
 
 ### Add the Keys to User Accounts

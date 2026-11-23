@@ -44,6 +44,7 @@ Create or use a non-TEE launcher compose file with the following properties:
 
 - Set `PLATFORM=NONTEE`
 - Set `MPC_CONTRACT_ID` to the account id of the MPC contract
+- Set `NEAR_GENESIS_HASH` to the genesis hash of the chain the MPC contract runs on
 - Mount `/var/run/docker.sock`
 - Do **not** mount `/var/run/dstack.sock`
 - Mount the user config file at `/tapp/user_config`
