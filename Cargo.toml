@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/async-testing",
     "crates/attestation",
     "crates/attestation-cli",
     "crates/attestation-types",
@@ -43,6 +44,7 @@ members = [
     "crates/test-port-allocator",
     "crates/test-utils",
     "crates/threshold-signatures",
+    "crates/tick",
     "crates/tls",
 ]
 
@@ -54,6 +56,7 @@ repository = "https://github.com/near/mpc"
 
 [workspace.dependencies]
 #workspace members
+async-testing = { path = "crates/async-testing" }
 attestation = { path = "crates/attestation" }
 attestation-types = { path = "crates/attestation-types" }
 chain-gateway = { path = "crates/chain-gateway" }
@@ -86,6 +89,7 @@ tee-verifier-interface = { path = "crates/tee-verifier-interface" }
 test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
+tick = { path = "crates/tick" }
 
 aes-gcm = "0.11.0"
 anyhow = "1.0.102"

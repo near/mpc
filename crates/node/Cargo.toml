@@ -83,6 +83,7 @@ test-port-allocator = { workspace = true, optional = true }
 thiserror = { workspace = true }
 thread-priority = { workspace = true }
 threshold-signatures = { workspace = true }
+tick = { workspace = true }
 tikv-jemallocator = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
@@ -111,6 +112,7 @@ pprof = { workspace = true, features = ["frame-pointer"] }
 built = { workspace = true }
 
 [dev-dependencies]
+async-testing = { workspace = true }
 average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
@@ -127,6 +129,7 @@ tempfile = { workspace = true }
 test-log = { workspace = true }
 test-port-allocator = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
+tick = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-test = { workspace = true }
 
