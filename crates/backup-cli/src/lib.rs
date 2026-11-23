@@ -11,6 +11,7 @@ pub mod backup;
 pub mod cli;
 pub mod keyset;
 pub mod ports;
+pub mod recovery;
 pub mod service;
 pub mod start;
 pub mod types;

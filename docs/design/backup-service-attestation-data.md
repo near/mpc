@@ -128,7 +128,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 1. **Operator trigger (manual)**: Operator calls [`start_node_migration(destination_node_info)`][start-node-migration].
 2. **Detection (automated)**: Backup service polls `attested_migration_destination(account_id)`, which returns the operator's ongoing migration only while the operator is a participant of the running state and the destination node passes the checks of `start_node_migration()` with a [`Dstack`][attestation-dstack] attestation (see [Required Changes](#contract-methods)).
-3. **Transfer**: Backup service connects via mTLS to the host of that destination's URL, on the migration port its configuration names, verifying the destination's TLS key from the view, and sends encrypted keyshares. A host-supplied port can only make the transfer fail.
+3. **Transfer**: Backup service connects via mTLS to the host of that destination's URL, on the migration port its configuration names, verifying the destination's TLS key from the view, and sends encrypted keyshares. A host-supplied port can only make the transfer fail. It sends them again every minute while the view returns the migration, since the destination may not accept them yet or may lose them before it concludes the migration.
 4. **Verification**: New node queries the contract to verify the backup service's attestation before saving keyshares.
 5. **Finalization**: New node calls [`conclude_node_migration(keyset)`][conclude-node-migration].
 

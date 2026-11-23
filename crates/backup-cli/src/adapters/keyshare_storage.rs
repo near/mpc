@@ -2,7 +2,7 @@ use mpc_node::keyshare::{
     Keyshare, local::LocalPermanentKeyStorageBackend, permanent::PermanentKeyStorage,
     permanent::PermanentKeyshareData,
 };
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use crate::ports::KeyShareRepository;
 
@@ -10,8 +10,9 @@ use crate::ports::KeyShareRepository;
 ///
 /// This uses the MPC node's [`PermanentKeyStorage`] to store keyshares locally
 /// in an encrypted format.
+#[derive(Clone)]
 pub struct KeyshareStorageAdapter {
-    storage: PermanentKeyStorage,
+    storage: Arc<PermanentKeyStorage>,
 }
 
 impl KeyshareStorageAdapter {
@@ -19,7 +20,9 @@ impl KeyshareStorageAdapter {
         let backend = LocalPermanentKeyStorageBackend::new(home_dir, encryption_key).await?;
         let storage = PermanentKeyStorage::new(Box::new(backend)).await?;
 
-        Ok(Self { storage })
+        Ok(Self {
+            storage: Arc::new(storage),
+        })
     }
 }
 

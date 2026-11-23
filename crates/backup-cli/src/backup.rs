@@ -307,71 +307,24 @@ fn verifying_key_from_str(mpc_node_p2p_key: &str) -> VerifyingKey {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use mpc_node::keyshare::{Keyshare, test_utils::generate_dummy_keyshare};
-    use near_mpc_contract_interface::types::Keyset;
-    use rand::SeedableRng as _;
-    use rand::rngs::StdRng;
+    use std::sync::atomic::Ordering;
 
     use super::put_keyshares;
-    use crate::ports::{KeyShareRepository, P2PClient};
-
-    struct FakeP2PClient {
-        put_keyshares_calls: AtomicUsize,
-    }
-
-    impl FakeP2PClient {
-        fn new() -> Self {
-            Self {
-                put_keyshares_calls: AtomicUsize::new(0),
-            }
-        }
-    }
-
-    impl P2PClient for FakeP2PClient {
-        type Error = anyhow::Error;
-
-        async fn get_keyshares(&self, _keyset: &Keyset) -> Result<Vec<Keyshare>, Self::Error> {
-            unreachable!("put-keyshares never fetches")
-        }
-
-        async fn put_keyshares(&self, _key_shares: &[Keyshare]) -> Result<(), Self::Error> {
-            self.put_keyshares_calls.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        }
-    }
-
-    struct FakeKeyshareStorage {
-        keyshares: Vec<Keyshare>,
-    }
-
-    impl KeyShareRepository for FakeKeyshareStorage {
-        type Error = anyhow::Error;
-
-        async fn store_keyshares(&self, _key_shares: &[Keyshare]) -> Result<(), Self::Error> {
-            unreachable!("put-keyshares never stores")
-        }
-
-        async fn load_keyshares(&self) -> Result<Vec<Keyshare>, Self::Error> {
-            Ok(self.keyshares.clone())
-        }
-    }
+    use crate::test_utils::{FakeKeyshareStorage, FakeP2PClient, keyshares_for};
 
     #[tokio::test]
     async fn put_keyshares__should_send_the_stored_keyshares() {
         // Given
-        let mut rng = StdRng::seed_from_u64(42);
         let mpc_p2p_client = FakeP2PClient::new();
-        let storage = FakeKeyshareStorage {
-            keyshares: vec![generate_dummy_keyshare(1, 0, 1, &mut rng)],
-        };
+        let storage = FakeKeyshareStorage::with_keyshares(keyshares_for(1, &[0]));
 
         // When
         let result = put_keyshares(&mpc_p2p_client, &storage).await;
 
         // Then
         result.expect("stored keyshares should be pushed to the node");
-        assert_eq!(mpc_p2p_client.put_keyshares_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(mpc_p2p_client.put_keyshares_calls(), 1);
+        assert_eq!(mpc_p2p_client.get_keyshares_calls(), 0);
+        assert_eq!(storage.stored.load(Ordering::SeqCst), 0);
     }
 }

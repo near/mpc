@@ -29,13 +29,15 @@ use crate::{
     },
     backup::run_backup_service_through_embedded_node,
     cli::{DEFAULT_POLL_INTERVAL_SECONDS, DEFAULT_REQUEST_TIMEOUT_SECONDS},
+    recovery::run_recovery,
 };
 
 /// Starts the backup service a launcher configured, serves its keys and attestation on
-/// `/public_data`, registers it on the contract every hour, and backs up the keyshares of its
-/// account's MPC node until the given [`CancellationToken`] is cancelled. Fails when the embedded
-/// NEAR node follows a chain other than the configured genesis hash's, or when the approved image
-/// hashes cannot be written for the launcher.
+/// `/public_data`, registers it on the contract every hour, backs up the keyshares of its
+/// account's MPC node and sends them to the account's migration destination until the given
+/// [`CancellationToken`] is cancelled. Fails when the embedded NEAR node follows a chain other
+/// than the configured genesis hash's, or when the approved image hashes cannot be written for the
+/// launcher.
 pub async fn start_with_config_file(
     home_dir: PathBuf,
     config: BackupServiceStartConfig,
@@ -113,6 +115,8 @@ pub async fn start_with_config_file(
     )
     .await?;
 
+    let migration_destination =
+        mpc_contract.attested_migration_destination(config.account_id.clone());
     let mpc_nodes = ChainListedNodes::new(
         mpc_contract.clone(),
         config.account_id,
@@ -123,15 +127,26 @@ pub async fn start_with_config_file(
     );
     let keyshares_storage =
         KeyshareStorageAdapter::new(home_dir, secrets.local_storage_aes_key).await?;
+    let retry_delay = Duration::from_secs(DEFAULT_POLL_INTERVAL_SECONDS);
     tokio::select! {
         result = run_backup_service_through_embedded_node(
             &mpc_contract,
-            mpc_nodes,
-            keyshares_storage,
+            mpc_nodes.clone(),
+            keyshares_storage.clone(),
             status_reporter,
-            Duration::from_secs(DEFAULT_POLL_INTERVAL_SECONDS),
-            shutdown,
+            retry_delay,
+            shutdown.clone(),
         ) => result,
+        result = async {
+            run_recovery(
+                &mpc_nodes,
+                &keyshares_storage,
+                migration_destination.subscribe().await,
+                retry_delay,
+                shutdown,
+            )
+            .await
+        } => result,
         Some(()) = image_hash_shutdown.recv() => {
             Err(anyhow!(
                 "the approved image hashes watcher exited unexpectedly: {:?}",

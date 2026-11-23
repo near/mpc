@@ -15,6 +15,7 @@ use crate::{adapters::p2p_client::MpcP2PClient, cli::NodeAddress, ports};
 /// Exchanges keyshares only with the MPC nodes the contract lists for an account, at the hosts of
 /// their contract URLs and verified by the TLS keys the contract lists for them: backups come from
 /// the account's participant node, and keyshares go to its attested migration destination.
+#[derive(Clone)]
 pub struct ChainListedNodes<V> {
     contract: MpcContractHandle<V>,
     account_id: AccountId,
@@ -90,20 +91,22 @@ mod tests {
         migration_service::web::test_utils::{TestSetup, setup},
         p2p::testing::{TestPorts, port_seed},
     };
-    use near_contract_transport::{
-        ObservedState,
-        mock::{MockViewContract, MockViewError},
-    };
-    use near_mpc_contract_interface::{
-        method_names::{ATTESTED_MIGRATION_DESTINATION, PARTICIPANT_INFO},
-        types::{DestinationNodeInfo, Ed25519PublicKey},
+    use near_contract_transport::mock::{MockViewContract, MockViewError};
+    use near_mpc_contract_interface::method_names::{
+        ATTESTED_MIGRATION_DESTINATION, PARTICIPANT_INFO,
     };
     use rand::{SeedableRng as _, rngs::StdRng};
     use rstest::rstest;
     use serde::Serialize;
 
     use super::*;
-    use crate::{ports::P2PClient as _, test_utils::TEST_REQUEST_TIMEOUT};
+    use crate::{
+        ports::P2PClient as _,
+        test_utils::{
+            TEST_REQUEST_TIMEOUT, migration_destination, mpc_contract, observed,
+            operator_account_id, participant_info,
+        },
+    };
 
     /// Lists the given node for the account in the given view; every other view fails
     fn chain_listed_nodes(
@@ -112,28 +115,15 @@ mod tests {
         listed: &impl Serialize,
     ) -> ChainListedNodes<MockViewContract> {
         let viewer = MockViewContract::new(Err(MockViewError("not listed")));
-        viewer.set_view_response_for_method(
-            view,
-            Ok(ObservedState {
-                observed_at: 0.into(),
-                value: serde_json::to_vec(&Some(listed)).unwrap(),
-            }),
-        );
+        viewer.set_view_response_for_method(view, observed(&Some(listed)));
         ChainListedNodes::new(
-            MpcContractHandle::new(viewer, "v1.signer".parse().unwrap()),
-            "operator.near".parse().unwrap(),
+            mpc_contract(viewer),
+            operator_account_id(),
             test_setup.target_address.port(),
             test_setup.client_key.clone(),
             test_setup.backup_encryption_key,
             TEST_REQUEST_TIMEOUT,
         )
-    }
-
-    fn participant_info(tls_public_key: Ed25519PublicKey) -> ParticipantInfo {
-        ParticipantInfo {
-            url: "http://127.0.0.1:3000".try_into().unwrap(),
-            tls_public_key,
-        }
     }
 
     #[rstest]
@@ -183,12 +173,7 @@ mod tests {
         let nodes = chain_listed_nodes(
             &test_setup,
             ATTESTED_MIGRATION_DESTINATION,
-            &DestinationNodeInfo {
-                signer_account_pk: Ed25519PublicKey::from([1; 32]),
-                destination_node_info: participant_info(
-                    (&test_setup.server_key.verifying_key()).into(),
-                ),
-            },
+            &migration_destination((&test_setup.server_key.verifying_key()).into()),
         );
         let keyshares = KeysetBuilder::new_populated(0, 8, &mut rng)
             .keyshares()
