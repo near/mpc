@@ -30,7 +30,7 @@ mod sandbox_test_methods;
 pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
-    foreign_chains_metadata::ForeignChainsMetadata,
+    foreign_chains_metadata::ForeignChainsMetadata, primitives::domain::AddDomainsVotes,
     primitives::threshold_votes::GovernanceThresholdParametersVotes, tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
@@ -76,6 +76,8 @@ pub struct MpcContract {
     /// launcher then refuses to start its TEE nodes.
     // TODO(#5254): let participants vote in a genesis hash while it is unset
     genesis_hash: Option<GenesisHash>,
+    /// Pending votes to add domains; storage-backed, so kept outside [`ProtocolContractState`].
+    add_domains_votes: AddDomainsVotes,
 }
 
 impl Default for MpcContract {

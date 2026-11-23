@@ -929,7 +929,6 @@ mod tests {
                 id: CryptoHash(rand::random()),
                 // All other fields are irrelevant for the test.
                 receipt_id: CryptoHash([0; 32]),
-                entropy: [0; 32],
                 payload: Payload::from_legacy_ecdsa([0; 32]),
                 timestamp_nanosec: 0,
                 tweak: Tweak::new([0; 32]),
