@@ -100,6 +100,7 @@ fn hash_to_curve(bytes: &[u8]) -> Vec<u8> {
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::*;
     use blstrs::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
@@ -110,6 +111,7 @@ mod tests {
     use near_mpc_contract_interface::types::kdf::derive_app_id;
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
+    use rstest::rstest;
     use threshold_signatures::confidential_key_derivation::{self as ckd, ElementG2, VerifyingKey};
 
     /// Finds a point on the G1 curve that is not in the prime-order subgroup
@@ -462,34 +464,6 @@ mod tests {
         assert!(!accepted);
     }
 
-    #[test]
-    #[should_panic(expected = "malformed BLS12-381 G1 point")]
-    #[expect(non_snake_case)]
-    fn app_public_key_check__should_abort_on_malformed_pk1() {
-        // Given
-        let app_pk = dtos::CKDAppPublicKeyPV {
-            pk1: dtos::Bls12381G1PublicKey(g1_x_not_on_curve()),
-            pk2: dtos::Bls12381G2PublicKey(G2Projective::generator().to_compressed()),
-        };
-
-        // When / Then
-        app_public_key_check(&app_pk);
-    }
-
-    #[test]
-    #[should_panic(expected = "malformed BLS12-381 G2 point")]
-    #[expect(non_snake_case)]
-    fn app_public_key_check__should_abort_on_malformed_pk2() {
-        // Given
-        let app_pk = dtos::CKDAppPublicKeyPV {
-            pk1: dtos::Bls12381G1PublicKey(G1Projective::generator().to_compressed()),
-            pk2: dtos::Bls12381G2PublicKey(g2_x_not_on_curve()),
-        };
-
-        // When / Then
-        app_public_key_check(&app_pk);
-    }
-
     /// Documents the pre-existing behavior that identity key pairs satisfy
     /// the pairing equation and are accepted.
     #[test]
@@ -506,6 +480,28 @@ mod tests {
 
         // Then
         assert!(accepted);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "malformed BLS12-381 G1 point")]
+    #[case::pk1(
+        dtos::Bls12381G1PublicKey(g1_x_not_on_curve()),
+        dtos::Bls12381G2PublicKey(G2Projective::generator().to_compressed())
+    )]
+    #[should_panic(expected = "malformed BLS12-381 G2 point")]
+    #[case::pk2(
+        dtos::Bls12381G1PublicKey(G1Projective::generator().to_compressed()),
+        dtos::Bls12381G2PublicKey(g2_x_not_on_curve())
+    )]
+    fn app_public_key_check__should_abort_on_malformed_key(
+        #[case] pk1: dtos::Bls12381G1PublicKey,
+        #[case] pk2: dtos::Bls12381G2PublicKey,
+    ) {
+        // Given
+        let app_pk = dtos::CKDAppPublicKeyPV { pk1, pk2 };
+
+        // When / Then
+        app_public_key_check(&app_pk);
     }
 
     /// Builds a CKD output that satisfies

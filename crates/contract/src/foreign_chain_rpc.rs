@@ -218,6 +218,7 @@ mod tests {
     };
     use mpc_primitives::GovernanceThreshold;
     use near_mpc_contract_interface::types::{AuthScheme, ChainRouting};
+    use rstest::rstest;
     use std::assert_matches;
 
     /// Build a [`GovernanceThresholdParameters`] for tests, bypassing the relative-threshold
@@ -535,95 +536,86 @@ mod tests {
         );
     }
 
-    #[test]
-    fn vote__should_return_err_on_zero_quorum() {
+    #[rstest]
+    #[case::zero_quorum(&["alchemy"], 0, "quorum must be >= 1")]
+    #[case::quorum_exceeding_providers_len(&["alchemy", "ankr"], 3, "exceeds providers.len()")]
+    fn vote__should_return_err_on_invalid_quorum(
+        #[case] providers: &[&str],
+        #[case] quorum: u64,
+        #[case] expected_error: &str,
+    ) {
+        // Given
         let (participants, auth_ids) = gen_authenticated_participants(2);
         let mut wl = ForeignChainRpcWhitelist::default();
+
+        // When
         let err = wl
             .vote(
                 auth_ids[0].clone(),
-                single_chain_votes(ForeignChain::Ethereum, &["alchemy"], 0),
+                single_chain_votes(ForeignChain::Ethereum, providers, quorum),
                 &tp(&participants, 2),
             )
             .unwrap_err();
-        assert_malformed(err, "quorum must be >= 1");
+
+        // Then
+        assert_malformed(err, expected_error);
     }
 
-    #[test]
-    fn vote__should_return_err_on_quorum_exceeding_providers_len() {
-        let (participants, auth_ids) = gen_authenticated_participants(2);
-        let mut wl = ForeignChainRpcWhitelist::default();
-        let err = wl
-            .vote(
-                auth_ids[0].clone(),
-                single_chain_votes(ForeignChain::Ethereum, &["alchemy", "ankr"], 3),
-                &tp(&participants, 2),
-            )
-            .unwrap_err();
-        assert_malformed(err, "exceeds providers.len()");
-    }
-
-    #[test]
-    fn vote__should_return_err_on_path_segment_with_slash() {
-        let (participants, auth_ids) = gen_authenticated_participants(2);
-        let mut wl = ForeignChainRpcWhitelist::default();
-        let bad = (
-            ProviderId("ankr".to_string()),
-            ProviderConfig {
-                base_url: "https://rpc.ankr.com".to_string(),
-                auth_scheme: AuthScheme::None,
-                chain_routing: ChainRouting::PathSegment {
-                    segment: "eth/sepolia".to_string(),
-                },
+    #[rstest]
+    #[case::path_segment_with_slash(
+        "ankr",
+        ProviderConfig {
+            base_url: "https://rpc.ankr.com".to_string(),
+            auth_scheme: AuthScheme::None,
+            chain_routing: ChainRouting::PathSegment {
+                segment: "eth/sepolia".to_string(),
             },
-        );
+        },
+        "PathSegment"
+    )]
+    #[case::query_param_name_colliding_with_auth_query(
+        "drpc",
+        ProviderConfig {
+            base_url: "https://lb.drpc.org/ogrpc".to_string(),
+            auth_scheme: AuthScheme::Query {
+                name: "key".to_string(),
+            },
+            chain_routing: ChainRouting::QueryParam {
+                name: "key".to_string(),
+                value: "ethereum".to_string(),
+            },
+        },
+        "QueryParam.name collides"
+    )]
+    fn vote__should_return_err_on_invalid_provider_config(
+        #[case] provider_id: &str,
+        #[case] config: ProviderConfig,
+        #[case] expected_error: &str,
+    ) {
+        // Given
+        let (participants, auth_ids) = gen_authenticated_participants(2);
+        let mut wl = ForeignChainRpcWhitelist::default();
+
+        // When
         let err = wl
             .vote(
                 auth_ids[0].clone(),
                 NonEmptyBTreeMap::new(
                     ForeignChain::Ethereum,
                     dtos::ChainEntry {
-                        providers: NonEmptyBTreeMap::new(bad.0, bad.1),
+                        providers: NonEmptyBTreeMap::new(
+                            ProviderId(provider_id.to_string()),
+                            config,
+                        ),
                         quorum: 1,
                     },
                 ),
                 &tp(&participants, 2),
             )
             .unwrap_err();
-        assert_malformed(err, "PathSegment");
-    }
 
-    #[test]
-    fn vote__should_return_err_on_query_param_name_colliding_with_auth_query() {
-        let (participants, auth_ids) = gen_authenticated_participants(2);
-        let mut wl = ForeignChainRpcWhitelist::default();
-        let bad = (
-            ProviderId("drpc".to_string()),
-            ProviderConfig {
-                base_url: "https://lb.drpc.org/ogrpc".to_string(),
-                auth_scheme: AuthScheme::Query {
-                    name: "key".to_string(),
-                },
-                chain_routing: ChainRouting::QueryParam {
-                    name: "key".to_string(),
-                    value: "ethereum".to_string(),
-                },
-            },
-        );
-        let err = wl
-            .vote(
-                auth_ids[0].clone(),
-                NonEmptyBTreeMap::new(
-                    ForeignChain::Ethereum,
-                    dtos::ChainEntry {
-                        providers: NonEmptyBTreeMap::new(bad.0, bad.1),
-                        quorum: 1,
-                    },
-                ),
-                &tp(&participants, 2),
-            )
-            .unwrap_err();
-        assert_malformed(err, "QueryParam.name collides");
+        // Then
+        assert_malformed(err, expected_error);
     }
 
     #[test]
