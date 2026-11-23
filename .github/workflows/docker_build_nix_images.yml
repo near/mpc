@@ -36,6 +36,9 @@ jobs:
       - name: Build mpc-launcher image
         run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-launcher .#mpc-launcher-image
 
+      - name: Build backup-service image
+        run: nix build --print-build-logs --no-update-lock-file --out-link out/backup-service .#backup-service-image
+
       - name: Print image digests
         run: sha256sum out/*/manifest.json
 
@@ -73,6 +76,6 @@ jobs:
       - name: Push images
         run: |
           tag="${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}-nix"
-          for image in mpc-node mpc-launcher; do
+          for image in mpc-node mpc-launcher backup-service; do
             skopeo copy --preserve-digests "dir:out/$image" "docker://docker.io/nearone/$image:$tag"
           done

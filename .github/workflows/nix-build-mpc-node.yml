@@ -36,6 +36,9 @@ jobs:
       - name: Build mpc-launcher image
         run: nix build --print-build-logs --no-update-lock-file --out-link out/mpc-launcher .#mpc-launcher-image
 
+      - name: Build backup-service image
+        run: nix build --print-build-logs --no-update-lock-file --out-link out/backup-service .#backup-service-image
+
       - name: Print image digests
         run: sha256sum out/*/manifest.json
 
@@ -43,5 +46,7 @@ jobs:
         run: |
           skopeo copy dir:out/mpc-node docker-daemon:mpc-node:latest
           skopeo copy dir:out/mpc-launcher docker-daemon:mpc-rust-launcher:latest
+          skopeo copy dir:out/backup-service docker-daemon:backup-service:latest
           docker run --rm mpc-node /app/mpc-node --version | grep -F "(commit ${GITHUB_SHA::7})"
+          docker run --rm backup-service /app/backup-cli --version | grep -F "(commit ${GITHUB_SHA::7})"
           .github/scripts/check-images-start.sh

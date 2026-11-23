@@ -54,13 +54,15 @@
       packages = forAllSystems (
         pkgs:
         let
-          mpc-node = pkgs.callPackage ./nix/mpc-node.nix {
-            inherit crane prodCFlags;
-            gitRev = self.shortRev or self.dirtyShortRev or null;
+          gitRev = self.shortRev or self.dirtyShortRev or null;
+          mpc-node = pkgs.callPackage ./nix/mpc-node.nix { inherit crane prodCFlags gitRev; };
+          backup-cli = pkgs.callPackage ./nix/mpc-node.nix {
+            inherit crane prodCFlags gitRev;
+            pname = "backup-cli";
           };
         in
         {
-          inherit mpc-node;
+          inherit mpc-node backup-cli;
           mpc-contract = pkgs.callPackage ./nix/mpc-contract.nix {
             cargo-near = pkgs.callPackage ./nix/cargo-near.nix { };
           };
@@ -80,6 +82,9 @@
             );
             mpc-launcher-image = registryImage (
               pkgs.callPackage ./nix/mpc-launcher-image.nix { inherit tee-launcher; }
+            );
+            backup-service-image = registryImage (
+              pkgs.callPackage ./nix/backup-service-image.nix { inherit backup-cli; }
             );
           }
         )
