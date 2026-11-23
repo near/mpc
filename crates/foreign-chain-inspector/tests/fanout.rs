@@ -23,7 +23,6 @@ use rstest::rstest;
 use std::num::NonZeroUsize;
 use tokio::sync::mpsc;
 
-/// Clones share one count of [`ForeignChainInspector::extract`] calls, made through any of them
 #[derive(Clone)]
 struct MockInspector {
     respond: ResponseFutureFn,
@@ -283,8 +282,8 @@ mod agreeing_verdicts {
     #[tokio::test]
     async fn fan_out__should_query_every_inspector_exactly_once() {
         // Given
-        let inspectors: Vec<_> = (0..3).map(|_| mock_returning(ok(vec![1, 2]))).collect();
-        let fan_out = fan_out_of(inspectors.clone());
+        let inspectors: [_; 3] = std::array::from_fn(|_| mock_returning(ok(vec![1, 2])));
+        let fan_out = fan_out_of(inspectors.to_vec());
 
         // When
         let result = fan_out
@@ -293,11 +292,8 @@ mod agreeing_verdicts {
 
         // Then
         assert_eq!(result.unwrap(), Verdict::Extracted(vec![1, 2]));
-        let extract_calls: Vec<_> = inspectors
-            .iter()
-            .map(|inspector| inspector.extract_calls.load(Ordering::Relaxed))
-            .collect();
-        assert_eq!(extract_calls, vec![1, 1, 1]);
+        let calls = inspectors.map(|inspector| inspector.extract_calls.load(Ordering::Relaxed));
+        assert_eq!(calls, [1, 1, 1]);
     }
 }
 

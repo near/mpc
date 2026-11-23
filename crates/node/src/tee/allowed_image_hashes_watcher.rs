@@ -484,10 +484,9 @@ mod tests {
             sender_shutdown,
         ));
 
-        // Let the watcher handle the list before checking what it did
         tokio::task::yield_now().await;
 
-        assert!(storage.writes.lock().unwrap().is_empty());
+        assert_eq!(*storage.writes.lock().unwrap(), vec![]);
 
         // No shutdown signal should be sent
         assert_matches!(

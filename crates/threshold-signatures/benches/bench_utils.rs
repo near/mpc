@@ -77,7 +77,6 @@ pub struct PreparedPresig<PresignOutput, KeygenOutput> {
     pub seeds: HashMap<Participant, u64>,
 }
 
-#[allow(clippy::cast_precision_loss)]
 /// Analyzes the size of the received data by a participant across the entire protocol
 pub fn analyze_received_sizes(
     sizes: &[usize],
@@ -88,9 +87,10 @@ pub fn analyze_received_sizes(
     }
     let min = *sizes.iter().min().expect("Minimum should exist");
     let max = *sizes.iter().max().expect("Maximum should exist");
-    let avg = sizes.iter().sum::<usize>() as f64 / sizes.len() as f64;
+    let to_f64 = |n: usize| f64::from(u32::try_from(n).expect("fits in u32"));
+    let avg = to_f64(sizes.iter().sum()) / to_f64(sizes.len());
 
-    let mut data = sizes.iter().map(|&x| x as f64).collect::<Vec<f64>>();
+    let mut data = sizes.iter().copied().map(to_f64).collect::<Vec<f64>>();
     data.sort_by(f64::total_cmp);
 
     let mid = data.len() / 2;
@@ -100,7 +100,7 @@ pub fn analyze_received_sizes(
         data[mid]
     };
     let variance = if sizes.len() > 1 {
-        data.iter().map(|x| (x - avg).powi(2)).sum::<f64>() / (sizes.len() - 1) as f64
+        data.iter().map(|x| (x - avg).powi(2)).sum::<f64>() / to_f64(sizes.len() - 1)
     } else {
         0.0
     };
