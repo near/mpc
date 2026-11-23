@@ -133,6 +133,11 @@ where
             .map(|(p_hash, voter_set)| (*p_hash, voter_set.0.clone()))
             .collect()
     }
+
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.votes_by_proposal.is_empty()
+    }
 }
 
 #[expect(rustdoc::private_intra_doc_links)]
