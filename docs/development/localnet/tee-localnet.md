@@ -276,7 +276,7 @@ Therefore, node attestation submissions will fail.
 mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
 ..
 ..
-ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
+ERROR tee_context::remote_attestation: failed to submit attestation cause=attestation submission was not executed
 ```
 
 You can view the transaction details by calling:

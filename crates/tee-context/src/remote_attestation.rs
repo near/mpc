@@ -1,15 +1,13 @@
 use std::{future::Future, time::Duration};
 
 use crate::{
-    indexer::{tx_sender::TransactionSender, types::ChainSendTransactionRequest},
+    TeeStateReceivers,
+    convert_to_contract_dto::{IntoContractInterfaceType, to_attestation_measurements},
     metrics::{
         MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL, MPC_TEE_ATTESTATION_OUTCOME_FAILURE,
         MPC_TEE_ATTESTATION_OUTCOME_SENT, MPC_TEE_ATTESTATION_OUTCOME_SUCCESS,
         MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL, MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
-    },
-    trait_extensions::convert_to_contract_dto::{
-        IntoContractInterfaceType, to_attestation_measurements,
     },
 };
 use anyhow::Context;
@@ -19,8 +17,7 @@ use mpc_attestation::{
     report_data::{ReportData, ReportDataV1},
 };
 use near_mpc_contract_interface::types::{
-    self as dtos, AllowedMpcDockerImageHash, Ed25519PublicKey, StoredAttestation,
-    VerifiedAttestation,
+    self as dtos, Ed25519PublicKey, StoredAttestation, VerifiedAttestation,
 };
 use near_time::Clock;
 use tee_authority::tee_authority::{AttestationError, TeeAuthority};
@@ -28,7 +25,6 @@ use tick::Tick;
 use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
-use near_mpc_contract_interface::call_args as contract_args;
 use tokio::{sync::watch, time::Instant};
 
 const MIN_BACKOFF_DURATION: Duration = Duration::from_millis(100);
@@ -39,7 +35,7 @@ const ATTESTATION_LANDING_TIMEOUT: Duration = Duration::from_secs(10);
 const STALE_LANDING_AGE_SECONDS: i64 =
     ATTESTATION_RESUBMISSION_INTERVAL.as_secs().cast_signed() * 3 / 2;
 
-pub(crate) trait GenerateAttestation: Send + Sync {
+pub trait GenerateAttestation: Send + Sync {
     fn generate_attestation(
         &self,
         report_data: ReportData,
@@ -55,48 +51,51 @@ impl GenerateAttestation for TeeAuthority {
     }
 }
 
+/// Sends an attestation for a TLS public key to the contract.
+pub trait SubmitAttestation: Clone + Send + Sync {
+    /// Succeeds once the transaction is sent. Whether the contract accepted the attestation
+    /// shows only in [`TeeStateReceivers::stored_attestation`].
+    fn submit(
+        &self,
+        attestation: dtos::Attestation,
+        tls_public_key: Ed25519PublicKey,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
 /// Inputs for the attestation-submission background task
 /// [`run_periodic_attestation_submission`].
 #[derive(Clone)]
-pub struct AttestationSubmitter<T, A> {
+pub struct AttestationSubmitter<S, A> {
     pub tee_authority: A,
-    pub tx_sender: T,
+    pub submitter: S,
     pub tls_public_key: Ed25519PublicKey,
     pub account_public_key: Ed25519PublicKey,
-    pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
-    pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    pub allowed_os_measurements: watch::Receiver<Vec<dtos::ExpectedMeasurements>>,
-    pub stored_attestation: watch::Receiver<Option<StoredAttestation>>,
+    pub tee: TeeStateReceivers,
 }
 
-/// Submits a [`contract_args::SubmitParticipantInfoArgs`] transaction containing the given
-/// participant's attestation and TLS public key, using the provided [`TransactionSender`] and
-/// retrying with backoff while the send fails or no stored attestation that can be ours shows up
-/// within [`ATTESTATION_LANDING_TIMEOUT`].
+/// Submits the given attestation and TLS public key through the provided [`SubmitAttestation`],
+/// retrying with backoff while the submission fails or no stored attestation that can be ours
+/// shows up within [`ATTESTATION_LANDING_TIMEOUT`].
 /// Retries are unbounded; the caller stops them by dropping this future, as
 /// [`periodic_attestation_submission`] does when a round times out.
 async fn submit_remote_attestation(
-    tx_sender: impl TransactionSender,
+    submitter: impl SubmitAttestation,
     stored_attestation: watch::Receiver<Option<StoredAttestation>>,
     attestation: Attestation,
     tls_public_key: Ed25519PublicKey,
 ) {
     let dstack_submitted = matches!(attestation, Attestation::Dstack(_));
-    let submit_participant_info_args = contract_args::SubmitParticipantInfoArgs::new(
-        attestation.into_contract_interface_type(),
-        tls_public_key,
-    );
+    let attestation = attestation.into_contract_interface_type();
 
     let set_attestation = move || {
-        let tx_sender = tx_sender.clone();
+        let submitter = submitter.clone();
         let mut stored_attestation = stored_attestation.clone();
-        let chain_args = ChainSendTransactionRequest::SubmitParticipantInfo(Box::new(
-            submit_participant_info_args.clone(),
-        ));
+        let attestation = attestation.clone();
+        let tls_public_key = tls_public_key.clone();
 
         async move {
-            tx_sender
-                .send(chain_args)
+            submitter
+                .submit(attestation, tls_public_key)
                 .await
                 .context("failed to submit transaction")?;
 
@@ -168,7 +167,7 @@ fn validate_remote_attestation(
         .map(|_| ())
 }
 
-impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<T, A> {
+impl<S: SubmitAttestation, A: GenerateAttestation> AttestationSubmitter<S, A> {
     async fn generate_attestation(&self) -> Option<Attestation> {
         let report_data: ReportData = ReportDataV1::new(
             *self.tls_public_key.as_bytes(),
@@ -194,13 +193,16 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
 
     async fn submit_attestation(&self, attestation: Attestation) {
         let allowed_image_hashes: Vec<_> = self
+            .tee
             .allowed_image_hashes
             .borrow()
             .iter()
             .map(|entry| entry.image_hash)
             .collect();
-        let allowed_launcher_compose_hashes = self.allowed_launcher_compose_hashes.borrow().clone();
+        let allowed_launcher_compose_hashes =
+            self.tee.allowed_launcher_compose_hashes.borrow().clone();
         let allowed_measurements: Vec<_> = self
+            .tee
             .allowed_os_measurements
             .borrow()
             .iter()
@@ -219,8 +221,8 @@ impl<T: TransactionSender + Clone, A: GenerateAttestation> AttestationSubmitter<
             tracing::warn!("Attestation is not valid: {error}");
         }
         submit_remote_attestation(
-            self.tx_sender.clone(),
-            self.stored_attestation.clone(),
+            self.submitter.clone(),
+            self.tee.stored_attestation.clone(),
             attestation,
             self.tls_public_key.clone(),
         )
@@ -239,9 +241,9 @@ fn outcome_label(succeeded: bool) -> &'static str {
     }
 }
 
-pub async fn run_periodic_attestation_submission<T, A>(submitter: AttestationSubmitter<T, A>)
+pub async fn run_periodic_attestation_submission<S, A>(submitter: AttestationSubmitter<S, A>)
 where
-    T: TransactionSender + Clone,
+    S: SubmitAttestation,
     A: GenerateAttestation,
 {
     let mut interval = tokio::time::interval(ATTESTATION_RESUBMISSION_INTERVAL);
@@ -254,13 +256,13 @@ where
 /// the next tick starts over with a fresh attestation. Failures are logged, never propagated;
 /// this task never returns.
 #[tracing::instrument(skip_all)]
-async fn periodic_attestation_submission<T: TransactionSender + Clone, A: GenerateAttestation>(
-    submitter: AttestationSubmitter<T, A>,
+async fn periodic_attestation_submission<S: SubmitAttestation, A: GenerateAttestation>(
+    submitter: AttestationSubmitter<S, A>,
     mut interval_ticker: impl Tick,
 ) {
     loop {
         interval_ticker.tick().await;
-        warn_if_no_recent_acceptance(submitter.stored_attestation.borrow().as_ref());
+        warn_if_no_recent_acceptance(submitter.tee.stored_attestation.borrow().as_ref());
         let deadline = Instant::now() + ATTESTATION_RESUBMISSION_INTERVAL;
         let Ok(generated) = submitter.generate_attestation().timeout_at(deadline).await else {
             record_round_timeout(MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION);
@@ -308,7 +310,6 @@ fn record_round_timeout(stage: &'static str) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::indexer::tx_sender::TransactionProcessorError;
     use async_testing::{MaybeReady, run_future_once};
     use ed25519_dalek::SigningKey;
     use near_mpc_contract_interface::types::{
@@ -385,15 +386,10 @@ mod tests {
         }
     }
 
-    impl TransactionSender for MockSender {
-        async fn send(
-            &self,
-            _: ChainSendTransactionRequest,
-        ) -> Result<(), TransactionProcessorError> {
+    impl SubmitAttestation for MockSender {
+        async fn submit(&self, _: dtos::Attestation, _: Ed25519PublicKey) -> anyhow::Result<()> {
             self.attempts.fetch_add(1, Ordering::Relaxed);
-            if self.failing.load(Ordering::Relaxed) {
-                return Err(TransactionProcessorError::ProcessorIsClosed);
-            }
+            anyhow::ensure!(!self.failing.load(Ordering::Relaxed), "submission failed");
 
             *self.submissions.lock().unwrap() += 1;
             self.notify.notify_one();
@@ -431,13 +427,15 @@ mod tests {
             }));
         let submitter = AttestationSubmitter {
             tee_authority,
-            tx_sender: MockSender::default(),
+            submitter: MockSender::default(),
             tls_public_key,
             account_public_key,
-            allowed_image_hashes,
-            allowed_launcher_compose_hashes,
-            allowed_os_measurements,
-            stored_attestation: stored_attestation_receiver,
+            tee: TeeStateReceivers {
+                allowed_image_hashes,
+                allowed_launcher_compose_hashes,
+                allowed_os_measurements,
+                stored_attestation: stored_attestation_receiver,
+            },
         };
         TestSetup {
             submitter,
@@ -447,7 +445,7 @@ mod tests {
 
     impl<A: GenerateAttestation + Clone + 'static> TestSetup<A> {
         fn sender(&self) -> &MockSender {
-            &self.submitter.tx_sender
+            &self.submitter.submitter
         }
 
         fn spawn_periodic(&self, ticks: usize) -> tokio::task::JoinHandle<()> {

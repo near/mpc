@@ -5,25 +5,36 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
+anyhow = { workspace = true }
 backon = { workspace = true }
 derive_more = { workspace = true }
 durable-fs = { workspace = true }
 itertools = { workspace = true }
 launcher-interface = { workspace = true }
+mpc-attestation = { workspace = true, features = ["local-verify"] }
 mpc-primitives = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
 near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
+near-time = { workspace = true, features = ["clock"] }
 prometheus = { workspace = true }
 serde_json = { workspace = true }
+tee-authority = { workspace = true }
 thiserror = { workspace = true }
+tick = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+async-testing = { workspace = true }
+ed25519-dalek = { workspace = true }
 mockall = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["ed25519-dalek"] }
+rand = { workspace = true }
 rstest = { workspace = true }
+tick = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true
