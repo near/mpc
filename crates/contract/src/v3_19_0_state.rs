@@ -12,7 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+    self as dtos, BlockCount, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest,
+    YieldIndex,
 };
 use near_sdk::{
     AccountId, env,
@@ -97,7 +98,7 @@ pub struct MpcContract {
     pending_ckd_requests: LookupMap<CKDRequest, Vec<YieldIndex>>,
     pending_verify_foreign_tx_requests: LookupMap<VerifyForeignTransactionRequest, Vec<YieldIndex>>,
     contract_update_votes: ContractUpdateVotes,
-    config: Config,
+    config: OldConfig,
     tee_state: TeeState,
     accept_requests: bool,
     node_migrations: NodeMigrations,
@@ -120,7 +121,7 @@ impl From<MpcContract> for crate::MpcContract {
             pending_ckd_requests: old.pending_ckd_requests,
             pending_verify_foreign_tx_requests: old.pending_verify_foreign_tx_requests,
             contract_update_votes: old.contract_update_votes,
-            config: old.config,
+            config: old.config.into(),
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,
             node_migrations: old.node_migrations,
@@ -131,6 +132,65 @@ impl From<MpcContract> for crate::MpcContract {
             parameters_votes: old.parameters_votes,
             genesis_hash: genesis_hash_of(&env::chain_id()),
             add_domains_votes: AddDomainsVotes::default(),
+        }
+    }
+}
+
+/// Shadow of the `3.19.0` [`Config`] layout.
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[cfg_attr(test, derive(Default))]
+struct OldConfig {
+    key_event_timeout_blocks: BlockCount,
+    tee_upgrade_deadline_duration_seconds: u64,
+    apply_contract_update_tera_gas: u64,
+    sign_call_gas_attachment_requirement_tera_gas: u64,
+    ckd_call_gas_attachment_requirement_tera_gas: u64,
+    return_signature_and_clean_state_on_success_call_tera_gas: u64,
+    return_ck_and_clean_state_on_success_call_tera_gas: u64,
+    fail_on_timeout_tera_gas: u64,
+    fail_attestation_submission_tera_gas: u64,
+    clean_tee_status_tera_gas: u64,
+    clean_invalid_attestations_tera_gas: u64,
+    cleanup_orphaned_node_migrations_tera_gas: u64,
+    remove_non_participant_update_votes_tera_gas: u64,
+    clean_foreign_chain_data_tera_gas: u64,
+    remove_non_participant_tee_verifier_votes_tera_gas: u64,
+    verifier_tera_gas: u64,
+    resolve_verification_tera_gas: u64,
+    launcher_hash_unused_ttl_seconds: u64,
+    attestation_storage_fee_millinear: u64,
+}
+
+impl From<OldConfig> for Config {
+    fn from(old: OldConfig) -> Self {
+        Config {
+            key_event_timeout_blocks: old.key_event_timeout_blocks,
+            tee_upgrade_deadline_duration_seconds: old.tee_upgrade_deadline_duration_seconds,
+            apply_contract_update_tera_gas: old.apply_contract_update_tera_gas,
+            sign_call_gas_attachment_requirement_tera_gas: old
+                .sign_call_gas_attachment_requirement_tera_gas,
+            ckd_call_gas_attachment_requirement_tera_gas: old
+                .ckd_call_gas_attachment_requirement_tera_gas,
+            return_signature_and_clean_state_on_success_call_tera_gas: old
+                .return_signature_and_clean_state_on_success_call_tera_gas,
+            return_ck_and_clean_state_on_success_call_tera_gas: old
+                .return_ck_and_clean_state_on_success_call_tera_gas,
+            fail_on_timeout_tera_gas: old.fail_on_timeout_tera_gas,
+            fail_attestation_submission_tera_gas: old.fail_attestation_submission_tera_gas,
+            clean_tee_status_tera_gas: old.clean_tee_status_tera_gas,
+            clean_invalid_attestations_tera_gas: old.clean_invalid_attestations_tera_gas,
+            cleanup_orphaned_node_migrations_tera_gas: old
+                .cleanup_orphaned_node_migrations_tera_gas,
+            remove_non_participant_update_votes_tera_gas: old
+                .remove_non_participant_update_votes_tera_gas,
+            clean_foreign_chain_data_tera_gas: old.clean_foreign_chain_data_tera_gas,
+            remove_non_participant_tee_verifier_votes_tera_gas: old
+                .remove_non_participant_tee_verifier_votes_tera_gas,
+            verifier_tera_gas: old.verifier_tera_gas,
+            resolve_verification_tera_gas: old.resolve_verification_tera_gas,
+            launcher_hash_unused_ttl_seconds: old.launcher_hash_unused_ttl_seconds,
+            attestation_storage_fee_millinear: old.attestation_storage_fee_millinear,
+            migration_genesis_hash: None,
         }
     }
 }
@@ -163,7 +223,7 @@ mod tests {
                 StorageKey::PendingVerifyForeignTxRequestsV3,
             ),
             contract_update_votes: ContractUpdateVotes::default(),
-            config: Config::default(),
+            config: OldConfig::default(),
             tee_state: TeeState::default(),
             accept_requests: true,
             node_migrations: NodeMigrations::default(),

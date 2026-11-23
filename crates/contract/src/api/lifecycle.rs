@@ -167,8 +167,9 @@ impl MpcContract {
     /// is deployed. This function should be changed every time state is changed to do the proper
     /// migrate flow.
     ///
-    /// If nothing is changed, then this function will just return the current state. If it fails
-    /// to read the state, then it will return an error.
+    /// If nothing is changed, then this function will just return the current state, taking the
+    /// genesis hash from the config if it has none. If it fails to read the state, then it will
+    /// return an error.
     #[private]
     #[init(ignore_state)]
     #[handle_result]
@@ -184,7 +185,10 @@ impl MpcContract {
         };
 
         match try_state_read::<Self>() {
-            Ok(Some(state)) => Ok(state),
+            Ok(Some(mut state)) => {
+                state.genesis_hash = state.genesis_hash.or(state.config.migration_genesis_hash);
+                Ok(state)
+            }
             Ok(None) => Err(InvalidState::ContractStateIsMissing.into()),
             Err(err) => env::panic_str(&format!("could not deserialize contract state: {err}")),
         }
@@ -219,12 +223,13 @@ fn try_state_read<T: borsh::BorshDeserialize>() -> Result<Option<T>, std::io::Er
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::api::test_utils::init_running_with_domain;
+    use crate::api::test_utils::{init_running_with_domain, running_state};
     use crate::primitives::test_utils::{
         bogus_genesis_hash, bogus_tee_verifier_account_id, gen_participants,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
     use dtos::{DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold};
+    use rstest::rstest;
 
     fn parameters() -> GovernanceThresholdParameters {
         GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
@@ -267,5 +272,25 @@ mod tests {
         // Then
         assert!(contract.tee_state.nodes.is_empty());
         assert!(!contract.accept_requests);
+    }
+
+    #[rstest]
+    #[case::unset(None, bogus_genesis_hash())]
+    #[case::set(Some(GenesisHash::MAINNET), GenesisHash::MAINNET)]
+    fn migrate__should_take_the_migration_genesis_hash_only_if_the_contract_has_none(
+        #[case] genesis_hash: Option<GenesisHash>,
+        #[case] expected: GenesisHash,
+    ) {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
+        contract.genesis_hash = genesis_hash;
+        contract.config.migration_genesis_hash = Some(bogus_genesis_hash());
+        env::state_write(&contract);
+
+        // When
+        let migrated = MpcContract::migrate().unwrap();
+
+        // Then
+        assert_eq!(migrated.genesis_hash, Some(expected));
     }
 }

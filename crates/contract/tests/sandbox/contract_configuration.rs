@@ -1,10 +1,10 @@
 use crate::sandbox::common::SandboxTestSetup;
 use mpc_contract::primitives::test_utils::bogus_genesis_hash;
-use near_mpc_contract_interface::types::BlockCount;
+use near_mpc_contract_interface::types::{BlockCount, InitConfig};
 
 #[tokio::test]
 async fn contract_configuration_can_be_set_on_initialization() {
-    let init_config = near_mpc_contract_interface::types::InitConfig {
+    let init_config = InitConfig {
         attestation_storage_fee_millinear: Some(20),
         key_event_timeout_blocks: Some(BlockCount::from(11)),
         tee_upgrade_deadline_duration_seconds: Some(22),
@@ -37,10 +37,9 @@ async fn contract_configuration_can_be_set_on_initialization() {
         .await;
 
     let stored_config = contract.config().await.unwrap().value;
-    assert_eq!(
-        serde_json::to_value(stored_config).unwrap(),
-        serde_json::to_value(init_config).unwrap()
-    );
+    let stored_config: InitConfig =
+        serde_json::from_value(serde_json::to_value(stored_config).unwrap()).unwrap();
+    assert_eq!(stored_config, init_config);
 }
 
 #[tokio::test]
