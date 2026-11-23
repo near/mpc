@@ -1,13 +1,12 @@
 use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
-use anyhow::Context;
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
 use near_account_id::AccountId;
 use near_async::{messaging::CanSendAsync, multithread::MultithreadRuntimeHandle};
 use near_client::RpcHandlerActor;
-use near_indexer::near_primitives::{hash::CryptoHash, transaction::SignedTransaction};
+use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
@@ -18,7 +17,6 @@ use tokio::sync::{
 };
 use types::ChainSendTransactionRequest;
 
-pub mod chain_binding;
 pub mod configs;
 pub mod foreign_chain;
 pub mod handler;
@@ -58,18 +56,6 @@ impl IndexerState {
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
-    }
-
-    async fn ensure_chain_matches_contract(
-        &self,
-        expected_genesis_hash: Option<CryptoHash>,
-    ) -> anyhow::Result<()> {
-        let genesis_hash = self
-            .gateway
-            .genesis_hash()
-            .await
-            .context("querying the genesis hash")?;
-        chain_binding::ensure_chain_matches_contract(expected_genesis_hash, genesis_hash)
     }
 }
 
