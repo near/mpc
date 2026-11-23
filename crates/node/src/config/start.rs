@@ -1,7 +1,8 @@
 use crate::home_paths::near_config_file;
 use anyhow::Context;
 use durable_fs::write_file_durably;
-use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfig};
+use mpc_node_config::{DownloadConfigType, NearInitConfig};
+use near_account_id::AccountId;
 use std::path::Path;
 
 pub trait NearInitConfigExt {
@@ -15,32 +16,27 @@ impl NearInitConfigExt for NearInitConfig {
     }
 }
 
-pub trait StartConfigExt {
-    /// Ensures the NEAR node data directory is initialized.
-    fn ensure_near_initialized(&self) -> anyhow::Result<()>;
-}
-
-impl StartConfigExt for StartConfig {
-    fn ensure_near_initialized(&self) -> anyhow::Result<()> {
-        let Some(near_init) = &self.near_init else {
-            return Ok(());
-        };
-
-        let near_config_path = near_config_file(&self.home_dir);
-        if near_config_path.exists() {
-            tracing::info!("NEAR node already initialized, skipping init");
-            return Ok(());
-        }
-
-        require_tier3_public_addr(near_init)?;
-
-        tracing::info!(chain_id = %near_init.chain_id, "initializing NEAR node");
-        run_near_init(near_init, &self.home_dir)?;
-
-        patch_near_config(&near_config_path, near_init, &self.node)?;
-
-        Ok(())
+/// Initializes the NEAR node data directory in the given home directory, tracking
+/// the shard of the given MPC contract. Does nothing when it is already initialized.
+pub fn ensure_near_initialized(
+    home_dir: &Path,
+    near_init: &NearInitConfig,
+    mpc_contract_id: &AccountId,
+) -> anyhow::Result<()> {
+    let near_config_path = near_config_file(home_dir);
+    if near_config_path.exists() {
+        tracing::info!("NEAR node already initialized, skipping init");
+        return Ok(());
     }
+
+    require_tier3_public_addr(near_init)?;
+
+    tracing::info!(chain_id = %near_init.chain_id, "initializing NEAR node");
+    run_near_init(near_init, home_dir)?;
+
+    patch_near_config(&near_config_path, near_init, mpc_contract_id)?;
+
+    Ok(())
 }
 
 /// Runs [`near_indexer::init_configs`] to create the NEAR data directory.
@@ -122,7 +118,7 @@ fn require_tier3_public_addr(near_init: &NearInitConfig) -> anyhow::Result<()> {
 fn patch_near_config(
     config_path: &Path,
     near_init: &NearInitConfig,
-    node_config: &ConfigFile,
+    mpc_contract_id: &AccountId,
 ) -> anyhow::Result<()> {
     let raw = std::fs::read_to_string(config_path)
         .with_context(|| format!("failed to read {}", config_path.display()))?;
@@ -131,8 +127,7 @@ fn patch_near_config(
     let mut config: serde_json::Value =
         serde_json::from_str(&raw).context("failed to parse NEAR config.json")?;
 
-    let contract_id = node_config.indexer.mpc_contract_id.to_string();
-    apply_near_config_patches(&mut config, near_init, &contract_id)?;
+    apply_near_config_patches(&mut config, near_init, mpc_contract_id.as_str())?;
 
     write_near_config_atomic(config_path, &config)?;
 
@@ -246,7 +241,7 @@ pub(crate) fn read_near_config_json(home_dir: &Path) -> serde_json::Value {
 }
 
 /// Pure JSON-manipulation half of [`patch_near_config`], extracted so it can
-/// be unit-tested without filesystem I/O or constructing a full [`ConfigFile`].
+/// be unit-tested without filesystem I/O.
 fn apply_near_config_patches(
     config: &mut serde_json::Value,
     near_init: &NearInitConfig,

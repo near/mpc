@@ -1,7 +1,7 @@
 use crate::{
     config::{
         PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
-        start::{StartConfigExt, read_near_config_json},
+        start::{ensure_near_initialized, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -65,8 +65,14 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
-    // after `init_logging` so its logs are emitted. No-op for the `start` path.
-    config.ensure_near_initialized()?;
+    // after `init_logging` so its logs are emitted
+    if let Some(near_init) = &config.near_init {
+        ensure_near_initialized(
+            &config.home_dir,
+            near_init,
+            &config.node.indexer.mpc_contract_id,
+        )?;
+    }
 
     // Log startup info
     tracing::info!("{}", *crate::MPC_VERSION_STRING);
