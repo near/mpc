@@ -119,9 +119,16 @@ impl NodeMigrations {
             .insert(account_id, destination_node_info);
     }
 
-    pub fn remove_account_data(&mut self, account_id: &AccountId) {
+    /// Removes the account's index row, ongoing migration and attested backup service, and
+    /// returns whether it had an attested backup service, whose grant is then due back.
+    pub fn remove_account_data(&mut self, account_id: &AccountId) -> bool {
+        let removed = self
+            .backup_service_of(account_id)
+            .map(|node| node.tls_public_key.clone())
+            .and_then(|key| self.backup_service_tee_state.nodes.remove(&key));
         self.backup_services_info.remove(account_id);
         self.ongoing_migrations.remove(account_id);
+        removed.is_some()
     }
 
     pub fn ongoing_migration(&self, account_id: &AccountId) -> Option<&DestinationNodeInfo> {

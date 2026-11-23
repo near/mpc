@@ -280,6 +280,9 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Removes the [`MpcContract::migration_info`] entry and the attested backup service of each
+    /// account with a registered backup service that is neither a participant nor a prospective
+    /// one, and gives the backup service's attestation-storage grant back. Runs after a resharing.
     #[private]
     #[handle_result]
     pub fn cleanup_orphaned_node_migrations(&mut self) -> Result<(), Error> {
@@ -298,8 +301,9 @@ impl MpcContract {
             if !self
                 .protocol_state
                 .is_existing_or_prospective_participant(account_id)?
+                && self.node_migrations.remove_account_data(account_id)
             {
-                self.node_migrations.remove_account_data(account_id);
+                self.return_attestation_storage_grant(account_id);
             }
         }
         Ok(())

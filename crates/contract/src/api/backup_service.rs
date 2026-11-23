@@ -160,13 +160,13 @@ mod tests {
         setup_tee_test_contract, verified_verdict, with_dstack_fixture_participant,
     };
     use crate::primitives::test_utils::{
-        bogus_ed25519_public_key, create_node, gen_account_id, gen_participants,
+        bogus_ed25519_public_key, create_node, gen_account_id, gen_participants, node_for,
     };
     use crate::tee::attested_service::AttestedService;
     use crate::tee::test_utils::{
         LAUNCHER_TTL, NANOS_PER_SECOND, NEWEST_LAUNCHER_ADDED_AT_SECS, OLD_LAUNCHER_ADDED_AT_SECS,
         after_retention, allow_launcher, dstack_fixture_node, dummy_code_hash, dummy_launcher_hash,
-        launcher_mock, set_block_secs,
+        index_backup_service, launcher_mock, set_block_secs, store_backup_service,
     };
     use mpc_attestation::attestation::{MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation};
     use near_mpc_contract_interface::types::BackupServiceInfo;
@@ -222,23 +222,6 @@ mod tests {
             freshly_initialized_contract(&with_dstack_fixture_participant(&gen_participants(2)), 2);
         let context = prepare_dstack_verification(&mut contract, whitelisted);
         (contract, context)
-    }
-
-    fn index_backup_service(contract: &mut MpcContract, node: &dtos::NodeInfo) {
-        contract.node_migrations.set_backup_service(
-            node.account_id.clone(),
-            node.tls_public_key.clone(),
-            None,
-        );
-    }
-
-    fn store_backup_service(contract: &mut MpcContract, node: dtos::NodeInfo) {
-        index_backup_service(contract, &node);
-        contract
-            .node_migrations
-            .backup_service_tee_state
-            .verify_and_store_mock(node, MockAttestation::Valid, Duration::MAX)
-            .unwrap();
     }
 
     fn store_mpc_node(contract: &mut MpcContract, node: dtos::NodeInfo) {
@@ -470,6 +453,55 @@ mod tests {
                     backup_service_nodes: kept_backup_services,
                     mpc_nodes: vec![node],
                     fixture_account_grants: u32::from(expired),
+                }
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::attested(|contract: &mut MpcContract, _: &dtos::NodeInfo| {
+        store_backup_service(contract, dstack_fixture_node());
+    }, 1)]
+    #[case::soft_launch_key(|contract: &mut MpcContract, _: &dtos::NodeInfo| {
+        index_backup_service(contract, &dstack_fixture_node());
+    }, 0)]
+    #[case::soft_launch_key_naming_a_participants_node(
+        |contract: &mut MpcContract, participants_node: &dtos::NodeInfo| {
+            index_backup_service(
+                contract,
+                &dtos::NodeInfo {
+                    tls_public_key: participants_node.tls_public_key.clone(),
+                    ..dstack_fixture_node()
+                },
+            );
+        },
+        0
+    )]
+    fn cleanup_orphaned_node_migrations__should_remove_a_departed_operators_backup_service_and_return_its_grant(
+        #[case] register_departed: fn(&mut MpcContract, &dtos::NodeInfo),
+        #[case] returned_grants: u32,
+    ) {
+        // Given
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
+        let (participant, _, _) = &contract.protocol_state.active_participants().participants()[0];
+        let participants_node = node_for(participant);
+        store_backup_service(&mut contract, participants_node.clone());
+        register_departed(&mut contract, &participants_node);
+
+        // When
+        let result = contract.cleanup_orphaned_node_migrations();
+
+        // Then
+        let kept_backup_services = vec![participants_node];
+        assert_eq!(
+            (result, registrations(&contract)),
+            (
+                Ok(()),
+                Registrations {
+                    migration_info: migration_info_of(&kept_backup_services),
+                    backup_service_nodes: kept_backup_services,
+                    mpc_nodes: vec![],
+                    fixture_account_grants: returned_grants,
                 }
             )
         );

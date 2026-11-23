@@ -2,14 +2,14 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, build_sandbox_nodes, gen_accounts, prepay_and_submit_tee_attestations,
-        sandbox_node,
+        SandboxTestSetup, build_sandbox_nodes, contract_state, gen_accounts,
+        prepay_and_submit_tee_attestations, sandbox_node,
     },
     utils::{
         interface::IntoContractType,
         mpc_contract::{
-            assert_running_return_participants, assert_running_return_threshold, get_tee_accounts,
-            prepay_and_submit_participant_info,
+            assert_running_return_participants, assert_running_return_threshold,
+            available_attestation_grants, get_tee_accounts, prepay_and_submit_participant_info,
         },
         resharing_utils::do_resharing,
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
@@ -23,14 +23,14 @@ use mpc_contract::{
         test_utils::bogus_ed25519_public_key,
         thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
-    tee::test_utils::make_measurement,
+    tee::test_utils::{make_measurement, store_backup_services_in_state},
 };
 use mpc_primitives::hash::{LauncherImageHash, NodeImageHash};
 use near_mpc_contract_interface::types::{
     self as dtos, Attestation, CodeHashesVotes, LauncherHashVotes, MeasurementVotes,
     MockAttestation, Protocol,
 };
-use near_workspaces::Account;
+use near_workspaces::{Account, Worker, network::Sandbox};
 use test_utils::attestation::{mock_expiring_at, p2p_tls_key};
 
 /// Reshares to the first threshold of participants, so that the others depart, and returns the
@@ -57,6 +57,32 @@ async fn reshare_to_first_threshold_participants(
     )
     .await?;
     Ok(new_participants)
+}
+
+/// Patches the nodes in as attested backup services, which only the tee-verifier attests on chain.
+async fn store_backup_services(
+    worker: &Worker<Sandbox>,
+    contract: &SandboxMpcContract,
+    nodes: Vec<dtos::NodeInfo>,
+) -> Result<()> {
+    let state = contract_state(worker, contract).await?;
+    let now = worker.view_block().await?.timestamp();
+    for (key, value) in store_backup_services_in_state(&state, now, nodes) {
+        worker.patch_state(contract.id(), &key, &value).await?;
+    }
+    Ok(())
+}
+
+async fn attestation_grants(
+    contract: &SandboxMpcContract,
+    accounts: &[Account],
+) -> Result<Vec<u32>> {
+    futures::future::try_join_all(
+        accounts
+            .iter()
+            .map(|account| available_attestation_grants(contract, account.id())),
+    )
+    .await
 }
 
 /// Integration test that validates the end-to-end behavior of the TEE attestation store
@@ -204,14 +230,14 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
 }
 
 /// Every departing participant leaves a pending vote in each MPC node and backup service TEE vote
-/// collection. The promises the resharing spawns to drop them run with fixed gas, and the
-/// resharing fails if any of them runs out of it.
+/// collection, and an attested backup service. The promises the resharing spawns to remove them
+/// run with fixed gas, and the resharing fails if any of them runs out of it.
 #[tokio::test]
-async fn reshare__should_drop_departed_participants_tee_votes_within_their_cleanup_gas()
+async fn reshare__should_remove_departed_participants_tee_votes_and_backup_services_within_their_cleanup_gas()
 -> Result<()> {
     // Given
     let SandboxTestSetup {
-        worker: _worker,
+        worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -221,10 +247,11 @@ async fn reshare__should_drop_departed_participants_tee_votes_within_their_clean
         .build()
         .await;
     let remaining = usize::try_from(assert_running_return_threshold(&contract).await.0)?;
+    let departing = &mpc_signer_accounts[remaining..];
     let code_hash = NodeImageHash::from([1; 32]);
     let launcher_hash = LauncherImageHash::from([2; 32]);
     let measurement = make_measurement(3);
-    for account in &mpc_signer_accounts[remaining..] {
+    for account in departing {
         let handle = account.call_mpc(contract.id());
         for result in [
             handle.vote_mpc_node_manifest_digest(code_hash).await?,
@@ -241,6 +268,16 @@ async fn reshare__should_drop_departed_participants_tee_votes_within_their_clean
             all_receipts_successful(result)?;
         }
     }
+    store_backup_services(
+        &worker,
+        &contract,
+        departing
+            .iter()
+            .map(|account| sandbox_node(account, bogus_ed25519_public_key()))
+            .collect(),
+    )
+    .await?;
+    let grants_before = attestation_grants(&contract, departing).await?;
 
     // When
     reshare_to_first_threshold_participants(&contract, &mpc_signer_accounts).await?;
@@ -257,8 +294,17 @@ async fn reshare__should_drop_departed_participants_tee_votes_within_their_clean
             contract.launcher_hash_votes().await?.value,
             contract.os_measurement_votes().await?.value,
             backup_service_votes,
+            contract.migration_info().await?.value,
+            attestation_grants(&contract, departing).await?,
         ),
-        Default::default()
+        (
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            grants_before.iter().map(|grants| grants + 1).collect(),
+        )
     );
 
     Ok(())

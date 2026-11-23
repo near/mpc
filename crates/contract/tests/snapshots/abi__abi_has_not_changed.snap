@@ -294,6 +294,7 @@ expression: abi
       },
       {
         "name": "cleanup_orphaned_node_migrations",
+        "doc": " Removes the [`MpcContract::migration_info`] entry and the attested backup service of each\n account with a registered backup service that is neither a participant nor a prospective\n one, and gives the backup service's attestation-storage grant back. Runs after a resharing.",
         "kind": "call",
         "modifiers": [
           "private"

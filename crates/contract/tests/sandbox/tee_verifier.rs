@@ -8,8 +8,8 @@
 
 use crate::sandbox::{
     common::{
-        SandboxTestSetup, gen_accounts, gen_participant_info, init_contract_running,
-        make_threshold_params, prepay_and_submit_attestations,
+        SandboxTestSetup, contract_state, gen_accounts, gen_participant_info,
+        init_contract_running, make_threshold_params, prepay_and_submit_attestations,
     },
     utils::{
         consts::ALL_PROTOCOLS,
@@ -81,14 +81,9 @@ async fn whitelist_fixture_dstack_hashes(
     setup: &SandboxTestSetup,
     compose_hash: Option<LauncherDockerComposeHash>,
 ) {
-    let state = setup
-        .worker
-        .view_state(setup.contract.id())
-        .prefix(MpcContract::state_key())
+    let state = contract_state(&setup.worker, &setup.contract)
         .await
-        .unwrap()
-        .remove(MpcContract::state_key())
-        .expect("the contract must have a STATE entry");
+        .unwrap();
     let patched = whitelist_dstack_in_state(
         &state,
         image_digest(),

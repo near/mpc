@@ -8,7 +8,7 @@ use crate::dto_mapping::IntoInterfaceType as _;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
 use crate::tee::launcher_compose::LauncherCompose;
 use crate::tee::tee_state::TeeState;
-use mpc_attestation::attestation::ExpectedMeasurements;
+use mpc_attestation::attestation::{ExpectedMeasurements, MockAttestation};
 use mpc_primitives::hash::{
     KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash, NodeImageHash,
     Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
@@ -16,12 +16,13 @@ use mpc_primitives::hash::{
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::borsh::{self, BorshDeserialize};
-use near_sdk::{BlockHeight, NearToken, PublicKey, test_utils::VMContextBuilder, testing_env};
+use near_sdk::{
+    BlockHeight, MockedBlockchain, NearToken, PublicKey, env, mock::with_mocked_blockchain,
+    test_utils::VMContextBuilder, testing_env,
+};
 use rand::Rng;
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-#[cfg(test)]
-use mpc_attestation::attestation::MockAttestation;
 #[cfg(test)]
 use test_utils::attestation::{account_key, p2p_tls_key};
 
@@ -167,6 +168,45 @@ pub fn whitelist_dstack_in_state(
         compose_hash,
     );
     borsh::to_vec(&contract).expect("STATE serializes")
+}
+
+/// Indexes the node's TLS key as its account's backup service, without storing an attestation.
+pub fn index_backup_service(contract: &mut MpcContract, node: &dtos::NodeInfo) {
+    contract.node_migrations.set_backup_service(
+        node.account_id.clone(),
+        node.tls_public_key.clone(),
+        None,
+    );
+}
+
+/// Stores the node as its account's backup service, under a mock attestation accepted at the
+/// current block time.
+pub fn store_backup_service(contract: &mut MpcContract, node: dtos::NodeInfo) {
+    index_backup_service(contract, &node);
+    contract
+        .node_migrations
+        .backup_service_tee_state
+        .verify_and_store_mock(node, MockAttestation::Valid, Duration::MAX)
+        .expect("a valid mock attestation is stored");
+}
+
+/// Returns the storage writes that [`store_backup_service`] makes for each node at the given block
+/// time, in the contract whose STATE is given. Only STATE is loaded, so the contract must hold no
+/// backup service yet.
+pub fn store_backup_services_in_state(
+    state: &[u8],
+    block_timestamp_nanos: u64,
+    nodes: Vec<dtos::NodeInfo>,
+) -> HashMap<Vec<u8>, Vec<u8>> {
+    set_block_timestamp(block_timestamp_nanos);
+    with_mocked_blockchain(MockedBlockchain::take_storage);
+    let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
+    for node in nodes {
+        store_backup_service(&mut contract, node);
+    }
+    env::state_write(&contract);
+    drop(contract);
+    with_mocked_blockchain(MockedBlockchain::take_storage)
 }
 
 #[cfg(test)]
