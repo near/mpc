@@ -155,10 +155,10 @@ mod tests {
     use std::time::Duration;
 
     #[rstest]
-    #[case::on_the_expected_network(vec![answering(MAINNET)], 1, ProviderStatus::Healthy, 1)]
+    #[case::on_the_expected_network(vec![answering(MAINNET)], 3, ProviderStatus::Healthy, 1)]
     #[case::on_another_network(
         vec![answering(SEPOLIA)],
-        1,
+        3,
         ProviderStatus::WrongNetwork {
             expected: NetworkFingerprint::new(MAINNET),
             observed: NetworkFingerprint::new(SEPOLIA),
