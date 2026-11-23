@@ -646,7 +646,7 @@ expression: abi
       },
       {
         "name": "migrate",
-        "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.\n\n Takes the genesis hash from the config if the contract has none.",
+        "doc": " This will be called internally by the contract to migrate the state when a new contract\n is deployed. This function should be changed every time state is changed to do the proper\n migrate flow.\n\n If nothing is changed, then this function will just return the current state. If it fails\n to read the state, then it will return an error.\n\n Takes the genesis hash from the config if the contract has none, and allows the compose\n hashes that carry it.",
         "kind": "call",
         "modifiers": [
           "init",

@@ -27,6 +27,7 @@ use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::store::{IterableMap, Lazy, LookupMap};
 use near_sdk::{AccountId, env, log, near, state::ContractState};
+use std::time::Duration;
 
 #[near]
 impl MpcContract {
@@ -170,14 +171,23 @@ impl MpcContract {
     /// If nothing is changed, then this function will just return the current state. If it fails
     /// to read the state, then it will return an error.
     ///
-    /// Takes the genesis hash from the config if the contract has none.
+    /// Takes the genesis hash from the config if the contract has none, and allows the compose
+    /// hashes that carry it.
     #[private]
     #[init(ignore_state)]
     #[handle_result]
     pub fn migrate() -> Result<Self, Error> {
         log!("migrating contract");
         let mut state = Self::read_state_for_migration()?;
-        state.genesis_hash = state.genesis_hash.or(state.config.migration_genesis_hash);
+        if state.genesis_hash.is_none()
+            && let Some(genesis_hash) = state.config.migration_genesis_hash
+        {
+            state.genesis_hash = Some(genesis_hash);
+            state.tee_state.add_compose_hashes(
+                &genesis_hash,
+                Duration::from_secs(state.config.tee_upgrade_deadline_duration_seconds),
+            );
+        }
         Ok(state)
     }
 
@@ -231,8 +241,10 @@ mod tests {
         bogus_genesis_hash, bogus_tee_verifier_account_id, gen_participants,
     };
     use crate::primitives::thresholds::GovernanceThreshold;
+    use crate::tee::proposal::get_docker_compose_hash;
     use dtos::{DomainConfig, DomainId, DomainPurpose, Protocol, ReconstructionThreshold};
     use rstest::rstest;
+    use std::collections::BTreeSet;
 
     fn parameters() -> GovernanceThresholdParameters {
         GovernanceThresholdParameters::new(gen_participants(3), GovernanceThreshold::new(2))
@@ -278,22 +290,37 @@ mod tests {
     }
 
     #[rstest]
-    #[case::unset(None, bogus_genesis_hash())]
-    #[case::set(Some(GenesisHash::MAINNET), GenesisHash::MAINNET)]
-    fn migrate__should_take_the_migration_genesis_hash_only_if_the_contract_has_none(
+    #[case::unset(None)]
+    #[case::set(Some(GenesisHash::MAINNET))]
+    fn migrate__should_take_the_migration_genesis_hash_and_allow_its_compose_hashes_only_if_unset(
         #[case] genesis_hash: Option<GenesisHash>,
-        #[case] expected: GenesisHash,
     ) {
         // Given
+        let migration_genesis_hash = bogus_genesis_hash();
+        let launcher = dtos::LauncherImageHash::from([1; 32]);
+        let image = dtos::NodeImageHash::from([2; 32]);
+        let forever = Duration::MAX;
         let mut contract = MpcContract::new_from_protocol_state(running_state());
         contract.genesis_hash = genesis_hash;
-        contract.config.migration_genesis_hash = Some(bogus_genesis_hash());
+        contract.config.migration_genesis_hash = Some(migration_genesis_hash);
+        let tee_state = &mut contract.tee_state;
+        tee_state.whitelist_tee_proposal(image, genesis_hash.as_ref(), forever);
+        tee_state.add_launcher_image(launcher, genesis_hash.as_ref(), forever, forever);
         env::state_write(&contract);
 
         // When
         let migrated = MpcContract::migrate().unwrap();
 
         // Then
+        let expected = genesis_hash.unwrap_or(migration_genesis_hash);
+        let compose_hash = |hash| get_docker_compose_hash(&launcher, &image, hash);
         assert_eq!(migrated.genesis_hash, Some(expected));
+        assert_eq!(
+            BTreeSet::from_iter(migrated.allowed_launcher_compose_hashes()),
+            BTreeSet::from([
+                compose_hash(genesis_hash.as_ref()),
+                compose_hash(Some(&expected))
+            ]),
+        );
     }
 }

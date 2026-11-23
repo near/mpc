@@ -271,7 +271,10 @@ mod tests {
     #[test]
     fn config_from__should_keep_every_3_19_0_value() {
         // Given
-        let config = Config::from(dummy_config(1));
+        let config = Config {
+            migration_genesis_hash: None,
+            ..Config::from(dummy_config(1))
+        };
         let bytes = borsh::to_vec(&config).unwrap();
         let (_migration_genesis_hash, old_layout) = bytes.split_last().unwrap();
         let old_config = OldConfig::try_from_slice(old_layout).unwrap();
