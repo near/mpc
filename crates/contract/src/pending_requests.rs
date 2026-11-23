@@ -164,16 +164,12 @@ mod tests {
         );
         assert_queue_matches_insertion_order(&queue);
     }
-}
-
-/// Helper to verify that the queue entries match the expected insertion order.
-/// Iterates over the u8 range directly to avoid `as` conversions.
-#[allow(dead_code)]
-fn assert_queue_matches_insertion_order(queue: &[YieldIndex]) {
-    for (expected, yield_idx) in (0..MAX_PENDING_REQUEST_FAN_OUT).zip(queue) {
-        assert_eq!(
-            yield_idx.data_id, [expected; 32],
-            "entry {expected} should match insertion order"
-        );
+    fn assert_queue_matches_insertion_order(queue: &[YieldIndex]) {
+        for (expected, yield_idx) in (0..MAX_PENDING_REQUEST_FAN_OUT).zip(queue) {
+            assert_eq!(
+                yield_idx.data_id, [expected; 32],
+                "entry {expected} should match insertion order"
+            );
+        }
     }
 }
