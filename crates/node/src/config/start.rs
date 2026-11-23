@@ -1,35 +1,8 @@
 use crate::home_paths::near_config_file;
 use anyhow::Context;
 use durable_fs::write_file_durably;
-use launcher_interface::types::{PccsEndpointConfig, TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{ConfigFile, DownloadConfigType, NearInitConfig, StartConfig};
-use near_mpc_bounded_collections::NonEmptyVec;
 use std::path::Path;
-use tee_authority::tee_authority::{
-    DstackTeeAuthorityConfig, LocalTeeAuthorityConfig, TeeAuthority, validate_pccs_endpoints,
-};
-
-pub trait TeeAuthorityImpl {
-    fn into_tee_authority(
-        self,
-        pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
-    ) -> anyhow::Result<TeeAuthority>;
-}
-
-impl TeeAuthorityImpl for TeeConfig {
-    fn into_tee_authority(
-        self,
-        pccs_endpoints: NonEmptyVec<PccsEndpointConfig>,
-    ) -> anyhow::Result<TeeAuthority> {
-        validate_pccs_endpoints(&pccs_endpoints)?;
-        Ok(match self.authority {
-            TeeAuthorityConfig::Local => LocalTeeAuthorityConfig::default().into(),
-            TeeAuthorityConfig::Dstack { dstack_endpoint } => {
-                DstackTeeAuthorityConfig::new(dstack_endpoint, pccs_endpoints).into()
-            }
-        })
-    }
-}
 
 pub trait NearInitConfigExt {
     /// Runs [`near_indexer::init_configs`] to create the NEAR data directory.
