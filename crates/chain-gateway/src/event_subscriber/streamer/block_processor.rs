@@ -14,7 +14,10 @@ use crate::{
             BlockContext, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
             MatchedEvent, ReceiverFunctionCallData,
         },
-        metrics::{MPC_BLOCK_UPDATES_DROPPED, MPC_BLOCKS_RECEIVED_FROM_INDEXER},
+        metrics::{
+            MPC_BLOCK_UPDATES_DROPPED, MPC_BLOCKS_RECEIVED_FROM_INDEXER,
+            MPC_INDEXER_LATEST_BLOCK_HEIGHT, MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS,
+        },
         recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker},
         stats::IndexerStats,
     },
@@ -39,6 +42,7 @@ pub(super) async fn listen_blocks(
             .ok_or(ChainGatewayError::BlockEventIndexerDropped)?;
         MPC_BLOCKS_RECEIVED_FROM_INDEXER.inc();
         let context = make_context(&streamer_message);
+        record_streamed_block(&context);
         let AddBlockResult { block_status } = recent_blocks_tracker.add_block(&context);
         let matched_events = match_block_events(streamer_message, &block_events);
         blocks_processed_count = blocks_processed_count.saturating_add(1);
@@ -71,6 +75,13 @@ pub(super) async fn listen_blocks(
             });
         }
     }
+}
+
+fn record_streamed_block(context: &BlockContext) {
+    MPC_INDEXER_LATEST_BLOCK_HEIGHT
+        .set(i64::try_from(u64::from(context.height)).unwrap_or(i64::MAX));
+    MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS
+        .set(i64::try_from(context.timestamp_nanosec / 1_000_000_000).unwrap_or(i64::MAX));
 }
 
 fn make_context(streamer_message: &near_indexer_primitives::StreamerMessage) -> BlockContext {
