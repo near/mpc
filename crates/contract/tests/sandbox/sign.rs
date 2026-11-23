@@ -99,8 +99,154 @@ async fn test_contract_request_timeout_all_schemes() -> anyhow::Result<()> {
 
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn contract_request_admission__should_track_distinct_sign_requests_independently()
--> anyhow::Result<()> {
+async fn sign_responding_to_a__should_leave_b_pending() -> anyhow::Result<()> {
+    // Given
+    let mut rng = rand::rngs::StdRng::from_seed([3u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::CaitSith])
+        .build()
+        .await;
+    let attested_account = &mpc_signer_accounts[0];
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let alice_balance = alice.view_account().await?.balance;
+    let key = &keys[0];
+    let request_a = DomainResponseTest::new(&mut rng, key, alice.id());
+    let request_b = DomainResponseTest::new(&mut rng, key, bob.id());
+
+    let status_a = request_a
+        .submit_request_ensure_included(&alice, &contract)
+        .await?;
+    let _status_b = request_b
+        .submit_request_ensure_included(&bob, &contract)
+        .await?;
+
+    let (request_a_key, request_b_key) = match (&request_a, &request_b) {
+        (DomainResponseTest::Sign(request_a), DomainResponseTest::Sign(request_b)) => (
+            request_a.response.request.clone(),
+            request_b.response.request.clone(),
+        ),
+        _ => anyhow::bail!("expected CaitSith requests to be signatures"),
+    };
+    assert!(
+        contract
+            .get_pending_request(request_a_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+    assert!(
+        contract
+            .get_pending_request(request_b_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+
+    // When
+    request_a
+        .submit_response(&contract, attested_account)
+        .await?;
+
+    // Then
+    request_a.verify_execution_outcome(status_a).await?;
+    assert!(
+        contract
+            .get_pending_request(request_a_key.clone())
+            .await?
+            .value
+            .is_none()
+    );
+    assert!(
+        contract
+            .get_pending_request(request_b_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+    let alice_new_balance = alice.view_account().await?.balance;
+    assert!(alice_balance >= alice_new_balance);
+    assert!(alice_balance.as_millinear() - alice_new_balance.as_millinear() < 10);
+
+    Ok(())
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn sign_responding_twice_to_a__should_be_rejected() -> anyhow::Result<()> {
+    // Given
+    let mut rng = rand::rngs::StdRng::from_seed([3u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::CaitSith])
+        .build()
+        .await;
+    let attested_account = &mpc_signer_accounts[0];
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let key = &keys[0];
+    let request_a = DomainResponseTest::new(&mut rng, key, alice.id());
+    let request_b = DomainResponseTest::new(&mut rng, key, bob.id());
+
+    let status_a = request_a
+        .submit_request_ensure_included(&alice, &contract)
+        .await?;
+    let _status_b = request_b
+        .submit_request_ensure_included(&bob, &contract)
+        .await?;
+
+    let (request_a_key, request_b_key) = match (&request_a, &request_b) {
+        (DomainResponseTest::Sign(request_a), DomainResponseTest::Sign(request_b)) => (
+            request_a.response.request.clone(),
+            request_b.response.request.clone(),
+        ),
+        _ => anyhow::bail!("expected CaitSith requests to be signatures"),
+    };
+    assert!(
+        contract
+            .get_pending_request(request_a_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+    assert!(
+        contract
+            .get_pending_request(request_b_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+
+    request_a
+        .submit_response(&contract, attested_account)
+        .await?;
+    request_a.verify_execution_outcome(status_a).await?;
+
+    // When
+    let result = request_a.submit_response(&contract, attested_account).await;
+
+    // Then
+    assert!(
+        result.is_err(),
+        "a completed request must not be resolved twice"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn sign_timing_out_b__should_clear_its_pending_entry() -> anyhow::Result<()> {
+    // Given
     let mut rng = rand::rngs::StdRng::from_seed([3u8; 32]);
     let SandboxTestSetup {
         worker,
@@ -153,28 +299,11 @@ async fn contract_request_admission__should_track_distinct_sign_requests_indepen
         .submit_response(&contract, attested_account)
         .await?;
     request_a.verify_execution_outcome(status_a).await?;
-    assert!(
-        contract
-            .get_pending_request(request_a_key.clone())
-            .await?
-            .value
-            .is_none()
-    );
-    assert!(
-        contract
-            .get_pending_request(request_b_key.clone())
-            .await?
-            .value
-            .is_some()
-    );
-    assert!(
-        request_a
-            .submit_response(&contract, attested_account)
-            .await
-            .is_err(),
-        "a completed request must not be resolved twice"
-    );
+
+    // When
     worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await?;
+
+    // Then
     verify_timeout(status_b).await?;
     assert!(
         contract
@@ -192,10 +321,156 @@ async fn contract_request_admission__should_track_distinct_sign_requests_indepen
 
     Ok(())
 }
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn ckd_responding_to_a__should_leave_b_pending() -> anyhow::Result<()> {
+    // Given
+    let mut rng = rand::rngs::StdRng::from_seed([4u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::ConfidentialKeyDerivation])
+        .build()
+        .await;
+    let attested_account = &mpc_signer_accounts[0];
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let alice_balance = alice.view_account().await?.balance;
+    let key = &keys[0];
+    let request_a = DomainResponseTest::new(&mut rng, key, alice.id());
+    let request_b = DomainResponseTest::new(&mut rng, key, bob.id());
+
+    let status_a = request_a
+        .submit_request_ensure_included(&alice, &contract)
+        .await?;
+    let _status_b = request_b
+        .submit_request_ensure_included(&bob, &contract)
+        .await?;
+
+    let (request_a_key, request_b_key) = match (&request_a, &request_b) {
+        (DomainResponseTest::CKD(request_a), DomainResponseTest::CKD(request_b)) => (
+            request_a.response.request.clone(),
+            request_b.response.request.clone(),
+        ),
+        _ => anyhow::bail!("expected CKD requests"),
+    };
+    assert!(
+        contract
+            .get_pending_ckd_request(request_a_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+    assert!(
+        contract
+            .get_pending_ckd_request(request_b_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+
+    // When
+    request_a
+        .submit_response(&contract, attested_account)
+        .await?;
+
+    // Then
+    request_a.verify_execution_outcome(status_a).await?;
+    assert!(
+        contract
+            .get_pending_ckd_request(request_a_key.clone())
+            .await?
+            .value
+            .is_none()
+    );
+    assert!(
+        contract
+            .get_pending_ckd_request(request_b_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+    let alice_new_balance = alice.view_account().await?.balance;
+    assert!(alice_balance >= alice_new_balance);
+    assert!(alice_balance.as_millinear() - alice_new_balance.as_millinear() < 10);
+
+    Ok(())
+}
 
 #[tokio::test]
 #[expect(non_snake_case)]
-async fn ckd_request__should_isolate_distinct_derivation_paths() -> anyhow::Result<()> {
+async fn ckd_responding_twice_to_a__should_be_rejected() -> anyhow::Result<()> {
+    // Given
+    let mut rng = rand::rngs::StdRng::from_seed([4u8; 32]);
+    let SandboxTestSetup {
+        worker,
+        contract,
+        mpc_signer_accounts,
+        keys,
+    } = SandboxTestSetup::builder()
+        .with_protocols(&[Protocol::ConfidentialKeyDerivation])
+        .build()
+        .await;
+    let attested_account = &mpc_signer_accounts[0];
+    let alice = worker.dev_create_account().await?;
+    let bob = worker.dev_create_account().await?;
+    let key = &keys[0];
+    let request_a = DomainResponseTest::new(&mut rng, key, alice.id());
+    let request_b = DomainResponseTest::new(&mut rng, key, bob.id());
+
+    let status_a = request_a
+        .submit_request_ensure_included(&alice, &contract)
+        .await?;
+    let _status_b = request_b
+        .submit_request_ensure_included(&bob, &contract)
+        .await?;
+
+    let (request_a_key, request_b_key) = match (&request_a, &request_b) {
+        (DomainResponseTest::CKD(request_a), DomainResponseTest::CKD(request_b)) => (
+            request_a.response.request.clone(),
+            request_b.response.request.clone(),
+        ),
+        _ => anyhow::bail!("expected CKD requests"),
+    };
+    assert!(
+        contract
+            .get_pending_ckd_request(request_a_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+    assert!(
+        contract
+            .get_pending_ckd_request(request_b_key.clone())
+            .await?
+            .value
+            .is_some()
+    );
+
+    request_a
+        .submit_response(&contract, attested_account)
+        .await?;
+    request_a.verify_execution_outcome(status_a).await?;
+
+    // When
+    let result = request_a.submit_response(&contract, attested_account).await;
+
+    // Then
+    assert!(
+        result.is_err(),
+        "a completed request must not be resolved twice"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+#[expect(non_snake_case)]
+async fn ckd_timing_out_b__should_clear_its_pending_entry() -> anyhow::Result<()> {
+    // Given
     let mut rng = rand::rngs::StdRng::from_seed([4u8; 32]);
     let SandboxTestSetup {
         worker,
@@ -248,28 +523,11 @@ async fn ckd_request__should_isolate_distinct_derivation_paths() -> anyhow::Resu
         .submit_response(&contract, attested_account)
         .await?;
     request_a.verify_execution_outcome(status_a).await?;
-    assert!(
-        contract
-            .get_pending_ckd_request(request_a_key.clone())
-            .await?
-            .value
-            .is_none()
-    );
-    assert!(
-        contract
-            .get_pending_ckd_request(request_b_key.clone())
-            .await?
-            .value
-            .is_some()
-    );
-    assert!(
-        request_a
-            .submit_response(&contract, attested_account)
-            .await
-            .is_err(),
-        "a completed request must not be resolved twice"
-    );
+
+    // When
     worker.fast_forward(SIGNATURE_TIMEOUT_BLOCKS).await?;
+
+    // Then
     verify_timeout(status_b).await?;
     assert!(
         contract
@@ -287,7 +545,6 @@ async fn ckd_request__should_isolate_distinct_derivation_paths() -> anyhow::Resu
 
     Ok(())
 }
-
 #[tokio::test]
 async fn test_contract_success_refund_all_schemes() -> anyhow::Result<()> {
     let SandboxTestSetup {
