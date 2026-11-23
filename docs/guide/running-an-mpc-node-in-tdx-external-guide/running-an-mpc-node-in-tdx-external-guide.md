@@ -2990,7 +2990,7 @@ ERROR periodic_attestation_submission: tee_context::remote_attestation:
   cause=attestation submission was not executed backoff_duration=60s
 ```
 
-This line **doesn't tell you why**: `cause` is `attestation submission was not executed` (most common) or `failed to submit transaction` (the node's transaction processor has stopped). Neither carries the underlying reason. Once a TEE attestation is stored for the key, a rejected resubmission logs no such line: an hour later, at the start of the next round, the node logs `WARN ... no attestation from this node accepted recently` and submits again. The actual failure shows up in one of three places.
+This line **doesn't tell you why**: `cause` is `attestation submission was not executed` (most common) or `failed to submit transaction` (the node's transaction processor has stopped). Neither carries the underlying reason. Once a TEE attestation is stored for the key, a rejected resubmission logs no such line: an hour later, at the start of the next round, the node logs `WARN ... no attestation from this service accepted recently` and submits again. The actual failure shows up in one of three places.
 
 #### 1. Client-side pre-flight WARN — in the node logs
 

@@ -30,6 +30,7 @@ tracing = { workspace = true }
 async-testing = { workspace = true }
 ed25519-dalek = { workspace = true }
 mockall = { workspace = true }
+near-contract-transport = { workspace = true, features = ["test-utils"] }
 near-mpc-contract-interface = { workspace = true, features = ["ed25519-dalek"] }
 rand = { workspace = true }
 rstest = { workspace = true }

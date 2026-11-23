@@ -288,7 +288,7 @@ where
     periodic_attestation_submission(submitter, interval).await
 }
 
-/// Periodically regenerates and submits this node's attestation. A stage still running at the
+/// Periodically regenerates and submits this service's attestation. A stage still running at the
 /// round deadline is abandoned, recorded in [`MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL`], and
 /// the next tick starts over with a fresh attestation. Failures are logged, never propagated;
 /// this task never returns.
@@ -329,8 +329,8 @@ fn warn_if_no_recent_acceptance(stored: Option<&StoredAttestation>) {
             tracing::warn!(
                 accepted_at_seconds = landed_at,
                 landing_age_seconds = landing_age,
-                "no attestation from this node accepted recently; its submit_participant_info \
-                 transactions were likely rejected"
+                "no attestation from this service accepted recently; its submissions were likely \
+                 rejected"
             );
         }
     }

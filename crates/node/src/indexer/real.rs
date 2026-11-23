@@ -25,7 +25,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 #[cfg(feature = "network-hardship-simulation")]
 use std::time::Duration;
-use tee_context::TeeStateMonitors;
+use tee_context::{TeeService, TeeStateMonitors};
 use tokio::sync::{Mutex, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 
@@ -186,6 +186,7 @@ pub fn spawn_real_indexer(
 
             tee_state_monitors.spawn(
                 indexer_state.contract.clone(),
+                TeeService::MpcNode,
                 Ed25519PublicKey::from(&tls_public_key),
             );
 

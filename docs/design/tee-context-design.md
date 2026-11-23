@@ -18,6 +18,14 @@ pub struct TeeStateReceivers {
     pub stored_attestation: watch::Receiver<Option<StoredAttestation>>,
 }
 
+/// The service whose TEE state `TeeStateMonitors` read. The contract keeps a separate TEE state
+/// for each.
+#[derive(Clone, Copy)]
+pub enum TeeService {
+    MpcNode,
+    BackupService,
+}
+
 /// Keeps `TeeStateReceivers` up to date with the contract.
 pub struct TeeStateMonitors { .. }
 
@@ -29,6 +37,7 @@ impl TeeStateMonitors {
     pub fn spawn<V: ViewContract + Clone + Send + Sync + 'static>(
         self,
         contract: MpcContractHandle<V>,
+        service: TeeService,
         tls_public_key: Ed25519PublicKey,
     );
 }
@@ -87,6 +96,8 @@ pub async fn run_periodic_attestation_submission<S: SubmitAttestation, A: Genera
 );
 ```
 
+The monitors read the views of the given `TeeService`, listed in [Backup Service Attestation Data](backup-service-attestation-data.md#tee-context).
+
 Submission is a port because each service signs with its own key and calls its own contract method. The MPC node implements it by sending `submit_participant_info` through its transaction sender, which holds the only signer of the node's access key: a second signer would keep its own nonce counter and race the node's other transactions.
 
 Each hourly round:
@@ -110,7 +121,7 @@ let attestation =
 let (latest_attestation, latest_attestation_receiver) = watch::channel(attestation);
 
 let (tee_state_monitors, tee) = TeeStateMonitors::new();
-tee_state_monitors.spawn(contract, tls_public_key.clone());
+tee_state_monitors.spawn(contract, TeeService::MpcNode, tls_public_key.clone());
 
 tokio::spawn(monitor_allowed_image_hashes(
     cancellation_token.child_token(),

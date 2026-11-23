@@ -164,17 +164,17 @@ The contract needs the following changes, most of them in the [migration service
 
 The allowed compose hashes also need a backup service template. [`LauncherCompose::hash()`](../../crates/contract/src/tee/launcher_compose.rs) fills in a launcher compose template, including the contract's own account id as [`MPC_CONTRACT_ID`][mpc-contract-id] and the genesis hash of the chain the contract runs on as `NEAR_GENESIS_HASH`, which the MPC node launcher takes from this measured compose rather than from its user config. The [backup service template](../../crates/contract/assets/backup_service_launcher_docker_compose.yaml.template) is the MPC node template plus a `LAUNCHED_SERVICE=backup-service` line naming the service for the launcher to start. No placeholder expands to a line break, so a filled backup service template always has one more line than a filled MPC node template, and no backup service compose hash is also an MPC node one, even for the same launcher and image hashes. The backup service votes derive their compose hashes from this template. The backup service takes the contract id and genesis hash from its measured compose rather than its user config, so its embedded NEAR node reads only this contract and refuses to follow another chain. Its launcher also fixes the home directory, so the embedded node stays on the chain its disk started on.
 
-### TeeContext
+### TEE Context
 
-**Status:** Partially superseded. TODO(#2730): `TeeContext` was removed. The `tee-context` crate now holds the TEE state monitors, which read the MPC node views below, and the hourly attestation submission, which sends through a port each service implements.
+The [TEE Context](./tee-context-design.md) crate keeps the TEE state of the service it runs in up to date and submits that service's attestation every hour. Its `TeeService` parameter selects the views it reads, and each service implements the submission port:
 
-[`TeeContext`](./tee-context-design.md) hardcodes MPC node method names and needs parameterization:
-
-| What | Current | Backup service needs |
-|------|---------|---------------------|
+| What | MPC node | Backup service |
+|------|----------|----------------|
 | Submit attestation | [`submit_participant_info`][submit-participant-info] | [`register_backup_service`][register-backup-service] |
 | Poll image hashes | [`allowed_docker_image_hashes`][allowed-docker-image-hashes] | `allowed_backup_service_code_hashes` |
 | Poll compose hashes | [`allowed_launcher_compose_hashes`][allowed-launcher-compose-hashes] | `allowed_backup_service_launcher_compose_hashes` |
+| Poll OS measurements | `allowed_os_measurements` | `allowed_backup_service_os_measurements` |
+| Poll its stored attestation by its TLS key | [`get_attestation`][get-attestation] | `get_backup_service_attestation` |
 
 
 <!-- Code permalinks (main @ 483e9ff, except seed-measurements @ 249bd1e; docs.rs links at the Cargo.lock versions) -->

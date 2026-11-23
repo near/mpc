@@ -14,4 +14,4 @@ pub use remote_attestation::{
     AttestationSubmitter, GenerateAttestation, SubmitAttestation, generate_initial_attestation,
     run_periodic_attestation_submission,
 };
-pub use tee_state_monitors::{TeeStateMonitors, TeeStateReceivers};
+pub use tee_state_monitors::{TeeService, TeeStateMonitors, TeeStateReceivers};

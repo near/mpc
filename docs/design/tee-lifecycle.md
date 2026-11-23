@@ -218,7 +218,7 @@ Every governance contract reuses [`TeeState`][tee-state] — a shared on-chain d
 
 ### Attestation Methods
 
-The following attestation methods must be uniform across all governance contracts. The [TEE Context][tee-context-design] reads the allowed lists through the contract interface crate's typed client, and the MPC node submits its attestation with `submit_participant_info`.
+The following attestation methods must be uniform across all governance contracts. The [TEE Context][tee-context-design] reads the allowed lists through the contract interface crate's typed client, and the MPC node submits its attestation with `submit_participant_info`. For the Backup Service, the TEE Context reads the mirrors of these views on the Backup Service's `TeeState`, listed below.
 
 | Method | Type | Description |
 |--------|------|-------------|
