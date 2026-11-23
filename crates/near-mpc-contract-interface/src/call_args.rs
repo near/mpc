@@ -200,7 +200,7 @@ pub struct ConcludeNodeMigrationArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct CleanInvalidAttestationsArgs {
+pub struct MaxScanArgs {
     pub max_scan: u32,
 }
 

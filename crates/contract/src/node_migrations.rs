@@ -80,6 +80,25 @@ impl NodeMigrations {
         );
     }
 
+    /// Removes the backup services whose attestation fails re-verification among the first
+    /// `max_scan` stored ones and returns their owners. Each owner's index row names the removed
+    /// entry, as an account's only stored backup service is the one its row indexes.
+    pub(crate) fn remove_invalid_backup_services(
+        &mut self,
+        tee_upgrade_deadline_duration: Duration,
+        max_scan: u32,
+    ) -> Vec<AccountId> {
+        let owners = self.backup_service_tee_state.clean_invalid_attestations(
+            tee_upgrade_deadline_duration,
+            max_scan,
+            |_| false,
+        );
+        for owner in &owners {
+            self.backup_services_info.remove(owner);
+        }
+        owners
+    }
+
     /// Removes the backup service launchers that no registered backup service attests with once
     /// their TTL has passed, as [`TeeState::remove_unused_launchers`] does for participants.
     pub(crate) fn remove_unused_backup_service_launchers(&mut self, ttl: Duration) {

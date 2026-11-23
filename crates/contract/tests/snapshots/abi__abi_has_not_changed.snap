@@ -2775,6 +2775,32 @@ expression: abi
         }
       },
       {
+        "name": "reverify_backup_services",
+        "doc": " Scans up to the given number of stored backup services and removes those whose attestation\n fails re-verification, together with their owners' [`MpcContract::migration_info`] keys.\n Gives one attestation-storage grant back to each owner and returns the number of backup\n services removed. Callable by anyone in any protocol state.",
+        "kind": "call",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "max_scan",
+              "type_schema": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0.0
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
         "name": "sign",
         "doc": " To avoid overloading the network with too many requests,\n we ask for a small deposit for each signature request.",
         "kind": "call",

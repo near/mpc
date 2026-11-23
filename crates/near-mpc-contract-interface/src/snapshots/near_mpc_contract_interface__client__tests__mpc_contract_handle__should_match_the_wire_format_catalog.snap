@@ -265,3 +265,9 @@ method:   clean_invalid_attestations
 gas:      300.0 Tgas
 deposit:  0 NEAR
 args:     {"max_scan":7}
+
+contract: mpc.near
+method:   reverify_backup_services
+gas:      300.0 Tgas
+deposit:  0 NEAR
+args:     {"max_scan":7}

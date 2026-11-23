@@ -438,14 +438,14 @@ impl TeeState {
     pub(crate) fn clean_invalid_attestations(
         &mut self,
         tee_upgrade_deadline_duration: Duration,
-        max_scan: usize,
+        max_scan: u32,
         is_in_use: impl Fn(&Node) -> bool,
     ) -> Vec<AccountId> {
         // Materialize candidates before any mutation to avoid iterator invalidation.
         let removable_tls_keys: Vec<Ed25519PublicKey> = self
             .nodes
             .iter()
-            .take(max_scan)
+            .take(usize::try_from(max_scan).expect("u32 should fit in a usize on wasm32 targets"))
             .filter(|(_, node)| {
                 !self.has_valid_attestation(node, tee_upgrade_deadline_duration) && !is_in_use(node)
             })

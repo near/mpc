@@ -279,6 +279,7 @@ stateDiagram-v2
 | `derived_public_key(path: String, predecessor: Option<AccountId>, domain_id: Option<DomainId>)`| Generates a derived public key for a given path and account, for the given domain (defaulting to first). | `Result<PublicKey, Error>` |                 |                    |
 | `prepay_attestation_storage(account_id: AccountId, grants: u32)` | Prepays attestation-entry storage for `account_id`. One grant permits one stored attestation. Payable and permissionless — anyone may prepay for any account, which is how an operator funds a node whose function-call access key cannot attach a deposit. Requires an attached deposit of exactly `attestation_storage_fee_millinear × grants` (see `config`) and rejects anything else. Nothing is refunded and there is no withdrawal. | `Result<(), Error>` | 30Tgas | ~4Tgas |
 | `available_attestation_grants(account_id: AccountId)` | Read-only function; returns the grants `account_id` has available — bought, minus those currently backing a stored attestation. `0` therefore means either "never prepaid" or "prepaid, and the grant is backing an entry"; cross-reference `get_tee_accounts` to distinguish them. | `u32` | | |
+| `reverify_backup_services(max_scan: u32)` | Permissionless, in any protocol state. Scans up to `max_scan` stored backup services, removes those whose attestation fails re-verification together with their `migration_info` keys, and gives one attestation-storage grant back to each owner. | `u32` (backup services removed) | TBD | TBD |
 
 #### SignRequestArgs (Latest version)
 

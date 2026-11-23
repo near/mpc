@@ -63,6 +63,7 @@ pub const REGISTER_BACKUP_SERVICE: &str = "register_backup_service";
 pub const CLEAN_TEE_STATUS: &str = "clean_tee_status";
 pub const CLEAN_BACKUP_SERVICE_TEE_STATUS: &str = "clean_backup_service_tee_status";
 pub const CLEAN_INVALID_ATTESTATIONS: &str = "clean_invalid_attestations";
+pub const REVERIFY_BACKUP_SERVICES: &str = "reverify_backup_services";
 
 // Callbacks (used in promise_yield_create and indexed by the node)
 pub const RETURN_SIGNATURE_AND_CLEAN_STATE_ON_SUCCESS: &str =

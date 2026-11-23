@@ -13,16 +13,16 @@ use near_contract_transport::{
 use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    AccountIdArgs, CKDRespondArgs, CleanInvalidAttestationsArgs, DerivedPublicKeyArgs,
-    GetAttestationArgs, GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs,
-    GetPendingVerifyForeignTxRequestArgs, InitArgs, InitRunningArgs, PrepayAttestationStorageArgs,
-    PublicKeyArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs,
-    RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs, StartKeygenArgs,
-    StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
-    VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs,
-    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteLauncherHashArgs,
-    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VoteOsMeasurementArgs, VotePkArgs,
-    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
+    AccountIdArgs, CKDRespondArgs, DerivedPublicKeyArgs, GetAttestationArgs,
+    GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs,
+    InitArgs, InitRunningArgs, MaxScanArgs, PrepayAttestationStorageArgs, PublicKeyArgs,
+    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs,
+    SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
+    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
+    VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs,
+    VoteContractUpdateArgs, VoteLauncherHashArgs, VoteMpcNodeManifestDigestArgs,
+    VoteNewParametersArgs, VoteOsMeasurementArgs, VotePkArgs, VoteResharedArgs,
+    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -633,7 +633,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         max_scan: u32,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&CleanInvalidAttestationsArgs::new(max_scan))?;
+        let args = serde_json::to_vec(&MaxScanArgs::new(max_scan))?;
         self.call(FunctionCallArgs::no_deposit(
             CLEAN_INVALID_ATTESTATIONS,
             args,
@@ -1203,6 +1203,7 @@ mod tests {
         handle.clean_tee_status().await.unwrap();
         handle.clean_backup_service_tee_status().await.unwrap();
         handle.clean_invalid_attestations(7).await.unwrap();
+        handle.reverify_backup_services(7).await.unwrap();
 
         // Then
         let calls = caller.calls.lock().unwrap();

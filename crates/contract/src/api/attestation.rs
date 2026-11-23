@@ -250,6 +250,19 @@ impl MpcContract {
         }
     }
 
+    /// Gives one grant back to the owner of each removed node and returns the number of nodes
+    /// removed.
+    pub(crate) fn return_attestation_storage_grants(
+        &mut self,
+        removed_entry_owners: &[AccountId],
+    ) -> u32 {
+        for account_id in removed_entry_owners {
+            self.return_attestation_storage_grant(account_id);
+        }
+        u32::try_from(removed_entry_owners.len())
+            .expect("u32 should always be convertible from usize on wasm32")
+    }
+
     pub(crate) fn return_attestation_storage_grant(&mut self, account_id: &AccountId) {
         let available = self.grants_for(account_id);
         // Checked, not saturating: at `u32::MAX` a returned grant would be dropped silently.
@@ -365,14 +378,10 @@ impl MpcContract {
             Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
         let removed_entry_owners = self.tee_state.clean_invalid_attestations(
             tee_upgrade_deadline_duration,
-            usize::try_from(max_scan).expect("u32 should fit in a usize on wasm32 targets"),
+            max_scan,
             is_in_use,
         );
-        for account_id in &removed_entry_owners {
-            self.return_attestation_storage_grant(account_id);
-        }
-        Ok(u32::try_from(removed_entry_owners.len())
-            .expect("u32 should always be convertible from usize on wasm32"))
+        Ok(self.return_attestation_storage_grants(&removed_entry_owners))
     }
 
     /// Verify-quote callback: on a verifier verdict it runs the post-DCAP checks and stores the

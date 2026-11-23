@@ -2,17 +2,17 @@ use near_contract_transport::{CallContract, FunctionCallArgs, ViewArgs, ViewCall
 
 use crate::{
     call_args::{
-        AccountIdArgs, GetAttestationArgs, VoteBackupServiceCodeHashArgs, VoteLauncherHashArgs,
-        VoteOsMeasurementArgs,
+        AccountIdArgs, GetAttestationArgs, MaxScanArgs, VoteBackupServiceCodeHashArgs,
+        VoteLauncherHashArgs, VoteOsMeasurementArgs,
     },
     client::{MAX_GAS, MpcContractHandle, MpcContractHandleError},
     method_names::{
         ALLOWED_BACKUP_SERVICE_CODE_HASHES, ALLOWED_BACKUP_SERVICE_LAUNCHER_COMPOSE_HASHES,
         ALLOWED_BACKUP_SERVICE_LAUNCHER_IMAGE_HASHES, ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS,
         ATTESTED_BACKUP_SERVICE, CLEAN_BACKUP_SERVICE_TEE_STATUS, GET_BACKUP_SERVICE_ATTESTATION,
-        VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH, VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT,
-        VOTE_BACKUP_SERVICE_CODE_HASH, VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH,
-        VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT,
+        REVERIFY_BACKUP_SERVICES, VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH,
+        VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT, VOTE_BACKUP_SERVICE_CODE_HASH,
+        VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH, VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT,
     },
     types::{
         AccountId, AllowedMpcDockerImageHash, BackupServiceInfo, Ed25519PublicKey,
@@ -93,6 +93,19 @@ impl<C: CallContract> MpcContractHandle<C> {
         self.call(FunctionCallArgs::no_deposit(
             CLEAN_BACKUP_SERVICE_TEE_STATUS,
             b"{}".to_vec(),
+            MAX_GAS,
+        ))
+        .await
+    }
+
+    pub async fn reverify_backup_services(
+        &self,
+        max_scan: u32,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&MaxScanArgs::new(max_scan))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REVERIFY_BACKUP_SERVICES,
+            args,
             MAX_GAS,
         ))
         .await

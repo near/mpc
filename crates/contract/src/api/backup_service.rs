@@ -9,7 +9,7 @@ use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::VerifiedQuote;
 use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
-use near_sdk::{AccountId, PromiseError, PromiseOrValue, log, near};
+use near_sdk::{AccountId, PromiseError, PromiseOrValue, env, log, near};
 use std::time::Duration;
 use tee_verifier_interface::VerificationResultWithCollateralDates;
 
@@ -63,6 +63,22 @@ impl MpcContract {
         self.node_migrations
             .backup_service_tee_state
             .get_attestation(&tls_public_key)
+    }
+
+    /// Scans up to the given number of stored backup services and removes those whose attestation
+    /// fails re-verification, together with their owners' [`MpcContract::migration_info`] keys.
+    /// Gives one attestation-storage grant back to each owner and returns the number of backup
+    /// services removed. Callable by anyone in any protocol state.
+    pub fn reverify_backup_services(&mut self, max_scan: u32) -> u32 {
+        log!(
+            "reverify_backup_services: signer={}, max_scan={max_scan}",
+            env::signer_account_id()
+        );
+        let removed_entry_owners = self.node_migrations.remove_invalid_backup_services(
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+            max_scan,
+        );
+        self.return_attestation_storage_grants(&removed_entry_owners)
     }
 
     /// Re-checks the registration before storing, since this runs a receipt later than the
@@ -225,6 +241,13 @@ mod tests {
             .unwrap();
     }
 
+    fn store_mpc_node(contract: &mut MpcContract, node: dtos::NodeInfo) {
+        contract
+            .tee_state
+            .verify_and_store_mock(node, MockAttestation::Valid, Duration::MAX)
+            .unwrap();
+    }
+
     fn fixture_node_under_another_key() -> dtos::NodeInfo {
         dtos::NodeInfo {
             tls_public_key: bogus_ed25519_public_key(),
@@ -374,10 +397,7 @@ mod tests {
     )]
     #[case::key_attested_as_mpc_node(
         |contract: &mut MpcContract| {
-            contract
-                .tee_state
-                .verify_and_store_mock(dstack_fixture_node(), MockAttestation::Valid, Duration::MAX)
-                .unwrap();
+            store_mpc_node(contract, dstack_fixture_node());
             index_backup_service(contract, &dstack_fixture_node());
         },
         false
@@ -412,6 +432,46 @@ mod tests {
             attested.then_some(BackupServiceInfo {
                 public_key: node.tls_public_key,
             })
+        );
+    }
+
+    #[rstest]
+    #[case::valid(0, false)]
+    #[case::expired(MOCK_EXPIRATION_DURATION_SECONDS + 1, true)]
+    fn reverify_backup_services__should_remove_only_an_invalid_backup_service_and_return_its_grant(
+        #[case] reverified_at_secs: u64,
+        #[case] expired: bool,
+    ) {
+        // Given
+        set_block_secs(0);
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
+        let node = dstack_fixture_node();
+        store_backup_service(&mut contract, node.clone());
+        store_mpc_node(&mut contract, node.clone());
+        set_block_secs(reverified_at_secs);
+        let other_accounts_node = create_node(&gen_account_id(), &bogus_ed25519_public_key());
+        store_backup_service(&mut contract, other_accounts_node.clone());
+
+        // When
+        let removed = contract.reverify_backup_services(u32::MAX);
+
+        // Then
+        let kept_backup_services: Vec<_> = (!expired)
+            .then(|| node.clone())
+            .into_iter()
+            .chain([other_accounts_node])
+            .collect();
+        assert_eq!(
+            (removed, registrations(&contract)),
+            (
+                u32::from(expired),
+                Registrations {
+                    migration_info: migration_info_of(&kept_backup_services),
+                    backup_service_nodes: kept_backup_services,
+                    mpc_nodes: vec![node],
+                    fixture_account_grants: u32::from(expired),
+                }
+            )
         );
     }
 
