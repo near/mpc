@@ -11,10 +11,12 @@ use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_store::db::RocksDB;
 use nearcore::{NearConfig, NearNode};
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
 use crate::event_subscriber;
+use crate::event_subscriber::IndexerStats;
 use crate::event_subscriber::block_events::BlockUpdate;
 use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
@@ -134,6 +136,14 @@ impl Drop for NodeHandle {
     }
 }
 
+pub struct BlockEventStream {
+    /// At most one update per block with at least one matched event;
+    /// dropped when this channel is full.
+    pub updates: Receiver<BlockUpdate>,
+    /// Progress tracking every block received from nearcore indexer.
+    pub progress: watch::Receiver<IndexerStats>,
+}
+
 impl ChainGateway {
     pub fn from_near_node(near_node: &NearNode, near_config: &NearConfig) -> Self {
         Self::new(near_node, expected_block_time(near_config))
@@ -151,19 +161,12 @@ impl ChainGateway {
     /// Spawns a NEAR node with [`NodeConfig`].
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
-    /// Returns a stream for BlockUpdates if BlockEventSubscriptions is not None.
+    /// Returns a [`BlockEventStream`] if `subscriber` is `Some`.
     pub async fn start(
         node_config: NodeConfig,
         subscriber: Option<BlockEventSubscriptions>,
         shutdown: CancellationToken,
-    ) -> Result<
-        (
-            ChainGateway,
-            NodeHandle,
-            Option<tokio::sync::mpsc::Receiver<BlockUpdate>>,
-        ),
-        ChainGatewayError,
-    > {
+    ) -> Result<(ChainGateway, NodeHandle, Option<BlockEventStream>), ChainGatewayError> {
         let NodeConfig(indexer_config) = node_config;
         let near_config: NearConfig = indexer_config.load_near_config().map_err(|err| {
             ChainGatewayError::FailureLoadingConfig {
@@ -201,7 +204,7 @@ impl ChainGateway {
     }
 }
 
-type RunNodeResult = Result<(ChainGateway, Option<Receiver<BlockUpdate>>), ChainGatewayError>;
+type RunNodeResult = Result<(ChainGateway, Option<BlockEventStream>), ChainGatewayError>;
 
 fn expected_block_time(near_config: &NearConfig) -> Duration {
     near_config
@@ -272,7 +275,7 @@ fn run_node(
             )
             .await
             {
-                Ok(rx) => Some(rx),
+                Ok(stream) => Some(stream),
                 Err(err) => {
                     let _ = ready_sender.send(Err(err));
                     return;

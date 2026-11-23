@@ -16,7 +16,7 @@ use mpc_contract::{
     errors,
     primitives::{
         participants::Participants,
-        test_utils::bogus_tee_verifier_account_id,
+        test_utils::{bogus_genesis_hash, bogus_tee_verifier_account_id},
         thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
     },
 };
@@ -758,15 +758,21 @@ async fn test_sign_v1_compatibility() -> anyhow::Result<()> {
 async fn test_contract_initialization() -> anyhow::Result<()> {
     let (worker, contract) = init().await;
     let contract = SandboxMpcContract::from_deployed(&worker, contract);
+    let init_with = |parameters| {
+        contract.init(
+            parameters,
+            bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
+            None,
+        )
+    };
 
     // Empty candidates should fail.
     let participants = Participants::new();
     let threshold = GovernanceThreshold::new(0);
     let proposed_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
         GovernanceThresholdParameters::new_unvalidated(participants, threshold).into();
-    let result = contract
-        .init(proposed_parameters, bogus_tee_verifier_account_id(), None)
-        .await?;
+    let result = init_with(proposed_parameters).await?;
     assert!(
         result.is_failure(),
         "initializing with zero candidates or less than threshold candidates should fail"
@@ -776,26 +782,14 @@ async fn test_contract_initialization() -> anyhow::Result<()> {
         GovernanceThresholdParameters::new(candidates(None), GovernanceThreshold::new(3))
             .unwrap()
             .into();
-    let result = contract
-        .init(
-            proposed_parameters.clone(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .await?;
+    let result = init_with(proposed_parameters.clone()).await?;
     assert!(
         result.is_success(),
         "initializing with valid candidates should succeed"
     );
 
     // Reinitializing after the first successful initialization should fail.
-    let result = contract
-        .init(
-            proposed_parameters.clone(),
-            bogus_tee_verifier_account_id(),
-            None,
-        )
-        .await?;
+    let result = init_with(proposed_parameters.clone()).await?;
     assert!(
         result.is_failure(),
         "initializing with valid candidates again should fail"

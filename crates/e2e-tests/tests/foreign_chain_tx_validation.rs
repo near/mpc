@@ -222,7 +222,7 @@ async fn must_setup_foreign_tx_cluster() -> ForeignTxTestEnv {
 
     // Quorum 1: the mocks share one host, so host matching leaves one conforming provider per chain.
     let whitelist: BTreeMap<_, _> = fc_config
-        .iter_chains()
+        .into_iter()
         .map(|(chain, config)| (chain, chain_entry_matching(config, 1)))
         .collect();
     let expected_chains: std::collections::BTreeSet<ForeignChain> =

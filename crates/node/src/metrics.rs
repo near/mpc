@@ -309,23 +309,6 @@ pub static MPC_OUTGOING_TRANSACTION_OUTCOMES: LazyLock<prometheus::IntCounterVec
         .unwrap()
     });
 
-pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
-    prometheus::register_int_gauge!(
-        "mpc_indexer_latest_block_height",
-        "Latest block height processed by the near indexer"
-    )
-    .unwrap()
-});
-
-pub static MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
-    LazyLock::new(|| {
-        prometheus::register_int_gauge!(
-            "mpc_indexer_latest_block_timestamp_seconds",
-            "Unix time of the latest block processed by the near indexer"
-        )
-        .unwrap()
-    });
-
 pub static MPC_CURRENT_EPOCH_ID: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_current_epoch_id",

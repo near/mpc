@@ -10,9 +10,10 @@ license.workspace = true
 bench = false
 
 [features]
-test-utils = ["rand", "rand_chacha"]
+test-utils = ["average", "rand", "rand_chacha"]
 
 [dependencies]
+average = { workspace = true, optional = true }
 blstrs.workspace = true
 borsh.workspace = true
 derive_more = { workspace = true, features = ["deref_mut"] }
@@ -126,22 +127,32 @@ name = "simulate_ckd"
 harness = false
 required-features = ["test-utils"]
 
+[[bench]]
+name = "simulate_triples"
+harness = false
+required-features = ["test-utils"]
+
 [lints.clippy]
 mod_module_files = "deny"
 # We might revisit these exceptions in the future
-missing-const-for-fn = "allow"
-trait-duplication-in-bounds = "allow"
-missing-errors-doc = "allow"
-similar-names = "allow"
-many-single-char-names = "allow"
-must-use-candidate = "allow"
-return-self-not-must-use = "allow"
+missing_const_for_fn = "allow"
+trait_duplication_in_bounds = "allow"
+missing_errors_doc = "allow"
+similar_names = "allow"
+many_single_char_names = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+
+# TODO(#5198): remove once on Rust 1.101. Clippy 1.99 and 1.100 flag
+# `derive_more::Constructor` output as redundant field names
+# (rust-lang/rust-clippy#17525).
+redundant_field_names = "allow"
 
 # Part of clippy restriction group
-indexing-slicing = "deny"
+indexing_slicing = "deny"
 panic = "deny"
-panic-in-result-fn = "warn"
-unwrap-used = "warn"
+panic_in_result_fn = "warn"
+unwrap_used = "warn"
 
 # Lint groups used
 nursery = { level = "warn", priority = -1 }

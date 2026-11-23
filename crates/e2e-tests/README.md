@@ -104,21 +104,21 @@ The inner `Sandbox` kills the process and deletes its temp directory on drop.
 
 ### 2. `NearBlockchain` — RPC client
 
-Wraps a `near_kit::Near` client signed as the sandbox root account. All
+Wraps a `near_kit::SigningNear` client signed as the sandbox root account. All
 contract interaction, account creation, and WASM deployment goes through it.
 
 ```rust
 pub struct NearBlockchain { /* root_client + rpc_url */ }
 
 impl NearBlockchain {
-    pub fn new(rpc_url: &str, chain_id: &str, root_account: &str,
-        root_secret: near_kit::signer::SecretKey) -> anyhow::Result<Self>;
-    pub async fn create_account_with_keys(&self, name: &str, balance_near: u128,
+    pub fn new(rpc_url: &str, chain_id: &str, root_account: AccountId,
+        root_secret: near_kit::signer::SecretKey) -> Self;
+    pub async fn create_account_with_keys(&self, name: &AccountId, balance_near: u128,
         keys: &[SigningKey]) -> anyhow::Result<()>;
-    pub async fn create_account_and_deploy(&self, name: &str, balance_near: u128,
+    pub async fn create_account_and_deploy(&self, name: &AccountId, balance_near: u128,
         key: &SigningKey, wasm: &[u8]) -> anyhow::Result<DeployedContract>;
-    pub fn client_for(&self, account_id: &str, key: &SigningKey)
-        -> anyhow::Result<NearKitCaller<ExecutedOptimistic>>;
+    pub fn client_for(&self, account_id: &AccountId, key: &SigningKey)
+        -> NearKitCaller<SigningNear<ExecutedOptimistic>>;
 }
 ```
 
@@ -223,6 +223,7 @@ pub struct MpcClusterConfig {
     pub port_seed: u16,
     pub triples_to_buffer: usize,
     pub sandbox_version: String,
+    pub sandbox_protocol_version: Option<u32>, // None = the binary's latest
     pub home_base: Option<PathBuf>,
     pub initial_participant_indices: Vec<usize>,
     pub migration_targets: Vec<usize>,          // source node indices
@@ -354,6 +355,10 @@ env var is unset and no pre-built WASM is found,
 local iteration).
 
 CI runs the same task via the `mpc-e2e-tests` job.
+
+The `mainnet_protocol` test, which runs the cluster at
+`test_utils::MAINNET_PROTOCOL_VERSION`, is `#[ignore]`d. CI runs it in the
+non-required `mainnet-protocol-tests` job; locally, pass `--run-ignored only -E 'test(/mainnet_protocol/)'`.
 
 ---
 

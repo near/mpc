@@ -126,7 +126,7 @@ The MPC node exposes web endpoints over which the backup service can submit requ
 
 The exposed endpoints are:
 
-- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract.
+- **GET /get_keyshares** - Returns the encrypted keyshares if a valid backup service is registered in the contract for the node's account and the contract has confirmed the node as that account's active node.
 - **PUT /set_keyshares** - Accepts encrypted keyshares from the backup service to restore a recovering node.
 
 ### Operators
@@ -282,7 +282,7 @@ sequenceDiagram
 4. **Operator**: Restarts the CVM (see _Node Boot Flow_ for details).
 5. **MPC Node → Contract**:
    - If the node sends an updated remote attestation **within the required time period**, the contract validates and updates the node's attestation info.
-   - Otherwise, if the node does not comply, the contract may remove ("kick out") the node, but only if the remaining participants still meet the threshold and every domain's signing protocol (robust ECDSA needs `2t - 1` participants).
+   - Otherwise, if the node does not comply, the contract stops accepting signature requests until the node attests again or a vote removes it from the participant set.
 
 ## Adding a New Participant
 
@@ -293,6 +293,7 @@ sequenceDiagram
     participant operator
     participant MPC_NODE
     participant contract
+    participant current_operators
 
     operator ->> MPC_NODE: Start CVM
     MPC_NODE ->> operator: Node boots and is ready
@@ -310,8 +311,8 @@ sequenceDiagram
         operator ->> contract: Submit remote attestation on node's behalf
     end
 
-    loop Until threshold participants reached
-        operator ->> contract: Call "vote_new_parameters"
+    loop Until a threshold of current participants voted
+        current_operators ->> contract: Call "vote_new_parameters"
     end
 
 ```
@@ -326,8 +327,8 @@ sequenceDiagram
 6. **(Optional – if the MPC Node fails to submit remote attestation):**
    - Operator ↔ MPC Node: Collects the quote, event log, and collateral from the node.
    - Operator → Contract: Submits the remote attestation on behalf of the node.
-7. **Loop (until threshold participants are reached):**
-   - Operator → Contract: Calls `vote_new_parameters` to update the active participant set.
+7. **Loop (until a threshold of current participants voted for the same proposal):**
+   - Current operators → Contract: Call `vote_new_parameters` to update the active participant set. The new operator cannot vote.
 
 # Design Details
 
@@ -377,11 +378,10 @@ pub struct Contract {
     ///     by the DAO and verified by the TEE.
     pub fn allowed_docker_image_hashes(&self) -> Vec<AllowedMpcDockerImageHash>
 
-    /// Verifies if all current participants have an accepted TEE state.
-    /// Automatically enters a resharing, in case one or more participants do not have an accepted
-    /// TEE state.
-    /// Returns `false` and stops the contract from accepting new signature requests or responses,
-    /// in case less than `threshold` participants run in an accepted Tee State.
+    /// Verifies whether every current participant has an accepted TEE state and returns the
+    /// result. While one does not, the contract stops accepting new signature requests or
+    /// responses. No participant is removed: requests resume once every participant has an
+    /// accepted TEE state again, or once a vote replaces the participant set.
     pub fn verify_tee(&mut self) -> Result<bool, Error>
 }
 ```
@@ -531,7 +531,7 @@ Check that the event log contains an entry `compose-hash` that matches one of th
 
 **Details**
 
-The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with two placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash and `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash.
+The Contract has a parameterized template of the launcher docker_compose file ([`launcher_docker_compose.yaml.template`](https://github.com/near/mpc/blob/main/crates/contract/assets/launcher_docker_compose.yaml.template)) with four placeholders: `{{LAUNCHER_IMAGE_HASH}}` for the launcher image hash, `{{DEFAULT_IMAGE_DIGEST_HASH}}` for the MPC node image hash, `{{MPC_CONTRACT_ID}}` for the contract's own account id and `{{NEAR_GENESIS_HASH}}` for the genesis hash of its chain.
 
 Compose hashes are derived on-chain as the cross-product of allowed launcher image hashes and allowed MPC image hashes. When a new MPC image hash is voted in (`vote_mpc_node_manifest_digest`), compose hashes are derived for all existing launcher hashes. When a new launcher hash is voted in (`vote_add_launcher_hash`), compose hashes are derived for all existing MPC hashes. This decouples launcher upgrades from contract deployments.
 A valid Docker compose file to start the MPC node might look like the following
@@ -603,7 +603,7 @@ Follow the launcher approach specified in <https://phalanetwork.notion.site/NEAR
   - Extends RTMR3 with the new `new_docker_image_hash`
   - Launches the MPC docker image
 
-## Kicking out nodes with invalid attestation
+## Participants with invalid attestation
 
 After a new MPC docker image hash has been successfully voted by Threshold participants.
 The old MPC docker image hash will still be valid for 7 days.
@@ -611,8 +611,7 @@ After 7 days, any call to the contract API `verify_tee` will removing the old
 
 _Note_ - Each MPC node will periodically call the `verify_tee` every 2 days.
 
-If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), then this participant will be automatically kicked out from the network, and a key re-sharing between the remaining participants will start.
-Note - In case the remaining participants are fewer than the threshold or than any domain's signing protocol requires, the node will not be kicked out, instead the contract will stop to accept signing requests until this is solved.
+If any participant fails this check (since it did not submit a remote attestation with the new MPC docker image hash), the contract stops accepting signing requests. No participant is removed automatically: requests resume once every participant attestation is valid again, or once a vote replaces the participant set.
 
 # CVM Upgrades
 

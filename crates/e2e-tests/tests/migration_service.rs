@@ -13,8 +13,8 @@ use e2e_tests::mpc_node::{MpcNodeSetup, ProcessGuard};
 use e2e_tests::{MpcNodeState, PARTICIPANT_ATTESTATIONS_TIMEOUT};
 use near_contract_transport::WatchContractState;
 use near_mpc_contract_interface::types::{
-    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, MigrationInfo, ParticipantInfo,
-    ProtocolContractState,
+    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, Keyset, MigrationInfo,
+    ParticipantInfo, ProtocolContractState,
 };
 use rand::SeedableRng;
 use rstest::rstest;
@@ -57,7 +57,7 @@ impl BackupService {
         );
     }
 
-    fn must_init_near_node(&self, node: &MpcNodeSetup) {
+    fn must_init_near_node(&self, node: &MpcNodeSetup, sandbox_config_path: &Path) {
         let output = Command::new(node.binary_path())
             .args(["init", "--chain-id", "mpc-localnet", "--dir"])
             .arg(self.home_dir.path())
@@ -77,6 +77,15 @@ impl BackupService {
             serde_json::from_slice(&config).expect("failed to parse the node's NEAR config");
         config["rpc"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
         config["network"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
+
+        let sandbox_config =
+            std::fs::read(sandbox_config_path).expect("failed to read the sandbox's NEAR config");
+        let sandbox_config: serde_json::Value = serde_json::from_slice(&sandbox_config)
+            .expect("failed to parse the sandbox's NEAR config");
+        config["consensus"]["min_block_production_delay"] =
+            sandbox_config["consensus"]["min_block_production_delay"].clone();
+        config["gc_blocks_limit"] = sandbox_config["gc_blocks_limit"].clone();
+        config["gc_step_period"] = sandbox_config["gc_step_period"].clone();
         std::fs::write(
             self.home_dir.path().join("config.json"),
             serde_json::to_vec_pretty(&config).expect("failed to serialize the NEAR config"),
@@ -99,12 +108,12 @@ impl BackupService {
         Ok(Ed25519PublicKey::from(&signing_key.verifying_key()))
     }
 
-    fn set_contract_state(&self, state: &ProtocolContractState) -> anyhow::Result<()> {
-        let state_path = self.home_dir.path().join("contract_state.json");
-        let json =
-            serde_json::to_string_pretty(state).context("failed to serialize contract state")?;
-        std::fs::write(&state_path, json)
-            .with_context(|| format!("failed to write {}", state_path.display()))?;
+    fn set_current_keyset(&self, current_keyset: &Option<Keyset>) -> anyhow::Result<()> {
+        let keyset_path = self.home_dir.path().join("current_keyset.json");
+        let json = serde_json::to_string_pretty(current_keyset)
+            .context("failed to serialize current keyset")?;
+        std::fs::write(&keyset_path, json)
+            .with_context(|| format!("failed to write {}", keyset_path.display()))?;
         Ok(())
     }
 
@@ -376,11 +385,13 @@ async fn get_keyshares_from_source(
     source_idx: usize,
     backup_service: &BackupService,
 ) -> anyhow::Result<()> {
-    let contract_state = cluster
-        .get_contract_state()
+    let current_keyset = cluster
+        .mpc_contract_handle
+        .current_keyset()
         .await
-        .context("failed to get contract state")?;
-    backup_service.set_contract_state(&contract_state)?;
+        .context("failed to get current keyset")?
+        .value;
+    backup_service.set_current_keyset(&current_keyset)?;
 
     let source_migration_addr = match &cluster.nodes[source_idx] {
         MpcNodeState::Running(n) => n.migration_web_ui_address(),
@@ -497,12 +508,6 @@ async fn put_keyshares_to_target(
         _ => bail!("target node not running"),
     };
     wait_for_migration_port(&target_migration_addr).await?;
-
-    let contract_state = cluster
-        .get_contract_state()
-        .await
-        .context("failed to get contract state")?;
-    backup_service.set_contract_state(&contract_state)?;
 
     let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
     backup_service.put_keyshares(
@@ -772,7 +777,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     let rpc_url = match contract_state_source {
         ContractStateSource::JsonRpc => Some(cluster.sandbox.rpc_url()),
         ContractStateSource::EmbeddedNode => {
-            backup_service.must_init_near_node(source.setup());
+            backup_service.must_init_near_node(source.setup(), &cluster.sandbox.config_path());
             None
         }
     };

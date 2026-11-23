@@ -6,7 +6,7 @@ expression: abi
   "schema_version": "0.4.0",
   "metadata": {
     "name": "mpc-contract",
-    "version": "3.18.0",
+    "version": "3.19.0",
     "build": {
       "compiler": "[RUSTC_VERSION]",
       "builder": "[CARGO_NEAR_BUILD_VERSION]"
@@ -15,6 +15,23 @@ expression: abi
   },
   "body": {
     "functions": [
+      {
+        "name": "add_domains_votes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
       {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
@@ -244,6 +261,24 @@ expression: abi
         }
       },
       {
+        "name": "current_keyset",
+        "doc": " The keyset of the running state, or of the previous running state while resharing;\n `None` otherwise.\n\n The backup-cli, which operators upgrade independently of the contract, depends on this\n view's JSON output staying stable across contract versions.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/Keyset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "derived_public_key",
         "doc": " This is the derived public key of the caller given path and predecessor\n if predecessor is not provided, it will be the caller of the contract.\n\n The domain parameter specifies which domain we're deriving the public key for;\n the default is the first domain.",
         "kind": "view",
@@ -312,6 +347,23 @@ expression: abi
         "modifiers": [
           "private"
         ]
+      },
+      {
+        "name": "genesis_hash",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/GenesisHash"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
       },
       {
         "name": "get_attestation",
@@ -452,14 +504,14 @@ expression: abi
       },
       {
         "name": "get_tee_accounts",
-        "doc": " Returns the id of every stored node, including nodes of accounts that are not participants.",
+        "doc": " Returns every stored node, including nodes of accounts that are not participants.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
           "type_schema": {
             "type": "array",
             "items": {
-              "$ref": "#/definitions/NodeId"
+              "$ref": "#/definitions/NodeInfo"
             }
           }
         }
@@ -484,6 +536,12 @@ expression: abi
               "type_schema": {
                 "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
                 "type": "string"
+              }
+            },
+            {
+              "name": "genesis_hash",
+              "type_schema": {
+                "$ref": "#/definitions/GenesisHash"
               }
             },
             {
@@ -544,6 +602,12 @@ expression: abi
               "type_schema": {
                 "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
                 "type": "string"
+              }
+            },
+            {
+              "name": "genesis_hash",
+              "type_schema": {
+                "$ref": "#/definitions/GenesisHash"
               }
             },
             {
@@ -880,7 +944,7 @@ expression: abi
                       "[u8; 48]"
                     ]
                   },
-                  "NodeId": {
+                  "NodeInfo": {
                     "Struct": [
                       [
                         "account_id",
@@ -980,8 +1044,8 @@ expression: abi
                   "VerificationContext": {
                     "Struct": [
                       [
-                        "node_id",
-                        "NodeId"
+                        "node",
+                        "NodeInfo"
                       ],
                       [
                         "tcb_info",
@@ -1887,11 +1951,16 @@ expression: abi
               "type_schema": {
                 "declaration": "Update",
                 "definitions": {
+                  "BlockCount": {
+                    "Struct": [
+                      "u64"
+                    ]
+                  },
                   "Config": {
                     "Struct": [
                       [
                         "key_event_timeout_blocks",
-                        "u64"
+                        "BlockCount"
                       ],
                       [
                         "tee_upgrade_deadline_duration_seconds",
@@ -2024,7 +2093,7 @@ expression: abi
       },
       {
         "name": "submit_participant_info",
-        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`](crate::tee::tee_state::AttestationSubmissionError::TlsKeyOwnedByOtherAccount)\n if the node stored under the TLS key belongs to another account.",
+        "doc": " Submit a TEE attestation for a current or prospective participant.\n\n - [`Attestation::Mock`] is verified synchronously.\n - [`Attestation::Dstack`] is verified asynchronously via a cross-contract\n   `verify_quote_with_collateral_dates` call, with [`Self::resolve_verification`]\n   chained as its callback to run the post-DCAP checks and store the attestation.\n\n A node submits with no deposit via its function-call access key. Storing a *new* entry\n consumes one attestation-storage grant, prepaid for the node's account by whoever\n onboards it; a re-attestation under a key the account already owns consumes none.\n\n A contract that is not accepting requests resumes once a stored attestation leaves every\n participant with an accepted TEE state.\n\n Fails with [`AttestationSubmissionError::TlsKeyOwnedByOtherAccount`]\n if the node stored under the TLS key belongs to another account, or another participant\n uses the TLS key.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2144,7 +2213,7 @@ expression: abi
       },
       {
         "name": "verify_tee",
-        "doc": " Verifies if all current participants have an accepted TEE state.\n Automatically enters a resharing, in case one or more participants do not have an accepted\n TEE state.\n Returns `false` and stops the contract from accepting new signature requests or responses,\n in case the participants running in an accepted TEE State are too few for the\n GovernanceThreshold or for any domain's signing protocol.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
+        "doc": " Verifies whether every current participant has an accepted TEE state and returns the\n result. While one does not, the contract stops accepting new signature requests or\n responses. No participant is removed: requests resume once every participant has an\n accepted TEE state again, or once a vote replaces the participant set.\n Also retires launcher hashes that no current participant uses (see\n [`dtos::Config::launcher_hash_unused_ttl_seconds`]).",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -2187,7 +2256,7 @@ expression: abi
       },
       {
         "name": "vote_add_domains",
-        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
+        "doc": " Propose adding a new set of domains for the MPC network.\n Once every participant has voted for the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2332,7 +2401,7 @@ expression: abi
       },
       {
         "name": "vote_new_parameters",
-        "doc": " Propose new parameters for the MPC network: participants, governance\n threshold, and optional per-domain\n [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates\n (empty map keeps the current ones), applied on resharing completion.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: [`assert_caller_is_signer()`](MpcContract::assert_caller_is_signer) requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
+        "doc": " Propose new parameters for the MPC network: participants, governance\n threshold, and optional per-domain\n [`ReconstructionThreshold`](near_mpc_contract_interface::types::ReconstructionThreshold) updates\n (empty map keeps the current ones), applied on resharing completion.\n Only current participants vote, including those the proposal would remove; accounts it\n would add cannot. Once the governance threshold of current participants voted for the exact\n same proposal, this will transition the contract into the Resharing state.\n\n The epoch_id must be equal to 1 plus the current epoch ID (if Running) or prospective epoch\n ID (if Resharing). Otherwise the vote is ignored. This is to prevent late transactions from\n accidentally voting on outdated proposals.\n\n Like the other governance voting methods, this must be called directly from the\n participant's own NEAR account: [`assert_caller_is_signer()`](MpcContract::assert_caller_is_signer) requires\n `signer_account_id == predecessor_account_id`, so calls forwarded through another\n contract are rejected.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2360,7 +2429,7 @@ expression: abi
       },
       {
         "name": "vote_pk",
-        "doc": " Casts a vote for `public_key` for the attempt identified by `key_event_id`.\n\n The effect of this method is either:\n  - Returns error (which aborts with no changes), if there is no active key generation\n    attempt (including if the attempt timed out), if the signer is not a participant, or if\n    the key_event_id corresponds to a different domain, different epoch, or different attempt\n    from the current key generation attempt.\n  - Returns Ok(()), with one of the following changes:\n    - A vote has been collected but we don't have enough votes yet.\n    - This vote is for a public key that disagrees from an earlier voted public key, causing\n      the attempt to abort; another call to `start` is then necessary.\n    - Everyone has now voted for the same public key; the state transitions into generating a\n      key for the next domain.\n    - Same as the last case, except that all domains have a generated key now, and the state\n      transitions into Running with the newly generated keys.",
+        "doc": " Casts a vote for `public_key` for the attempt identified by `key_event_id`.\n\n The effect of this method is either:\n  - Returns error (which aborts with no changes), if there is no active key generation\n    attempt (including if the attempt timed out), if the signer is not a participant, or if\n    the key_event_id corresponds to a different domain, different epoch, or different attempt\n    from the current key generation attempt.\n  - Returns Ok(()), with one of the following changes:\n    - A vote has been collected but we don't have enough votes yet.\n    - This vote is for a public key that disagrees from an earlier voted public key, causing\n      the attempt to abort; another call to [`Self::start_keygen_instance`] is then\n      necessary.\n    - Everyone has now voted for the same public key; the state transitions into generating a\n      key for the next domain.\n    - Same as the last case, except that all domains have a generated key now, and the state\n      transitions into Running with the newly generated keys.",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2523,24 +2592,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AddDomainsVotes": {
-          "description": "Votes for adding new domains.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/DomainConfig"
-                }
-              }
-            }
-          }
-        },
         "AllowedMpcDockerImageHash": {
           "type": "object",
           "required": [
@@ -2792,6 +2843,18 @@ expression: abi
           "pattern": "^(?:[0-9A-Fa-f]{2})*$"
         },
         "BlockConfirmations": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "BlockCount": {
+          "description": "A number of blocks: a distance between heights or a timeout measured in blocks.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "BlockHeight": {
+          "description": "Height of a NEAR block. Later blocks compare greater.",
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
@@ -3192,9 +3255,11 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "allOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "How long a launcher hash that no current participant uses stays allowed after its last vote or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is never removed automatically.",
@@ -3750,6 +3815,10 @@ expression: abi
             "$ref": "#/definitions/ForeignChainsConfig"
           }
         },
+        "GenesisHash": {
+          "description": "Hash of the genesis block of a NEAR chain, which identifies the chain. Its text form is base58, as nearcore prints it.",
+          "type": "string"
+        },
         "GovernanceThreshold": {
           "description": "Network-wide governance threshold (`k`): the minimum number of participants that must agree to approve a governance action (participant set changes, resharing, parameter updates). Distinct from a domain's [`ReconstructionThreshold`], the per-domain `t` needed to reconstruct a key.",
           "type": "integer",
@@ -3875,12 +3944,14 @@ expression: abi
             },
             "key_event_timeout_blocks": {
               "description": "If a key event attempt has not successfully completed within this many blocks, it is considered failed.",
-              "type": [
-                "integer",
-                "null"
-              ],
-              "format": "uint64",
-              "minimum": 0.0
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/BlockCount"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "TTL for launcher hashes no current participant uses; see [`Config::launcher_hash_unused_ttl_seconds`].",
@@ -4100,9 +4171,7 @@ expression: abi
               "uniqueItems": true
             },
             "expires_on": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             },
             "public_key": {
               "anyOf": [
@@ -4115,9 +4184,7 @@ expression: abi
               ]
             },
             "started_in": {
-              "type": "integer",
-              "format": "uint64",
-              "minimum": 0.0
+              "$ref": "#/definitions/BlockHeight"
             }
           }
         },
@@ -4301,7 +4368,8 @@ expression: abi
           "minLength": 96,
           "pattern": "^[0-9a-fA-F]+$"
         },
-        "NodeId": {
+        "NodeInfo": {
+          "description": "A node the contract stores under its TLS key. Its attestation is a separate [`StoredAttestation`](crate::types::StoredAttestation).",
           "type": "object",
           "required": [
             "account_id",
@@ -4803,15 +4871,11 @@ expression: abi
           "description": "State when the contract is ready for signature operations.",
           "type": "object",
           "required": [
-            "add_domains_votes",
             "domains",
             "keyset",
             "parameters"
           ],
           "properties": {
-            "add_domains_votes": {
-              "$ref": "#/definitions/AddDomainsVotes"
-            },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
             },

@@ -7,10 +7,23 @@ use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use tokio::sync::watch;
 
-const FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
+const FOREIGN_CHAIN_REGISTRATIONS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const FOREIGN_CHAIN_PROVIDERS_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 const MIN_BACKOFF_DURATION: Duration = Duration::from_secs(1);
 const MAX_BACKOFF_DURATION: Duration = Duration::from_mins(1);
+
+/// Both receivers are fed by one poll of the contract.
+pub struct ForeignChainRegistrations {
+    pub supporters: watch::Receiver<ForeignChainSupporters>,
+    /// The foreign chains each node registered, keyed by TLS key.
+    pub configs: watch::Receiver<dtos::ForeignChainsConfigs>,
+}
+
+/// One read of [`ForeignChainRegistrations`].
+struct RegistrationsSnapshot {
+    supporters: ForeignChainSupporters,
+    configs: dtos::ForeignChainsConfigs,
+}
 
 /// TLS keys of the nodes whose registered config supports each available chain.
 pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed25519PublicKey>>;
@@ -18,59 +31,70 @@ pub type ForeignChainSupporters = BTreeMap<dtos::ForeignChain, BTreeSet<dtos::Ed
 /// The contract's voted RPC providers and quorum per chain.
 pub type ForeignChainWhitelist = BTreeMap<dtos::ForeignChain, dtos::ChainEntry>;
 
-/// Returns once the first supporters snapshot is read, then keeps it updated in
-/// the background. Mirrors `monitor_contract_state`: the receiver always holds a
-/// real value, and a failed refresh keeps the previous one.
-pub async fn monitor_foreign_chain_supporters<V: ViewContract + Clone + Send + Sync + 'static>(
+/// Returns once the first snapshot is read, then keeps it updated in the background.
+/// Mirrors [`monitor_contract_state`](super::participants::monitor_contract_state): the receivers
+/// always hold a real value, and a failed refresh keeps the previous one.
+pub async fn monitor_foreign_chain_registrations<
+    V: ViewContract + Clone + Send + Sync + 'static,
+>(
     contract: MpcContractHandle<V>,
-) -> watch::Receiver<ForeignChainSupporters> {
+) -> ForeignChainRegistrations {
     let initial = loop {
-        match read_supporters(&contract).await {
-            Ok(supporters) => break supporters,
+        match read_registrations(&contract).await {
+            Ok(registrations) => break registrations,
             Err(e) => {
-                tracing::error!(target: "mpc", "error reading foreign-chain supporters from chain: {:?}", e);
-                tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
+                tracing::error!(target: "mpc", "error reading foreign-chain registrations from chain: {:?}", e);
+                tokio::time::sleep(FOREIGN_CHAIN_REGISTRATIONS_REFRESH_INTERVAL).await;
             }
         }
     };
 
-    let (sender, receiver) = watch::channel(initial);
+    let (supporters_sender, supporters) = watch::channel(initial.supporters);
+    let (configs_sender, configs) = watch::channel(initial.configs);
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(FOREIGN_CHAIN_SUPPORTERS_REFRESH_INTERVAL).await;
-            match read_supporters(&contract).await {
-                Ok(supporters) => {
-                    sender.send_if_modified(|previous| {
-                        if *previous == supporters {
-                            false
-                        } else {
-                            *previous = supporters;
-                            true
-                        }
-                    });
+            tokio::time::sleep(FOREIGN_CHAIN_REGISTRATIONS_REFRESH_INTERVAL).await;
+            match read_registrations(&contract).await {
+                Ok(latest) => {
+                    send_if_changed(&supporters_sender, latest.supporters);
+                    send_if_changed(&configs_sender, latest.configs);
                 }
                 Err(e) => {
-                    tracing::error!(target: "mpc", "error reading foreign-chain supporters from chain: {:?}", e)
+                    tracing::error!(target: "mpc", "error reading foreign-chain registrations from chain: {:?}", e)
                 }
             }
         }
     });
-    receiver
+    ForeignChainRegistrations {
+        supporters,
+        configs,
+    }
 }
 
 /// The two view calls are not atomic: a change finalized between them yields
 /// a transiently inconsistent snapshot, corrected on the next poll.
-async fn read_supporters<C: ViewContract + Clone + Send + 'static>(
+async fn read_registrations<C: ViewContract + Clone + Send + 'static>(
     contract: &MpcContractHandle<C>,
-) -> anyhow::Result<ForeignChainSupporters> {
+) -> anyhow::Result<RegistrationsSnapshot> {
     let (available_chains, configs) = tokio::try_join!(
         contract.get_available_foreign_chains(),
         contract.get_foreign_chains_configs()
     )?;
-    Ok(supporters_by_available_chain(
-        &available_chains.value,
-        &configs.value,
-    ))
+    Ok(RegistrationsSnapshot {
+        supporters: supporters_by_available_chain(&available_chains.value, &configs.value),
+        configs: configs.value,
+    })
+}
+
+fn send_if_changed<T: PartialEq>(sender: &watch::Sender<T>, latest: T) {
+    sender.send_if_modified(|previous| {
+        if *previous == latest {
+            false
+        } else {
+            *previous = latest;
+            true
+        }
+    });
 }
 
 /// Maps each available chain to the TLS keys registered as supporting it;
@@ -117,7 +141,7 @@ async fn fetch_foreign_chain_whitelist_with_retry<C: ViewContract + Clone + Send
 }
 
 /// Returns once the first whitelist is read, then keeps it updated in the background, like
-/// [`monitor_foreign_chain_supporters`].
+/// [`monitor_foreign_chain_registrations`].
 ///
 /// `probe_whitelist` receives the same whitelists, wrapped in `Some`. Its channel exists from
 /// process start, for the foreign chain probe, which starts before the indexer has synced.
@@ -148,6 +172,9 @@ mod tests {
     use near_contract_transport::mock::{MockViewContract, MockViewError};
     use near_contract_transport::{ObservedState, SerializedObservation};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
+    use near_mpc_contract_interface::method_names::{
+        GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
+    };
 
     use super::*;
 
@@ -164,10 +191,10 @@ mod tests {
         BTreeMap::from([(dtos::ForeignChain::Polygon, entry)])
     }
 
-    fn observed(whitelist: &ForeignChainWhitelist) -> Result<SerializedObservation, MockViewError> {
+    fn observed(value: &impl serde::Serialize) -> Result<SerializedObservation, MockViewError> {
         Ok(ObservedState {
             observed_at: 0.into(),
-            value: serde_json::to_vec(whitelist).unwrap(),
+            value: serde_json::to_vec(value).unwrap(),
         })
     }
 
@@ -245,6 +272,27 @@ mod tests {
             dtos::ForeignChain::Bitcoin,
             seeds.iter().map(|seed| tls_key(*seed)).collect(),
         )])
+    }
+
+    #[tokio::test]
+    async fn monitor_foreign_chain_registrations__should_publish_the_configs_the_contract_returns()
+    {
+        // Given
+        let configs: dtos::ForeignChainsConfigs =
+            BTreeMap::from([(tls_key(1), bitcoin_config())]).into();
+        let viewer = MockViewContract::new(Err(MockViewError("unexpected view")));
+        viewer.set_view_response_for_method(
+            GET_AVAILABLE_FOREIGN_CHAINS,
+            observed(&dtos::AvailableForeignChains::default()),
+        );
+        viewer.set_view_response_for_method(GET_FOREIGN_CHAINS_CONFIGS, observed(&configs));
+        let contract = MpcContractHandle::new(viewer, "mpc.near".parse().unwrap());
+
+        // When
+        let registrations = monitor_foreign_chain_registrations(contract).await;
+
+        // Then
+        assert_eq!(*registrations.configs.borrow(), configs);
     }
 
     #[test]

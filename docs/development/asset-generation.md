@@ -5,10 +5,10 @@ cryptographic material (herein simply called **assets**) as input. This
 document describes how our MPC nodes manage asset generation, storage
 and consumption. Only **OT-based ECDSA** (**Cait-Sith**) uses assets: it
 consumes **triples**. Each signature consumes a pair of triples (called a
-`PairedTriple`): the leader presigns and signs over the pair in one
-computation. **Robust ECDSA**, an insecure stub that is never enabled in
-production (see `crates/node/src/providers/robust_ecdsa.rs`), uses no
-assets: it presigns and signs in one computation from the key share alone.
+`PairedTriple`): the leader signs over the pair in one computation.
+**Robust ECDSA**, an insecure stub that is never enabled in production
+(see `crates/node/src/providers/robust_ecdsa.rs`), uses no assets: it
+signs in one computation from the key share alone.
 
 The system supports an arbitrary number of secret keys. Each key is
 uniquely identified by a `DomainId`, which maps to a combination of
@@ -21,13 +21,12 @@ reconstruction threshold `t` among the OT-based ECDSA domains, shared by
 all domains with that `t`.
 
 ```
-Triples  ──►  Signatures (presign and sign over a triple pair)
+Triples  ──►  Signatures (sign over a triple pair)
 (slow)        (fast)
 ```
 
 Triple generation is the bottleneck: it involves heavy OT-based
-cryptographic computation. Presigning and signing over a triple pair is
-fairly cheap.
+cryptographic computation. Signing over a triple pair is fairly cheap.
 
 ## Queue design
 
@@ -240,7 +239,7 @@ section of the node configuration specifies:
 If a node owns fewer triples than configured, it initiates new generation
 computations (see
 [`providers/ecdsa/triple.rs`](https://github.com/near/mpc/blob/main/crates/node/src/providers/ecdsa/triple.rs)).
-Triples are generated in batches of `triple.batch_size` (64 by default).
+Triples are generated in batches of `triple.batch_size` (16 by default).
 There is one triple generation loop per triple store, that is, per
 distinct reconstruction threshold `t` among the OT-based ECDSA domains.
 
@@ -267,14 +266,13 @@ signature request arrives:
 2. Leader opens a network channel with the pair's borrowers and
    broadcasts the pair's ID along with the signature request.
 3. **Followers** call `take_unowned(id)` on their triple store to
-   retrieve their shares, then presign and sign over the pair in one
-   computation.
+   retrieve their shares, then sign over the pair in one computation.
 4. The leader does **not** wait for all followers to confirm success
    (`leader_waits_for_success` returns `false`).
 
 Robust ECDSA (`crates/node/src/providers/robust_ecdsa/sign.rs`) takes
 no asset: the leader picks the signers among random online participants,
-and they presign and sign in one computation.
+and they sign in one computation.
 
 ## Asset cleanup on epoch transition
 
@@ -339,7 +337,7 @@ Defined in `crates/node-config/src/lib.rs` and set in `config.yaml`.
 | `desired_triples_to_buffer` | `usize` | Target number of owned triples to maintain. Generation pauses when `num_owned + in_flight >= desired`. |
 | `timeout_sec` | `u64` | Timeout for a single triple generation protocol execution. |
 | `parallel_triple_generation_stagger_time_sec` | `u64` | Delay between spawning successive triple generation tasks, to prevent all tasks from starting at the same time. |
-| `batch_size` | `usize` | Triples produced per generation computation. Even, non-zero and at most 64; defaults to 64. Only the leader reads it; followers take the size from the leader's task id. |
+| `batch_size` | `usize` | Triples produced per generation computation. Even, non-zero and at most 64; defaults to 16. Only the leader reads it; followers take the size from the leader's task id. |
 
 ### `SignatureConfig`
 
@@ -362,7 +360,6 @@ loop {
     if num_owned + in_flight < desired_triples_to_buffer
        AND in_flight < concurrency * 2 * batch_size:
         pick threshold random online participants
-        (64 instead of batch_size if one of them does not accept it)
         reserve batch of batch_size IDs
         spawn async task (semaphore-limited to `concurrency`):
             run MPC triple protocol → batch_size triples
@@ -379,9 +376,7 @@ loop {
 
 - Each batch produces `batch_size` raw triples, paired into half as many
   `PairedTriple` values, which is why the size must be even.
-- The leader selects `threshold` random online participants, and generates at
-  64 instead of `batch_size` unless all of them advertise the protocol version
-  that made the size configurable.
+- The leader selects `threshold` random online participants.
 - `InFlightGenerationTracker` counts how many triples are "in flight"
   (spawned but not yet completed) using an atomic counter with a drop guard.
 - A tokio semaphore limits actual concurrent protocol executions to

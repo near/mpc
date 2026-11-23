@@ -211,9 +211,11 @@ EOF
     wait "$pid"
   done
 
-  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" '
+  genesis_hash=$(curl -s localhost:3030/status | jq -r .genesis_hash)
+  JSON_RESULT=$(jq -n --arg threshold "$THRESHOLD" --arg next_id "$N" --arg tee_verifier_account "$TEE_VERIFIER_ACCOUNT" --arg genesis_hash "$genesis_hash" '
   {
     tee_verifier_account_id: $tee_verifier_account,
+    genesis_hash: $genesis_hash,
     parameters: {
       threshold: ($threshold | tonumber),
       participants: {
@@ -243,6 +245,15 @@ EOF
   echo "Initializing contract"
   run_quiet_on_success "$(mpc_tx init "file-args ${init_args}" '0 NEAR' mpc-contract.test.near)"
   run_quiet_on_success_with_retries "$(mpc_view state)"
+
+  echo "Prepaying attestation storage for the nodes"
+  for ((i = 1; i <= N; i++)); do
+    node_name="mpc-node-$i.test.near"
+    run_quiet_on_success "$(mpc_tx prepay_attestation_storage "json-args '{\"account_id\":\"${node_name}\",\"grants\":1}'" '0.02 NEAR' "${node_name}")"
+  done
+
+  echo "Waiting for every node to attest"
+  wait_for_success "[[ \$($(mpc_view get_tee_accounts) 2>/dev/null | jq length) -eq ${N} ]]"
 
   echo "Adding domains to contract"
 

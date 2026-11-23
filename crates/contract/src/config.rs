@@ -1,8 +1,9 @@
+use near_mpc_contract_interface::types::BlockCount;
 use near_sdk::near;
 
 // --- Timeouts & Deadlines ---
 /// Default for `key_event_timeout_blocks`.
-pub(crate) const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: u64 = 150;
+pub(crate) const DEFAULT_KEY_EVENT_TIMEOUT_BLOCKS: BlockCount = BlockCount::new(150);
 /// Maximum time after which TEE MPC nodes must be upgraded to the latest version
 const DEFAULT_TEE_UPGRADE_DEADLINE_DURATION_SECONDS: u64 = 7 * 24 * 60 * 60; // 7 Days
 
@@ -51,7 +52,7 @@ const DEFAULT_ATTESTATION_STORAGE_FEE_MILLINEAR: u64 = 20;
 pub(crate) struct Config {
     /// If a key event attempt has not successfully completed within this many blocks,
     /// it is considered failed.
-    pub(crate) key_event_timeout_blocks: u64,
+    pub(crate) key_event_timeout_blocks: BlockCount,
     /// The grace period duration for expiry of old mpc image hashes once a new one is added.
     pub(crate) tee_upgrade_deadline_duration_seconds: u64,
     /// Prepaid gas for applying contract and config updates.

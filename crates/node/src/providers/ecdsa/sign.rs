@@ -16,7 +16,7 @@ use near_mpc_contract_interface::types::Tweak;
 use std::sync::Arc;
 use std::time::Duration;
 use threshold_signatures::ReconstructionThreshold;
-use threshold_signatures::ecdsa::ot_based_ecdsa::{PresignArguments, presign_and_sign};
+use threshold_signatures::ecdsa::ot_based_ecdsa::{SignArguments, sign};
 use threshold_signatures::ecdsa::{Signature, SignatureOption};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::participants::Participant;
@@ -196,11 +196,11 @@ impl MpcLeaderCentricComputation<(SignatureOption, VerifyingKey)> for OnlinePres
         let derived_public_key = tweak.derive_verifying_key(&self.keygen_out.public_key);
         let (triple0, triple1) = self.triples;
 
-        let protocol = presign_and_sign(
+        let protocol = sign(
             &cs_participants,
             channel.sender().get_leader().into(),
             channel.my_participant_id().into(),
-            PresignArguments {
+            SignArguments {
                 triple0,
                 triple1,
                 keygen_out: self.keygen_out,

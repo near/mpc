@@ -5,7 +5,7 @@ use super::queue::{
 use crate::indexer::types::ChainRespondArgs;
 use crate::primitives::ParticipantId;
 use crate::types::Request;
-use near_indexer_primitives::types::{BlockHeight, NumBlocks};
+use near_contract_transport::{BlockCount, BlockHeight};
 use std::collections::{BinaryHeap, HashSet};
 use std::fmt::Debug;
 use std::fmt::Write;
@@ -21,7 +21,7 @@ pub(super) struct CompletedRequest<RequestType, ChainRespondArgsType> {
     pub indexed_block_height: BlockHeight,
     /// The block height at which the request was responded to successfully,
     /// as well as the delay in wall time observed from the indexer.
-    pub completion_delay: Option<(NumBlocks, near_time::Duration)>,
+    pub completion_delay: Option<(BlockCount, near_time::Duration)>,
 }
 
 /// A buffer of completed requests, surfaced on the queue's debug
@@ -203,11 +203,7 @@ where
                 self.my_participant_id,
                 &request_eligible_leaders,
             );
-            request_lines.push((
-                request.block_height.into(),
-                request.request.get_id(),
-                debug_line,
-            ));
+            request_lines.push((request.block_height, request.request.get_id(), debug_line));
         }
 
         for completed in &self.recently_completed_requests.requests {
@@ -255,7 +251,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{CompletedRequest, CompletedRequests};
+    use super::{BlockCount, BlockHeight, CompletedRequest, CompletedRequests};
     use crate::types::{CKDRequest, SignatureRequest};
     use mpc_primitives::domain::DomainId;
     use near_indexer_primitives::CryptoHash;
@@ -281,12 +277,12 @@ mod tests {
                     domain_id: DomainId::legacy_ecdsa_id(),
                 },
                 progress: Default::default(),
-                indexed_block_height: i,
+                indexed_block_height: BlockHeight::new(i),
                 completion_delay: if rand::random::<bool>() {
                     None
                 } else {
                     Some((
-                        i + rand::random::<u64>() % 100,
+                        BlockCount::new(rand::random::<u64>() % 100),
                         near_time::Duration::milliseconds(100),
                     ))
                 },
@@ -298,7 +294,10 @@ mod tests {
             .map(|r| r.indexed_block_height)
             .collect::<Vec<_>>();
         kept_indices.sort_unstable();
-        assert_eq!(kept_indices, (100..200).collect::<Vec<_>>());
+        assert_eq!(
+            kept_indices,
+            (100..200).map(BlockHeight::new).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -319,12 +318,12 @@ mod tests {
                     domain: DomainId::legacy_ecdsa_id(),
                 },
                 progress: Default::default(),
-                indexed_block_height: i,
+                indexed_block_height: BlockHeight::new(i),
                 completion_delay: if rand::random::<bool>() {
                     None
                 } else {
                     Some((
-                        i + rand::random::<u64>() % 100,
+                        BlockCount::new(rand::random::<u64>() % 100),
                         near_time::Duration::milliseconds(100),
                     ))
                 },
@@ -336,6 +335,9 @@ mod tests {
             .map(|r| r.indexed_block_height)
             .collect::<Vec<_>>();
         kept_indices.sort_unstable();
-        assert_eq!(kept_indices, (100..200).collect::<Vec<_>>());
+        assert_eq!(
+            kept_indices,
+            (100..200).map(BlockHeight::new).collect::<Vec<_>>()
+        );
     }
 }

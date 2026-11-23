@@ -11,7 +11,7 @@ pub use start::{
 
 use anyhow::Context;
 use near_account_id::AccountId;
-use near_indexer_primitives::types::Finality;
+use near_indexer_primitives::{CryptoHash, types::Finality};
 use serde::{Deserialize, Serialize};
 use std::net::{Ipv4Addr, SocketAddr, ToSocketAddrs};
 
@@ -43,8 +43,8 @@ pub struct TripleConfig {
 pub struct TripleBatchSize(usize);
 
 impl TripleBatchSize {
-    /// The fixed batch size used before the value became configurable.
-    pub const LEGACY: Self = Self(64);
+    /// The batch size used when the config does not set one.
+    pub const DEFAULT: Self = Self(16);
 
     /// The largest batch a follower accepts.
     pub const MAX: Self = Self(64);
@@ -60,7 +60,7 @@ impl TripleBatchSize {
 
 impl Default for TripleBatchSize {
     fn default() -> Self {
-        Self::LEGACY
+        Self::DEFAULT
     }
 }
 
@@ -126,6 +126,9 @@ pub struct IndexerConfig {
     pub concurrency: std::num::NonZeroU16,
     /// MPC contract id
     pub mpc_contract_id: AccountId,
+    /// Genesis hash of the chain the MPC contract runs on. If set, the node refuses to follow any
+    /// other chain.
+    pub genesis_hash: Option<CryptoHash>,
     /// If specified, replaces the port number in any ParticipantInfos read from chain
     pub port_override: Option<u16>,
     /// Wipe token for the nearcore data dir (`home_dir/data`). On startup, whenever
@@ -258,7 +261,7 @@ parallel_triple_generation_stagger_time_sec: 1
     }
 
     #[test]
-    fn triple_config__should_default_the_batch_size_to_the_legacy_one() {
+    fn triple_config__should_default_the_batch_size_when_the_config_sets_none() {
         // Given
         // a config written before the batch size became configurable
 
@@ -266,7 +269,7 @@ parallel_triple_generation_stagger_time_sec: 1
         let config: TripleConfig = serde_yaml::from_str(TRIPLE_CONFIG_YAML).unwrap();
 
         // Then
-        assert_eq!(config.batch_size, TripleBatchSize::LEGACY);
+        assert_eq!(config.batch_size, TripleBatchSize::DEFAULT);
     }
 
     #[test]
@@ -285,7 +288,7 @@ parallel_triple_generation_stagger_time_sec: 1
     #[test]
     fn triple_config__should_round_trip_a_configured_batch_size() {
         // Given
-        let yaml = format!("{TRIPLE_CONFIG_YAML}batch_size: 16\n");
+        let yaml = format!("{TRIPLE_CONFIG_YAML}batch_size: 8\n");
         let config: TripleConfig = serde_yaml::from_str(&yaml).unwrap();
 
         // When
@@ -293,7 +296,7 @@ parallel_triple_generation_stagger_time_sec: 1
             serde_yaml::from_str(&serde_yaml::to_string(&config).unwrap()).unwrap();
 
         // Then
-        assert_eq!(*reparsed.batch_size, 16);
+        assert_eq!(*reparsed.batch_size, 8);
         assert_eq!(reparsed, config);
     }
 }

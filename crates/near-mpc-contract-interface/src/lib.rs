@@ -29,9 +29,9 @@ pub mod types {
     pub use primitives::{AccountId, DomainId, Tweak};
     pub use sign::*;
     pub use state::{
-        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, Curve,
-        DomainConfig, DomainPurpose, DomainRegistry, EpochId, GovernanceThreshold,
-        GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
+        AddDomainsVotes, AttemptId, AuthenticatedAccountId, AuthenticatedParticipantId, BlockCount,
+        BlockHeight, Curve, DomainConfig, DomainPurpose, DomainRegistry, EpochId,
+        GovernanceThreshold, GovernanceThresholdParameters, GovernanceThresholdParametersVotes,
         InitializingContractState, KeyEvent, KeyEventId, KeyEventInstance, KeyForDomain, Keyset,
         ParticipantCount, ProposedGovernanceThresholdParameters, Protocol, ProtocolContractState,
         ReconstructionThreshold, ResharingContractState, RunningContractState,
@@ -39,15 +39,16 @@ pub mod types {
     };
     pub use tee::{
         AllowedMpcDockerImageHash, CodeHashesVotes, ExpectedMeasurements, LauncherHashVotes,
-        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeId,
+        LauncherVoteAction, MeasurementVoteAction, MeasurementVotes, NodeInfo,
     };
 
     pub use updates::{Update, UpdateHash};
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
-        KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash,
-        NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
+        GenesisHash, KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash,
+        MrtdHash, NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+        TeeVerifierCodeHash,
     };
 
     // Re-export crypto types from near-mpc-crypto-types

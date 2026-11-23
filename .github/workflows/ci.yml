@@ -356,6 +356,54 @@ jobs:
         env:
           RUST_LOG: info,e2e_tests=debug
 
+  # Not a required check: `main` may target a newer protocol than mainnet runs.
+  # It must pass before a mainnet release.
+  mainnet-protocol-tests:
+    name: "Mainnet protocol compatibility"
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code_changed != 'false' }}
+    runs-on: warp-ubuntu-2604-x64-32x
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: $/.github/actions/install-nix
+        with:
+          project-cache: true
+
+      - run: echo "WEEK=$(date -u +%Y-%U)" >> "$GITHUB_ENV"
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          cache-provider: "warpbuild"
+          prefix-key: v1-rust-e2e-week-${{ env.WEEK }}-nix-${{ hashFiles('flake.nix', 'flake.lock', 'nix/**', 'rust-toolchain.toml') }}
+
+      - name: Build mpc-node
+        run: nix develop --command cargo make build-mpc-node-network-hardship-simulation
+
+      - name: Build mpc-contract
+        run: nix develop --command cargo make build-mpc-contract-optimized
+
+      - name: Build tee-verifier
+        run: nix develop --command cargo make build-tee-verifier-optimized
+
+      - name: Run contract sandbox test
+        run: nix develop --command cargo nextest run --cargo-profile=test-release --all-features --locked -p mpc-contract --run-ignored only -E 'test(/mainnet_protocol/)'
+
+      - name: Run E2E test
+        if: ${{ !cancelled() }}
+        run: nix develop --command cargo make e2e-tests-skip-build --run-ignored only -E 'test(/mainnet_protocol/)'
+        env:
+          RUST_LOG: info,e2e_tests=debug
+
   ci-extra:
     name: "Extra CI checks"
     needs: changes
@@ -376,6 +424,11 @@ jobs:
 
       - name: Run cargo-make extra checks
         run: nix develop --command cargo make check-extra
+
+      # Not blocking: a stale MAINNET_PROTOCOL_VERSION shows up as red on main.
+      - name: Check MAINNET_PROTOCOL_VERSION matches mainnet
+        if: ${{ !cancelled() }}
+        run: nix develop --command ./scripts/check-mainnet-protocol-version.sh
 
   check-todo-closed-issues:
     name: "Check TODOs for issues closed by this PR"

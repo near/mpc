@@ -32,3 +32,20 @@ pub static MPC_BLOCK_UPDATES_DROPPED: LazyLock<prometheus::IntCounter> = LazyLoc
     )
     .unwrap()
 });
+
+pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
+    prometheus::register_int_gauge!(
+        "mpc_indexer_latest_block_height",
+        "Height of the last block seen by the block streamer"
+    )
+    .unwrap()
+});
+
+pub static MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS: LazyLock<prometheus::IntGauge> =
+    LazyLock::new(|| {
+        prometheus::register_int_gauge!(
+            "mpc_indexer_latest_block_timestamp_seconds",
+            "Unix time of the last block seen by the block streamer"
+        )
+        .unwrap()
+    });
