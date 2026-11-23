@@ -59,8 +59,7 @@ pub struct InitConfig {
     pub verifier_tera_gas: Option<u64>,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: Option<u64>,
-    /// TTL for launcher hashes no current participant uses; see
-    /// [`Config::launcher_hash_unused_ttl_seconds`].
+    /// TTL for unused launcher hashes; see [`Config::launcher_hash_unused_ttl_seconds`].
     pub launcher_hash_unused_ttl_seconds: Option<u64>,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: Option<u64>,
@@ -121,9 +120,10 @@ pub struct Config {
     pub verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub resolve_verification_tera_gas: u64,
-    /// How long a launcher hash that no current participant uses stays allowed after its last vote
-    /// or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can
-    /// lag this TTL; a hash in use is never removed automatically.
+    /// How long a launcher hash that no current participant uses, or a backup service launcher hash
+    /// that no registered backup service uses, stays allowed after its last vote or the last
+    /// `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this
+    /// TTL; a hash in use is never removed automatically.
     pub launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: u64,

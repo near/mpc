@@ -42,7 +42,7 @@ const DEFAULT_VERIFIER_TERA_GAS: u64 = 200;
 /// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
-/// Default TTL after which a launcher image hash unused by any participant is evicted.
+/// Default TTL after which an unused launcher image hash is evicted.
 pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
 
 /// One attestation-storage grant, in milliNEAR.
@@ -88,7 +88,7 @@ pub(crate) struct Config {
     pub(crate) verifier_tera_gas: u64,
     /// Prepaid gas for the `resolve_verification` callback.
     pub(crate) resolve_verification_tera_gas: u64,
-    /// TTL for launcher hashes no current participant uses; see
+    /// TTL for unused launcher hashes; see
     /// [`near_mpc_contract_interface::types::Config::launcher_hash_unused_ttl_seconds`].
     pub(crate) launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, charged for one attestation-storage grant.

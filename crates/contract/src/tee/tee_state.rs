@@ -564,8 +564,9 @@ mod tests {
         gen_participant, gen_participants, node_for,
     };
     use crate::tee::test_utils::{
-        MPC_NODE_COMPOSE, allow_launcher, dstack_fixture_node, dummy_code_hash, set_block_secs,
-        set_block_timestamp, whitelist_dstack_measurements,
+        LAUNCHER_TTL, MPC_NODE_COMPOSE, NEWEST_LAUNCHER_ADDED_AT_SECS, OLD_LAUNCHER_ADDED_AT_SECS,
+        after_retention, allow_launcher, dstack_fixture_node, dummy_code_hash, launcher_mock,
+        set_block_secs, set_block_timestamp, whitelist_dstack_measurements,
     };
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{
@@ -848,24 +849,6 @@ mod tests {
 
         // Then
         assert_matches!(validation_result, TeeValidationResult::Full);
-    }
-
-    const LAUNCHER_TTL: Duration = Duration::from_secs(100);
-    const OLD_LAUNCHER_ADDED_AT_SECS: u64 = 1;
-    const NEWEST_LAUNCHER_ADDED_AT_SECS: u64 = OLD_LAUNCHER_ADDED_AT_SECS + 1;
-    const VERY_FAR_IN_FUTURE_SECS: u64 = 1_000_000;
-
-    fn after_retention(added_at_secs: u64) -> u64 {
-        added_at_secs + LAUNCHER_TTL.as_secs() + 1
-    }
-
-    fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
-        MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(MPC_NODE_COMPOSE.hash(launcher, mpc_hash)),
-            expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
-            expected_measurements: None,
-        }
     }
 
     #[test]

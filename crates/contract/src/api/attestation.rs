@@ -291,7 +291,8 @@ impl MpcContract {
     /// result. While one does not, the contract stops accepting new signature requests or
     /// responses. No participant is removed: requests resume once every participant has an
     /// accepted TEE state again, or once a vote replaces the participant set.
-    /// Also retires launcher hashes that no current participant uses (see
+    /// Also retires launcher hashes that no current participant uses, and backup service launcher
+    /// hashes that no registered backup service uses (see
     /// [`dtos::Config::launcher_hash_unused_ttl_seconds`]).
     #[handle_result]
     pub fn verify_tee(&mut self) -> Result<bool, Error> {
@@ -309,6 +310,8 @@ impl MpcContract {
 
         self.tee_state
             .remove_unused_launchers(participants.tls_keys(), launcher_unused_ttl);
+        self.node_migrations
+            .remove_unused_backup_service_launchers(launcher_unused_ttl);
 
         match self
             .tee_state

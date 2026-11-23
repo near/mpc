@@ -140,18 +140,23 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        freshly_initialized_contract, prepare_dstack_verification, running_state, verified_verdict,
-        with_dstack_fixture_participant,
+        freshly_initialized_contract, prepare_dstack_verification, running_state,
+        setup_tee_test_contract, verified_verdict, with_dstack_fixture_participant,
     };
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key, create_node, gen_account_id, gen_participants,
     };
     use crate::tee::attested_service::AttestedService;
-    use crate::tee::test_utils::{dstack_fixture_node, set_block_secs};
+    use crate::tee::test_utils::{
+        LAUNCHER_TTL, NANOS_PER_SECOND, NEWEST_LAUNCHER_ADDED_AT_SECS, OLD_LAUNCHER_ADDED_AT_SECS,
+        after_retention, allow_launcher, dstack_fixture_node, dummy_code_hash, dummy_launcher_hash,
+        launcher_mock, set_block_secs,
+    };
     use mpc_attestation::attestation::{MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation};
     use near_mpc_contract_interface::types::BackupServiceInfo;
+    use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rstest::rstest;
-    use std::collections::BTreeMap;
+    use std::{assert_matches, collections::BTreeMap};
 
     #[derive(Debug, PartialEq)]
     struct Registrations {
@@ -407,6 +412,55 @@ mod tests {
             attested.then_some(BackupServiceInfo {
                 public_key: node.tls_public_key,
             })
+        );
+    }
+
+    #[rstest]
+    #[case::indexed(dstack_fixture_node(), true)]
+    #[case::not_indexed_key(fixture_node_under_another_key(), false)]
+    fn verify_tee__should_keep_the_launcher_a_registered_backup_service_uses(
+        #[case] indexed: dtos::NodeInfo,
+        #[case] attested_launcher_kept: bool,
+    ) {
+        // Given
+        let code_hash = dummy_code_hash(1);
+        let attested = dummy_launcher_hash(1);
+        let unused = dummy_launcher_hash(2);
+        let (mut contract, _, account_id) = setup_tee_test_contract(3, 2);
+        contract.config.launcher_hash_unused_ttl_seconds = LAUNCHER_TTL.as_secs();
+        index_backup_service(&mut contract, &indexed);
+        let tee_state = &mut contract.node_migrations.backup_service_tee_state;
+        set_block_secs(OLD_LAUNCHER_ADDED_AT_SECS);
+        allow_launcher(tee_state, attested, code_hash, LAUNCHER_TTL);
+        tee_state
+            .verify_and_store_mock(
+                dstack_fixture_node(),
+                launcher_mock(&attested, &code_hash),
+                Duration::MAX,
+            )
+            .unwrap();
+        set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
+        allow_launcher(tee_state, unused, code_hash, LAUNCHER_TTL);
+        testing_env!(
+            VMContextBuilder::new()
+                .signer_account_id(account_id.clone())
+                .predecessor_account_id(account_id)
+                .block_timestamp(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS) * NANOS_PER_SECOND)
+                .build()
+        );
+
+        // When
+        let result = contract.verify_tee();
+
+        // Then
+        assert_matches!(result, Ok(true));
+        assert_eq!(
+            contract.allowed_backup_service_launcher_image_hashes(),
+            vec![if attested_launcher_kept {
+                attested
+            } else {
+                unused
+            }]
         );
     }
 

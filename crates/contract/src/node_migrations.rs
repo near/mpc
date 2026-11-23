@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
@@ -78,6 +78,17 @@ impl NodeMigrations {
                 public_key: tls_public_key,
             },
         );
+    }
+
+    /// Removes the backup service launchers that no registered backup service attests with once
+    /// their TTL has passed, as [`TeeState::remove_unused_launchers`] does for participants.
+    pub(crate) fn remove_unused_backup_service_launchers(&mut self, ttl: Duration) {
+        let registered = self
+            .backup_services_info
+            .iter()
+            .map(|(account_id, info)| (account_id, &info.public_key));
+        self.backup_service_tee_state
+            .remove_unused_launchers(registered, ttl);
     }
 
     pub fn set_destination_node_info(

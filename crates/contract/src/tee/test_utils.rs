@@ -21,6 +21,8 @@ use rand::Rng;
 use std::time::Duration;
 
 #[cfg(test)]
+use mpc_attestation::attestation::MockAttestation;
+#[cfg(test)]
 use test_utils::attestation::{account_key, p2p_tls_key};
 
 /// Test environment for managing VM context state.
@@ -177,6 +179,33 @@ pub(crate) fn allow_launcher(
     tee_state
         .allowed_launcher_images
         .add_or_refresh(launcher, &[mpc_hash], MPC_NODE_COMPOSE, ttl);
+}
+
+#[cfg(test)]
+pub(crate) const LAUNCHER_TTL: Duration = Duration::from_secs(100);
+#[cfg(test)]
+pub(crate) const OLD_LAUNCHER_ADDED_AT_SECS: u64 = 1;
+#[cfg(test)]
+pub(crate) const NEWEST_LAUNCHER_ADDED_AT_SECS: u64 = OLD_LAUNCHER_ADDED_AT_SECS + 1;
+#[cfg(test)]
+const VERY_FAR_IN_FUTURE_SECS: u64 = 1_000_000;
+
+#[cfg(test)]
+pub(crate) fn after_retention(added_at_secs: u64) -> u64 {
+    added_at_secs + LAUNCHER_TTL.as_secs() + 1
+}
+
+#[cfg(test)]
+pub(crate) fn launcher_mock(
+    launcher: &LauncherImageHash,
+    mpc_hash: &NodeImageHash,
+) -> MockAttestation {
+    MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: Some(MPC_NODE_COMPOSE.hash(launcher, mpc_hash)),
+        expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
+        expected_measurements: None,
+    }
 }
 
 #[cfg(test)]
