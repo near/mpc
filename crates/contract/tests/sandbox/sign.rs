@@ -136,18 +136,16 @@ async fn contract_request_admission__should_track_distinct_sign_requests_indepen
     };
     assert!(
         contract
-            .view(method_names::GET_PENDING_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_a_key }))
+            .get_pending_request(request_a_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_some()
     );
     assert!(
         contract
-            .view(method_names::GET_PENDING_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_b_key }))
+            .get_pending_request(request_b_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_some()
     );
 
@@ -157,18 +155,16 @@ async fn contract_request_admission__should_track_distinct_sign_requests_indepen
     request_a.verify_execution_outcome(status_a).await?;
     assert!(
         contract
-            .view(method_names::GET_PENDING_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_a_key }))
+            .get_pending_request(request_a_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_none()
     );
     assert!(
         contract
-            .view(method_names::GET_PENDING_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_b_key }))
+            .get_pending_request(request_b_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_some()
     );
     assert!(
@@ -182,10 +178,9 @@ async fn contract_request_admission__should_track_distinct_sign_requests_indepen
     verify_timeout(status_b).await?;
     assert!(
         contract
-            .view(method_names::GET_PENDING_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_b_key }))
+            .get_pending_request(request_b_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_none()
     );
     let alice_new_balance = alice.view_account().await?.balance;
@@ -236,18 +231,16 @@ async fn ckd_request__should_isolate_distinct_derivation_paths() -> anyhow::Resu
     };
     assert!(
         contract
-            .view(method_names::GET_PENDING_CKD_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_a_key }))
+            .get_pending_ckd_request(request_a_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_some()
     );
     assert!(
         contract
-            .view(method_names::GET_PENDING_CKD_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_b_key }))
+            .get_pending_ckd_request(request_b_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_some()
     );
 
@@ -257,18 +250,16 @@ async fn ckd_request__should_isolate_distinct_derivation_paths() -> anyhow::Resu
     request_a.verify_execution_outcome(status_a).await?;
     assert!(
         contract
-            .view(method_names::GET_PENDING_CKD_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_a_key }))
+            .get_pending_ckd_request(request_a_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_none()
     );
     assert!(
         contract
-            .view(method_names::GET_PENDING_CKD_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_b_key }))
+            .get_pending_ckd_request(request_b_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_some()
     );
     assert!(
@@ -282,10 +273,9 @@ async fn ckd_request__should_isolate_distinct_derivation_paths() -> anyhow::Resu
     verify_timeout(status_b).await?;
     assert!(
         contract
-            .view(method_names::GET_PENDING_CKD_REQUEST)
-            .args_json(serde_json::json!({ "request": &request_b_key }))
+            .get_pending_ckd_request(request_b_key.clone())
             .await?
-            .json::<Option<near_mpc_contract_interface::types::YieldIndex>>()?
+            .value
             .is_none()
     );
     let alice_new_balance = alice.view_account().await?.balance;

@@ -461,10 +461,8 @@ async fn verify_foreign_transaction__should_isolate_distinct_transaction_request
         foreign_tx_key.as_secp256k1(),
     );
     let result = setup.mpc_signer_accounts[0]
-        .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
-        .args_json(json!({ "request": &verify_request_a, "response": response }))
-        .max_gas()
-        .transact()
+        .call_mpc(setup.contract.id())
+        .respond_verify_foreign_tx(verify_request_a.clone(), response)
         .await
         .unwrap()
         .into_result();
@@ -480,21 +478,17 @@ async fn verify_foreign_transaction__should_isolate_distinct_transaction_request
 
     let pending_a: Option<dtos::YieldIndex> = setup
         .contract
-        .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
-        .args_json(json!({ "request": &verify_request_a }))
+        .get_pending_verify_foreign_tx_request(verify_request_a.clone())
         .await
         .unwrap()
-        .json()
-        .unwrap();
+        .value;
     assert!(pending_a.is_none());
     let pending_b: Option<dtos::YieldIndex> = setup
         .contract
-        .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
-        .args_json(json!({ "request": &verify_request_b }))
+        .get_pending_verify_foreign_tx_request(verify_request_b.clone())
         .await
         .unwrap()
-        .json()
-        .unwrap();
+        .value;
     assert!(pending_b.is_some());
 
     let (_, late_response) = sign_foreign_tx_response(
@@ -503,13 +497,8 @@ async fn verify_foreign_transaction__should_isolate_distinct_transaction_request
         foreign_tx_key.as_secp256k1(),
     );
     let late_result = setup.mpc_signer_accounts[0]
-        .call(setup.contract.id(), method_names::RESPOND_VERIFY_FOREIGN_TX)
-        .args_json(json!({
-            "request": &verify_request_a,
-            "response": late_response,
-        }))
-        .max_gas()
-        .transact()
+        .call_mpc(setup.contract.id())
+        .respond_verify_foreign_tx(verify_request_a.clone(), late_response)
         .await
         .unwrap()
         .into_result();
@@ -527,12 +516,10 @@ async fn verify_foreign_transaction__should_isolate_distinct_transaction_request
 
     let pending_b: Option<dtos::YieldIndex> = setup
         .contract
-        .view(method_names::GET_PENDING_VERIFY_FOREIGN_TX_REQUEST)
-        .args_json(json!({ "request": &verify_request_b }))
+        .get_pending_verify_foreign_tx_request(verify_request_b.clone())
         .await
         .unwrap()
-        .json()
-        .unwrap();
+        .value;
     assert!(pending_b.is_none());
 
     let alice_new_balance = alice.view_account().await.unwrap().balance;
