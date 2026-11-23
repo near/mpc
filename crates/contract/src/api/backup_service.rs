@@ -1,5 +1,6 @@
 //! Backup service registration through a TEE attestation, verified against the backup service's
-//! own allowlists, kept apart from the MPC nodes' ones.
+//! own allowlists, kept apart from the MPC nodes' ones, and the views of registered backup
+//! services.
 
 mod allowlists;
 
@@ -7,7 +8,7 @@ use crate::errors::{Error, InvalidState};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
 use mpc_attestation::attestation::VerifiedQuote;
-use near_mpc_contract_interface::types::Ed25519PublicKey;
+use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
 use near_sdk::{AccountId, PromiseError, PromiseOrValue, log, near};
 use std::time::Duration;
 use tee_verifier_interface::VerificationResultWithCollateralDates;
@@ -32,6 +33,36 @@ impl MpcContract {
         let registration_result = Self::quote_verdict(&account_id, result)
             .and_then(|quote| self.verify_post_dcap_and_store_backup_service(context, &quote));
         self.fail_submission_on_err(registration_result)
+    }
+
+    /// Returns the account's backup service only while its attestation is valid, so MPC nodes
+    /// export keyshares to this key alone. Unlike [`MpcContract::migration_info`], it never
+    /// returns an unattested or expired key.
+    pub fn attested_backup_service(
+        &self,
+        account_id: AccountId,
+    ) -> Option<dtos::BackupServiceInfo> {
+        let node = self.node_migrations.backup_service_of(&account_id)?;
+        self.node_migrations
+            .backup_service_tee_state
+            .has_valid_attestation(
+                node,
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+            )
+            .then(|| dtos::BackupServiceInfo {
+                public_key: node.tls_public_key.clone(),
+            })
+    }
+
+    /// Returns the attestation stored for the backup service with the given TLS key, like
+    /// [`MpcContract::get_attestation`] does for MPC nodes.
+    pub fn get_backup_service_attestation(
+        &self,
+        tls_public_key: Ed25519PublicKey,
+    ) -> Option<dtos::StoredAttestation> {
+        self.node_migrations
+            .backup_service_tee_state
+            .get_attestation(&tls_public_key)
     }
 
     /// Re-checks the registration before storing, since this runs a receipt later than the
@@ -116,9 +147,9 @@ mod tests {
         bogus_ed25519_public_key, create_node, gen_account_id, gen_participants,
     };
     use crate::tee::attested_service::AttestedService;
-    use crate::tee::test_utils::dstack_fixture_node;
-    use mpc_attestation::attestation::MockAttestation;
-    use near_mpc_contract_interface::types::{self as dtos, BackupServiceInfo};
+    use crate::tee::test_utils::{dstack_fixture_node, set_block_secs};
+    use mpc_attestation::attestation::{MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation};
+    use near_mpc_contract_interface::types::BackupServiceInfo;
     use rstest::rstest;
     use std::collections::BTreeMap;
 
@@ -318,5 +349,83 @@ mod tests {
             ),
             (true, registrations_before)
         );
+    }
+
+    #[rstest]
+    #[case::unregistered(|_: &mut MpcContract| {}, false)]
+    #[case::soft_launch_key(
+        |contract: &mut MpcContract| index_backup_service(contract, &dstack_fixture_node()),
+        false
+    )]
+    #[case::key_owned_by_another_account(
+        |contract: &mut MpcContract| {
+            store_backup_service(
+                contract,
+                create_node(&gen_account_id(), &dstack_fixture_node().tls_public_key),
+            );
+            index_backup_service(contract, &dstack_fixture_node());
+        },
+        false
+    )]
+    #[case::key_attested_as_mpc_node(
+        |contract: &mut MpcContract| {
+            contract
+                .tee_state
+                .verify_and_store_mock(dstack_fixture_node(), MockAttestation::Valid, Duration::MAX)
+                .unwrap();
+            index_backup_service(contract, &dstack_fixture_node());
+        },
+        false
+    )]
+    #[case::expired(
+        |contract: &mut MpcContract| {
+            store_backup_service(contract, dstack_fixture_node());
+            set_block_secs(MOCK_EXPIRATION_DURATION_SECONDS + 1);
+        },
+        false
+    )]
+    #[case::valid(
+        |contract: &mut MpcContract| store_backup_service(contract, dstack_fixture_node()),
+        true
+    )]
+    fn attested_backup_service__should_return_only_a_valid_attested_key(
+        #[case] register: fn(&mut MpcContract),
+        #[case] attested: bool,
+    ) {
+        // Given
+        set_block_secs(0);
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
+        register(&mut contract);
+        let node = dstack_fixture_node();
+
+        // When
+        let backup_service = contract.attested_backup_service(node.account_id);
+
+        // Then
+        assert_eq!(
+            backup_service,
+            attested.then_some(BackupServiceInfo {
+                public_key: node.tls_public_key,
+            })
+        );
+    }
+
+    #[test]
+    fn backup_service_views__should_keep_their_json_format() {
+        // Given
+        let (mut contract, context) =
+            backup_service_verification_setup(AttestedService::BackupService);
+        let node = context.node.clone();
+        let _ = contract.resolve_backup_service_verification(context, Ok(verified_verdict()));
+
+        // When
+        let views = serde_json::json!({
+            "attested_backup_service": contract.attested_backup_service(node.account_id),
+            "get_backup_service_attestation":
+                contract.get_backup_service_attestation(node.tls_public_key),
+        });
+
+        // Then
+        insta::assert_json_snapshot!(views);
     }
 }

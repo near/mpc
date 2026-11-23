@@ -13,14 +13,14 @@ use near_contract_transport::{
 use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    AvailableAttestationGrantsArgs, CKDRespondArgs, CleanInvalidAttestationsArgs,
-    DerivedPublicKeyArgs, GetAttestationArgs, GetPendingCKDRequestArgs,
-    GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs, InitArgs,
-    InitRunningArgs, PrepayAttestationStorageArgs, PublicKeyArgs, RegisterBackupServiceArgs,
-    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs,
-    StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
-    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
-    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteLauncherHashArgs,
+    AccountIdArgs, CKDRespondArgs, CleanInvalidAttestationsArgs, DerivedPublicKeyArgs,
+    GetAttestationArgs, GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs,
+    GetPendingVerifyForeignTxRequestArgs, InitArgs, InitRunningArgs, PrepayAttestationStorageArgs,
+    PublicKeyArgs, RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs,
+    RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs, StartKeygenArgs,
+    StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs, UpdateParticipantUrlArgs,
+    VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs,
+    VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteLauncherHashArgs,
     VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VoteOsMeasurementArgs, VotePkArgs,
     VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
@@ -763,7 +763,7 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     }
 
     pub fn available_attestation_grants(&self, account_id: AccountId) -> ViewCall<C, u32> {
-        let args = serde_json::to_vec(&AvailableAttestationGrantsArgs::new(account_id))
+        let args = serde_json::to_vec(&AccountIdArgs::new(account_id))
             .expect("plain-data args; JSON serialization cannot fail");
         self.view(ViewArgs::new(AVAILABLE_ATTESTATION_GRANTS, args))
     }
@@ -1241,6 +1241,12 @@ mod tests {
             .await;
         let _ = handle.allowed_backup_service_launcher_image_hashes().await;
         let _ = handle.allowed_backup_service_os_measurements().await;
+        let _ = handle
+            .attested_backup_service("alice.near".parse().unwrap())
+            .await;
+        let _ = handle
+            .get_backup_service_attestation(&Ed25519PublicKey::from([7u8; 32]))
+            .await;
         let _ = handle.get_available_foreign_chains().await;
         let _ = handle.get_foreign_chains_configs().await;
         let _ = handle.allowed_foreign_chain_providers().await;

@@ -157,6 +157,36 @@ expression: abi
         }
       },
       {
+        "name": "attested_backup_service",
+        "doc": " Returns the account's backup service only while its attestation is valid, so MPC nodes\n export keyshares to this key alone. Unlike [`MpcContract::migration_info`], it never\n returns an unattested or expired key.",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "account_id",
+              "type_schema": {
+                "description": "NEAR Account Identifier.\n\nThis is a unique, syntactically valid, human-readable account identifier on the NEAR network.\n\n[See the crate-level docs for information about validation.](index.html#account-id-rules)\n\nAlso see [Error kind precedence](AccountId#error-kind-precedence).\n\n## Examples\n\n``` use near_account_id::AccountId;\n\nlet alice: AccountId = \"alice.near\".parse().unwrap();\n\nassert!(\"ƒelicia.near\".parse::<AccountId>().is_err()); // (ƒ is not f) ```",
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/BackupServiceInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "available_attestation_grants",
         "kind": "view",
         "params": {
@@ -475,6 +505,35 @@ expression: abi
         }
       },
       {
+        "name": "get_backup_service_attestation",
+        "doc": " Returns the attestation stored for the backup service with the given TLS key, like\n [`MpcContract::get_attestation`] does for MPC nodes.",
+        "kind": "view",
+        "params": {
+          "serialization_type": "json",
+          "args": [
+            {
+              "name": "tls_public_key",
+              "type_schema": {
+                "$ref": "#/definitions/Ed25519PublicKey"
+              }
+            }
+          ]
+        },
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/StoredAttestation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      {
         "name": "get_foreign_chains_configs",
         "doc": " Per-participant view of which foreign chains each node currently covers. Feeds the\n available-set computation ([`Self::get_available_foreign_chains`]) and coverage alerting.",
         "kind": "view",
@@ -725,6 +784,7 @@ expression: abi
       },
       {
         "name": "migration_info",
+        "doc": " Returns every account's registered backup service key and ongoing migration. A backup\n service key listed here may have no valid attestation, which\n [`MpcContract::attested_backup_service`] checks.",
         "kind": "view",
         "result": {
           "serialization_type": "json",

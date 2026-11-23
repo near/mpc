@@ -217,6 +217,6 @@ pub struct DerivedPublicKeyArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct AvailableAttestationGrantsArgs {
+pub struct AccountIdArgs {
     pub account_id: AccountId,
 }

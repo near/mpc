@@ -484,6 +484,15 @@ impl TeeState {
             .collect()
     }
 
+    pub(crate) fn get_attestation(
+        &self,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Option<dtos::StoredAttestation> {
+        self.nodes
+            .get(tls_public_key)
+            .map(IntoInterfaceType::into_dto_type)
+    }
+
     pub(crate) fn node_of(
         &self,
         account_id: &AccountId,

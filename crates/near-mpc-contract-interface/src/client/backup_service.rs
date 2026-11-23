@@ -1,18 +1,23 @@
 use near_contract_transport::{CallContract, FunctionCallArgs, ViewArgs, ViewCall, ViewContract};
 
 use crate::{
-    call_args::{VoteBackupServiceCodeHashArgs, VoteLauncherHashArgs, VoteOsMeasurementArgs},
+    call_args::{
+        AccountIdArgs, GetAttestationArgs, VoteBackupServiceCodeHashArgs, VoteLauncherHashArgs,
+        VoteOsMeasurementArgs,
+    },
     client::{MAX_GAS, MpcContractHandle, MpcContractHandleError},
     method_names::{
         ALLOWED_BACKUP_SERVICE_CODE_HASHES, ALLOWED_BACKUP_SERVICE_LAUNCHER_COMPOSE_HASHES,
         ALLOWED_BACKUP_SERVICE_LAUNCHER_IMAGE_HASHES, ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS,
-        CLEAN_BACKUP_SERVICE_TEE_STATUS, VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH,
-        VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT, VOTE_BACKUP_SERVICE_CODE_HASH,
-        VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH, VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT,
+        ATTESTED_BACKUP_SERVICE, CLEAN_BACKUP_SERVICE_TEE_STATUS, GET_BACKUP_SERVICE_ATTESTATION,
+        VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH, VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT,
+        VOTE_BACKUP_SERVICE_CODE_HASH, VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH,
+        VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT,
     },
     types::{
-        AllowedMpcDockerImageHash, ExpectedMeasurements, LauncherDockerComposeHash,
-        LauncherImageHash, NodeImageHash,
+        AccountId, AllowedMpcDockerImageHash, BackupServiceInfo, Ed25519PublicKey,
+        ExpectedMeasurements, LauncherDockerComposeHash, LauncherImageHash, NodeImageHash,
+        StoredAttestation,
     },
 };
 
@@ -119,5 +124,23 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
 
     pub fn allowed_backup_service_os_measurements(&self) -> ViewCall<C, Vec<ExpectedMeasurements>> {
         self.view(ViewArgs::no_args(ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS))
+    }
+
+    pub fn attested_backup_service(
+        &self,
+        account_id: AccountId,
+    ) -> ViewCall<C, Option<BackupServiceInfo>> {
+        let args = serde_json::to_vec(&AccountIdArgs::new(account_id))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(ATTESTED_BACKUP_SERVICE, args))
+    }
+
+    pub fn get_backup_service_attestation(
+        &self,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> ViewCall<C, Option<StoredAttestation>> {
+        let args = serde_json::to_vec(&GetAttestationArgs::new(tls_public_key))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(GET_BACKUP_SERVICE_ATTESTATION, args))
     }
 }

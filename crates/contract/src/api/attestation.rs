@@ -1,6 +1,6 @@
 //! TEE attestation lifecycle
 
-use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
+use crate::dto_mapping::TryIntoContractType;
 use crate::errors::{Error, InvalidParameters, InvalidState, TeeError};
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::{AttestationSubmissionError, Node, TeeValidationResult};
@@ -278,10 +278,7 @@ impl MpcContract {
         &self,
         tls_public_key: dtos::Ed25519PublicKey,
     ) -> Option<dtos::StoredAttestation> {
-        self.tee_state
-            .nodes
-            .get(&tls_public_key)
-            .map(IntoInterfaceType::into_dto_type)
+        self.tee_state.get_attestation(&tls_public_key)
     }
 
     /// Returns every stored node, including nodes of accounts that are not participants.

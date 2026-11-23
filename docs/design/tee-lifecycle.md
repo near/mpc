@@ -229,7 +229,7 @@ The following attestation methods must be uniform across all governance contract
 | `get_tee_accounts()` | View | Query all stored nodes, including those of non-participants |
 | `get_available_foreign_chains()` | View | Query foreign chains accepted by `verify_foreign_transaction` |
 
-> **Backup Service:** The contract keeps a separate `TeeState` for the Backup Service, whose allowlists the `allowed_backup_service_code_hashes()`, `allowed_backup_service_launcher_compose_hashes()`, `allowed_backup_service_launcher_image_hashes()` and `allowed_backup_service_os_measurements()` views list and the backup service [voting methods](#voting-methods) fill. `register_backup_service` still stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add it.
+> **Backup Service:** The contract keeps a separate `TeeState` for the Backup Service, whose allowlists the `allowed_backup_service_code_hashes()`, `allowed_backup_service_launcher_compose_hashes()`, `allowed_backup_service_launcher_image_hashes()` and `allowed_backup_service_os_measurements()` views list and the backup service [voting methods](#voting-methods) fill. `attested_backup_service(account_id)` returns an account's backup service only while its attestation is valid, and `get_backup_service_attestation(tls_public_key)` returns the attestation stored for a backup service. `register_backup_service` still stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add it.
 
 [backup-tee-methods]: ../archive/design/migration-service.md#backup-service-tee-methods
 

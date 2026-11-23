@@ -16,6 +16,9 @@ use std::time::Duration;
 
 #[near]
 impl MpcContract {
+    /// Returns every account's registered backup service key and ongoing migration. A backup
+    /// service key listed here may have no valid attestation, which
+    /// [`MpcContract::attested_backup_service`] checks.
     pub fn migration_info(&self) -> dtos::MigrationInfo {
         log!("migration_info");
         self.node_migrations.get_all()
