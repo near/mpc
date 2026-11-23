@@ -300,54 +300,58 @@ where
         }
         join_set.abort_all();
 
-        let Some(verdict) = verdicts.first().map(|(_, verdict)| verdict.clone()) else {
-            if let Some(err) = first_error {
-                return Err(err);
-            }
-            tracing::warn!(
-                whitelisted_agreeing = 0,
-                required = quorum.required,
-                "fan-out: fewer whitelisted providers reached the verdict than the quorum requires",
-            );
-            return Err(ForeignChainInspectionError::SubQuorum {
-                agreeing: 0,
-                required: quorum.required,
-            });
-        };
-
-        let (agreeing, disagreeing): (Vec<_>, Vec<_>) = verdicts
-            .into_iter()
-            .partition(|(_, candidate)| *candidate == verdict);
-        if !disagreeing.is_empty() {
-            tracing::error!(
-                ?agreeing,
-                ?disagreeing,
-                "fan-out: inspectors returned mismatching verdicts",
-            );
-            return Err(ForeignChainInspectionError::InspectorResponseMismatch);
-        }
-
-        let whitelisted_agreeing: BTreeSet<&ProviderId> = agreeing
-            .iter()
-            .map(|(provider, _)| provider)
-            .filter(|provider| quorum.whitelisted.contains(provider))
-            .collect();
-        let whitelisted_agreeing = whitelisted_agreeing.len();
-        if whitelisted_agreeing < quorum.required.get() {
-            tracing::warn!(
-                whitelisted_agreeing,
-                required = quorum.required,
-                ?verdict,
-                "fan-out: fewer whitelisted providers reached the verdict than the quorum requires",
-            );
-            return Err(ForeignChainInspectionError::SubQuorum {
-                agreeing: whitelisted_agreeing,
-                required: quorum.required,
-            });
-        }
-
-        Ok(verdict)
+        judge(verdicts, first_error, quorum)
     }
+}
+
+fn judge<Value: Clone + PartialEq + std::fmt::Debug>(
+    verdicts: Vec<(ProviderId, Verdict<Value>)>,
+    first_error: Option<ForeignChainInspectionError>,
+    quorum: &RpcQuorum,
+) -> Result<Verdict<Value>, ForeignChainInspectionError> {
+    let Some(verdict) = verdicts.first().map(|(_, verdict)| verdict.clone()) else {
+        if let Some(err) = first_error {
+            return Err(err);
+        }
+        tracing::warn!(required = quorum.required, "fan-out: no provider answered");
+        return Err(ForeignChainInspectionError::SubQuorum {
+            agreeing: 0,
+            required: quorum.required,
+        });
+    };
+
+    let (agreeing, disagreeing): (Vec<_>, Vec<_>) = verdicts
+        .into_iter()
+        .partition(|(_, candidate)| *candidate == verdict);
+    if !disagreeing.is_empty() {
+        tracing::error!(
+            ?agreeing,
+            ?disagreeing,
+            "fan-out: inspectors returned mismatching verdicts",
+        );
+        return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+    }
+
+    let whitelisted_agreeing: BTreeSet<&ProviderId> = agreeing
+        .iter()
+        .map(|(provider, _)| provider)
+        .filter(|provider| quorum.whitelisted.contains(provider))
+        .collect();
+    let whitelisted_agreeing = whitelisted_agreeing.len();
+    if whitelisted_agreeing < quorum.required.get() {
+        tracing::warn!(
+            whitelisted_agreeing,
+            required = quorum.required,
+            ?verdict,
+            "fan-out: fewer whitelisted providers reached the verdict than the quorum requires",
+        );
+        return Err(ForeignChainInspectionError::SubQuorum {
+            agreeing: whitelisted_agreeing,
+            required: quorum.required,
+        });
+    }
+
+    Ok(verdict)
 }
 
 pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}

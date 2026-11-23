@@ -215,6 +215,10 @@ fn transient() -> ResponseFn {
     err(|| ForeignChainInspectionError::RpcRequestFailed("connection refused".to_string()))
 }
 
+fn panicking() -> ResponseFn {
+    Arc::new(|| panic!("inspector task panics"))
+}
+
 fn mock_answering_after(delay: Duration, response: ResponseFn) -> MockInspector {
     mock_awaiting(Arc::new(move || {
         let response = Arc::clone(&response);
@@ -569,6 +573,7 @@ mod quorum {
         quorum(1, &[1]),
         0,
     )]
+    #[case::whitelisted_provider_panics(vec![ok(vec![1]), panicking()], quorum(2, &[0, 1]), 1)]
     #[tokio::test]
     async fn fan_out__should_return_sub_quorum_when_too_few_whitelisted_providers_agree(
         #[case] responses: Vec<ResponseFn>,
