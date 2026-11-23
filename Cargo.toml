@@ -12,6 +12,7 @@ members = [
     "crates/contract",
     "crates/contract-history",
     "crates/devnet",
+    "crates/durable-fs",
     "crates/e2e-tests",
     "crates/foreign-chain-config-tester",
     "crates/foreign-chain-health-check",
@@ -62,6 +63,7 @@ attestation-types = { path = "crates/attestation-types" }
 chain-gateway = { path = "crates/chain-gateway" }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
+durable-fs = { path = "crates/durable-fs" }
 foreign-chain-health-check = { path = "crates/foreign-chain-health-check" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-factory = { path = "crates/foreign-chain-rpc-factory" }

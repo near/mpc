@@ -40,7 +40,6 @@ mod assets;
 mod background;
 mod coordinator;
 mod db;
-mod durable_fs;
 mod foreign_chain_policy;
 mod foreign_chain_probe;
 mod foreign_chain_registrar;
