@@ -140,7 +140,7 @@ pub struct BlockEventStream {
     /// At most one update per block with at least one matched event;
     /// dropped when this channel is full.
     pub updates: Receiver<BlockUpdate>,
-    /// Progress over every streamed block, matched or not.
+    /// Progress tracking every block received from nearcore indexer.
     pub progress: watch::Receiver<IndexerStats>,
 }
 
