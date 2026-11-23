@@ -138,7 +138,7 @@ impl ProtocolContractState {
     }
 
     pub fn vote_add_domains(
-        &mut self,
+        &self,
         domains: Vec<DomainConfig>,
         votes: &mut AddDomainsVotes,
     ) -> Result<Option<ProtocolContractState>, Error> {

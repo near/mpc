@@ -61,8 +61,9 @@ impl MpcContract {
                 }
                 // Without domains the proposal applies directly; drop votes of dropped participants.
                 if let ProtocolContractState::Running(state) = &self.protocol_state {
+                    let participants = state.parameters.participants();
                     self.add_domains_votes
-                        .retain(state.parameters.participants());
+                        .retain_votes(|p| participants.is_participant(p));
                 }
                 Ok(())
             }

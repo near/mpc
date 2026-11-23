@@ -1,15 +1,16 @@
 use super::key_state::AuthenticatedParticipantId;
 use crate::errors::{DomainError, Error};
 use crate::primitives::participants::Participants;
-use crate::primitives::proposal_hash::{Borsh, ProposalHash, Sha256, ToProposalHash};
+use crate::primitives::proposal_hash::{Borsh, Sha256, ToProposalHash};
 use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
 use crate::primitives::votes::Votes;
 use crate::storage_keys::StorageKey;
+use derive_more::{Deref, DerefMut};
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainId, DomainPurpose, ParticipantCount, Protocol, ReconstructionThreshold,
 };
 use near_sdk::near;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 /// Lower bound on a domain's reconstruction threshold. `t = 1` would mean a
 /// single share is sufficient to reconstruct the secret, defeating the point
@@ -255,7 +256,7 @@ impl ToProposalHash for [DomainConfig] {
 
 /// Votes to add domains, one per participant, stored by proposal hash.
 #[near(serializers=[borsh])]
-#[derive(Debug)]
+#[derive(Debug, Deref, DerefMut)]
 pub struct AddDomainsVotes(Votes<AuthenticatedParticipantId>);
 
 impl Default for AddDomainsVotes {
@@ -281,24 +282,6 @@ impl AddDomainsVotes {
             .vote(participant, domains.to_proposal_hash())
             .count_participants(participants);
         n_votes == participants.count()
-    }
-
-    /// Drops votes from accounts that are no longer in `participants`.
-    pub fn retain(&mut self, participants: &Participants) {
-        self.0.retain_votes(|p| participants.is_participant(p));
-    }
-
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
-
-    pub fn all(&self) -> BTreeMap<ProposalHash, BTreeSet<AuthenticatedParticipantId>> {
-        self.0.all()
-    }
-
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.all().is_empty()
     }
 }
 
@@ -499,15 +482,15 @@ pub mod tests {
         let (participants, auth_ids) = gen_authenticated_participants(3);
         let proposal = sample_proposal();
         let mut votes = AddDomainsVotes::default();
-        assert!(!votes.vote(&proposal, auth_ids[0].clone(), &participants));
-        assert!(!votes.vote(&proposal, auth_ids[1].clone(), &participants));
 
         // When
-        let accepted = votes.vote(&proposal, auth_ids[2].clone(), &participants);
+        let accepted: Vec<_> = auth_ids
+            .into_iter()
+            .map(|id| votes.vote(&proposal, id, &participants))
+            .collect();
 
         // Then
-        assert!(accepted);
-        assert!(!votes.is_empty());
+        assert_eq!(accepted, [false, false, true]);
     }
 
     #[test]
@@ -519,13 +502,18 @@ pub mod tests {
         votes.vote(&proposal, auth_ids[2].clone(), &participants);
         let current = participants.subset(0..2);
 
-        // When / Then: only the current participants count towards acceptance
-        assert!(!votes.vote(&proposal, auth_ids[0].clone(), &current));
-        assert!(votes.vote(&proposal, auth_ids[1].clone(), &current));
+        // When
+        let accepted: Vec<_> = auth_ids[..2]
+            .iter()
+            .map(|id| votes.vote(&proposal, id.clone(), &current))
+            .collect();
+
+        // Then: only the current participants count towards acceptance
+        assert_eq!(accepted, [false, true]);
     }
 
     #[test]
-    fn retain__should_keep_only_current_participants_votes() {
+    fn retain_votes__should_keep_only_current_participants_votes() {
         // Given: three of four participants voted
         let (participants, auth_ids) = gen_authenticated_participants(4);
         let proposal = sample_proposal();
@@ -533,9 +521,10 @@ pub mod tests {
         for auth_id in &auth_ids[..3] {
             votes.vote(&proposal, auth_id.clone(), &participants);
         }
+        let current = participants.subset(0..1);
 
         // When
-        votes.retain(&participants.subset(0..1));
+        votes.retain_votes(|p| current.is_participant(p));
 
         // Then
         assert_eq!(
@@ -548,7 +537,7 @@ pub mod tests {
     }
 
     #[test]
-    fn retain__should_drop_all_votes_when_no_voter_remains() {
+    fn retain_votes__should_drop_all_votes_when_no_voter_remains() {
         // Given
         let (participants, auth_ids) = gen_authenticated_participants(4);
         let proposal = sample_proposal();
@@ -556,16 +545,17 @@ pub mod tests {
         for auth_id in &auth_ids[..3] {
             votes.vote(&proposal, auth_id.clone(), &participants);
         }
+        let current = gen_participants(0);
 
         // When
-        votes.retain(&gen_participants(0));
+        votes.retain_votes(|p| current.is_participant(p));
 
         // Then
         assert!(votes.is_empty());
     }
 
     #[test]
-    fn retain__should_preserve_different_proposals() {
+    fn retain_votes__should_preserve_different_proposals() {
         // Given
         let (participants, auth_ids) = gen_authenticated_participants(4);
         let proposal_a = vec![DomainConfig {
@@ -584,9 +574,10 @@ pub mod tests {
         votes.vote(&proposal_a, auth_ids[0].clone(), &participants);
         votes.vote(&proposal_b, auth_ids[1].clone(), &participants);
         votes.vote(&proposal_a, auth_ids[2].clone(), &participants);
+        let current = participants.subset(0..2);
 
         // When
-        votes.retain(&participants.subset(0..2));
+        votes.retain_votes(|p| current.is_participant(p));
 
         // Then
         assert_eq!(
