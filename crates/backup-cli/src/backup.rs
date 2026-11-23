@@ -1,5 +1,6 @@
 use chain_gateway::{ChainGateway, NodeConfig};
 use ed25519_dalek::VerifyingKey;
+use mpc_node_config::BackupServiceStartConfig;
 use near_account_id::AccountId;
 use near_contract_transport::{NearKitCaller, PollInterval};
 use near_kit::Near;
@@ -16,7 +17,8 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    adapters, cli, keyset::keyset_to_backup, ports, service::Service, types::PersistentSecrets,
+    adapters, cli, keyset::keyset_to_backup, ports, service::Service,
+    start::start_with_config_file, types::PersistentSecrets,
 };
 
 pub async fn run_command(args: cli::Args) {
@@ -61,7 +63,7 @@ pub async fn run_command(args: cli::Args) {
 
             let (status_reporter, status) = adapters::web::status_channel();
             if let Some(listen_address) = subcommand_args.listen_address {
-                adapters::web::spawn_web_server(listen_address, status)
+                adapters::web::spawn_web_server(listen_address, status, None)
                     .await
                     .expect("failed to start the web server");
             }
@@ -113,6 +115,15 @@ pub async fn run_command(args: cli::Args) {
             )
             .await
             .expect("automatic backup service failed");
+        }
+        cli::Command::StartWithConfigFile { config_path } => {
+            let config = BackupServiceStartConfig::from_toml_file(&config_path)
+                .expect("failed to read the config file");
+            let shutdown = CancellationToken::new();
+            spawn_shutdown_on_signal(shutdown.clone());
+            start_with_config_file(PathBuf::from(args.home_dir), config, shutdown)
+                .await
+                .expect("backup service failed");
         }
     }
 }

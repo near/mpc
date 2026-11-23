@@ -1,6 +1,8 @@
+pub mod backup_service;
 pub mod foreign_chains;
 pub mod start;
 
+pub use backup_service::BackupServiceStartConfig;
 pub use foreign_chains::{
     AuthConfig, ForeignChainConfig, ForeignChainProviderConfig, ForeignChainsConfig, TokenConfig,
 };

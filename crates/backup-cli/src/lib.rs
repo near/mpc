@@ -12,6 +12,7 @@ pub mod cli;
 pub mod keyset;
 pub mod ports;
 pub mod service;
+pub mod start;
 pub mod types;
 
 #[cfg(test)]

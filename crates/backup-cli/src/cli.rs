@@ -1,4 +1,4 @@
-use std::{fmt, net::SocketAddr, str::FromStr, sync::LazyLock};
+use std::{fmt, net::SocketAddr, path::PathBuf, str::FromStr, sync::LazyLock};
 
 use near_account_id::AccountId;
 
@@ -83,6 +83,12 @@ pub enum Command {
     /// Run the automatic backup service: watch the MPC contract and back up keyshares whenever
     /// the stored ones no longer cover its keyset.
     Run(RunArgs),
+    /// Start the backup service from the TOML configuration file a launcher writes. It reads
+    /// the chain only through its embedded NEAR node.
+    StartWithConfigFile {
+        /// Path to the TOML configuration file.
+        config_path: PathBuf,
+    },
 }
 
 #[derive(clap::Args, Debug)]

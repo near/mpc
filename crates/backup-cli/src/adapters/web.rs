@@ -2,7 +2,9 @@ use std::net::SocketAddr;
 
 use axum::extract::State;
 use axum::{Json, Router, routing::get};
+pub use mpc_node::web::PublicData;
 use near_mpc_contract_interface::types::EpochId;
+use node_types::http_server::StaticWebData;
 use prometheus::{Encoder as _, IntGauge, Registry, TextEncoder};
 use serde::Serialize;
 use tokio::net::TcpListener;
@@ -18,28 +20,37 @@ pub fn status_channel() -> (BackupStatusReporter, BackupStatusReceiver) {
     )
 }
 
-/// Serves `/health`, `/status` and `/metrics` on `listen_address` until the process exits.
-/// Returns an error when the address cannot be bound.
+/// Serves `/health`, `/status` and `/metrics` on `listen_address` until the process exits, and
+/// `/public_data` when [`PublicData`] is given. Returns an error when the address cannot be
+/// bound.
 pub async fn spawn_web_server(
     listen_address: SocketAddr,
     status: BackupStatusReceiver,
+    public_data: Option<PublicData>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(listen_address).await?;
-    tracing::info!(%listen_address, "serving /health, /status and /metrics");
+    tracing::info!(%listen_address, "serving the web endpoints");
     tokio::spawn(async move {
-        if let Err(err) = axum::serve(listener, router(status)).await {
+        if let Err(err) = axum::serve(listener, router(status, public_data)).await {
             tracing::error!(?err, "web server stopped");
         }
     });
     Ok(())
 }
 
-fn router(status: BackupStatusReceiver) -> Router {
-    Router::new()
+fn router(status: BackupStatusReceiver, public_data: Option<PublicData>) -> Router {
+    let router = Router::new()
         .route("/health", get(health))
         .route("/status", get(serve_status))
         .route("/metrics", get(serve_metrics))
-        .with_state(status)
+        .with_state(status);
+    match public_data {
+        Some(public_data) => router.route(
+            "/public_data",
+            get(serve_public_data).with_state(public_data),
+        ),
+        None => router,
+    }
 }
 
 async fn health() -> &'static str {
@@ -48,6 +59,10 @@ async fn health() -> &'static str {
 
 async fn serve_status(State(status): State<BackupStatusReceiver>) -> Json<BackupStatus> {
     Json(status.0.borrow().clone())
+}
+
+async fn serve_public_data(State(public_data): State<PublicData>) -> Json<StaticWebData> {
+    Json(public_data.current())
 }
 
 async fn serve_metrics(State(status): State<BackupStatusReceiver>) -> String {

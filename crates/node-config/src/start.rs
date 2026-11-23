@@ -4,9 +4,9 @@ use anyhow::Context;
 use clap::ValueEnum;
 use launcher_interface::types::PccsEndpointConfig;
 use near_mpc_bounded_collections::NonEmptyVec;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Configuration for starting the MPC node. This is the canonical type used
 /// by the run logic. Both `StartCmd` (CLI flags) and `StartWithConfigFileCmd`
@@ -61,12 +61,16 @@ pub fn default_pccs_endpoints() -> NonEmptyVec<PccsEndpointConfig> {
         .expect("single-element vec is non-empty")
 }
 
+pub(crate) fn read_toml_file<T: DeserializeOwned>(path: &Path) -> anyhow::Result<T> {
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("failed to read config file: {}", path.display()))?;
+    toml::from_str(&content)
+        .with_context(|| format!("failed to parse config file: {}", path.display()))
+}
+
 impl StartConfig {
-    pub fn from_toml_file(path: &std::path::Path) -> anyhow::Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .with_context(|| format!("failed to read config file: {}", path.display()))?;
-        let config: Self = toml::from_str(&content)
-            .with_context(|| format!("failed to parse config file: {}", path.display()))?;
+    pub fn from_toml_file(path: &Path) -> anyhow::Result<Self> {
+        let config: Self = read_toml_file(path)?;
         config.validate()?;
         Ok(config)
     }
@@ -102,7 +106,7 @@ pub enum LogFormat {
 
 /// NEAR node initialization configuration. Controls how the NEAR node's
 /// genesis and config files are bootstrapped when they don't yet exist.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NearInitConfig {
     pub chain_id: ChainId,
     /// Comma-separated NEAR boot nodes.
@@ -197,7 +201,7 @@ impl std::fmt::Display for ChainId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DownloadConfigType {
     Validator,
