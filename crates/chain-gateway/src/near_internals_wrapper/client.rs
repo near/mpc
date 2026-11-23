@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use near_async::messaging::CanSendAsync as _;
+use near_indexer::near_primitives::views::StatusSyncInfo;
 
 use crate::{errors::NearClientError, primitives::IsSyncing};
 
@@ -24,11 +25,19 @@ impl NearClientActorHandle {
 impl IsSyncing for NearClientActorHandle {
     type Error = NearClientError;
     async fn is_syncing(&self) -> Result<bool, Self::Error> {
+        Ok(self.sync_info().await?.syncing)
+    }
+}
+
+impl NearClientActorHandle {
+    /// Part of the [`crate::nearcore_workarounds`]: can be merged back into
+    /// [`IsSyncing::is_syncing`] once <https://github.com/near/nearcore/issues/16004> is resolved.
+    pub(crate) async fn sync_info(&self) -> Result<StatusSyncInfo, NearClientError> {
         let status_request = near_client::Status {
             is_health_check: false,
             detailed: false,
         };
-        let status = &self
+        let status = self
             .client
             .send_async(
                 near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
@@ -40,6 +49,6 @@ impl IsSyncing for NearClientActorHandle {
             .map_err(|err| NearClientError::ResponseError {
                 message: err.to_string(),
             })?;
-        Ok(status.sync_info.syncing)
+        Ok(status.sync_info)
     }
 }

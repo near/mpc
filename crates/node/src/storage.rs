@@ -238,7 +238,15 @@ mod tests {
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let storage = SignRequestStorage::new(db).unwrap();
 
-        let req1 = signature_request();
+        let req1 = SignatureRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            payload: Payload::from_legacy_ecdsa([0; 32]),
+            timestamp_nanosec: 0,
+            tweak: Tweak::new([0; 32]),
+            domain: DomainId::legacy_ecdsa_id(),
+        };
         storage.add(&req1).unwrap();
         let err = storage.add(&req1).unwrap_err();
         assert_eq!(err.to_string(), "signature request already exists");
@@ -246,7 +254,15 @@ mod tests {
             .get(req1.id)
             .await
             .expect("Stored signature request should be retrievable");
-        let req2 = signature_request();
+        let req2 = SignatureRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            payload: Payload::from_legacy_ecdsa([0; 32]),
+            timestamp_nanosec: 0,
+            tweak: Tweak::new([0; 32]),
+            domain: DomainId::legacy_ecdsa_id(),
+        };
         storage.add(&req2).unwrap();
         let _ = storage
             .get(req1.id)
@@ -264,7 +280,19 @@ mod tests {
         let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
         let storage = CKDRequestStorage::new(db).unwrap();
 
-        let req1 = cdk_request();
+        let req1 = CKDRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
+                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+                    .parse()
+                    .unwrap(),
+            ),
+            app_id: [1u8; 32].into(),
+            timestamp_nanosec: 0,
+            domain_id: DomainId::legacy_ecdsa_id(),
+        };
         storage.add(&req1).unwrap();
         let err = storage.add(&req1).unwrap_err();
         assert_eq!(err.to_string(), "CKD request already exists");
@@ -272,7 +300,19 @@ mod tests {
             .get(req1.id)
             .await
             .expect("Stored CKD request should be retrievable");
-        let req2 = cdk_request();
+        let req2 = CKDRequest {
+            id: CryptoHash(rand::random()),
+            // All other fields are irrelevant for the test.
+            receipt_id: CryptoHash([0; 32]),
+            app_public_key: near_mpc_contract_interface::types::CKDAppPublicKey::AppPublicKey(
+                "bls12381g1:6KtVVcAAGacrjNGePN8bp3KV6fYGrw1rFsyc7cVJCqR16Zc2ZFg3HX3hSZxSfv1oH6"
+                    .parse()
+                    .unwrap(),
+            ),
+            app_id: [1u8; 32].into(),
+            timestamp_nanosec: 0,
+            domain_id: DomainId::legacy_ecdsa_id(),
+        };
         storage.add(&req2).unwrap();
         let _ = storage
             .get(req1.id)
