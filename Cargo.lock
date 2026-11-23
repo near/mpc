@@ -1509,7 +1509,7 @@ dependencies = [
  "byte-slice-cast",
  "ff 0.13.1",
  "group 0.13.0",
- "pairing",
+ "pairing 0.23.0",
  "rand_core 0.6.4",
  "serde",
  "subtle",
@@ -8377,6 +8377,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pairing"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2507708d4076d5c62617fbdd8c50e11047d033ac318a437623d7e35385f9b7f"
+dependencies = [
+ "group 0.14.0",
+]
+
+[[package]]
 name = "parity-scale-codec"
 version = "3.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11466,7 +11475,7 @@ dependencies = [
  "itertools 0.15.0",
  "k256 0.13.4",
  "keccak 0.1.6",
- "pairing",
+ "pairing 0.24.2",
  "rand 0.8.8",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
