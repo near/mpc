@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
 use blaire_interface::NodeReport;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 use crate::traits::{StoreReports, TrackMpcNodes, WhitelistAccounts};
 use crate::types::{
@@ -26,7 +26,7 @@ pub struct FileStore {
     lock: Mutex<()>,
 }
 
-/// Everything that can go wrong while reading or writing the files.
+/// Things that can go wrong while reading or writing the files.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
     #[error("file I/O failed: {0}")]
@@ -73,10 +73,7 @@ impl WhitelistAccounts for FileStore {
         let mut accounts: Vec<WhitelistedAccount> = read_json(&path)?;
 
         // An account is only stored once
-        if accounts
-            .iter()
-            .any(|account| account.account_id == account_id)
-        {
+        if accounts.iter().any(|account| account.account_id == account_id) {
             return Ok(()); // already whitelisted: keep the original entry
         }
 
@@ -190,10 +187,7 @@ impl StoreReports for FileStore {
         let reports: Vec<ReportedData> = read_json(&self.path(REPORTS_FILE))?;
 
         // Search from the newest end: the first match is the latest report
-        Ok(reports
-            .into_iter()
-            .rev()
-            .find(|report| &report.tls_key == tls_key))
+        Ok(reports.into_iter().rev().find(|report| &report.tls_key == tls_key))
     }
 
     fn list_reports(
