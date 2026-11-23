@@ -715,6 +715,26 @@ mod deadline {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn fan_out__should_judge_as_soon_as_the_last_provider_returns() {
+        // Given
+        let last_answer = INSPECTION_TIMEOUT / 5;
+        let fan_out = fan_out_of(vec![
+            mock_returning(ok(vec![1])),
+            mock_answering_after(last_answer, ok(vec![1])),
+        ]);
+        let start = tokio::time::Instant::now();
+
+        // When
+        let result = fan_out
+            .extract_with_quorum(&quorum(2, &[0, 1]), INSPECTION_TIMEOUT, (), (), vec![])
+            .await;
+
+        // Then
+        assert_eq!(result.unwrap(), Verdict::Extracted(vec![1]));
+        assert_eq!(start.elapsed(), last_answer);
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn fan_out__should_report_a_dropped_call_for_a_provider_that_misses_the_deadline() {
         // Given
         let (fan_out, mut observed) =
