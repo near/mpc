@@ -137,7 +137,8 @@ impl Drop for NodeHandle {
 }
 
 pub struct BlockEventStream {
-    /// One update per block with at least one matched event.
+    /// At most one update per block with at least one matched event;
+    /// dropped when this channel is full.
     pub updates: Receiver<BlockUpdate>,
     /// Progress over every streamed block, matched or not.
     pub progress: watch::Receiver<IndexerStats>,

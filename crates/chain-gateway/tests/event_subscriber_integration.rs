@@ -12,6 +12,7 @@ use chain_gateway::{
             BlockEventId, BlockUpdate, EventData, ExecutorFunctionCallSuccessWithPromiseData,
             ReceiverFunctionCallData,
         },
+        metrics::{MPC_INDEXER_LATEST_BLOCK_HEIGHT, MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS},
         subscriber::{BlockEventSubscription, BlockEventSubscriptions},
     },
     transaction_sender::{SubmitFunctionCall, TransactionSigner},
@@ -179,6 +180,10 @@ async fn block_event_stream__should_advance_progress_without_updates_when_the_pr
     receiver
         .try_recv()
         .expect_err("expected channel to be empty");
+    let observed_at = i64::try_from(u64::from(observed_end_marker.observed_at))
+        .expect("block height must fit in i64");
+    assert!(MPC_INDEXER_LATEST_BLOCK_HEIGHT.get() > observed_at);
+    assert!(MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS.get() > 0);
 }
 
 struct ReceiverFunctionCallTest {
