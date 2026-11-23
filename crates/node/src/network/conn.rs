@@ -397,13 +397,13 @@ impl<I: Send + Sync + 'static, O: Send + Sync + 'static> AllNodeConnectivities<I
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::network::conn::{
         AllNodeConnectivities, ConnectionVersion, ConnectionWithVersion, NodeConnectivity,
         OptionSenderConnectionId,
     };
     use crate::primitives::ParticipantId;
     use crate::protocol_version::NetworkProtocolVersion;
+    use async_testing::{MaybeReady, run_future_once};
     use futures::FutureExt;
     use rstest::rstest;
     use std::sync::{Arc, Weak};

@@ -7,10 +7,10 @@ use std::future::Future;
 use foreign_chain_health_check::probe::{ProbeReport, probe_all_providers};
 use foreign_chain_rpc_factory::inspectors::InspectorFactory;
 use mpc_node_config::ForeignChainsConfig;
+use tick::Tick;
 use tokio::sync::watch;
 
 use crate::indexer::foreign_chain::ForeignChainWhitelist;
-use crate::tick::Tick;
 
 mod chain_health;
 mod report;
@@ -136,20 +136,20 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::collections::{BTreeMap, VecDeque};
 
+    use async_testing::{MaybeReady, run_future_once};
     use foreign_chain_health_check::probe::{ProviderCounts, ProviderStatus};
     use mpc_node_config::{AuthConfig, ForeignChainProviderConfig};
     use near_mpc_contract_interface::types as dtos;
     use rstest::rstest;
+    use tick::testing::MockTicker;
     use tracing_test::traced_test;
 
     use super::*;
-    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::foreign_chain_probe::test_utils::{
         ALCHEMY_URL, ProbedConfig, ProbedProvider, chain_config, empty_report, foreign_chains,
         gauges, mock_finish_round, mock_probe, no_whitelist, polygon_with_report, row,
         whitelist_of,
     };
-    use crate::tick::MockTicker;
 
     #[test]
     fn probe_periodically__should_probe_once_per_tick() {

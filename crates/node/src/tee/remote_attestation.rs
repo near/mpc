@@ -8,7 +8,6 @@ use crate::{
         MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL, MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION,
         MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION, MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL,
     },
-    tick::Tick,
     trait_extensions::convert_to_contract_dto::{
         IntoContractInterfaceType, to_attestation_measurements,
     },
@@ -25,6 +24,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_time::Clock;
 use tee_authority::tee_authority::{AttestationError, TeeAuthority};
+use tick::Tick;
 use tokio_util::time::FutureExt;
 
 use mpc_primitives::hash::{LauncherDockerComposeHash, NodeImageHash};
@@ -308,9 +308,8 @@ fn record_round_timeout(stage: &'static str) {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::indexer::tx_sender::TransactionProcessorError;
-    use crate::tick::MockTicker;
+    use async_testing::{MaybeReady, run_future_once};
     use ed25519_dalek::SigningKey;
     use near_mpc_contract_interface::types::{
         MockAttestation, VerifiedDstackAttestation, VerifiedMeasurements,
@@ -322,6 +321,7 @@ mod tests {
         atomic::{AtomicBool, AtomicUsize, Ordering},
     };
     use tee_authority::tee_authority::{LocalTeeAuthorityConfig, TeeAuthority};
+    use tick::testing::MockTicker;
 
     const TEST_SUBMISSION_COUNT: usize = 2;
     const STORED_MOCK: VerifiedAttestation = VerifiedAttestation::Mock(MockAttestation::Valid);

@@ -683,10 +683,10 @@ where
 mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
-    use crate::async_testing::{MaybeReady, run_future_once};
     use crate::db::DBCol;
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
+    use async_testing::{MaybeReady, run_future_once};
     use borsh::BorshDeserialize;
     use futures::FutureExt;
     use mpc_primitives::domain::DomainId;
