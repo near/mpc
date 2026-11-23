@@ -1,6 +1,6 @@
-use crate::durable_fs::{write_file_durably, write_file_durably_with_permissions};
 use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
+use durable_fs::{write_file_durably, write_file_durably_with_permissions};
 use mpc_node_config::ConfigFile;
 
 use anyhow::Context;

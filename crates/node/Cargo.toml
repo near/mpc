@@ -21,6 +21,7 @@ bytes = { workspace = true }
 chain-gateway = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
+durable-fs = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 foreign-chain-health-check = { workspace = true }

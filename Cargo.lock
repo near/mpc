@@ -3212,6 +3212,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "durable-fs"
+version = "3.19.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6110,6 +6117,7 @@ dependencies = [
  "chain-gateway",
  "clap",
  "derive_more 2.1.1",
+ "durable-fs",
  "ed25519-dalek 2.2.0",
  "elliptic-curve 0.13.8",
  "flume",
