@@ -632,6 +632,7 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     // alongside the participants so their indexers sync before blocks pile up.
     let (mut cluster, running) =
         common::must_setup_cluster(common::MIGRATION_SERVICE_PORT_SEED, |c| {
+            c.contract_wasm = common::must_load_mock_attestation_contract_wasm();
             c.num_nodes = 2;
             c.threshold = 2;
             c.migration_targets = vec![0, 1];
@@ -754,6 +755,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     // Given
     let source_idx = 0;
     let (cluster, _running) = common::must_setup_cluster(port_seed, |c| {
+        c.contract_wasm = common::must_load_mock_attestation_contract_wasm();
         c.num_nodes = 2;
         c.threshold = 2;
     })
@@ -886,6 +888,7 @@ async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
     let num_nodes = 2;
     let (mut cluster, running) =
         common::must_setup_cluster(common::MIGRATION_BACK_PORT_SEED, |c| {
+            c.contract_wasm = common::must_load_mock_attestation_contract_wasm();
             c.num_nodes = num_nodes;
             c.threshold = num_nodes;
             c.migration_targets = vec![0];

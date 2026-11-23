@@ -8,10 +8,11 @@ use crate::sandbox::{
         consts::ALL_PROTOCOLS,
         interface::IntoContractType,
         mpc_contract::{
-            assert_running_return_participants, assert_running_return_threshold,
-            available_attestation_grants, get_config, get_participant_attestation, get_state,
-            get_tee_accounts, prepay_and_submit_participant_info, prepay_attestation_grants,
-            submit_participant_info, vote_add_launcher_hash, vote_for_hash,
+            add_function_call_key, assert_running_return_participants,
+            assert_running_return_threshold, available_attestation_grants, get_config,
+            get_participant_attestation, get_state, get_tee_accounts,
+            prepay_and_submit_participant_info, prepay_attestation_grants, submit_participant_info,
+            vote_add_launcher_hash, vote_for_hash,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         sign_utils::DomainResponseTest,
@@ -27,7 +28,6 @@ use near_mpc_contract_interface::types::{
     self as dtos, Attestation, MockAttestation, Protocol, VerifiedAttestation,
 };
 use near_workspaces::types::{KeyType, NearToken, SecretKey};
-use near_workspaces::{AccessKey, Account};
 use rand::SeedableRng;
 use test_utils::attestation::{image_digest, mock_expiring_at, p2p_tls_key};
 
@@ -238,7 +238,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
 async fn submit_participant_info__should_accept_zero_deposit_via_function_call_key() -> Result<()> {
     // Given
     let SandboxTestSetup {
-        worker,
+        worker: _worker,
         contract,
         mpc_signer_accounts,
         ..
@@ -257,17 +257,8 @@ async fn submit_participant_info__should_accept_zero_deposit_via_function_call_k
         .expect("participant must exist");
     let attestation = Attestation::Mock(MockAttestation::Valid);
 
-    let fc_sk = SecretKey::from_random(KeyType::ED25519);
-    account
-        .batch(account.id())
-        .add_key(
-            fc_sk.public_key(),
-            AccessKey::function_call_access(contract.id(), &[], None),
-        )
-        .transact()
-        .await?
-        .into_result()?;
-    let fc_account = Account::from_secret_key(account.id().clone(), fc_sk, &worker);
+    let fc_account =
+        add_function_call_key(account, &contract, SecretKey::from_random(KeyType::ED25519)).await?;
 
     // When
     let outcome = submit_participant_info(&fc_account, &contract, &attestation, &tls_key).await?;

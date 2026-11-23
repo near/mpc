@@ -7,7 +7,7 @@ for the "Hard Launch" TEE-enabled phase.
 
 ### Current State
 
-In the soft launch, the operator registers the backup service via [`register_backup_service()`][register-backup-service] with only a TLS public key, without attestation or TEE verification:
+In the soft launch, the operator registered the backup service via [`register_backup_service()`][register-backup-service] with only a TLS public key, without attestation or TEE verification:
 
 ```rust
 // current soft-launch struct
@@ -28,20 +28,19 @@ For the hard launch, the backup service runs inside a TEE. The contract needs to
 
 ## Proposal
 
-### `BackupServiceInfo` with Attestation
+### Registration with Attestation
 
-The backup service submits a TLS public key ([already exists][backup-service-info]) and a TDX attestation quote (new):
+The backup service submits its TLS public key in the [existing `BackupServiceInfo`][backup-service-info] and a TDX attestation quote as a second argument:
 
 ```rust
-pub struct BackupServiceInfo {
-    /// Ed25519 public key for mutual TLS authentication with MPC nodes
-    pub public_key: Ed25519PublicKey,
-    /// TDX attestation quote (Dstack variant only — Mock is rejected)
-    pub attestation: Attestation,
-}
+pub fn register_backup_service(
+    &mut self,
+    backup_service_info: BackupServiceInfo,
+    attestation: Attestation,
+) -> Result<PromiseOrValue<()>, Error>
 ```
 
-The method keeps its name and argument: [`register_backup_service(backup_service_info: BackupServiceInfo)`][register-backup-service]. The backup service signs this transaction using the account key it generated inside the TEE. The operator retrieves this public key from the backup service's HTTP endpoint (same pattern as MPC nodes with [`GET /public_data`][public-data]) and adds it to their NEAR account as a function-call access key scoped to the MPC contract with an empty method list, like the MPC node's key. The transaction is then signed under the operator's [`AccountId`][account-id]. Unlike the soft-launch version, the method takes no deposit, since a function-call access key cannot attach one. The attestation takes over the deposit's role of keeping other function-call keys, such as the MPC node's, from registering a backup service. The contract rejects [`Mock`][attestation-mock] attestations — only [`Dstack`][attestation-dstack] is accepted.
+`BackupServiceInfo` keeps only the TLS key, so its storage and the [`migration_info()`][migration-info] format that MPC nodes parse stay unchanged. The backup service signs this transaction using the account key it generated inside the TEE. The operator retrieves this public key from the backup service's HTTP endpoint (same pattern as MPC nodes with [`GET /public_data`][public-data]) and adds it to their NEAR account as a function-call access key scoped to the MPC contract with an empty method list, like the MPC node's key. The transaction is then signed under the operator's [`AccountId`][account-id]. Unlike the soft-launch version, the method takes no deposit, since a function-call access key cannot attach one. The attestation takes over the deposit's role of keeping other function-call keys, such as the MPC node's, from registering a backup service. Deployed contracts reject [`Mock`][attestation-mock] attestations and accept only [`Dstack`][attestation-dstack] ones; only the contract built for the end-to-end tests accepts `Mock`.
 
 A separate method from [`submit_participant_info()`][submit-participant-info] is needed because `submit_participant_info()` writes to [`self.tee_state`][mpc-contract-tee-state] (the MPC node [`TeeState`][tee-state]), while the backup service writes to `self.node_migrations.backup_service_tee_state` (a separate `TeeState` instance with its own allowed lists).
 
@@ -112,7 +111,7 @@ The following walkthroughs show how the attestation data defined above is used i
 **Attestation registration (periodic — every hour, starting on first boot):**
 
 4. Backup service constructs [`ReportDataV1::new(tls_pk_bytes, account_pk_bytes)`][report-data-v1-new] and generates a fresh TDX quote.
-5. Backup service calls `register_backup_service(BackupServiceInfo { public_key, attestation })`. The contract verifies the attestation and stores/overwrites the entry in `backup_service_tee_state`.
+5. Backup service calls `register_backup_service(BackupServiceInfo { public_key }, attestation)`. The contract verifies the attestation and stores/overwrites the entry in `backup_service_tee_state`.
 
 **Keyshare monitoring (continuous):**
 
@@ -139,7 +138,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 The contract needs the following changes, most of them in the [migration service `impl` block][migration-service-impl]:
 
-- **[`register_backup_service()`][register-backup-service]**: Accept extended [`BackupServiceInfo`][backup-service-info] and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to [`tee_state`][mpc-contract-tee-state]: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback, `resolve_backup_service_verification()`, once the [`tee-verifier`][tee-verifier] contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for the account's first entry. The grant comes from the operator account's pool, shared with its MPC nodes, so operators prepay one more grant than for their nodes. The callback also records the TLS key in [`backup_services_info`][backup-services-info-field] and, if that replaces a different key, removes the entry under the old key, so each account has at most one backup service entry. This conserves grants: a registration consumes one only when the account has no attested backup service, that is no entry it owns under its indexed key, so replacing or re-attesting that entry is free. A soft-launch key never counts as attested, since no grant paid for it, and replacing it removes nothing, since it may name another account's entry. The callback re-checks the participant set, the TLS key's owner and the grant before it writes, since a failed callback still commits its writes. The index row is not paid for by a grant: each account holds at most one, and only participants register. `backup_service_tee_state` needs its own storage keys because [`TeeState::default()`][tee-state-default] uses fixed ones.
+- **[`register_backup_service()`][register-backup-service]**: Take the attestation as a second argument and drop the deposit. Write to `backup_service_tee_state` the way [`submit_participant_info()`][submit-participant-info] writes to [`tee_state`][mpc-contract-tee-state]: via [`verify_and_store_dstack()`][verify-and-store-dstack] in a callback, `resolve_backup_service_verification()`, once the [`tee-verifier`][tee-verifier] contract accepts the quote, consuming a [prepaid attestation-storage grant](operator-prepaid-attestation-storage.md) for the account's first entry. The grant comes from the operator account's pool, shared with its MPC nodes, so operators prepay one more grant than for their nodes. The callback also records the TLS key in [`backup_services_info`][backup-services-info-field] and, if that replaces a different key, removes the entry under the old key, so each account has at most one backup service entry. This conserves grants: a registration consumes one only when the account has no attested backup service, that is no entry it owns under its indexed key, so replacing or re-attesting that entry is free. A soft-launch key never counts as attested, since no grant paid for it, and replacing it removes nothing, since it may name another account's entry. The callback re-checks the participant set, the TLS key's owner and the grant before it writes, since a failed callback still commits its writes. The index row is not paid for by a grant: each account holds at most one, and only participants register. `backup_service_tee_state` needs its own storage keys because [`TeeState::default()`][tee-state-default] uses fixed ones.
 - **[`migration_info()`][migration-info]**: Keep it for ongoing migrations. A new view, `attested_backup_service(account_id)`, takes an [`AccountId`][account-id] and returns the backup service's TLS key from `backup_services_info` only while its entry in `backup_service_tee_state` has a valid attestation, so its callers never get an unattested or expired key, unlike `migration_info()`, which still lists them. The MPC node needs this to look up its operator's backup service.
 - **New methods**:
   - `vote_backup_service_code_hash(code_hash)`

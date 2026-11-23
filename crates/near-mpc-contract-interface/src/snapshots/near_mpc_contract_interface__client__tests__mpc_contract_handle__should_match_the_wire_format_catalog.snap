@@ -209,8 +209,8 @@ args:     {"url":"http://localhost:7"}
 contract: mpc.near
 method:   register_backup_service
 gas:      300.0 Tgas
-deposit:  1 yoctoNEAR
-args:     {"backup_service_info":{"public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}}
+deposit:  0 NEAR
+args:     {"backup_service_info":{"public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"},"attestation":{"Mock":"Valid"}}
 
 contract: mpc.near
 method:   start_node_migration

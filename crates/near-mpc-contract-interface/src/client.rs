@@ -16,13 +16,12 @@ use crate::call_args::{
     AccountIdArgs, CKDRespondArgs, DerivedPublicKeyArgs, GetAttestationArgs,
     GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs,
     InitArgs, InitRunningArgs, MaxScanArgs, PrepayAttestationStorageArgs, PublicKeyArgs,
-    RegisterBackupServiceArgs, RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs,
-    SignatureRespondArgs, StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs,
-    SubmitParticipantInfoArgs, UpdateParticipantUrlArgs, VerifyForeignTransactionArgs,
-    VerifyForeignTransactionRespondArgs, VoteAddDomainsArgs, VoteCancelKeygenArgs,
-    VoteContractUpdateArgs, VoteLauncherHashArgs, VoteMpcNodeManifestDigestArgs,
-    VoteNewParametersArgs, VoteOsMeasurementArgs, VotePkArgs, VoteResharedArgs,
-    VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
+    RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs,
+    StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
+    UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
+    VoteAddDomainsArgs, VoteCancelKeygenArgs, VoteContractUpdateArgs, VoteLauncherHashArgs,
+    VoteMpcNodeManifestDigestArgs, VoteNewParametersArgs, VoteOsMeasurementArgs, VotePkArgs,
+    VoteResharedArgs, VoteTeeVerifierChangeArgs, VoteUpdateForeignChainProvidersArgs,
 };
 use crate::deposits::{
     MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR, SIGN_DEPOSIT_YOCTONEAR,
@@ -37,30 +36,29 @@ use crate::method_names::{
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
     GET_TEE_ACCOUNTS, INIT, INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO,
     MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PARTICIPANT_INFO,
-    PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
-    REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
-    START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
-    TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
-    VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
-    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_REMOVE_LAUNCHER_HASH,
-    VOTE_REMOVE_OS_MEASUREMENT, VOTE_RESHARED, VOTE_TEE_VERIFIER_CHANGE,
+    PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_FOREIGN_CHAINS_CONFIG,
+    REMOVE_CONTRACT_UPDATE_VOTE, REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES,
+    REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX, SIGN,
+    START_KEYGEN_INSTANCE, START_NODE_MIGRATION, START_RESHARE_INSTANCE, STATE,
+    SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO, TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES,
+    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS,
+    VOTE_ADD_LAUNCHER_HASH, VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING,
+    VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK,
+    VOTE_REMOVE_LAUNCHER_HASH, VOTE_REMOVE_OS_MEASUREMENT, VOTE_RESHARED, VOTE_TEE_VERIFIER_CHANGE,
     VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AddDomainsVotes, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
-    AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
-    CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
-    Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GenesisHash, GovernanceThresholdParameters,
-    GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
-    LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
-    ParticipantInfo, ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters,
-    ProtocolContractState, PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse,
-    StoredAttestation, TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse, YieldIndex,
+    AvailableForeignChains, CKDAppPublicKey, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
+    CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey,
+    EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig, ForeignChainsConfigs,
+    GenesisHash, GovernanceThresholdParameters, GovernanceThresholdParametersVotes, InitConfig,
+    KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash,
+    MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo, ParticipantInfo, ParticipantUrl,
+    ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
+    Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -492,20 +490,6 @@ impl<C: CallContract> MpcContractHandle<C> {
         let args = serde_json::to_vec(&UpdateParticipantUrlArgs::new(url))?;
         self.call(FunctionCallArgs::new(
             UPDATE_PARTICIPANT_URL,
-            args,
-            MAX_GAS,
-            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
-        ))
-        .await
-    }
-
-    pub async fn register_backup_service(
-        &self,
-        backup_service_info: BackupServiceInfo,
-    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&RegisterBackupServiceArgs::new(backup_service_info))?;
-        self.call(FunctionCallArgs::new(
-            REGISTER_BACKUP_SERVICE,
             args,
             MAX_GAS,
             NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
@@ -1151,9 +1135,12 @@ mod tests {
             .await
             .unwrap();
         handle
-            .register_backup_service(BackupServiceInfo {
-                public_key: Ed25519PublicKey::from([7u8; 32]),
-            })
+            .register_backup_service(
+                BackupServiceInfo {
+                    public_key: Ed25519PublicKey::from([7u8; 32]),
+                },
+                Attestation::Mock(MockAttestation::Valid),
+            )
             .await
             .unwrap();
         handle

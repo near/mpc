@@ -46,9 +46,6 @@ impl NodeMigrations {
     pub(crate) fn backup_services_info(&self) -> &IterableMap<AccountId, BackupServiceInfo> {
         &self.backup_services_info
     }
-    pub fn set_backup_service_info(&mut self, account_id: AccountId, info: BackupServiceInfo) {
-        self.backup_services_info.insert(account_id, info);
-    }
 
     /// The account's attested backup service: the node it owns under its indexed TLS key. A
     /// soft-launch key has no such node, and may even name another account's node.
@@ -59,9 +56,9 @@ impl NodeMigrations {
     }
 
     /// Indexes the account's backup service under the TLS key. `replaced` must be the TLS key
-    /// of [`Self::backup_service_of`] before the new node was stored; its node is removed unless
-    /// the new node took its place.
-    pub(crate) fn set_backup_service(
+    /// of the account's attested backup service before the new node was stored; its node is
+    /// removed unless the new node took its place.
+    pub fn set_backup_service(
         &mut self,
         account_id: AccountId,
         tls_public_key: Ed25519PublicKey,
@@ -262,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn test_set_backup_service_info() {
+    fn test_set_backup_service() {
         let mut migrations = NodeMigrations::default();
         let backup_service_pk = bogus_ed25519_public_key();
 
@@ -279,7 +276,7 @@ mod tests {
         );
         assert!(migrations.get_all().is_empty());
 
-        migrations.set_backup_service_info(account_id.clone(), info.clone());
+        migrations.set_backup_service(account_id.clone(), info.public_key.clone(), None);
 
         assert_eq!(
             migrations.backup_services_info.get(&account_id).unwrap(),
@@ -364,7 +361,7 @@ mod tests {
         assert!(migrations.remove_migration(&account_id).is_none());
         assert!(migrations.backup_services_info.get(&account_id).is_none());
 
-        migrations.set_backup_service_info(account_id.clone(), info.clone());
+        migrations.set_backup_service(account_id.clone(), info.public_key.clone(), None);
         migrations.set_destination_node_info(account_id.clone(), destination_node_info.clone());
 
         // those asserts only fail if one of the above test fails. Still good to keep them.

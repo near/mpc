@@ -2,26 +2,43 @@ use near_contract_transport::{CallContract, FunctionCallArgs, ViewArgs, ViewCall
 
 use crate::{
     call_args::{
-        AccountIdArgs, GetAttestationArgs, MaxScanArgs, VoteBackupServiceCodeHashArgs,
-        VoteLauncherHashArgs, VoteOsMeasurementArgs,
+        AccountIdArgs, GetAttestationArgs, MaxScanArgs, RegisterBackupServiceArgs,
+        VoteBackupServiceCodeHashArgs, VoteLauncherHashArgs, VoteOsMeasurementArgs,
     },
     client::{MAX_GAS, MpcContractHandle, MpcContractHandleError},
     method_names::{
         ALLOWED_BACKUP_SERVICE_CODE_HASHES, ALLOWED_BACKUP_SERVICE_LAUNCHER_COMPOSE_HASHES,
         ALLOWED_BACKUP_SERVICE_LAUNCHER_IMAGE_HASHES, ALLOWED_BACKUP_SERVICE_OS_MEASUREMENTS,
         ATTESTED_BACKUP_SERVICE, CLEAN_BACKUP_SERVICE_TEE_STATUS, GET_BACKUP_SERVICE_ATTESTATION,
-        REVERIFY_BACKUP_SERVICES, VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH,
+        REGISTER_BACKUP_SERVICE, REVERIFY_BACKUP_SERVICES, VOTE_ADD_BACKUP_SERVICE_LAUNCHER_HASH,
         VOTE_ADD_BACKUP_SERVICE_OS_MEASUREMENT, VOTE_BACKUP_SERVICE_CODE_HASH,
         VOTE_REMOVE_BACKUP_SERVICE_LAUNCHER_HASH, VOTE_REMOVE_BACKUP_SERVICE_OS_MEASUREMENT,
     },
     types::{
-        AccountId, AllowedMpcDockerImageHash, BackupServiceInfo, Ed25519PublicKey,
+        AccountId, AllowedMpcDockerImageHash, Attestation, BackupServiceInfo, Ed25519PublicKey,
         ExpectedMeasurements, LauncherDockerComposeHash, LauncherImageHash, NodeImageHash,
         StoredAttestation,
     },
 };
 
 impl<C: CallContract> MpcContractHandle<C> {
+    pub async fn register_backup_service(
+        &self,
+        backup_service_info: BackupServiceInfo,
+        attestation: Attestation,
+    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        let args = serde_json::to_vec(&RegisterBackupServiceArgs::new(
+            backup_service_info,
+            attestation,
+        ))?;
+        self.call(FunctionCallArgs::no_deposit(
+            REGISTER_BACKUP_SERVICE,
+            args,
+            MAX_GAS,
+        ))
+        .await
+    }
+
     pub async fn vote_backup_service_code_hash(
         &self,
         code_hash: NodeImageHash,

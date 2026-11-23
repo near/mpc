@@ -20,7 +20,7 @@ use crate::state::test_utils::{
 };
 use crate::storage_keys::StorageKey;
 use crate::tee::attested_service::AttestedService;
-use crate::tee::test_utils::{dstack_fixture_node, whitelist_dstack_measurements};
+use crate::tee::test_utils::{dstack_fixture_node, tee_state_of, whitelist_dstack_measurements};
 use crate::tee::verification_context::VerificationContext;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
@@ -453,12 +453,8 @@ pub(crate) fn prepare_dstack_verification(
         .build();
     testing_env!(context);
 
-    let tee_state = match service {
-        AttestedService::MpcNode => &mut contract.tee_state,
-        AttestedService::BackupService => &mut contract.node_migrations.backup_service_tee_state,
-    };
     whitelist_dstack_measurements(
-        tee_state,
+        tee_state_of(contract, service),
         image_digest(),
         launcher_image_hash(),
         measurements(),

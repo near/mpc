@@ -4,17 +4,78 @@
 
 mod allowlists;
 
-use crate::errors::{Error, InvalidState};
+use crate::dto_mapping::TryIntoContractType;
+use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::tee::verification_context::VerificationContext;
 use crate::{MpcContract, MpcContractExt};
-use mpc_attestation::attestation::VerifiedQuote;
+use mpc_attestation::attestation::{Attestation, VerifiedQuote};
 use near_mpc_contract_interface::types::{self as dtos, Ed25519PublicKey};
 use near_sdk::{AccountId, PromiseError, PromiseOrValue, env, log, near};
 use std::time::Duration;
 use tee_verifier_interface::VerificationResultWithCollateralDates;
 
+/// Only a contract built for tests accepts mock attestations from backup services, since a mock
+/// attestation proves nothing about the software holding the keyshares.
+const ACCEPTS_MOCK_ATTESTATIONS: bool = cfg!(feature = "mock-attestation");
+
 #[near]
 impl MpcContract {
+    /// Registers the backup service of the calling account, an existing or prospective
+    /// participant, under the TLS key in [`dtos::BackupServiceInfo`], once its
+    /// [`dtos::Attestation`] verifies against the backup service allowlists. Replaces the
+    /// account's earlier registration.
+    ///
+    /// The backup service calls this with no deposit, through the account key it generated inside
+    /// the TEE, which the attestation binds together with the TLS key. Registering an account's
+    /// first attested backup service consumes one attestation-storage grant. Deployed contracts
+    /// reject mock attestations.
+    #[handle_result]
+    pub fn register_backup_service(
+        &mut self,
+        backup_service_info: dtos::BackupServiceInfo,
+        attestation: dtos::Attestation,
+    ) -> Result<PromiseOrValue<()>, Error> {
+        let attestation = attestation.try_into_contract_type()?;
+        let node = Self::signer_node_info(backup_service_info.public_key)?;
+        log!(
+            "register_backup_service: signer={}, tls_public_key={:?}, account_key={:?}",
+            node.account_id,
+            node.tls_public_key,
+            node.account_public_key
+        );
+        let replaced =
+            self.authorize_backup_service_registration(&node.account_id, &node.tls_public_key)?;
+
+        match attestation {
+            Attestation::Mock(mock) if ACCEPTS_MOCK_ATTESTATIONS => {
+                let account_id = node.account_id.clone();
+                let tls_public_key = node.tls_public_key.clone();
+                self.node_migrations
+                    .backup_service_tee_state
+                    .verify_and_store_mock(
+                        node,
+                        mock,
+                        Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+                    )?;
+                self.record_backup_service(account_id, tls_public_key, replaced);
+                Ok(PromiseOrValue::Value(()))
+            }
+            Attestation::Mock(_) => Err(InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: "a backup service must submit a Dstack attestation".to_string(),
+            }
+            .into()),
+            Attestation::Dstack(attestation) => Ok(PromiseOrValue::Promise(
+                self.verify_quote(attestation.quote, attestation.collateral)
+                    .then(self.resolve_callback().resolve_backup_service_verification(
+                        VerificationContext {
+                            node,
+                            tcb_info: attestation.tcb_info,
+                        },
+                    )),
+            )),
+        }
+    }
+
     /// Verify-quote callback for a backup service registration: on a verifier verdict it runs
     /// the post-DCAP checks against the backup service allowlists, stores the attestation and
     /// indexes it as the account's backup service. On any failure it fails the submitter's
@@ -156,23 +217,27 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{
-        freshly_initialized_contract, prepare_dstack_verification, running_state,
+        freshly_initialized_contract, initializing_state, prepare_dstack_verification,
+        resharing_state, running_contract_called_by_participant_via_forwarder, running_state,
         setup_tee_test_contract, verified_verdict, with_dstack_fixture_participant,
     };
     use crate::primitives::test_utils::{
         bogus_ed25519_public_key, create_node, gen_account_id, gen_participants, node_for,
     };
     use crate::tee::attested_service::AttestedService;
+    use crate::tee::tee_state::AttestationSubmissionError;
     use crate::tee::test_utils::{
-        LAUNCHER_TTL, NANOS_PER_SECOND, NEWEST_LAUNCHER_ADDED_AT_SECS, OLD_LAUNCHER_ADDED_AT_SECS,
-        after_retention, allow_launcher, dstack_fixture_node, dummy_code_hash, dummy_launcher_hash,
-        index_backup_service, launcher_mock, set_block_secs, store_backup_service,
+        Environment, LAUNCHER_TTL, NANOS_PER_SECOND, NEWEST_LAUNCHER_ADDED_AT_SECS,
+        OLD_LAUNCHER_ADDED_AT_SECS, after_retention, allow_launcher, dstack_fixture_node,
+        dummy_code_hash, dummy_launcher_hash, index_backup_service, launcher_mock, set_block_secs,
+        store_backup_service,
     };
     use mpc_attestation::attestation::{MOCK_EXPIRATION_DURATION_SECONDS, MockAttestation};
     use near_mpc_contract_interface::types::BackupServiceInfo;
     use near_sdk::{test_utils::VMContextBuilder, testing_env};
     use rstest::rstest;
     use std::{assert_matches, collections::BTreeMap};
+    use test_utils::attestation::mock_dto_dstack_attestation;
 
     #[derive(Debug, PartialEq)]
     struct Registrations {
@@ -201,12 +266,7 @@ mod tests {
             .map(|node| {
                 (
                     node.account_id.clone(),
-                    (
-                        Some(BackupServiceInfo {
-                            public_key: node.tls_public_key.clone(),
-                        }),
-                        None,
-                    ),
+                    (Some(backup_service_info_of(node)), None),
                 )
             })
             .collect::<BTreeMap<_, _>>()
@@ -236,6 +296,170 @@ mod tests {
             tls_public_key: bogus_ed25519_public_key(),
             ..dstack_fixture_node()
         }
+    }
+
+    fn backup_service_info_of(node: &dtos::NodeInfo) -> BackupServiceInfo {
+        BackupServiceInfo {
+            public_key: node.tls_public_key.clone(),
+        }
+    }
+
+    fn fixture_not_a_participant() -> Error {
+        InvalidState::NotParticipant {
+            account_id: dstack_fixture_node().account_id,
+        }
+        .into()
+    }
+
+    fn fixture_without_grant() -> Error {
+        InvalidParameters::NoAttestationStorageGrant {
+            account_id: dstack_fixture_node().account_id.to_string(),
+        }
+        .into()
+    }
+
+    fn store_fixture_tls_key_for_another_account(contract: &mut MpcContract) {
+        store_backup_service(
+            contract,
+            create_node(&gen_account_id(), &dstack_fixture_node().tls_public_key),
+        );
+    }
+
+    fn remove_fixture_grant(contract: &mut MpcContract) {
+        contract
+            .available_attestation_grants
+            .remove(&dstack_fixture_node().account_id);
+    }
+
+    #[rstest]
+    #[case::non_participant_running(
+        |contract: &mut MpcContract| contract.protocol_state = running_state(),
+        fixture_not_a_participant()
+    )]
+    #[case::non_participant_initializing(
+        |contract: &mut MpcContract| contract.protocol_state = initializing_state(),
+        fixture_not_a_participant()
+    )]
+    #[case::non_participant_resharing(
+        |contract: &mut MpcContract| contract.protocol_state = resharing_state(),
+        fixture_not_a_participant()
+    )]
+    #[case::tls_key_of_another_account(
+        store_fixture_tls_key_for_another_account,
+        AttestationSubmissionError::TlsKeyOwnedByOtherAccount.into()
+    )]
+    #[case::no_grant(remove_fixture_grant, fixture_without_grant())]
+    #[case::soft_launch_entry_without_grant(
+        |contract: &mut MpcContract| {
+            index_backup_service(contract, &dstack_fixture_node());
+            remove_fixture_grant(contract);
+        },
+        fixture_without_grant()
+    )]
+    fn register_backup_service__should_reject_before_verification(
+        #[case] intervene: fn(&mut MpcContract),
+        #[case] expected_error: Error,
+    ) {
+        // Given
+        let (mut contract, context) =
+            backup_service_verification_setup(AttestedService::BackupService);
+        intervene(&mut contract);
+        let registrations_before = registrations(&contract);
+        Environment::new(None, Some(context.node.account_id.clone()), None)
+            .set_pk(context.node.account_public_key.clone().into());
+
+        // When
+        let result = contract.register_backup_service(
+            backup_service_info_of(&context.node),
+            mock_dto_dstack_attestation(),
+        );
+
+        // Then
+        assert_eq!(
+            (result.err(), registrations(&contract)),
+            (Some(expected_error), registrations_before)
+        );
+    }
+
+    #[cfg(feature = "mock-attestation")]
+    mod mock_attestation {
+        use super::*;
+        use crate::api::test_utils::participant_account_ids;
+        use crate::state::{ProtocolContractState, test_utils::account_ids};
+
+        fn existing_or_prospective_participants(contract: &MpcContract) -> Vec<AccountId> {
+            match &contract.protocol_state {
+                ProtocolContractState::Resharing(resharing) => {
+                    account_ids(resharing.resharing_key.proposed_parameters().participants())
+                }
+                _ => participant_account_ids(contract),
+            }
+        }
+
+        #[rstest]
+        fn register_backup_service__should_store_a_mock_attested_backup_service(
+            #[values(running_state(), initializing_state(), resharing_state())]
+            protocol_state: ProtocolContractState,
+        ) {
+            // Given
+            let mut contract = MpcContract::new_from_protocol_state(protocol_state);
+            let nodes: Vec<_> = existing_or_prospective_participants(&contract)
+                .iter()
+                .map(node_for)
+                .collect();
+            for node in &nodes {
+                contract
+                    .available_attestation_grants
+                    .insert(node.account_id.clone(), 1);
+            }
+
+            // When
+            let stored: Vec<_> = nodes
+                .iter()
+                .map(|node| {
+                    Environment::new(None, Some(node.account_id.clone()), None)
+                        .set_pk(node.account_public_key.clone().into());
+                    matches!(
+                        contract.register_backup_service(
+                            backup_service_info_of(node),
+                            dtos::Attestation::Mock(dtos::MockAttestation::Valid),
+                        ),
+                        Ok(PromiseOrValue::Value(()))
+                    )
+                })
+                .collect();
+
+            // Then
+            let registrations: Vec<_> = nodes
+                .iter()
+                .zip(stored)
+                .map(|(node, stored)| {
+                    (
+                        stored,
+                        contract.attested_backup_service(node.account_id.clone()),
+                        contract.available_attestation_grants(node.account_id.clone()),
+                    )
+                })
+                .collect();
+            let expected: Vec<_> = nodes
+                .iter()
+                .map(|node| (true, Some(backup_service_info_of(node)), 0))
+                .collect();
+            assert_eq!(registrations, expected);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "Caller must be the signer account")]
+    fn register_backup_service__should_panic_when_forwarded() {
+        // Given
+        let mut contract = running_contract_called_by_participant_via_forwarder();
+
+        // When, Then
+        let _ = contract.register_backup_service(
+            backup_service_info_of(&dstack_fixture_node()),
+            mock_dto_dstack_attestation(),
+        );
     }
 
     #[rstest]
@@ -318,26 +542,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case::grant_spent(
-        AttestedService::BackupService,
-        |contract: &mut MpcContract| {
-            contract
-                .available_attestation_grants
-                .remove(&dstack_fixture_node().account_id);
-        }
-    )]
+    #[case::grant_spent(AttestedService::BackupService, remove_fixture_grant)]
     #[case::not_a_participant(
         AttestedService::BackupService,
         |contract: &mut MpcContract| contract.protocol_state = running_state()
     )]
     #[case::tls_key_of_another_account(
         AttestedService::BackupService,
-        |contract: &mut MpcContract| {
-            store_backup_service(
-                contract,
-                create_node(&gen_account_id(), &dstack_fixture_node().tls_public_key),
-            )
-        }
+        store_fixture_tls_key_for_another_account
     )]
     #[case::only_mpc_node_allowlists_match(AttestedService::MpcNode, |_: &mut MpcContract| {})]
     fn resolve_backup_service_verification__should_store_nothing_and_fail_the_submission(
@@ -370,10 +582,7 @@ mod tests {
     )]
     #[case::key_owned_by_another_account(
         |contract: &mut MpcContract| {
-            store_backup_service(
-                contract,
-                create_node(&gen_account_id(), &dstack_fixture_node().tls_public_key),
-            );
+            store_fixture_tls_key_for_another_account(contract);
             index_backup_service(contract, &dstack_fixture_node());
         },
         false
@@ -407,14 +616,12 @@ mod tests {
         let node = dstack_fixture_node();
 
         // When
-        let backup_service = contract.attested_backup_service(node.account_id);
+        let backup_service = contract.attested_backup_service(node.account_id.clone());
 
         // Then
         assert_eq!(
             backup_service,
-            attested.then_some(BackupServiceInfo {
-                public_key: node.tls_public_key,
-            })
+            attested.then(|| backup_service_info_of(&node))
         );
     }
 

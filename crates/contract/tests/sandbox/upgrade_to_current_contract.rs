@@ -30,6 +30,7 @@ use mpc_contract::{
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -38,7 +39,11 @@ use near_mpc_contract_interface::types::{
     Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
+use near_workspaces::{
+    Account, Worker,
+    network::Sandbox,
+    types::{Gas, NearToken},
+};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::{BTreeMap, HashSet};
@@ -398,9 +403,14 @@ async fn migrate__should_seed_backup_service_measurements_and_keep_backup_regist
     let backup_service_info = dtos::BackupServiceInfo {
         public_key: dtos::Ed25519PublicKey::from([1; 32]),
     };
+    // The old contract's registration takes no attestation and requires a deposit
     let registration = accounts[0]
-        .call_mpc(contract.id())
-        .register_backup_service(backup_service_info.clone())
+        .call(contract.id(), method_names::REGISTER_BACKUP_SERVICE)
+        .args_json(serde_json::json!({ "backup_service_info": backup_service_info }))
+        .deposit(NearToken::from_yoctonear(
+            MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR,
+        ))
+        .transact()
         .await
         .unwrap();
     all_receipts_successful(registration).unwrap();

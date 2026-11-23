@@ -96,6 +96,7 @@ pub struct UpdateParticipantUrlArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct RegisterBackupServiceArgs {
     pub backup_service_info: BackupServiceInfo,
+    pub attestation: Attestation,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]

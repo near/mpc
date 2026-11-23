@@ -6,6 +6,7 @@
 use crate::MpcContract;
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
+use crate::tee::attested_service::AttestedService;
 use crate::tee::launcher_compose::LauncherCompose;
 use crate::tee::tee_state::TeeState;
 use mpc_attestation::attestation::{ExpectedMeasurements, MockAttestation};
@@ -154,6 +155,7 @@ pub fn whitelist_dstack_measurements(
 
 pub fn whitelist_dstack_in_state(
     state: &[u8],
+    service: AttestedService,
     image: NodeImageHash,
     launcher: LauncherImageHash,
     measurements: ExpectedMeasurements,
@@ -161,13 +163,20 @@ pub fn whitelist_dstack_in_state(
 ) -> Vec<u8> {
     let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
     whitelist_dstack_measurements(
-        &mut contract.tee_state,
+        tee_state_of(&mut contract, service),
         image,
         launcher,
         measurements,
         compose_hash,
     );
     borsh::to_vec(&contract).expect("STATE serializes")
+}
+
+pub(crate) fn tee_state_of(contract: &mut MpcContract, service: AttestedService) -> &mut TeeState {
+    match service {
+        AttestedService::MpcNode => &mut contract.tee_state,
+        AttestedService::BackupService => &mut contract.node_migrations.backup_service_tee_state,
+    }
 }
 
 /// Indexes the node's TLS key as its account's backup service, without storing an attestation.

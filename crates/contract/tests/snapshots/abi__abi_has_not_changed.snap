@@ -943,11 +943,8 @@ expression: abi
       },
       {
         "name": "register_backup_service",
-        "doc": " Registers or updates the backup service information for the caller account.\n\n The caller (`signer_account_id`) must be an existing or prospective participant.\n Otherwise, the transaction will fail.\n\n Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so\n the call must be signed by a full-access key rather than the node's function-call access\n key.",
+        "doc": " Registers the backup service of the calling account, an existing or prospective\n participant, under the TLS key in [`dtos::BackupServiceInfo`], once its\n [`dtos::Attestation`] verifies against the backup service allowlists. Replaces the\n account's earlier registration.\n\n The backup service calls this with no deposit, through the account key it generated inside\n the TEE, which the attestation binds together with the TLS key. Registering an account's\n first attested backup service consumes one attestation-storage grant. Deployed contracts\n reject mock attestations.",
         "kind": "call",
-        "modifiers": [
-          "payable"
-        ],
         "params": {
           "serialization_type": "json",
           "args": [
@@ -956,13 +953,19 @@ expression: abi
               "type_schema": {
                 "$ref": "#/definitions/BackupServiceInfo"
               }
+            },
+            {
+              "name": "attestation",
+              "type_schema": {
+                "$ref": "#/definitions/Attestation"
+              }
             }
           ]
         },
         "result": {
           "serialization_type": "json",
           "type_schema": {
-            "type": "null"
+            "$ref": "#/definitions/PromiseOrValueNull"
           }
         }
       },

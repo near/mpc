@@ -18,13 +18,15 @@ use crate::sandbox::{
             tee_verifier_contract_with_pinned_clock,
         },
         mpc_contract::{
-            available_attestation_grants, get_config, get_participant_attestation,
-            get_tee_accounts, prepay_attestation_grants, submit_participant_info,
-            tee_verifier_account_id, total_gas_fee, vote_tee_verifier_change,
+            add_function_call_key, available_attestation_grants, get_config,
+            get_participant_attestation, get_tee_accounts, prepay_attestation_grants,
+            submit_participant_info, tee_verifier_account_id, total_gas_fee,
+            vote_tee_verifier_change,
         },
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::{DomainKey, make_key_for_domain},
         sign_utils::DomainResponseTest,
+        transactions::CallMpcContract as _,
     },
 };
 use mpc_contract::{
@@ -35,7 +37,10 @@ use mpc_contract::{
         participants::ParticipantInfo,
         thresholds::GovernanceThresholdParameters,
     },
-    tee::{tee_state::AttestationSubmissionError, test_utils::whitelist_dstack_in_state},
+    tee::{
+        attested_service::AttestedService, tee_state::AttestationSubmissionError,
+        test_utils::whitelist_dstack_in_state,
+    },
 };
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_mpc_contract_interface::{method_names, types as dtos};
@@ -47,6 +52,7 @@ use near_workspaces::{
     types::{Gas, NearToken, SecretKey},
 };
 use rand::{SeedableRng, rngs::StdRng};
+use rstest::rstest;
 use std::time::Duration;
 use tee_verifier_interface::VerificationResult;
 use test_utils::attestation::{
@@ -79,6 +85,7 @@ async fn deploy_and_trust(setup: &SandboxTestSetup, wasm: &[u8]) -> Contract {
 
 async fn whitelist_fixture_dstack_hashes(
     setup: &SandboxTestSetup,
+    service: AttestedService,
     compose_hash: Option<LauncherDockerComposeHash>,
 ) {
     let state = contract_state(&setup.worker, &setup.contract)
@@ -86,6 +93,7 @@ async fn whitelist_fixture_dstack_hashes(
         .unwrap();
     let patched = whitelist_dstack_in_state(
         &state,
+        service,
         image_digest(),
         launcher_image_hash(),
         measurements(),
@@ -98,12 +106,15 @@ async fn whitelist_fixture_dstack_hashes(
         .unwrap();
 }
 
-async fn create_fixture_account(worker: &Worker<Sandbox>, account_id: &str) -> Account {
-    let secret_key: SecretKey = account_secret_key()
+fn fixture_account_secret_key() -> SecretKey {
+    account_secret_key()
         .parse()
-        .expect("near_account_secret_key asset holds a valid ed25519 secret key");
+        .expect("near_account_secret_key asset holds a valid ed25519 secret key")
+}
+
+async fn create_fixture_account(worker: &Worker<Sandbox>, account_id: &str) -> Account {
     worker
-        .create_root_account_subaccount(account_id.parse().unwrap(), secret_key)
+        .create_root_account_subaccount(account_id.parse().unwrap(), fixture_account_secret_key())
         .await
         .unwrap()
         .into_result()
@@ -149,7 +160,7 @@ async fn setup_fixture(allowed_compose_hash: Option<LauncherDockerComposeHash>) 
         .build()
         .await;
     let verifier = deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
-    whitelist_fixture_dstack_hashes(&setup, allowed_compose_hash).await;
+    whitelist_fixture_dstack_hashes(&setup, AttestedService::MpcNode, allowed_compose_hash).await;
     let submitter = create_fixture_account(&setup.worker, "fixture-node-a").await;
     prepay_grant_from_separate_payer(&setup, &submitter).await;
     VerifiedFixture {
@@ -641,7 +652,12 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
         keys: Vec::new(),
     };
     let verifier = deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
-    whitelist_fixture_dstack_hashes(&setup, Some(launcher_compose_digest())).await;
+    whitelist_fixture_dstack_hashes(
+        &setup,
+        AttestedService::MpcNode,
+        Some(launcher_compose_digest()),
+    )
+    .await;
     prepay_grant_from_separate_payer(&setup, &submitter).await;
 
     // When
@@ -673,6 +689,73 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
             .submit_request_ensure_included(&submitter, &setup.contract)
             .await
             .expect("the contract should accept requests once every participant has attested");
+}
+
+#[rstest]
+#[case::signed_with_the_attested_key(true, mock_dto_dstack_attestation(), true)]
+#[case::signed_with_another_key(false, mock_dto_dstack_attestation(), false)]
+#[case::mock(true, dtos::Attestation::Mock(dtos::MockAttestation::Valid), false)]
+#[tokio::test]
+async fn register_backup_service__should_index_only_a_dstack_attestation_signed_with_its_key(
+    #[case] signs_with_the_attested_key: bool,
+    #[case] attestation: dtos::Attestation,
+    #[case] registered: bool,
+) {
+    // Given
+    let setup = SandboxTestSetup::builder()
+        .with_protocols(ALL_PROTOCOLS)
+        .with_pinned_clock()
+        .build()
+        .await;
+    deploy_and_trust(&setup, tee_verifier_contract_with_pinned_clock()).await;
+    whitelist_fixture_dstack_hashes(
+        &setup,
+        AttestedService::BackupService,
+        Some(launcher_compose_digest()),
+    )
+    .await;
+    let operator = &setup.mpc_signer_accounts[0];
+    let attested_signer =
+        add_function_call_key(operator, &setup.contract, fixture_account_secret_key())
+            .await
+            .unwrap();
+    let submitter = if signs_with_the_attested_key {
+        attested_signer
+    } else {
+        operator.clone()
+    };
+    prepay_grant_from_separate_payer(&setup, operator).await;
+    let backup_service_info = dtos::BackupServiceInfo {
+        public_key: p2p_tls_key().into(),
+    };
+
+    // When
+    let result = submitter
+        .call_mpc(setup.contract.id())
+        .register_backup_service(backup_service_info.clone(), attestation)
+        .await
+        .unwrap();
+
+    // Then
+    assert_eq!(
+        (
+            result.failures().is_empty(),
+            setup
+                .contract
+                .attested_backup_service(operator.id().clone())
+                .await
+                .unwrap()
+                .value,
+            available_attestation_grants(&setup.contract, operator.id())
+                .await
+                .unwrap(),
+        ),
+        (
+            registered,
+            registered.then_some(backup_service_info),
+            u32::from(!registered)
+        )
+    );
 }
 
 /// Initializes `contract` as Running with `parameters` and a single CaitSith Sign domain.
