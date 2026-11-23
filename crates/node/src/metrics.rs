@@ -521,43 +521,6 @@ impl MpcTaskId {
     }
 }
 
-pub static MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter_vec!(
-            "mpc_tee_attestation_attempts_total",
-            "Total number of completed TEE attestation generation attempts",
-            &["outcome"],
-        )
-        .unwrap()
-    });
-
-pub static MPC_TEE_ATTESTATION_SUBMISSIONS_TOTAL: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter_vec!(
-            "mpc_tee_attestation_submissions_total",
-            "Total number of TEE attestation submissions to the MPC contract",
-            &["outcome"],
-        )
-        .unwrap()
-    });
-
-pub const MPC_TEE_ATTESTATION_OUTCOME_SUCCESS: &str = "success";
-pub const MPC_TEE_ATTESTATION_OUTCOME_FAILURE: &str = "failure";
-pub const MPC_TEE_ATTESTATION_OUTCOME_SENT: &str = "sent";
-
-pub static MPC_TEE_ATTESTATION_ROUND_TIMEOUTS_TOTAL: LazyLock<prometheus::IntCounterVec> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter_vec!(
-            "mpc_tee_attestation_round_timeouts_total",
-            "Total number of TEE attestation submission rounds that timed out, by stage",
-            &["stage"],
-        )
-        .unwrap()
-    });
-
-pub const MPC_TEE_ATTESTATION_STAGE_GENERATE_ATTESTATION: &str = "generate_attestation";
-pub const MPC_TEE_ATTESTATION_STAGE_SUBMIT_ATTESTATION: &str = "submit_attestation";
-
 pub static FOREIGN_CHAIN_RPC_PROVIDERS_CONFIGURED: LazyLock<prometheus::IntGaugeVec> =
     LazyLock::new(|| {
         prometheus::register_int_gauge_vec!(

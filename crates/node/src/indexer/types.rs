@@ -1,4 +1,3 @@
-use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{AffinePoint, Scalar, ecdsa::RecoveryId};
@@ -138,7 +137,7 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
             )
             .context(RECOVERY_ID_FAILED)?;
         Ok(contract_args::SignatureRespondArgs::new(
-            request.into_contract_interface_type(),
+            request.into(),
             k256_signature_response(response.big_r, response.s, recovery_id),
         ))
     }
@@ -153,7 +152,7 @@ impl SignatureRespondArgsExt for contract_args::SignatureRespondArgs {
             .map_err(|_| anyhow::anyhow!("Response is not 64 bytes"))?;
 
         Ok(contract_args::SignatureRespondArgs::new(
-            request.into_contract_interface_type(),
+            request.into(),
             dtos::SignatureResponse::Ed25519 {
                 signature: dtos::Ed25519Signature::from(response),
             },

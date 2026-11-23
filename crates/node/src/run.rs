@@ -10,6 +10,7 @@ use crate::{
     keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
+    tee::SubmitParticipantInfo,
     tracing::init_logging,
     tracking::{self, start_root_task},
     types::SubmittedTransaction,
@@ -37,13 +38,15 @@ use std::{
     time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
-use tee_context::{AllowedImageHashesFile, monitor_allowed_image_hashes};
+use tee_context::{
+    AllowedImageHashesFile, AttestationSubmitter, MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL,
+    MPC_TEE_ATTESTATION_OUTCOME_FAILURE, MPC_TEE_ATTESTATION_OUTCOME_SUCCESS,
+    monitor_allowed_image_hashes, run_periodic_attestation_submission,
+};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-
-use crate::tee::remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission};
 
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
 
@@ -153,15 +156,15 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let attestation = match tee_authority.generate_attestation(report_data).await {
         Ok(att) => {
-            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
+            MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                .with_label_values(&[MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
                 .inc();
             tracing::info!("TEE attestation generated successfully");
             Some(att)
         }
         Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
-            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+            MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                .with_label_values(&[MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                 .inc();
             tracing::error!(
                 error = %e,
@@ -170,8 +173,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             None
         }
         Err(e) => {
-            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
+            MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
+                .with_label_values(&[MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
                 .inc();
             return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
         }
@@ -364,13 +367,10 @@ where
 
     let submitter = AttestationSubmitter {
         tee_authority,
-        tx_sender: indexer_api.txn_sender.clone(),
+        submitter: SubmitParticipantInfo(indexer_api.txn_sender.clone()),
         tls_public_key,
         account_public_key,
-        allowed_image_hashes: indexer_api.tee.allowed_image_hashes.clone(),
-        allowed_launcher_compose_hashes: indexer_api.tee.allowed_launcher_compose_hashes.clone(),
-        allowed_os_measurements: indexer_api.tee.allowed_os_measurements.clone(),
-        stored_attestation: indexer_api.tee.stored_attestation.clone(),
+        tee: indexer_api.tee.clone(),
     };
     tokio::spawn(run_periodic_attestation_submission(submitter));
 

@@ -104,6 +104,16 @@ impl FromChain<CKDRequestFromChain> for CKDRequest {
     }
 }
 
+impl From<&CKDRequest> for dtos::CKDRequest {
+    fn from(request: &CKDRequest) -> Self {
+        Self {
+            app_public_key: request.app_public_key.clone(),
+            app_id: request.app_id.clone(),
+            domain_id: request.domain_id,
+        }
+    }
+}
+
 pub type SignatureId = CryptoHash;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -133,6 +143,16 @@ impl FromChain<SignatureRequestFromChain> for SignatureRequest {
             tweak: derive_tweak(&predecessor_id, &request.path),
             timestamp_nanosec: block.timestamp_nanosec,
             domain: request.domain_id,
+        }
+    }
+}
+
+impl From<&SignatureRequest> for dtos::SignatureRequest {
+    fn from(request: &SignatureRequest) -> Self {
+        Self {
+            tweak: request.tweak.clone(),
+            payload: request.payload.clone(),
+            domain_id: request.domain,
         }
     }
 }

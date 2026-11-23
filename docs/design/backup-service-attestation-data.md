@@ -166,7 +166,7 @@ The allowed compose hashes also need a backup service template. [`LauncherCompos
 
 ### TeeContext
 
-**Status:** Partially superseded. TODO(#2730): `TeeContext` was removed. The `tee-context` crate now holds the TEE state monitors, which read the MPC node views below, and attestation submission still lives in the MPC node.
+**Status:** Partially superseded. TODO(#2730): `TeeContext` was removed. The `tee-context` crate now holds the TEE state monitors, which read the MPC node views below, and the hourly attestation submission, which sends through a port each service implements.
 
 [`TeeContext`](./tee-context-design.md) hardcodes MPC node method names and needs parameterization:
 

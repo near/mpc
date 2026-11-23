@@ -34,7 +34,6 @@ pub mod web;
 
 pub(crate) mod log_throttle;
 pub(crate) mod profiler;
-pub(crate) mod trait_extensions;
 
 mod assets;
 mod background;
