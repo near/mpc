@@ -4,6 +4,7 @@ use near_mpc_contract_interface::types::ProviderId;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use jsonrpsee::core::{
     client::BatchResponse,
@@ -130,6 +131,8 @@ impl SequentialResponseMockClientBuilder {
         })
     }
 }
+
+pub const INSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub fn fan_out_of<Inspector>(inspectors: Vec<Inspector>) -> FanOut<Inspector> {
     let named: Vec<(ProviderId, Inspector)> = inspectors

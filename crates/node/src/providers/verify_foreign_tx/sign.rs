@@ -20,7 +20,6 @@ use foreign_chain_inspector::sui::inspector::{SuiExtractor, SuiFinality};
 use foreign_chain_inspector::svm::inspector::{SvmChain, SvmExtractor, SvmFinality, SvmInspector};
 use foreign_chain_inspector::{EthereumFinality, RpcQuorum};
 use threshold_signatures::{ecdsa::Signature, frost_secp256k1::VerifyingKey};
-use tokio_util::time::FutureExt;
 
 use crate::foreign_chain_policy::SupportersByForeignChain;
 use crate::foreign_chain_rpc_policy::{self, RpcQuorumError};
@@ -249,10 +248,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -290,13 +293,12 @@ impl VerifyForeignTxProvider {
                     inspector
                         .extract_with_quorum(
                             &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
                             transaction_id,
                             block_confirmations,
                             extractors,
                         )
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .await?,
                 )?;
                 extracted_values.into_iter().map(Into::into).collect()
             }
@@ -317,10 +319,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -341,10 +347,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -365,10 +375,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -389,10 +403,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -413,10 +431,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -437,10 +459,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -461,10 +487,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -485,10 +515,14 @@ impl VerifyForeignTxProvider {
                     .collect::<Result<_, _>>()?;
                 let values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
                 values.into_iter().map(Into::into).collect()
             }
@@ -510,10 +544,14 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, transaction_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            transaction_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
 
                 extracted_values.into_iter().map(Into::into).collect()
@@ -539,10 +577,14 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            tx_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
 
                 extracted_values.into_iter().map(Into::into).collect()
@@ -565,10 +607,14 @@ impl VerifyForeignTxProvider {
 
                 let extracted_values = require_extracted(
                     inspector
-                        .extract_with_quorum(&quorum, tx_id, finality, extractors)
-                        .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-                        .await
-                        .context("timed out during execution of foreign chain request")??,
+                        .extract_with_quorum(
+                            &quorum,
+                            FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                            tx_id,
+                            finality,
+                            extractors,
+                        )
+                        .await?,
                 )?;
 
                 extracted_values.into_iter().map(Into::into).collect()
@@ -607,10 +653,14 @@ where
 
     let values = require_extracted(
         inspector
-            .extract_with_quorum(quorum, tx_id, finality, extractors)
-            .timeout(FOREIGN_CHAIN_INSPECTION_TIMEOUT)
-            .await
-            .context("timed out during execution of foreign chain request")??,
+            .extract_with_quorum(
+                quorum,
+                FOREIGN_CHAIN_INSPECTION_TIMEOUT,
+                tx_id,
+                finality,
+                extractors,
+            )
+            .await?,
     )?;
 
     Ok(values.into_iter().map(Into::into).collect())

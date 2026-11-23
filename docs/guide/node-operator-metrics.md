@@ -85,8 +85,10 @@ are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
 A dropped check is different from an error: the node itself stopped waiting,
 at its deadline or at shutdown, and whether the provider ever answered is
 unknown. Such checks are timed in `mpc_foreign_chain_provider_dropped_seconds`
-and do not appear under any `kind`. The node waits for every provider, so
-outside shutdowns one dropped check fails the whole check for that chain.
+and do not appear under any `kind`. At its deadline the node judges the answers
+that arrived and drops the checks still running, so a dropped check fails the
+whole check for that chain only when the whitelisted providers that agree fall
+short of the quorum.
 
 Reading the numbers:
 
@@ -257,8 +259,9 @@ increase(mpc_foreign_chain_provider_errors_total{kind=~"rejected|malformed"}[5m]
 increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  for 15m
 
 # Page: a provider stops answering, either its RPC client timed out or the node
-# gave up waiting at its deadline. The node waits for every provider, so one
-# silent provider fails the check for that whole chain.
+# gave up waiting at its deadline. Every verify request on that chain then waits
+# for it, up to the deadline, and fails when the whitelisted providers that agree
+# fall short of the quorum.
 (increase(mpc_foreign_chain_provider_dropped_seconds_count[5m]) > 0
   or increase(mpc_foreign_chain_provider_errors_total{kind="timed_out"}[5m]) > 0)  for 5m
 
