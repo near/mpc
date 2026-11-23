@@ -720,7 +720,7 @@ mod tests {
         let ProtocolContractState::Resharing(resharing) = &contract.protocol_state else {
             panic!("expected Resharing state");
         };
-        let (leader, _) = find_leader(&resharing.resharing_key);
+        let (leader, _) = find_leader(resharing.resharing_key());
         let key_event_id = KeyEventId {
             attempt_id: AttemptId::new(),
             domain_id,

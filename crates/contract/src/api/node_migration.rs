@@ -611,7 +611,7 @@ mod tests {
     fn test_register_backup_service_success_resharing() {
         let resharing_state = gen_resharing_state(NUM_DOMAINS).1;
         let participants = resharing_state
-            .resharing_key
+            .resharing_key()
             .proposed_parameters()
             .participants()
             .clone();
@@ -624,7 +624,7 @@ mod tests {
     fn test_register_backup_service_success_initializing() {
         let initializing_state = gen_initializing_state(NUM_DOMAINS, 0).1;
         let participants = initializing_state
-            .generating_key
+            .generating_key()
             .proposed_parameters()
             .participants()
             .clone();
@@ -786,9 +786,9 @@ mod tests {
     fn test_conclude_node_migration_failure_resharing() {
         let (_, resharing_state) = gen_resharing_state(NUM_DOMAINS);
 
-        let keyset = resharing_state.previous_running_state.keyset().clone();
+        let keyset = resharing_state.previous_running_state().keyset().clone();
         let participants = resharing_state
-            .previous_running_state
+            .previous_running_state()
             .participants()
             .clone();
         let resharing_state = ProtocolContractState::Resharing(resharing_state);
@@ -801,11 +801,11 @@ mod tests {
         let (_, initializing) = gen_initializing_state(NUM_DOMAINS, 0);
 
         let keyset = Keyset::new(
-            initializing.generating_key.epoch_id(),
-            initializing.generated_keys.clone(),
+            initializing.generating_key().epoch_id(),
+            initializing.generated_keys().to_vec(),
         );
         let participants = initializing
-            .generating_key
+            .generating_key()
             .proposed_parameters()
             .participants()
             .clone();
@@ -859,10 +859,10 @@ mod tests {
                     match &contract.protocol_state {
                         ProtocolContractState::Running(running) => running.participants(),
                         ProtocolContractState::Resharing(resharing) => {
-                            resharing.previous_running_state.participants()
+                            resharing.previous_running_state().participants()
                         }
                         ProtocolContractState::Initializing(initializing) => initializing
-                            .generating_key
+                            .generating_key()
                             .proposed_parameters()
                             .participants(),
                         _ => panic!("expected different state"),

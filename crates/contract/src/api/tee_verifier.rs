@@ -122,10 +122,12 @@ impl MpcContract {
 mod tests {
     use super::*;
     use crate::api::test_utils::{participant_account_ids, setup_tee_test_contract};
+    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::proposal_hash::ToProposalHash;
     use crate::primitives::test_utils::bogus_tee_verifier_account_id;
     use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::state::key_event::tests::Environment;
+    use crate::state::running::RunningContractState;
     use near_sdk::test_utils::VMContextBuilder;
     use near_sdk::testing_env;
     use std::panic;
@@ -240,11 +242,16 @@ mod tests {
             let ProtocolContractState::Running(ref mut state) = contract.protocol_state else {
                 panic!("expected Running");
             };
-            state.parameters = GovernanceThresholdParameters::new(
-                participants.subset(1..3),
-                GovernanceThreshold::new(2),
-            )
-            .unwrap();
+            *state = RunningContractState::new(
+                state.domains().clone(),
+                state.keyset().clone(),
+                GovernanceThresholdParameters::new(
+                    participants.subset(1..3),
+                    GovernanceThreshold::new(2),
+                )
+                .unwrap(),
+                AddDomainsVotes::default(),
+            );
         }
         Environment::new(None, Some(env::current_account_id()), None);
         contract
