@@ -7,7 +7,7 @@ been removed (#2951, #2952).
 
 ## Prerequisites
 1. One TDX-enabled machine (with 2 external IPs), or two such machines.
-2. dstack installed and configured (`v0.5.5+` for reserved port forwarding).
+2. dstack 0.6.5 installed and configured (`dstack-vmm` and guest image, with `qemu_hotplug_off = false`), see the [TDX operator guide](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#2-dstack-setup-and-configuration).
 3. MPC repository cloned.
 4. NEAR CLI installed (`near-cli-rs`).
 
@@ -364,11 +364,8 @@ advertise URL port 80 to the contract regardless of the contract's
 `url:` field. If you need a different port (e.g. dstack on this host
 can't forward port 80), change `port_override` post-deploy as follows.
 
-> SSH into the CVM is **not supported on dstack ≥ 0.5.6** unless the
-> launcher's `pre_launch_script` installs a passwordless SSH key (the
-> dstack-dev images stopped exposing SSH by default). On `dstack-0.5.5`
-> and earlier dev images you can SSH with `ssh root@localhost -p
-> <CVM-SSH-port>` (`1220` for frodo, `1221` for sam by default).
+> This needs a shell on the CVM, and dstack 0.6 has no dev image, so there
+> is no SSH. Prefer a deploy that can forward port 80.
 
 Once on the CVM, stop the MPC container, edit the config, restart:
 

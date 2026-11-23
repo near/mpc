@@ -128,8 +128,7 @@ LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-$(find_free_port)}"
 
 # dstack
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
-# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
-OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
+OS_IMAGE="${OS_IMAGE:-dstack-0.6.5}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 DISK="${DISK:-500G}"
 

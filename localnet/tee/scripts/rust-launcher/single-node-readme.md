@@ -20,7 +20,7 @@ See [crates/test-utils/assets/README.md](../../../../crates/test-utils/assets/RE
 
 ```bash
 # dstack base path — the folder containing vmm/src/vmm-cli.py
-export BASE_PATH=/path/to/meta-dstack/dstack
+export BASE_PATH=/path/to/dstack
 
 # External machine IP reachable from the CVM
 export MACHINE_IP=<host-ip>
@@ -38,9 +38,8 @@ export LAUNCHER_MANIFEST_DIGEST=sha256:e28cb0425db06255fe5fc7aadb79534ac63c94c7a
 # dstack VMM port (default: http://127.0.0.1:10000)
 export VMM_RPC=http://127.0.0.1:<port>
 
-# Guest OS image (default: dstack-dev-0.5.8)
-# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
-export OS_IMAGE=dstack-0.5.8
+# Guest OS image (default: dstack-0.6.5)
+export OS_IMAGE=dstack-0.6.5
 
 # Custom NEAR accounts
 export NODE_ACCOUNT=frodo.test.near

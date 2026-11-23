@@ -211,7 +211,7 @@ fi
 
 # Default basePath if not provided via CLI
 if [ -z "$basePath" ]; then
-  basePath="./" # parent folder of meta-dstack
+  basePath="./" # the dstack checkout, which holds vmm/
 fi
 
 # Default pythonExec if not provided via CLI

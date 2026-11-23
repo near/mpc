@@ -16,7 +16,7 @@ Scripts for deploying and testing MPC nodes with the launcher on localnet (TDX C
 
 - Local NEAR network running (`mpc-localnet`)
 - dstack VMM running (default: `http://127.0.0.1:10000`)
-- OS image: `dstack-dev-0.5.8` (TODO(#5069): the compose templates on main need dstack 0.6+)
+- OS image: `dstack-0.6.5`, on a `dstack-vmm` 0.6.5 host with `qemu_hotplug_off = false`
 - MPC node image must support TOML config (`start-with-config-file`), e.g. `main-9515e18` or later
 - Tools: `near`, `jq`, `curl`, `envsubst`, `docker`
 
@@ -36,7 +36,7 @@ To regenerate test assets from real TDX attestation, from the repo root on the T
 prerequisites and required variables from [single-node-readme.md](single-node-readme.md) set up.
 
 ```bash
-export BASE_PATH=/path/to/meta-dstack/dstack
+export BASE_PATH=/path/to/dstack
 export WORKDIR=/tmp/mpc-fixture-collection
 
 # Reuse the fixture's current image digests unless changing images: measurements then stay put.

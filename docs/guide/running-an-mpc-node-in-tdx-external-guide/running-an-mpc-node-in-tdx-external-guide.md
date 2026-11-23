@@ -83,7 +83,7 @@ This ensures that your TDX setup is correctly configured.
 #### 2. Dstack Setup and Configuration
 
 This section will guide you through installing and configuring `dstack-vmm`, which is the only dstack component needed for running MPC nodes in TDX environments.
-The instructions are based on the [dstack deployment guide](https://github.com/Dstack-TEE/dstack/blob/eab86e8a3fd934656946a39bf07849bd75cf20fb/docs/deployment.md).
+The instructions are based on the [dstack deployment guide](https://github.com/Dstack-TEE/dstack/blob/v0.6.5/docs/deployment.md).
 
 **Prerequisites:**
 
@@ -134,13 +134,15 @@ All steps below assume the current user is `mpc` and the current directory is
 `/opt/mpc`.
 
 > **dstack versions.** `dstack-vmm` and the **guest OS image** are both
-> **v0.5.8** (their `MRTD`/`RTMR0-2` are pinned on-chain, so use exactly that
+> **v0.6.5** (their `MRTD`/`RTMR0-2` are pinned on-chain, so use exactly that
 > version). Only the **`key-provider-build/`** recipe is taken from dstack
 > **v0.5.11** (see the [key-provider step](#3-local-gramine-sealing-key-provider-setup)),
 > which builds a reproducible `mr_enclave` from build-args.
 >
-> TODO(#5069): the launcher compose template on `main` needs a dstack 0.6+ guest; this guide
-> still describes 0.5.8.
+> Moving an existing node from dstack 0.5.8? See
+> [Upgrading from dstack 0.5.8 to 0.6.5](#upgrading-from-dstack-058-to-065).
+
+1. **Clone dstack:**
 
    ```bash
    git clone https://github.com/Dstack-TEE/dstack
@@ -150,7 +152,7 @@ All steps below assume the current user is `mpc` and the current directory is
 
    ```bash
    cd dstack
-   git checkout 368c62e7de5d4016bd75332824aa7f2ef1d7d19e # dstack v0.5.8
+   git checkout 350a0a73ffdb6041bda69118f13d81591870b565 # dstack v0.6.5
 
    cargo build --release -p dstack-vmm -p supervisor
    mkdir -p vmm-data
@@ -172,15 +174,20 @@ port = 10000
 #   address = "unix:./vmm.sock"
 
 reuse = true
-image_path = "./images"
 run_path = "./run/vm"
 
+[image]
+path = "./images"
+
 [cvm]
-kms_urls = ["https://kms.test2.dstack.phala.network:9201"]
+kms_urls = []
 gateway_urls = []
 cid_start = 30000
 cid_pool_size = 1000
 max_disk_size = 1000
+# The on-chain OS measurements are taken with hotplug on. The VMM default (true) changes RTMR0,
+# and the CVM then fails attestation.
+qemu_hotplug_off = false
 
 [cvm.port_mapping]
 enabled = true
@@ -189,6 +196,11 @@ range = [
     { protocol = "tcp", from = 1, to = 30000 },
     { protocol = "udp", from = 1, to = 30000 },
 ]
+
+# What the CVM's guest agent (port 8090) serves without a token. The list replaces the default;
+# guest:containers and guest:logs let you read the container logs from the host.
+[cvm.guest_agent_api]
+anonymous_scopes = ["guest:dashboard", "guest:version", "guest:health", "guest:info", "guest:containers", "guest:logs"]
 
 [host_api]
 address = "vsock:2"
@@ -199,8 +211,8 @@ EOF
 4. **Download Guest OS images:**
 
    ```bash
-   DSTACK_VERSION=0.5.8
-   wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
+   DSTACK_VERSION=0.6.5
+   wget "https://github.com/Dstack-TEE/dstack/releases/download/mkosi-os-v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
    mkdir -p images/
    tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
    rm -f dstack-${DSTACK_VERSION}.tar.gz
@@ -285,7 +297,7 @@ Nothing else should stop this unit on its own; see
 > **Important:** The guest OS image that runs inside the CVM must be **identical across all nodes**.
 > The image is **measured**, and those measurements are **hardcoded in the contract**.
 
-The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.5.8**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
+The guest OS image was downloaded automatically during **Step 4** of the installation process using version **0.6.5**. This version ensures **compatibility** and **reproducibility** across all MPC nodes.
 
 If you need to **verify**, **re-download**, or **rebuild** the image, follow one of the methods below.
 
@@ -296,46 +308,28 @@ If you need to **verify**, **re-download**, or **rebuild** the image, follow one
 Use this method to retrieve the official pre-built image provided by the Dstack project.
 
 ```bash
-DSTACK_VERSION=0.5.8
-wget "https://github.com/Dstack-TEE/meta-dstack/releases/download/v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
+DSTACK_VERSION=0.6.5
+wget "https://github.com/Dstack-TEE/dstack/releases/download/mkosi-os-v${DSTACK_VERSION}/dstack-${DSTACK_VERSION}.tar.gz"
 mkdir -p images/
 tar -xvf dstack-${DSTACK_VERSION}.tar.gz -C images/
 rm -f dstack-${DSTACK_VERSION}.tar.gz
 ```
 
-This ensures you are using the verified release image corresponding to version **0.5.8**.
+This ensures you are using the verified release image corresponding to version **0.6.5**.
 
 ---
 
 ###### Option 2 — Build the image from source
 
 This method is intended for advanced users who wish to inspect, rebuild, or reproduce the image for verification purposes.
-
-1. **Clone and check out the exact release:**
-
-   ```bash
-   git clone https://github.com/Dstack-TEE/meta-dstack.git
-   cd meta-dstack/
-   git checkout 48dd3df6f443bfe25a65701d4453fb7cf9c3dbb9
-   git submodule update --init --recursive
-   ```
-
-2. **Choose one of the following actions:**
-
-   - **Download the pre-built image (recommended, faster):**
-     ```bash
-     ./build.sh dl 0.5.8
-     ```
-
-   - **Build a reproducible image from source (slower, ~1–2 hours):**
-     ```bash
-     cd repro-build && ./repro-build.sh -n
-     ```
-
+The 0.6 image is built with `mkosi` from the dstack repository: follow
+[Building the guest OS](https://github.com/Dstack-TEE/dstack/blob/v0.6.5/docs/building-guest-os.md)
+at tag `v0.6.5` (commit `350a0a73ffdb6041bda69118f13d81591870b565`, the `git_revision` in the
+image's `metadata.json`).
 
 ###### Verification Steps
 
-Run these commands from inside your image folder (e.g., `dstack-0.5.8`).
+Run these commands from inside your image folder (e.g., `dstack-0.6.5`).
 
 **1. Verify file hashes against expected values:**
 
@@ -345,10 +339,12 @@ set -euo pipefail
 
 # Hard-coded expected hashes
 declare -A EXPECTED
-EXPECTED["ovmf.fd"]="76888ce69c91aed86c43f840b913899b40b981964b7ce6018667f91ad06301f0"
-EXPECTED["bzImage"]="2afe5b0571363fe2278a3438e337630bfeffc74bafba3d116630e2a1ef1805f3"
-EXPECTED["initramfs.cpio.gz"]="1272ab4b10db1933d02a80059fbb94b4be9eb4af8c4f79e739dfc0b0101acc40"
-EXPECTED["metadata.json"]="20fde70b9e4f31ab6ef55d8a5bf33b1734593a9e605982c510c0963d69af075b"
+EXPECTED["ovmf.fd"]="ca9f1ac2ff25096f0363f85450dc7db58c2dc270c27198d790c0e30eabd01c8c"
+EXPECTED["bzImage"]="6f88788ddf13be71bb39ef31bafed9610464fb8245a0d0ff021a97d47a991e96"
+EXPECTED["initramfs.cpio.gz"]="63207bde974005087efbc7d4c7771d9c1d73edcc7425fb02f488d8ffc05e7af1"
+EXPECTED["metadata.json"]="90f4e4933eef51d4c419d2c41001c7dfb2b101466818c99421b7faea3fb159fc"
+# sha256 of this file is the `os_image_hash` a node reports in its attestation
+EXPECTED["sha256sum.txt"]="4771a29e03e93f0e2d5e37174cd8bb1112942c9689deb36b16c5df9e183d8623"
 
 ALL_OK=1
 for FILE in "${!EXPECTED[@]}"; do
@@ -376,7 +372,10 @@ else
 fi
 ```
 
-**2. Verify the `rootfs.img.verity`:**
+**2. Verify the `rootfs.img.parted.verity`:**
+
+The rootfs is a GPT image; partition 1 holds the data followed by its dm-verity hash tree.
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
@@ -388,90 +387,40 @@ ROOTFS=$(jq -r '.rootfs' "$META")
 ROOTFS_SIZE=$(jq -r '.cmdline' "$META" | sed -n 's/.*dstack.rootfs_size=\([0-9]*\).*/\1/p')
 ROOTFS_HASH=$(jq -r '.cmdline' "$META" | sed -n 's/.*dstack.rootfs_hash=\([a-f0-9]*\).*/\1/p')
 
-# Compute parameters
-BLOCK_SIZE=4096
-DATA_BLOCKS=$(( ROOTFS_SIZE / BLOCK_SIZE ))
-HASH_OFFSET=$ROOTFS_SIZE
+# Copy partition 1 out of the GPT image
+START=$(sfdisk --json "$ROOTFS" | jq '.partitiontable.partitions[0].start')
+SIZE=$(sfdisk --json "$ROOTFS" | jq '.partitiontable.partitions[0].size')
+PART=$(mktemp)
+trap 'rm -f "$PART"' EXIT
+dd if="$ROOTFS" of="$PART" bs=512 skip="$START" count="$SIZE" status=none
 
+BLOCK_SIZE=4096
 echo "Verifying $ROOTFS"
 echo "  Rootfs size:   $ROOTFS_SIZE bytes"
-echo "  Data blocks:   $DATA_BLOCKS"
-echo "  Hash offset:   $HASH_OFFSET"
 echo "  Rootfs hash:   $ROOTFS_HASH"
 
 # Run verification
 veritysetup verify \
-  --data-blocks=$DATA_BLOCKS \
-  --hash-offset=$HASH_OFFSET \
+  --data-blocks=$(( ROOTFS_SIZE / BLOCK_SIZE )) \
+  --hash-offset="$ROOTFS_SIZE" \
   --data-block-size=$BLOCK_SIZE \
   --hash-block-size=$BLOCK_SIZE \
-  "$ROOTFS" "$ROOTFS" "$ROOTFS_HASH"
+  "$PART" "$PART" "$ROOTFS_HASH"
 
 echo "✅ Verification succeeded"
 ```
 
 **3. Check actual vs. expected RTMR values:**
 
-1. Build `dstack-mr` tool (using Docker).
-2. Calculate the actual RTMRs of the image.
-3. Compare against expected RTMRs from the contract (shown below).
-
-For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/master/attestation.md).
-
-Build `dstack-mr` docker image:
+Build `dstack-mr` from the same dstack checkout as `dstack-vmm` (v0.6.5), so its measurement
+logic matches the image and the on-chain values:
 
 ```bash
-cd /opt/mpc/dstack/vmm-data/images/dstack-0.5.8
+cd /opt/mpc/dstack
+cargo build --release -p dstack-mr-cli
 ```
 
-Create a Dockerfile file with the following contents:
-```shell
-# Dockerfile
-FROM rust:1.86.0@sha256:300ec56abce8cc9448ddea2172747d048ed902a3090e6b57babb2bf19f754081 AS kms-builder
-# Pinned to a commit (immutable) rather than a tag (which can be moved). This is
-# the dstack v0.5.8 commit — matches the guest OS image this guide uses (the
-# `dstack-0.5.8/` dir you cd into below). For a different OS-image version,
-# override with the matching commit: --build-arg DSTACK_REV=<commit>
-ARG DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e
-WORKDIR /build
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    git \
-    build-essential \
-    musl-tools \
-    libssl-dev \
-    protobuf-compiler \
-    libprotobuf-dev \
-    clang \
-    libclang-dev
-RUN git clone https://github.com/Dstack-TEE/dstack.git
-RUN rustup target add x86_64-unknown-linux-musl
-# Build dstack-mr from the SAME dstack version as your guest OS image (DSTACK_REV).
-# Building from master is not reproducible: the measurement logic changes between
-# releases and may compute different MRTD/RTMR values than the on-chain set was
-# generated with.
-RUN cd dstack && git checkout "${DSTACK_REV}" && \
-    cargo build --release -p dstack-mr-cli --target x86_64-unknown-linux-musl
-
-# kvin/kms supplies the `dstack-acpi-tables` helper (feeds RTMR0). Pinned by digest
-# (not the moving `:latest`) for reproducible measurements: this digest reproduces
-# the MRTD/RTMR0-2 published on-chain in `v1.signer`'s `allowed_os_measurements`
-# (the same values shown in the example output below), so an operator can re-check
-# it. It is a third-party image; a NEAR/Dstack-owned published image would be a
-# better long-term trust root.
-FROM kvin/kms@sha256:ad6a8c5c43aed7278e665cd0960ae5be95060847f7d517633be685cabda95a3d
-COPY --from=kms-builder /build/dstack/target/x86_64-unknown-linux-musl/release/dstack-mr /usr/local/bin/
-ENTRYPOINT ["dstack-mr"]
-CMD []
-```
-
-Build. Pass `DSTACK_REV` = the **commit** matching your guest OS image's dstack
-version (here the v0.5.8 commit), so `dstack-mr`'s measurement logic matches the
-image and the on-chain values:
-
-```bash
-docker build --build-arg DSTACK_REV=368c62e7de5d4016bd75332824aa7f2ef1d7d19e -t dstack-mr .
-```
+For more details, see the [Dstack attestation guide](https://github.com/Dstack-TEE/dstack/blob/v0.6.5/docs/attestation-tdx.md).
 
 Run:
 
@@ -487,21 +436,22 @@ Run:
 > ```
 > If your version is not **8.2.2**, attestation might fail.
 
+`--hotplug-off false` matches `qemu_hotplug_off = false` in `vmm.toml`.
+
 ```bash
-docker run --rm \
-  -v "$(pwd)":/dstack-0.5.8 \
-  dstack-mr \
-  measure -c 8 -m 64G --qemu-version 8.2.2 /dstack-0.5.8/metadata.json
+/opt/mpc/dstack/target/release/dstack-mr measure \
+  -c 8 -m 64G --qemu-version 8.2.2 --hotplug-off false \
+  /opt/mpc/dstack/vmm-data/images/dstack-0.6.5/metadata.json
 ```
 
 Example output:
 
 ```text
 Machine measurements:
-MRTD: f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077
+MRTD: 2a674327c50218dba880066b349b8d559d749ed68dce33fd651c184a877d084b07a9e583767a7ad5da13ed91deec2b70
 RTMR0: e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46
-RTMR1: b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f
-RTMR2: 9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf
+RTMR1: 2f72a4db2f7de90adeabe55607b0c1cf209fc243bc773f5862d1b00d3bb198e835e99d502e90a24005f0d1368dd24f29
+RTMR2: 3d9910a33a26a769c5146dea31bea0d2924a7746ad09e121dabe709eddd5c647716f4d89279e0e24d8dbb93f9cdb605b
 ```
 
 ---
@@ -560,7 +510,7 @@ For more information, see [local-key-provider-from-phala](https://github.com/Dst
    `rustup-init` are pinned inside the recipe).
 
    The `APT_SNAPSHOT` build-arg is available in `key-provider-build/` as of
-   dstack **v0.5.11**. Since `dstack-vmm` and the OS image stay on v0.5.8, add a
+   dstack **v0.5.11**. Since `dstack-vmm` and the OS image are on v0.6.5, add a
    v0.5.11 worktree just for this build (it does not change your vmm or image):
 
     ```bash
@@ -727,8 +677,8 @@ archive from moving these packages.
 
 The measurements have no other host-package inputs: the guest firmware, kernel
 and rootfs come from the dstack image directory. `pgrep -af qemu-system-x86_64`
-shows the CVM started with `-bios .../images/dstack-0.5.8/ovmf.fd`,
-`-kernel .../bzImage` and `-drive file=.../rootfs.img.verity`. The host's own
+shows the CVM started with `-bios .../images/dstack-0.6.5/ovmf.fd`,
+`-kernel .../bzImage` and `-drive file=.../rootfs.img.parted.verity`. The host's own
 `ovmf` and `qemu-efi-*` are held above as PPA members, but nothing measured
 comes from them.
 
@@ -1850,7 +1800,7 @@ The [`deploy-launcher.sh`](https://github.com/near/mpc/blob/main/deployment/cvm-
    cd deployment/cvm-deployment
    ./deploy-launcher.sh \
      --env-file <your-env-file> \
-     --base-path /path/to/meta-dstack/dstack
+     --base-path /opt/mpc/dstack
    ```
 
    The script will:
@@ -1868,6 +1818,8 @@ Full flag reference and `.env` field-by-field documentation:
 
 Dstack provides a dedicated web page to view CVM information, including links to the Docker logs.
 More details can be found in [Phala's guide](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#deploy-an-app).
+
+The guest agent serves the container list and logs without a token only with the `guest:containers` and `guest:logs` scopes in `vmm.toml` (see [Dstack Setup](#2-dstack-setup-and-configuration), step 3). Without them it returns `401`.
 
 > **Log retention:** from launcher 3.14.0, the MPC container is reused across
 > **restarts**, so its logs are preserved and remain viewable here after a
@@ -2626,6 +2578,17 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 4. Operator migrates key shares from the old CVM to the new one using the [migration service](../node-migration-guide.md).
 5. The old launcher manifest digest is retired at the first TEE verification after its TTL (`launcher_hash_unused_ttl_seconds`, default 14 days) once no current participant uses it; after all operators have migrated, participants may vote to remove it immediately and/or remove old OS measurements (OS measurements do not auto-expire).
 
+### Upgrading from dstack 0.5.8 to 0.6.5
+
+The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new OS measurements. Votes come first, then each node moves.
+
+1. **Wait for the votes.** The 0.6.5 OS measurements and the new launcher must be allowed on-chain (see [OS Measurement Voting](#os-measurement-voting) and [Launcher Image Voting](#launcher-image-voting)). Until then a 0.6.5 CVM cannot attest.
+2. **Upgrade the host to `dstack-vmm` 0.6.5** ([Dstack Setup](#2-dstack-setup-and-configuration), steps 2–4): build it, add `qemu_hotplug_off = false` and the `[cvm.guest_agent_api]` section to your `vmm.toml`, download the 0.6.5 image next to the 0.5.8 one, and restart the VMM. The running 0.5.8 CVM keeps running, and with `qemu_hotplug_off = false` it keeps its measurements if it restarts.
+3. **Deploy a new CVM** next to the old one, with `OS_IMAGE=dstack-0.6.5` and the new launcher compose. It needs its own host ports.
+4. **Migrate the key shares** to the new CVM with the [node migration guide](../node-migration-guide.md), then stop the old CVM.
+
+> **Don't redeploy a 0.5.8 CVM** once the contract runs the 0.6 launcher template: it only accepts launcher composes for dstack 0.6. A 0.5.8 CVM that is already running keeps working, and takes new MPC images on restart.
+
 ### Launcher Image Voting
 
 #### Launcher image/code inspection
@@ -2811,13 +2774,13 @@ You usually don't need to edit `user-config.toml` after initial deployment. Howe
 
 ### Via Command Line
 
-See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/master/docs/vmm-cli-user-guide.md). The CLI script is at `meta-dstack/dstack/vmm/src/vmm-cli.py`.
+See the [VMM CLI user guide](https://github.com/Dstack-TEE/dstack/blob/v0.6.5/docs/vmm-cli-user-guide.md). The CLI script is at `/opt/mpc/dstack/vmm/src/vmm-cli.py`.
 
 First, define environment variables (once per shell session):
 
 ```bash
 export VMM_URL=http://127.0.0.1:11100 # change to your port
-export VMM_CLI_PATH="meta-dstack/dstack/vmm/src/vmm-cli.py" # change to your meta-dstack location
+export VMM_CLI_PATH="/opt/mpc/dstack/vmm/src/vmm-cli.py" # change to your dstack location
 ```
 
 Then:
