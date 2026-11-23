@@ -66,6 +66,7 @@ mod onboarding;
 mod protocol_yielding;
 mod reconstruction_thresholds;
 mod resharing;
+mod slow_peer_link;
 mod update_participant_url;
 mod verify_foreign_tx_gating;
 
@@ -214,6 +215,7 @@ impl IntegrationTestSetup {
                     concurrency: 1.try_into().unwrap(),
                     finality: Finality::Final,
                     mpc_contract_id: "test".parse().unwrap(),
+                    genesis_hash: None,
                     port_override: None,
                     wipe_near_data_token: 0,
                     sync_mode: SyncMode::Latest,

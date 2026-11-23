@@ -17,6 +17,7 @@ use crate::primitives::{
         governance_threshold_lower_relative_bound,
     },
 };
+use near_account_id::AccountId;
 use rand::Rng;
 use std::collections::BTreeMap;
 
@@ -72,6 +73,22 @@ pub fn gen_valid_params_proposal(
     ProposedGovernanceThresholdParameters::new(parameters, BTreeMap::new())
 }
 
+/// The first [`GovernanceThreshold`] participants of `parameters`: the fewest voters whose
+/// votes for a proposal make `vote_new_parameters` accept it.
+pub fn threshold_voters(parameters: &GovernanceThresholdParameters) -> Vec<AccountId> {
+    let threshold = usize::try_from(parameters.threshold().value()).unwrap();
+    account_ids(&parameters.participants().subset(0..threshold))
+}
+
+/// The account ids of `participants`, in participant order.
+pub fn account_ids(participants: &Participants) -> Vec<AccountId> {
+    participants
+        .participants()
+        .iter()
+        .map(|(account_id, _, _)| account_id.clone())
+        .collect()
+}
+
 /// Generates a resharing state with the given number of domains.
 /// We do this by starting from the Running state and calling vote_new_parameters to have it
 /// transition into Resharing. (This also tests the transitioning code path.)
@@ -81,8 +98,8 @@ pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContrac
     let proposal = gen_valid_params_proposal(&running.parameters);
     let mut votes = GovernanceThresholdParametersVotes::default();
     let mut resharing_state = None;
-    for (account, _, _) in proposal.participants().participants() {
-        env.set_signer(account);
+    for account in threshold_voters(&running.parameters) {
+        env.set_signer(&account);
         assert!(resharing_state.is_none());
         resharing_state = running
             .vote_new_parameters(running.keyset.epoch_id.next(), &proposal, &mut votes)
@@ -143,12 +160,7 @@ pub fn gen_running_state_with_params(
             key: bogus_ed25519_public_key_extended(),
         });
     }
-    RunningContractState::new(
-        domains,
-        Keyset::new(epoch_id, keys),
-        threshold_parameters,
-        AddDomainsVotes::default(),
-    )
+    RunningContractState::new(domains, Keyset::new(epoch_id, keys), threshold_parameters)
 }
 
 /// Randomly generates an InitializingContractState where we already have keys for
@@ -160,14 +172,17 @@ pub fn gen_initializing_state(
     num_generated: usize,
 ) -> (Environment, InitializingContractState) {
     let mut env = Environment::new(None, None, None);
-    let mut running = gen_running_state(num_generated);
+    let running = gen_running_state(num_generated);
     let domains_to_add = gen_domains_to_add(&running.domains, num_domains - num_generated);
 
     let mut initializing_state = None;
+    let mut votes = AddDomainsVotes::default();
     for (account, _, _) in running.parameters.participants().participants().clone() {
         env.set_signer(&account);
         assert!(initializing_state.is_none());
-        initializing_state = running.vote_add_domains(domains_to_add.clone()).unwrap();
+        initializing_state = running
+            .vote_add_domains(domains_to_add.clone(), &mut votes)
+            .unwrap();
     }
     let initializing_state = initializing_state
         .expect("Enough votes to add domains should transition into initializing");

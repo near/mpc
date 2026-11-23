@@ -251,10 +251,12 @@ The first step to achieve this is to get their public keys.
 export FRODO_P2P_KEY=$(curl -s localhost:8081/public_data | jq -r '.near_p2p_public_key')
 export SAM_P2P_KEY=$(curl -s localhost:8082/public_data | jq -r '.near_p2p_public_key')
 export MPC_HOST=localhost
+export NEAR_GENESIS_HASH=$(curl -s localhost:3030/status | jq -r .genesis_hash)
 ```
 
 With these set, we can prepare the arguments for the init call. Besides the
-participants, they name `tee-verifier.test.near` as the trusted TEE verifier.
+participants and the localnet's genesis hash, they name `tee-verifier.test.near`
+as the trusted TEE verifier.
 The nodes here submit mock attestations, which the contract verifies itself, so
 that account only has to exist once real Dstack attestations are in play. Step 6
 deploys it.
@@ -344,7 +346,7 @@ near contract call-function as-read-only tee-verifier.test.near verify_quote fil
 
 Either outcome proves the DCAP path runs: a verified report while the fixture's
 collateral is still inside its validity window (it ends at the `nextUpdate` in
-`crates/test-utils/assets/collateral.json`), and `TCBInfo expired` once the live
+`collateral.json` of the latest fixture in `crates/test-utils/assets/`), and `TCBInfo expired` once the live
 block clock passes it. Tests set the VM block timestamp instead
 (`crates/tee-verifier/tests/verify_quote.rs`). Regenerate the
 fixture (after changing the quote/collateral fixtures) with:

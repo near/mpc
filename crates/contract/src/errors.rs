@@ -113,10 +113,6 @@ pub enum VoteError {
     VoterNotLeader,
     #[error("Vote already casted.")]
     VoteAlreadySubmitted,
-    #[error(
-        "Candidates can only cast a vote after `threshold` participants casted one to admit them"
-    )]
-    VoterPending,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

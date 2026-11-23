@@ -26,8 +26,8 @@ use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{
-    DomainConfig, DomainPurpose, GovernanceThreshold, GovernanceThresholdParameters, ParticipantId,
-    ParticipantInfo, Participants, ProposedGovernanceThresholdParameters, Protocol,
+    DomainConfig, DomainPurpose, GenesisHash, GovernanceThreshold, GovernanceThresholdParameters,
+    ParticipantId, ParticipantInfo, Participants, ProposedGovernanceThresholdParameters, Protocol,
     ProtocolContractState, ReconstructionThreshold, Update, protocol_state_to_string,
 };
 use near_mpc_sdk::update::hash;
@@ -308,6 +308,12 @@ impl MpcDeployContractCmd {
 
 impl MpcInitContractCmd {
     pub async fn run(&self, name: &str, config: ParsedConfig) {
+        let genesis_hash = config
+            .rpc
+            .submit(methods::status::RpcStatusRequest)
+            .await
+            .expect("querying the chain's status")
+            .genesis_hash;
         let mut setup = OperatingDevnetSetup::load(config.rpc).await;
         let mpc_setup = setup
             .mpc_setups
@@ -343,6 +349,7 @@ impl MpcInitContractCmd {
             .init(
                 parameters,
                 self.tee_verifier_account_id.clone(),
+                GenesisHash::from(genesis_hash.0),
                 Some(near_mpc_contract_interface::types::InitConfig::default()),
             )
             .await

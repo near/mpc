@@ -156,7 +156,7 @@ httpmock = "0.9.0"
 humantime = "2.3.0"
 hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
-inferno = "0.12"
+inferno = { version = "0.12", default-features = false }
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.15.0"
 # Must stay on the `tikv-jemalloc-sys` version that nearcore's rocksdb pulls in
@@ -190,10 +190,7 @@ near-token = "0.3.4"
 near-workspaces = { version = "0.24.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
-pprof = { version = "0.15.0", features = [
-    "cpp",
-    "flamegraph",
-], default-features = false }
+pprof = { version = "0.15.0", features = ["cpp"], default-features = false }
 # Same `tikv-jemalloc-sys` constraint as `jemalloc_pprof`.
 pprof_util = "0.8"
 proc-macro2 = "1.0"

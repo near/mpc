@@ -249,7 +249,7 @@ async fn node_startup__should_register_chains_resolved_from_rpc_preset() {
     let whitelist: BTreeMap<_, _> = resolve_with_embedded(&preset_config)
         .expect("the testnet preset should resolve")
         .config
-        .iter_chains()
+        .into_iter()
         .map(|(chain, config)| (chain, chain_entry_matching(config, 1)))
         .collect();
     assert!(
@@ -301,7 +301,7 @@ fn resolved_chains(config: &ForeignChainsConfig) -> BTreeSet<ForeignChain> {
     resolve_with_embedded(config)
         .expect("the testnet preset should resolve")
         .config
-        .iter_chains()
+        .into_iter()
         .map(|(chain, _)| chain)
         .collect()
 }
