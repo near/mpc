@@ -43,3 +43,28 @@ impl IsSyncing for NearClientActorHandle {
         Ok(status.sync_info.syncing)
     }
 }
+
+#[cfg(any(test, feature = "test-utils"))]
+impl NearClientActorHandle {
+    pub(crate) async fn knows_producer(
+        &self,
+        account_id: &near_indexer::near_primitives::types::AccountId,
+    ) -> Result<bool, NearClientError> {
+        let network_info = self
+            .client
+            .send_async(
+                near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(
+                    near_client::GetNetworkInfo {},
+                ),
+            )
+            .await
+            .map_err(|err| NearClientError::AsyncSendError {
+                message: err.to_string(),
+            })?
+            .map_err(|message| NearClientError::ResponseError { message })?;
+        Ok(network_info
+            .known_producers
+            .iter()
+            .any(|producer| &producer.account_id == account_id))
+    }
+}

@@ -76,7 +76,9 @@ impl BackupService {
         let mut config: serde_json::Value =
             serde_json::from_slice(&config).expect("failed to parse the node's NEAR config");
         config["rpc"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
-        config["network"]["addr"] = format!("127.0.0.1:{}", reserve_port()).into();
+        let network_addr = format!("127.0.0.1:{}", reserve_port());
+        config["network"]["addr"] = network_addr.clone().into();
+        config["network"]["experimental"]["tier3_public_addr"] = network_addr.into();
 
         let sandbox_config =
             std::fs::read(sandbox_config_path).expect("failed to read the sandbox's NEAR config");

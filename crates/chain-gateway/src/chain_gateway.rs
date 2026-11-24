@@ -201,6 +201,18 @@ impl ChainGateway {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+impl ChainGateway {
+    /// Whether this node has received the `AccountData` that the validator `account_id`
+    /// broadcasts. Until it has, the node drops every transaction it would forward to that
+    /// validator, while still reporting the submission as routed.
+    pub async fn knows_producer(&self, account_id: &AccountId) -> Result<bool, NearClientError> {
+        self.client
+            .knows_producer(&crate::account_id_compat::to_near_internal(account_id))
+            .await
+    }
+}
+
 type RunNodeResult = Result<(ChainGateway, Option<Receiver<BlockUpdate>>), ChainGatewayError>;
 
 fn expected_block_time(near_config: &NearConfig) -> Duration {
