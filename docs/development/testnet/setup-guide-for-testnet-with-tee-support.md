@@ -31,7 +31,7 @@ and `how-to-run-deploy-tee-cluster.md` for the full reference.
 3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.
 4. Get account and TLS keys from each node.
 5. Initialize the contract with node parameters (keys, accounts, IPs), and prepay attestation storage for each node.
-6. Workaround for port override issue.
+6. Port override (default 80, nothing to do).
 7. Vote for MPC code hash on the contract.
 8. Vote for launcher image hash on the contract.
 9. Vote for OS measurements on the contract.
@@ -357,27 +357,13 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT prepay_attestat
 
 ---
 
-## Step 6: Workaround for Port Override Issue (optional)
+## Step 6: Port Override
 
-**Note:** `port_override = 80` is the default on testnet. The MPC nodes will
-advertise URL port 80 to the contract regardless of the contract's
-`url:` field. If you need a different port (e.g. dstack on this host
-can't forward port 80), change `port_override` post-deploy as follows.
-
-> SSH into the CVM is **not supported on dstack ≥ 0.5.6** unless the
-> launcher's `pre_launch_script` installs a passwordless SSH key (the
-> dstack-dev images stopped exposing SSH by default). On `dstack-0.5.5`
-> and earlier dev images you can SSH with `ssh root@localhost -p
-> <CVM-SSH-port>` (`1220` for frodo, `1221` for sam by default).
-
-Once on the CVM, stop the MPC container, edit the config, restart:
-
-```bash
-docker stop mpc-node
-sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.yaml
-sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.json
-docker start mpc-node
-```
+Nothing to do here. `port_override = 80` is set by default, in `deployment/testnet/{frodo,sam}.toml`
+as in every testnet and mainnet deployment: each node listens on, and dials every peer at, port 80,
+whatever port the participant URL in the contract has. To use another port, change `port_override`
+(under `[mpc_node_config.node.indexer]`) and the matching `port_mappings` entry in the TOML before
+Step 3.
 
 ---
 
