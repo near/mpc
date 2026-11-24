@@ -6111,7 +6111,6 @@ dependencies = [
  "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
  "near-mpc-crypto-types",
- "near-o11y",
  "near-sdk",
  "near-store",
  "near-time 2.14.1",
