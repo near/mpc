@@ -68,6 +68,11 @@ pub struct VoteMpcNodeManifestDigestArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
+pub struct VoteBackupServiceCodeHashArgs {
+    pub code_hash: NodeImageHash,
+}
+
+#[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct VoteLauncherHashArgs {
     pub launcher_hash: LauncherImageHash,
 }
@@ -91,6 +96,7 @@ pub struct UpdateParticipantUrlArgs {
 #[derive(Serialize, Debug, derive_more::Constructor)]
 pub struct RegisterBackupServiceArgs {
     pub backup_service_info: BackupServiceInfo,
+    pub attestation: Attestation,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
@@ -195,7 +201,7 @@ pub struct ConcludeNodeMigrationArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct CleanInvalidAttestationsArgs {
+pub struct MaxScanArgs {
     pub max_scan: u32,
 }
 
@@ -212,6 +218,6 @@ pub struct DerivedPublicKeyArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct AvailableAttestationGrantsArgs {
+pub struct AccountIdArgs {
     pub account_id: AccountId,
 }

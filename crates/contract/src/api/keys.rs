@@ -1,4 +1,5 @@
-//! Key views: the current keyset, the domain public key and per-account derived keys.
+//! Key views: the current keyset and its participants, the domain public key and per-account
+//! derived keys.
 
 use crate::crypto_shared::derive_key_secp256k1;
 use crate::crypto_shared::kdf::derive_public_key_edwards_point_ed25519;
@@ -20,6 +21,18 @@ impl MpcContract {
     pub fn current_keyset(&self) -> Option<dtos::Keyset> {
         self.protocol_state
             .current_keyset()
+            .map(IntoInterfaceType::into_dto_type)
+    }
+
+    /// The account's TLS key and URL among the participants holding [`MpcContract::current_keyset`];
+    /// `None` if the account is not one of them.
+    ///
+    /// Like [`MpcContract::current_keyset`], the backup-cli depends on this view's JSON output
+    /// staying stable across contract versions.
+    pub fn participant_info(&self, account_id: AccountId) -> Option<dtos::ParticipantInfo> {
+        self.protocol_state
+            .current_participants()?
+            .info(&account_id)
             .map(IntoInterfaceType::into_dto_type)
     }
 
@@ -84,17 +97,30 @@ impl MpcContract {
 #[expect(non_snake_case)]
 mod tests {
     use crate::MpcContract;
-    use crate::api::test_utils::{initializing_state, make_public_key_for_curve};
+    use crate::api::test_utils::{
+        contract_with_participants, initializing_state, make_public_key_for_curve,
+    };
     use crate::dto_mapping::IntoInterfaceType;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-    use crate::primitives::test_utils::{NUM_PROTOCOLS, gen_domain_registry, gen_threshold_params};
+    use crate::primitives::participants::ParticipantInfo;
+    use crate::primitives::test_utils::{
+        NUM_PROTOCOLS, gen_domain_registry, gen_participant, gen_participant_url,
+        gen_threshold_params,
+    };
+    use crate::primitives::thresholds::{
+        GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    };
     use crate::state::ProtocolContractState;
     use crate::state::running::RunningContractState;
-    use crate::state::test_utils::{gen_resharing_state, gen_running_state};
-    use near_mpc_contract_interface::types::Curve;
+    use crate::state::test_utils::{
+        RunningStateParams, account_ids, gen_resharing_state, gen_resharing_state_from,
+        gen_running_state, gen_running_state_with_params,
+    };
+    use near_mpc_contract_interface::types::{Curve, Ed25519PublicKey};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
+    use std::collections::BTreeMap;
 
     #[test]
     fn current_keyset__should_return_the_running_keyset() {
@@ -174,5 +200,96 @@ mod tests {
 
         // Then
         insta::assert_json_snapshot!(keyset);
+    }
+
+    #[rstest]
+    #[case::running(|running, _: &_| ProtocolContractState::Running(running))]
+    #[case::resharing(|running, proposal: &_| {
+        ProtocolContractState::Resharing(gen_resharing_state_from(running, proposal).1)
+    })]
+    fn participant_info__should_return_only_the_info_of_the_current_keysets_participants(
+        #[case] into_state: fn(
+            RunningContractState,
+            &ProposedGovernanceThresholdParameters,
+        ) -> ProtocolContractState,
+    ) {
+        // Given
+        let running = gen_running_state_with_params(RunningStateParams {
+            num_domains: 1,
+            num_participants: 3,
+            governance_threshold: GovernanceThreshold::new(2),
+        });
+        let participants = running.participants().clone();
+        let (joining, joining_info) = gen_participant(participants.len());
+        let mut proposed_participants = participants.subset(0..participants.len() - 1);
+        proposed_participants
+            .insert(joining.clone(), joining_info)
+            .unwrap();
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(
+                proposed_participants,
+                running.parameters.threshold(),
+            )
+            .unwrap(),
+            BTreeMap::new(),
+        );
+        let contract = MpcContract::new_from_protocol_state(into_state(running, &proposal));
+
+        // When
+        let infos: Vec<_> = account_ids(&participants)
+            .into_iter()
+            .chain([joining])
+            .map(|account_id| contract.participant_info(account_id))
+            .collect();
+
+        // Then
+        let expected: Vec<_> = participants
+            .participants()
+            .iter()
+            .map(|(_, _, info)| Some(info.into_dto_type()))
+            .chain([None])
+            .collect();
+        assert_eq!(infos, expected);
+    }
+
+    #[test]
+    fn participant_info__should_return_none_while_initializing() {
+        // Given
+        let (contract, participants) = contract_with_participants(initializing_state());
+
+        // When
+        let infos: Vec<_> = participants
+            .iter()
+            .map(|account_id| contract.participant_info(account_id.clone()))
+            .collect();
+
+        // Then
+        assert_eq!(infos, vec![None; participants.len()]);
+    }
+
+    /// Updating this snapshot is a breaking change for the backup-cli, which parses this output
+    /// like the current keyset's.
+    #[test]
+    fn participant_info__should_keep_its_json_format() {
+        // Given
+        let mut running = gen_running_state(1);
+        let account_id = account_ids(running.participants()).swap_remove(0);
+        running
+            .update_participant_info(
+                account_id.clone(),
+                ParticipantInfo {
+                    url: gen_participant_url(0),
+                    tls_public_key: Ed25519PublicKey::from([7u8; 32]),
+                },
+            )
+            .unwrap();
+        let contract =
+            MpcContract::new_from_protocol_state(ProtocolContractState::Running(running));
+
+        // When
+        let info = contract.participant_info(account_id);
+
+        // Then
+        insta::assert_json_snapshot!(info);
     }
 }

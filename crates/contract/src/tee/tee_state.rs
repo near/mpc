@@ -10,6 +10,7 @@ use crate::{
         votes::{VoterSet, Votes},
     },
     storage_keys::StorageKey,
+    tee::attested_service::AttestedService,
     tee::launcher_compose::LauncherCompose,
     tee::measurements::AllowedMeasurements,
     tee::proposal::{
@@ -59,13 +60,14 @@ pub struct TeeState {
     pub(crate) allowed_launcher_images: AllowedLauncherImages,
     pub(crate) votes: Votes<AuthenticatedAccountId>,
     pub(crate) launcher_votes: Votes<AuthenticatedAccountId>,
-    /// Invariant: each TLS key a participant uses (its current one and, during a node migration,
-    /// the destination one) maps to a node owned by that participant, except that an initial
-    /// participant has no node until its first attestation. Joining the participant set
-    /// and migrating require such a node, and [`crate::MpcContract::clean_invalid_attestations`]
-    /// never removes it. This lets [`Self::assert_tls_key_claimable`] decide whether an account
-    /// may store a node under a TLS key by looking only at this map, so code that changes how
-    /// participants get TLS keys or how nodes are removed must preserve the invariant.
+    /// Invariant, in the MPC node [`TeeState`]: each TLS key a participant uses (its current one
+    /// and, during a node migration, the destination one) maps to a node owned by that
+    /// participant, except that an initial participant has no node until its first attestation.
+    /// Joining the participant set and migrating require such a node, and
+    /// [`crate::MpcContract::clean_invalid_attestations`] never removes it. This lets
+    /// [`Self::assert_tls_key_claimable`] decide whether an account may store a node under a TLS
+    /// key by looking only at this map, so code that changes how participants get TLS keys or how
+    /// nodes are removed must preserve the invariant.
     ///
     /// Callers must not assume this map is small; use the key-indexed accessors rather than
     /// scanning the whole collection.
@@ -76,28 +78,55 @@ pub struct TeeState {
 
 impl Default for TeeState {
     fn default() -> Self {
-        Self {
-            allowed_docker_image_hashes: Default::default(),
-            allowed_launcher_images: Default::default(),
-            votes: Votes::new(
-                StorageKey::CodeHashVotesByVoter,
-                StorageKey::CodeHashVotesByProposal,
-            ),
-            launcher_votes: Votes::new(
-                StorageKey::LauncherHashVotesByVoter,
-                StorageKey::LauncherHashVotesByProposal,
-            ),
-            nodes: IterableMap::new(StorageKey::Nodes),
-            allowed_measurements: Default::default(),
-            measurement_votes: Votes::new(
-                StorageKey::MeasurementVotesByVoter,
-                StorageKey::MeasurementVotesByProposal,
-            ),
-        }
+        Self::new(AttestedService::MpcNode)
     }
 }
 
 impl TeeState {
+    pub(crate) fn new(service: AttestedService) -> Self {
+        let (votes, launcher_votes, nodes, measurement_votes) = match service {
+            AttestedService::MpcNode => (
+                Votes::new(
+                    StorageKey::CodeHashVotesByVoter,
+                    StorageKey::CodeHashVotesByProposal,
+                ),
+                Votes::new(
+                    StorageKey::LauncherHashVotesByVoter,
+                    StorageKey::LauncherHashVotesByProposal,
+                ),
+                IterableMap::new(StorageKey::Nodes),
+                Votes::new(
+                    StorageKey::MeasurementVotesByVoter,
+                    StorageKey::MeasurementVotesByProposal,
+                ),
+            ),
+            AttestedService::BackupService => (
+                Votes::new(
+                    StorageKey::BackupServiceCodeHashVotesByVoter,
+                    StorageKey::BackupServiceCodeHashVotesByProposal,
+                ),
+                Votes::new(
+                    StorageKey::BackupServiceLauncherHashVotesByVoter,
+                    StorageKey::BackupServiceLauncherHashVotesByProposal,
+                ),
+                IterableMap::new(StorageKey::BackupServiceNodes),
+                Votes::new(
+                    StorageKey::BackupServiceMeasurementVotesByVoter,
+                    StorageKey::BackupServiceMeasurementVotesByProposal,
+                ),
+            ),
+        };
+        Self {
+            allowed_docker_image_hashes: Default::default(),
+            allowed_launcher_images: Default::default(),
+            votes,
+            launcher_votes,
+            nodes,
+            allowed_measurements: Default::default(),
+            measurement_votes,
+        }
+    }
+
     /// Creates a [`TeeState`] in which every participant has a valid mock attestation, signed
     /// with a random signer public key.
     #[cfg(test)]
@@ -267,12 +296,16 @@ impl TeeState {
             .collect()
     }
 
+    /// Returns the allowed image hashes, newest first.
     pub fn get_allowed_mpc_docker_images(
         &self,
         tee_upgrade_deadline_duration: Duration,
     ) -> Vec<dtos::AllowedMpcDockerImageHash> {
-        self.allowed_docker_image_hashes
-            .allowed_images(tee_upgrade_deadline_duration)
+        let mut images = self
+            .allowed_docker_image_hashes
+            .allowed_images(tee_upgrade_deadline_duration);
+        images.reverse();
+        images
     }
 
     pub fn whitelist_tee_proposal(
@@ -405,14 +438,14 @@ impl TeeState {
     pub(crate) fn clean_invalid_attestations(
         &mut self,
         tee_upgrade_deadline_duration: Duration,
-        max_scan: usize,
+        max_scan: u32,
         is_in_use: impl Fn(&Node) -> bool,
     ) -> Vec<AccountId> {
         // Materialize candidates before any mutation to avoid iterator invalidation.
         let removable_tls_keys: Vec<Ed25519PublicKey> = self
             .nodes
             .iter()
-            .take(max_scan)
+            .take(usize::try_from(max_scan).expect("u32 should fit in a usize on wasm32 targets"))
             .filter(|(_, node)| {
                 !self.has_valid_attestation(node, tee_upgrade_deadline_duration) && !is_in_use(node)
             })
@@ -451,6 +484,15 @@ impl TeeState {
             .collect()
     }
 
+    pub(crate) fn get_attestation(
+        &self,
+        tls_public_key: &Ed25519PublicKey,
+    ) -> Option<dtos::StoredAttestation> {
+        self.nodes
+            .get(tls_public_key)
+            .map(IntoInterfaceType::into_dto_type)
+    }
+
     pub(crate) fn node_of(
         &self,
         account_id: &AccountId,
@@ -473,8 +515,8 @@ impl TeeState {
     }
 }
 
-/// An MPC node, stored under its TLS key. An account can own many nodes; as a participant it
-/// uses its current node and, while migrating, the node it migrates to.
+/// A node of an [`AttestedService`], stored under its TLS key. An account can own many MPC nodes;
+/// as a participant it uses its current node and, while migrating, the node it migrates to.
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 #[cfg_attr(
     all(feature = "abi", not(target_arch = "wasm32")),
@@ -522,8 +564,9 @@ mod tests {
         gen_participant, gen_participants, node_for,
     };
     use crate::tee::test_utils::{
-        MPC_NODE_COMPOSE, allow_launcher, dstack_fixture_node, set_block_secs, set_block_timestamp,
-        whitelist_dstack_measurements,
+        LAUNCHER_TTL, MPC_NODE_COMPOSE, NEWEST_LAUNCHER_ADDED_AT_SECS, OLD_LAUNCHER_ADDED_AT_SECS,
+        after_retention, allow_launcher, dstack_fixture_node, dummy_code_hash, launcher_mock,
+        set_block_secs, set_block_timestamp, whitelist_dstack_measurements,
     };
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{
@@ -541,6 +584,38 @@ mod tests {
         VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
         launcher_image_hash, measurements, mock_expiring_at, mock_tcb_info, verified_report,
     };
+
+    #[test]
+    fn get_allowed_mpc_docker_images__should_list_newest_first() {
+        // Given
+        const DEADLINE_SECS: u64 = 100;
+        const NEWER_ADDED_AT_SECS: u64 = 2;
+        let deadline = Duration::from_secs(DEADLINE_SECS);
+        let (older, newer) = (dummy_code_hash(1), dummy_code_hash(2));
+        let mut tee_state = TeeState::default();
+        set_block_secs(NEWER_ADDED_AT_SECS - 1);
+        tee_state.whitelist_tee_proposal(older, MPC_NODE_COMPOSE, deadline);
+        set_block_secs(NEWER_ADDED_AT_SECS);
+        tee_state.whitelist_tee_proposal(newer, MPC_NODE_COMPOSE, deadline);
+
+        // When
+        let images = tee_state.get_allowed_mpc_docker_images(deadline);
+
+        // Then
+        assert_eq!(
+            images,
+            vec![
+                dtos::AllowedMpcDockerImageHash {
+                    image_hash: newer,
+                    expiry_timestamp_seconds: None,
+                },
+                dtos::AllowedMpcDockerImageHash {
+                    image_hash: older,
+                    expiry_timestamp_seconds: Some(NEWER_ADDED_AT_SECS + DEADLINE_SECS),
+                },
+            ]
+        );
+    }
 
     #[test]
     fn clean_non_participant_votes__should_not_touch_attestations() {
@@ -774,24 +849,6 @@ mod tests {
 
         // Then
         assert_matches!(validation_result, TeeValidationResult::Full);
-    }
-
-    const LAUNCHER_TTL: Duration = Duration::from_secs(100);
-    const OLD_LAUNCHER_ADDED_AT_SECS: u64 = 1;
-    const NEWEST_LAUNCHER_ADDED_AT_SECS: u64 = OLD_LAUNCHER_ADDED_AT_SECS + 1;
-    const VERY_FAR_IN_FUTURE_SECS: u64 = 1_000_000;
-
-    fn after_retention(added_at_secs: u64) -> u64 {
-        added_at_secs + LAUNCHER_TTL.as_secs() + 1
-    }
-
-    fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
-        MockAttestation::WithConstraints {
-            mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(MPC_NODE_COMPOSE.hash(launcher, mpc_hash)),
-            expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
-            expected_measurements: None,
-        }
     }
 
     #[test]

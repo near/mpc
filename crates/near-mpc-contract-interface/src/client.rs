@@ -5,16 +5,17 @@
 //! backend implementing [`CallContract`]. Backends implementing
 //! [`ViewContract`] get the typed view methods.
 
+mod backup_service;
+
 use near_contract_transport::{
     CallContract, FunctionCallArgs, Json, NearGas, NearToken, ViewArgs, ViewCall, ViewContract,
 };
 use serde::de::DeserializeOwned;
 
 use crate::call_args::{
-    AvailableAttestationGrantsArgs, CKDRespondArgs, CleanInvalidAttestationsArgs,
-    DerivedPublicKeyArgs, GetAttestationArgs, GetPendingCKDRequestArgs,
-    GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs, InitArgs,
-    InitRunningArgs, PrepayAttestationStorageArgs, PublicKeyArgs, RegisterBackupServiceArgs,
+    AccountIdArgs, CKDRespondArgs, DerivedPublicKeyArgs, GetAttestationArgs,
+    GetPendingCKDRequestArgs, GetPendingSignatureRequestArgs, GetPendingVerifyForeignTxRequestArgs,
+    InitArgs, InitRunningArgs, MaxScanArgs, PrepayAttestationStorageArgs, PublicKeyArgs,
     RegisterForeignChainsConfigArgs, RequestAppPrivateKeyArgs, SignArgs, SignatureRespondArgs,
     StartKeygenArgs, StartNodeMigrationArgs, StartReshareArgs, SubmitParticipantInfoArgs,
     UpdateParticipantUrlArgs, VerifyForeignTransactionArgs, VerifyForeignTransactionRespondArgs,
@@ -34,31 +35,30 @@ use crate::method_names::{
     GENESIS_HASH, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
     GET_TEE_ACCOUNTS, INIT, INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO,
-    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES,
-    PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
-    REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
-    REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
-    RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
-    START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
-    TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
-    VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
-    VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
-    VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_REMOVE_LAUNCHER_HASH,
-    VOTE_REMOVE_OS_MEASUREMENT, VOTE_RESHARED, VOTE_TEE_VERIFIER_CHANGE,
+    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES, PARTICIPANT_INFO,
+    PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_FOREIGN_CHAINS_CONFIG,
+    REMOVE_CONTRACT_UPDATE_VOTE, REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES,
+    REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD, RESPOND_VERIFY_FOREIGN_TX, SIGN,
+    START_KEYGEN_INSTANCE, START_NODE_MIGRATION, START_RESHARE_INSTANCE, STATE,
+    SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO, TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES,
+    UPDATE_PARTICIPANT_URL, VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS,
+    VOTE_ADD_LAUNCHER_HASH, VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING,
+    VOTE_CONTRACT_UPDATE, VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK,
+    VOTE_REMOVE_LAUNCHER_HASH, VOTE_REMOVE_OS_MEASUREMENT, VOTE_RESHARED, VOTE_TEE_VERIFIER_CHANGE,
     VOTE_UPDATE_FOREIGN_CHAIN_PROVIDERS,
 };
 use crate::types::{
     AccountId, AddDomainsVotes, AllowedMpcDockerImageHash, Attestation, AuthenticatedParticipantId,
-    AvailableForeignChains, BackupServiceInfo, CKDAppPublicKey, CKDRequest, CKDRequestArgs,
-    CKDResponse, ChainEntry, CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId,
-    Ed25519PublicKey, EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig,
-    ForeignChainsConfigs, GenesisHash, GovernanceThresholdParameters,
-    GovernanceThresholdParametersVotes, InitConfig, KeyEventId, Keyset, LauncherDockerComposeHash,
-    LauncherHashVotes, LauncherImageHash, MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo,
-    ParticipantUrl, ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState,
-    PublicKey, SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation,
-    TeeVerifierCodeHash, Update, UpdateHash, VerifyForeignTransactionRequest,
-    VerifyForeignTransactionRequestArgs, VerifyForeignTransactionResponse, YieldIndex,
+    AvailableForeignChains, CKDAppPublicKey, CKDRequest, CKDRequestArgs, CKDResponse, ChainEntry,
+    CodeHashesVotes, Config, DestinationNodeInfo, DomainConfig, DomainId, Ed25519PublicKey,
+    EpochId, ExpectedMeasurements, ForeignChain, ForeignChainsConfig, ForeignChainsConfigs,
+    GenesisHash, GovernanceThresholdParameters, GovernanceThresholdParametersVotes, InitConfig,
+    KeyEventId, Keyset, LauncherDockerComposeHash, LauncherHashVotes, LauncherImageHash,
+    MeasurementVotes, MigrationInfo, NodeImageHash, NodeInfo, ParticipantInfo, ParticipantUrl,
+    ProposalHash, ProposedGovernanceThresholdParameters, ProtocolContractState, PublicKey,
+    SignRequestArgs, SignatureRequest, SignatureResponse, StoredAttestation, TeeVerifierCodeHash,
+    Update, UpdateHash, VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
+    VerifyForeignTransactionResponse, YieldIndex,
 };
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use std::collections::{BTreeMap, BTreeSet};
@@ -497,20 +497,6 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
-    pub async fn register_backup_service(
-        &self,
-        backup_service_info: BackupServiceInfo,
-    ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&RegisterBackupServiceArgs::new(backup_service_info))?;
-        self.call(FunctionCallArgs::new(
-            REGISTER_BACKUP_SERVICE,
-            args,
-            MAX_GAS,
-            NearToken::from_yoctonear(MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR),
-        ))
-        .await
-    }
-
     pub async fn start_node_migration(
         &self,
         destination_node_info: DestinationNodeInfo,
@@ -631,7 +617,7 @@ impl<C: CallContract> MpcContractHandle<C> {
         &self,
         max_scan: u32,
     ) -> Result<C::Output, MpcContractHandleError<C::Error>> {
-        let args = serde_json::to_vec(&CleanInvalidAttestationsArgs::new(max_scan))?;
+        let args = serde_json::to_vec(&MaxScanArgs::new(max_scan))?;
         self.call(FunctionCallArgs::no_deposit(
             CLEAN_INVALID_ATTESTATIONS,
             args,
@@ -693,6 +679,15 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     /// versions.
     pub fn current_keyset(&self) -> ViewCall<C, Option<Keyset>> {
         self.view(ViewArgs::no_args(CURRENT_KEYSET))
+    }
+
+    /// The account's TLS key and URL among the participants holding [`Self::current_keyset`];
+    /// `None` if the account is not one of them. Its JSON format stays stable across contract
+    /// versions.
+    pub fn participant_info(&self, account_id: AccountId) -> ViewCall<C, Option<ParticipantInfo>> {
+        let args = serde_json::to_vec(&AccountIdArgs::new(account_id))
+            .expect("plain-data args; JSON serialization cannot fail");
+        self.view(ViewArgs::new(PARTICIPANT_INFO, args))
     }
 
     pub fn config(&self) -> ViewCall<C, Config> {
@@ -761,7 +756,7 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
     }
 
     pub fn available_attestation_grants(&self, account_id: AccountId) -> ViewCall<C, u32> {
-        let args = serde_json::to_vec(&AvailableAttestationGrantsArgs::new(account_id))
+        let args = serde_json::to_vec(&AccountIdArgs::new(account_id))
             .expect("plain-data args; JSON serialization cannot fail");
         self.view(ViewArgs::new(AVAILABLE_ATTESTATION_GRANTS, args))
     }
@@ -826,9 +821,9 @@ mod tests {
         ForeignChain, ForeignChainRpcRequest, ForeignTxPayloadVersion, GenesisHash,
         GovernanceThreshold, GovernanceThresholdParameters, Hash256, InitConfig, K256AffinePoint,
         K256Scalar, K256Signature, KeyEventId, KeyProviderEventDigest, Keyset, LauncherImageHash,
-        MockAttestation, MrtdHash, ParticipantId, ParticipantInfo, Participants, Payload,
-        ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId, PublicKey,
-        ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
+        MockAttestation, MrtdHash, NodeImageHash, ParticipantId, ParticipantInfo, Participants,
+        Payload, ProposedGovernanceThresholdParameters, Protocol, ProviderConfig, ProviderId,
+        PublicKey, ReconstructionThreshold, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, SignRequestArgs,
         SignatureRequest, SignatureResponse, TeeVerifierCodeHash, Update, UpdateHash,
         VerifyForeignTransactionRequest, VerifyForeignTransactionRequestArgs,
         VerifyForeignTransactionResponse,
@@ -927,6 +922,7 @@ mod tests {
             payload_version: ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
         };
+        let code_hash = NodeImageHash::from([7u8; 32]);
         let launcher_hash = LauncherImageHash::from([7u8; 32]);
         let measurement = ExpectedMeasurements {
             mrtd: MrtdHash::from([7u8; 48]),
@@ -1104,7 +1100,27 @@ mod tests {
             .await
             .unwrap();
         handle
-            .vote_remove_os_measurement(measurement)
+            .vote_remove_os_measurement(measurement.clone())
+            .await
+            .unwrap();
+        handle
+            .vote_backup_service_code_hash(code_hash)
+            .await
+            .unwrap();
+        handle
+            .vote_add_backup_service_launcher_hash(launcher_hash)
+            .await
+            .unwrap();
+        handle
+            .vote_remove_backup_service_launcher_hash(launcher_hash)
+            .await
+            .unwrap();
+        handle
+            .vote_add_backup_service_os_measurement(measurement.clone())
+            .await
+            .unwrap();
+        handle
+            .vote_remove_backup_service_os_measurement(measurement)
             .await
             .unwrap();
         handle
@@ -1119,9 +1135,12 @@ mod tests {
             .await
             .unwrap();
         handle
-            .register_backup_service(BackupServiceInfo {
-                public_key: Ed25519PublicKey::from([7u8; 32]),
-            })
+            .register_backup_service(
+                BackupServiceInfo {
+                    public_key: Ed25519PublicKey::from([7u8; 32]),
+                },
+                Attestation::Mock(MockAttestation::Valid),
+            )
             .await
             .unwrap();
         handle
@@ -1169,7 +1188,9 @@ mod tests {
             .unwrap();
         handle.verify_tee().await.unwrap();
         handle.clean_tee_status().await.unwrap();
+        handle.clean_backup_service_tee_status().await.unwrap();
         handle.clean_invalid_attestations(7).await.unwrap();
+        handle.reverify_backup_services(7).await.unwrap();
 
         // Then
         let calls = caller.calls.lock().unwrap();
@@ -1207,10 +1228,26 @@ mod tests {
         let _ = handle.contract_update_votes().await;
         let _ = handle.state().await;
         let _ = handle.current_keyset().await;
+        let _ = handle.participant_info("alice.near".parse().unwrap()).await;
         let _ = handle.config().await;
         let _ = handle.genesis_hash().await;
         let _ = handle.get_tee_accounts().await;
         let _ = handle.migration_info().await;
+        let _ = handle.allowed_backup_service_code_hashes().await;
+        let _ = handle
+            .allowed_backup_service_launcher_compose_hashes()
+            .await;
+        let _ = handle.allowed_backup_service_launcher_image_hashes().await;
+        let _ = handle.allowed_backup_service_os_measurements().await;
+        let _ = handle
+            .attested_backup_service("alice.near".parse().unwrap())
+            .await;
+        let _ = handle
+            .get_backup_service_attestation(&Ed25519PublicKey::from([7u8; 32]))
+            .await;
+        let _ = handle
+            .attested_migration_destination("alice.near".parse().unwrap())
+            .await;
         let _ = handle.get_available_foreign_chains().await;
         let _ = handle.get_foreign_chains_configs().await;
         let _ = handle.allowed_foreign_chain_providers().await;

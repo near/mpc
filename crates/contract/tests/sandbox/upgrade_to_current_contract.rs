@@ -16,17 +16,21 @@ use crate::sandbox::{
         sandbox_mpc_contract::{SandboxMpcContract, SandboxMpcContractExt as _},
         shared_key_utils::DomainKey,
         sign_utils::{make_and_submit_requests, submit_ckd_response, submit_signature_response},
-        transactions::{CallMpcContract, execute_async_handle_calls},
+        transactions::{CallMpcContract, all_receipts_successful, execute_async_handle_calls},
     },
 };
-use mpc_contract::primitives::{
-    key_state::EpochId,
-    participants::Participants,
-    test_utils::{bogus_genesis_hash, bogus_tee_verifier_account_id},
-    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
+use mpc_contract::{
+    primitives::{
+        key_state::EpochId,
+        participants::Participants,
+        test_utils::{bogus_genesis_hash, bogus_tee_verifier_account_id},
+        thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
+    },
+    tee::test_utils::make_measurement,
 };
 use near_account_id::AccountId;
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
+use near_mpc_contract_interface::deposits::MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types as dtos;
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -35,7 +39,11 @@ use near_mpc_contract_interface::types::{
     Protocol, ProviderConfig, ProviderId, ReconstructionThreshold,
 };
 use near_mpc_sdk::sign::SignatureRequestResponse;
-use near_workspaces::{Account, Worker, network::Sandbox, types::Gas};
+use near_workspaces::{
+    Account, Worker,
+    network::Sandbox,
+    types::{Gas, NearToken},
+};
 use rand_core::OsRng;
 use rstest::rstest;
 use std::collections::{BTreeMap, HashSet};
@@ -376,6 +384,59 @@ async fn migrate__should_leave_the_genesis_hash_unset_outside_mainnet_and_testne
 
     // Then
     assert_eq!(contract.genesis_hash().await.unwrap().value, None);
+}
+
+#[tokio::test]
+async fn migrate__should_seed_backup_service_measurements_and_keep_backup_registrations() {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
+    let contract = deploy_old(&worker, Network::Mainnet).await.unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
+    submit_attestations(&contract, &accounts, &participants).await;
+    let measurement = make_measurement(1);
+    execute_async_handle_calls(&accounts, &contract, |handle| {
+        let measurement = measurement.clone();
+        async move { handle.vote_add_os_measurement(measurement).await }
+    })
+    .await
+    .unwrap();
+    let backup_service_info = dtos::BackupServiceInfo {
+        public_key: dtos::Ed25519PublicKey::from([1; 32]),
+    };
+    // The old contract's registration takes no attestation and requires a deposit
+    let registration = accounts[0]
+        .call(contract.id(), method_names::REGISTER_BACKUP_SERVICE)
+        .args_json(serde_json::json!({ "backup_service_info": backup_service_info }))
+        .deposit(NearToken::from_yoctonear(
+            MINIMUM_NODE_MANAGEMENT_DEPOSIT_YOCTONEAR,
+        ))
+        .transact()
+        .await
+        .unwrap();
+    all_receipts_successful(registration).unwrap();
+    upgrade_to_new(&contract).await.unwrap();
+
+    // When
+    migrate_and_assert_contract_code(&contract).await.unwrap();
+
+    // Then
+    assert_eq!(
+        (
+            contract.migration_info().await.unwrap().value,
+            contract
+                .allowed_backup_service_os_measurements()
+                .await
+                .unwrap()
+                .value,
+        ),
+        (
+            dtos::MigrationInfo::from(BTreeMap::from([(
+                accounts[0].id().clone(),
+                (Some(backup_service_info), None),
+            )])),
+            vec![measurement],
+        )
+    );
 }
 
 //// Verifies that upgrading the contract preserves state and functionality.

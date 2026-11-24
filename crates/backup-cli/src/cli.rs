@@ -76,8 +76,6 @@ pub struct Args {
 pub enum Command {
     /// Generate new backup service keys (p2p_private_key and near_signer_key) and save to secrets.json.
     GenerateKeys(GenerateKeysArgs),
-    /// Print the NEAR CLI command to register the backup service on the MPC contract.
-    Register(RegisterArgs),
     /// Get keyshares from an MPC node and save them locally.
     GetKeyshares(NodeConnectionArgs),
     /// Put keyshares to an MPC node from local storage.
@@ -89,23 +87,6 @@ pub enum Command {
 
 #[derive(clap::Args, Debug)]
 pub struct GenerateKeysArgs {}
-
-#[derive(clap::Args, Debug)]
-pub struct RegisterArgs {
-    /// MPC contract account ID.
-    #[arg(long, env)]
-    pub mpc_contract_account_id: AccountId,
-
-    /// NEAR network config name (e.g., testnet, mainnet, mpc-localnet).
-    /// This will be used directly in the NEAR CLI command.
-    #[arg(long, env)]
-    pub near_network: String,
-
-    /// Named account that will sign the registration transaction (e.g., sam.test.near).
-    /// This is the operator's account that has permission to register backup services.
-    #[arg(long, env)]
-    pub signer_account_id: AccountId,
-}
 
 /// How to reach an MPC node. Shared by every subcommand that talks to one.
 #[derive(clap::Args, Debug)]

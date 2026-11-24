@@ -136,6 +136,8 @@ This installs the `backup-cli` binary to your cargo bin directory (typically `~/
 
 ### Generate Backup Service Keys
 
+**Important:** If your account already has a backup service key registered (check `migration_info` as in [Step 2](#step-2-check-the-backup-cli-registration)), skip this section and keep the backup home directory whose `secrets.json` holds that key. `generate-keys` overwrites `secrets.json`, and a new key can no longer be registered from `backup-cli` (see Step 2).
+
 Create the backup home directory (`$BACKUP_HOME_DIR` from [Environment Variables Setup](#environment-variables-setup)):
 
 ```bash
@@ -156,45 +158,11 @@ This creates a `secrets.json` file in your backup home directory containing:
 
 **Important:** Keep the `secrets.json` file secure. Anyone with access to this file can authenticate as your backup service and decrypt any keyshares stored locally.
 
-## Step 2: Register the backup-cli
+## Step 2: Check the backup-cli registration
 
-Before you can backup keyshares, you must register your backup-cli's public key with the MPC contract.
+Before you can backup keyshares, the MPC contract must list your backup-cli's public key as your account's backup service.
 
-### Get the Registration Command
-
-Run the following command to generate the NEAR CLI command for registration:
-
-```bash
-backup-cli \
-  --home-dir $BACKUP_HOME_DIR \
-  register \
-  --mpc-contract-account-id $MPC_CONTRACT_ACCOUNT_ID \
-  --near-network $NEAR_NETWORK \
-  --signer-account-id $SIGNER_ACCOUNT_ID
-```
-
-This will output a complete `near` CLI command. Example output:
-
-```bash
-Run the following command to register your backup service:
-
-near contract call-function as-transaction \
-  $MPC_CONTRACT_ACCOUNT_ID \
-  register_backup_service \
-  json-args '{"backup_service_info":{"public_key":"ed25519:AbC123..."}}' \
-  prepaid-gas '300.0 Tgas' \
-  attached-deposit '1 yoctoNEAR' \
-  sign-as $SIGNER_ACCOUNT_ID \
-  network-config $NEAR_NETWORK \
-  sign-with-keychain \
-  send
-```
-
-### Execute the Registration
-
-Copy and run the generated command to register your backup-cli with the contract.
-
-**Note:** The "public key" in the registration corresponds to the `p2p_private_key` created in Step 1.
+The contract registers a backup service only together with a TDX attestation that the backup service produces inside its own CVM and signs with an account key generated there (see [Backup Service Attestation Data](../design/backup-service-attestation-data.md)). A `backup-cli` running outside a TEE cannot produce one, so it cannot register. A key registered before the contract required attestations stays listed in `migration_info`, and MPC nodes keep accepting it, as long as `secrets.json` in your backup home directory holds its `p2p_private_key`.
 
 ### Verify Registration
 ```bash

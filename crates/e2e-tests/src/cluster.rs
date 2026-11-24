@@ -969,15 +969,20 @@ impl MpcCluster {
             .await
     }
 
-    /// Register backup service info for a node.
+    /// Prepays a grant and registers a backup service for a node under a mock attestation, which
+    /// only a contract built to accept mock attestations stores.
     pub async fn register_backup_service(
         &self,
         node_index: usize,
         backup_service_info: BackupServiceInfo,
     ) -> anyhow::Result<near_kit::rpc::FinalExecutionOutcome> {
+        self.prepay_attestation_grant(node_index).await?;
         self.operator_client_for(node_index)
             .call_mpc(self.contract_id())
-            .register_backup_service(backup_service_info)
+            .register_backup_service(
+                backup_service_info,
+                Attestation::Mock(MockAttestation::Valid),
+            )
             .await
             .context("failed to register backup service")
     }

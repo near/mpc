@@ -23,7 +23,8 @@ const DEFAULT_RETURN_CK_AND_CLEAN_STATE_ON_SUCCESS_CALL_TERA_GAS: u64 = 7;
 const DEFAULT_FAIL_ON_TIMEOUT_TERA_GAS: u64 = 2;
 /// Prepaid gas for a `fail_attestation_submission` call
 const DEFAULT_FAIL_ATTESTATION_SUBMISSION_TERA_GAS: u64 = 2;
-/// Prepaid gas for a `clean_tee_status` call
+/// Prepaid gas for each of the [`crate::MpcContract::clean_tee_status`] and
+/// [`crate::MpcContract::clean_backup_service_tee_status`] calls
 const DEFAULT_CLEAN_TEE_STATUS_TERA_GAS: u64 = 10;
 /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
 const DEFAULT_CLEAN_INVALID_ATTESTATIONS_TERA_GAS: u64 = 15;
@@ -38,10 +39,11 @@ pub(crate) const DEFAULT_CLEAN_FOREIGN_CHAIN_DATA_TERA_GAS: u64 = 8;
 const DEFAULT_REMOVE_NON_PARTICIPANT_TEE_VERIFIER_VOTES_TERA_GAS: u64 = 5;
 /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the TEE verifier.
 const DEFAULT_VERIFIER_TERA_GAS: u64 = 200;
-/// Prepaid gas for the `resolve_verification` callback. Carries the bulk of the
+/// Prepaid gas for each of the [`crate::MpcContract::resolve_verification`] and
+/// [`crate::MpcContract::resolve_backup_service_verification`] callbacks. Carries the bulk of the
 /// post-DCAP work (allowlist match, RTMR3 replay, app-compose validation, store).
 const DEFAULT_RESOLVE_VERIFICATION_TERA_GAS: u64 = 60;
-/// Default TTL after which a launcher image hash unused by any participant is evicted.
+/// Default TTL after which an unused launcher image hash is evicted.
 pub(crate) const DEFAULT_LAUNCHER_HASH_UNUSED_TTL_SECONDS: u64 = 14 * 24 * 60 * 60; // 14 days
 
 /// One attestation-storage grant, in milliNEAR.
@@ -70,7 +72,8 @@ pub(crate) struct Config {
     pub(crate) fail_on_timeout_tera_gas: u64,
     /// Prepaid gas for a `fail_attestation_submission` call.
     pub(crate) fail_attestation_submission_tera_gas: u64,
-    /// Prepaid gas for a `clean_tee_status` call.
+    /// Prepaid gas for each of the [`crate::MpcContract::clean_tee_status`] and
+    /// [`crate::MpcContract::clean_backup_service_tee_status`] calls.
     pub(crate) clean_tee_status_tera_gas: u64,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
     pub(crate) clean_invalid_attestations_tera_gas: u64,
@@ -84,9 +87,10 @@ pub(crate) struct Config {
     pub(crate) remove_non_participant_tee_verifier_votes_tera_gas: u64,
     /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub(crate) verifier_tera_gas: u64,
-    /// Prepaid gas for the `resolve_verification` callback.
+    /// Prepaid gas for each of the [`crate::MpcContract::resolve_verification`] and
+    /// [`crate::MpcContract::resolve_backup_service_verification`] callbacks.
     pub(crate) resolve_verification_tera_gas: u64,
-    /// TTL for launcher hashes no current participant uses; see
+    /// TTL for unused launcher hashes; see
     /// [`near_mpc_contract_interface::types::Config::launcher_hash_unused_ttl_seconds`].
     pub(crate) launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, charged for one attestation-storage grant.

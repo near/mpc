@@ -93,16 +93,25 @@ pub fn account_ids(participants: &Participants) -> Vec<AccountId> {
 /// We do this by starting from the Running state and calling vote_new_parameters to have it
 /// transition into Resharing. (This also tests the transitioning code path.)
 pub fn gen_resharing_state(num_domains: usize) -> (Environment, ResharingContractState) {
-    let mut env = Environment::new(Some(100), None, None);
-    let mut running = gen_running_state(num_domains);
+    let running = gen_running_state(num_domains);
     let proposal = gen_valid_params_proposal(&running.parameters);
+    gen_resharing_state_from(running, &proposal)
+}
+
+/// Like [`gen_resharing_state`], but from the given [`RunningContractState`] towards the given
+/// proposal.
+pub fn gen_resharing_state_from(
+    mut running: RunningContractState,
+    proposal: &ProposedGovernanceThresholdParameters,
+) -> (Environment, ResharingContractState) {
+    let mut env = Environment::new(Some(100), None, None);
     let mut votes = GovernanceThresholdParametersVotes::default();
     let mut resharing_state = None;
     for account in threshold_voters(&running.parameters) {
         env.set_signer(&account);
         assert!(resharing_state.is_none());
         resharing_state = running
-            .vote_new_parameters(running.keyset.epoch_id.next(), &proposal, &mut votes)
+            .vote_new_parameters(running.keyset.epoch_id.next(), proposal, &mut votes)
             .unwrap();
     }
     (

@@ -5,7 +5,7 @@ use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::Error;
 use crate::foreign_chains_metadata::ForeignChainsMetadata;
 use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
-use crate::primitives::participants::Participants;
+use crate::primitives::participants::{ParticipantInfo, Participants};
 use crate::primitives::test_utils::{
     NUM_PROTOCOLS, bogus_ed25519_near_public_key, bogus_genesis_hash,
     bogus_tee_verifier_account_id, gen_participant_url, gen_participants,
@@ -19,6 +19,9 @@ use crate::state::test_utils::{
     gen_initializing_state, gen_resharing_state, gen_running_state, threshold_voters,
 };
 use crate::storage_keys::StorageKey;
+use crate::tee::attested_service::AttestedService;
+use crate::tee::test_utils::{dstack_fixture_node, tee_state_of, whitelist_dstack_measurements};
+use crate::tee::verification_context::VerificationContext;
 use dtos::{
     Attestation, Curve, DomainConfig, DomainId, DomainPurpose, MockAttestation, Protocol,
     ReconstructionThreshold,
@@ -34,6 +37,11 @@ use near_sdk::{NearToken, VMContext, env, testing_env};
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
 use std::{assert_matches, str::FromStr, time::Duration};
+use tee_verifier_interface::VerificationResultWithCollateralDates;
+use test_utils::attestation::{
+    VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
+    launcher_image_hash, measurements, mock_tcb_info, verified_report,
+};
 use threshold_signatures::confidential_key_derivation as ckd;
 use threshold_signatures::frost_core::Group as _;
 use threshold_signatures::frost_ed25519::Ed25519Group;
@@ -387,6 +395,81 @@ pub(crate) fn must_attest_new_node(
         )
         .expect("attestation insertion should succeed");
     node
+}
+
+/// A contract fresh from [`MpcContract::init`]: no participant has attested yet.
+pub(crate) fn freshly_initialized_contract(
+    participants: &Participants,
+    governance_threshold: u64,
+) -> MpcContract {
+    let parameters = GovernanceThresholdParameters::new(
+        participants.clone(),
+        GovernanceThreshold::new(governance_threshold),
+    )
+    .unwrap();
+    MpcContract::init(
+        (&parameters).into_dto_type(),
+        bogus_tee_verifier_account_id(),
+        bogus_genesis_hash(),
+        None,
+    )
+    .unwrap()
+}
+
+/// Adds the account of [`dstack_fixture_node`] to `participants`, under the fixture's TLS key.
+pub(crate) fn with_dstack_fixture_participant(participants: &Participants) -> Participants {
+    let fixture_node = dstack_fixture_node();
+    let mut participants = participants.clone();
+    participants
+        .insert(
+            fixture_node.account_id,
+            ParticipantInfo {
+                url: gen_participant_url(participants.len()),
+                tls_public_key: fixture_node.tls_public_key,
+            },
+        )
+        .unwrap();
+    participants
+}
+
+pub(crate) fn verified_verdict() -> VerificationResultWithCollateralDates {
+    VerificationResultWithCollateralDates::Verified {
+        report: verified_report(),
+        collateral_dates: collateral_dates(),
+    }
+}
+
+/// Sets a block time at which the dstack fixture is valid, with the contract as caller, and
+/// readies `contract` to store the fixture's node as the given service.
+pub(crate) fn prepare_dstack_verification(
+    contract: &mut MpcContract,
+    service: AttestedService,
+) -> VerificationContext {
+    let contract_account_id = env::current_account_id();
+    let context = VMContextBuilder::new()
+        .current_account_id(contract_account_id.clone())
+        .predecessor_account_id(contract_account_id)
+        .block_timestamp(VALID_ATTESTATION_TIMESTAMP * 1_000_000_000)
+        .build();
+    testing_env!(context);
+
+    whitelist_dstack_measurements(
+        tee_state_of(contract, service),
+        image_digest(),
+        launcher_image_hash(),
+        measurements(),
+        Some(launcher_compose_digest()),
+    );
+
+    let node = dstack_fixture_node();
+    // Storing a new entry consumes a grant, so stand in for the operator's prepayment.
+    contract
+        .available_attestation_grants
+        .insert(node.account_id.clone(), 1);
+    VerificationContext {
+        node,
+        tcb_info: mock_tcb_info(),
+    }
 }
 
 pub(crate) fn destination_of(node: &dtos::NodeInfo) -> dtos::DestinationNodeInfo {

@@ -12,7 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use borsh::{BorshDeserialize, BorshSerialize};
 use mpc_primitives::hash::GenesisHash;
 use near_mpc_contract_interface::types::{
-    self as dtos, CKDRequest, SignatureRequest, VerifyForeignTransactionRequest, YieldIndex,
+    self as dtos, BackupServiceInfo, CKDRequest, DestinationNodeInfo, SignatureRequest,
+    VerifyForeignTransactionRequest, YieldIndex,
 };
 use near_sdk::{
     AccountId, env,
@@ -22,7 +23,6 @@ use near_sdk::{
 use crate::{
     config::Config,
     foreign_chains_metadata::ForeignChainsMetadata,
-    node_migrations::NodeMigrations,
     primitives::{
         domain::{AddDomainsVotes, DomainRegistry},
         key_state::{
@@ -108,11 +108,27 @@ pub struct MpcContract {
     parameters_votes: GovernanceThresholdParametersVotes,
 }
 
+#[derive(Debug, BorshSerialize, BorshDeserialize)]
+struct NodeMigrations {
+    backup_services_info: IterableMap<AccountId, BackupServiceInfo>,
+    ongoing_migrations: IterableMap<AccountId, DestinationNodeInfo>,
+}
+
 impl From<MpcContract> for crate::MpcContract {
     fn from(old: MpcContract) -> Self {
         let OldProtocolContractState::Running(running_state) = old.protocol_state else {
             env::panic_str("Contract must be in running state when migrating.");
         };
+
+        let mut node_migrations = crate::node_migrations::NodeMigrations::new(
+            old.node_migrations.backup_services_info,
+            old.node_migrations.ongoing_migrations,
+        );
+        // Backup service CVMs run the same dstack OS as MPC nodes. One of another size needs a
+        // vote, as RTMR0 depends on its vCPUs and memory
+        node_migrations
+            .backup_service_tee_state
+            .allowed_measurements = old.tee_state.allowed_measurements.clone();
 
         crate::MpcContract {
             protocol_state: ProtocolContractState::Running(running_state.into()),
@@ -123,7 +139,7 @@ impl From<MpcContract> for crate::MpcContract {
             config: old.config.into(),
             tee_state: old.tee_state,
             accept_requests: old.accept_requests,
-            node_migrations: old.node_migrations,
+            node_migrations,
             foreign_chains: old.foreign_chains,
             tee_verifier_account_id: old.tee_verifier_account_id,
             tee_verifier_votes: old.tee_verifier_votes,
@@ -226,7 +242,10 @@ mod tests {
             config: OldConfig::default(),
             tee_state: TeeState::default(),
             accept_requests: true,
-            node_migrations: NodeMigrations::default(),
+            node_migrations: NodeMigrations {
+                backup_services_info: IterableMap::new(StorageKey::BackupServicesInfo),
+                ongoing_migrations: IterableMap::new(StorageKey::NodeMigrations),
+            },
             foreign_chains: Lazy::new(
                 StorageKey::ForeignChainMetadata,
                 ForeignChainsMetadata::default(),

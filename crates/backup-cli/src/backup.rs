@@ -31,24 +31,6 @@ pub async fn run_command(args: cli::Args) {
                 .expect("failed to create secrets storage");
             generate_secrets(&secrets_storage).await;
         }
-        cli::Command::Register(command_args) => {
-            let home_dir = PathBuf::from(args.home_dir);
-            let secrets_storage =
-                adapters::secrets_storage::SharedJsonSecretsStorage::<File>::open_read(
-                    home_dir.as_path(),
-                )
-                .await
-                .expect("failed to create secrets storage");
-
-            print_register_command(
-                &secrets_storage,
-                &command_args.near_network,
-                &command_args.mpc_contract_account_id,
-                &command_args.signer_account_id,
-            )
-            .await;
-        }
-
         cli::Command::GetKeyshares(subcommand_args) => {
             let home_dir = PathBuf::from(args.home_dir);
             let (mpc_p2p_client, key_shares_storage) =
@@ -264,37 +246,6 @@ pub async fn generate_secrets(secrets_storage: &impl ports::SecretsRepository) {
         .store_secrets(&persistent_secrets)
         .await
         .expect("fail to store private key");
-}
-
-async fn print_register_command(
-    secrets_storage: &impl ports::SecretsRepository,
-    near_network: &str,
-    mpc_contract_account_id: &AccountId,
-    signer_account_id: &AccountId,
-) {
-    let secrets = secrets_storage
-        .load_secrets()
-        .await
-        .expect("failed to load secrets");
-
-    let public_key =
-        contract_types::Ed25519PublicKey::from(&secrets.p2p_private_key.verifying_key());
-    let public_key_str = String::from(&public_key);
-
-    println!("Run the following command to register your backup service:\n");
-    println!(
-        r#"near contract call-function as-transaction \
-  {} \
-  register_backup_service \
-  json-args '{{"backup_service_info":{{"public_key":"{}"}}}}' \
-  prepaid-gas '300.0 Tgas' \
-  attached-deposit '1 yoctoNEAR' \
-  sign-as {} \
-  network-config {} \
-  sign-with-keychain \
-  send"#,
-        mpc_contract_account_id, public_key_str, signer_account_id, near_network
-    );
 }
 
 pub async fn get_keyshares(

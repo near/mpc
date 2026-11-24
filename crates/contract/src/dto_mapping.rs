@@ -651,10 +651,7 @@ mod test_conversions {
 
     impl From<ParticipantInfo> for dtos::ParticipantInfo {
         fn from(info: ParticipantInfo) -> Self {
-            dtos::ParticipantInfo {
-                url: info.url,
-                tls_public_key: info.tls_public_key,
-            }
+            (&info).into_dto_type()
         }
     }
 
@@ -767,6 +764,15 @@ impl IntoInterfaceType<dtos::PublicKeyExtended> for &PublicKeyExtended {
 
 // --- Participants types ---
 
+impl IntoInterfaceType<dtos::ParticipantInfo> for &ParticipantInfo {
+    fn into_dto_type(self) -> dtos::ParticipantInfo {
+        dtos::ParticipantInfo {
+            url: self.url.clone(),
+            tls_public_key: self.tls_public_key.clone(),
+        }
+    }
+}
+
 impl IntoInterfaceType<dtos::Participants> for &Participants {
     fn into_dto_type(self) -> dtos::Participants {
         let participants = self
@@ -776,10 +782,7 @@ impl IntoInterfaceType<dtos::Participants> for &Participants {
                 (
                     account_id.clone(),
                     dtos::ParticipantId(participant_id.get()),
-                    dtos::ParticipantInfo {
-                        url: info.url.clone(),
-                        tls_public_key: info.tls_public_key.clone(),
-                    },
+                    info.into_dto_type(),
                 )
             })
             .collect();

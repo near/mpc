@@ -9,7 +9,11 @@ use near_mpc_contract_interface::types::{
     Attestation, Config, Ed25519PublicKey, GovernanceThreshold, NodeInfo, Participants,
     ProtocolContractState, StoredAttestation,
 };
-use near_workspaces::{Account, AccountId, result::ExecutionFinalResult, types::NearToken};
+use near_workspaces::{
+    AccessKey, Account, AccountId,
+    result::ExecutionFinalResult,
+    types::{NearToken, SecretKey},
+};
 
 pub fn total_gas_fee(result: &ExecutionFinalResult) -> NearToken {
     result
@@ -105,6 +109,27 @@ pub async fn submit_participant_info(
         .submit_participant_info(attestation.clone(), tls_key.clone())
         .await
         .map_err(Into::into)
+}
+
+/// Adds the secret key to the account as a function-call access key for the contract, and returns
+/// the account signing with it.
+pub async fn add_function_call_key(
+    account: &Account,
+    contract: &SandboxMpcContract,
+    secret_key: SecretKey,
+) -> anyhow::Result<Account> {
+    account
+        .batch(account.id())
+        .add_key(
+            secret_key.public_key(),
+            AccessKey::function_call_access(contract.id(), &[], None),
+        )
+        .transact()
+        .await?
+        .into_result()?;
+    let mut signer = account.clone();
+    signer.set_secret_key(secret_key);
+    Ok(signer)
 }
 
 pub async fn tee_verifier_account_id(contract: &SandboxMpcContract) -> AccountId {

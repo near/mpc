@@ -51,6 +51,10 @@ method:   current_keyset
 args:     {}
 
 contract: mpc.near
+method:   participant_info
+args:     {"account_id":"alice.near"}
+
+contract: mpc.near
 method:   config
 args:     {}
 
@@ -65,6 +69,34 @@ args:     {}
 contract: mpc.near
 method:   migration_info
 args:     {}
+
+contract: mpc.near
+method:   allowed_backup_service_code_hashes
+args:     {}
+
+contract: mpc.near
+method:   allowed_backup_service_launcher_compose_hashes
+args:     {}
+
+contract: mpc.near
+method:   allowed_backup_service_launcher_image_hashes
+args:     {}
+
+contract: mpc.near
+method:   allowed_backup_service_os_measurements
+args:     {}
+
+contract: mpc.near
+method:   attested_backup_service
+args:     {"account_id":"alice.near"}
+
+contract: mpc.near
+method:   get_backup_service_attestation
+args:     {"tls_public_key":"ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"}
+
+contract: mpc.near
+method:   attested_migration_destination
+args:     {"account_id":"alice.near"}
 
 contract: mpc.near
 method:   get_available_foreign_chains

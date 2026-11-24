@@ -177,13 +177,14 @@ To start, the run does exactly what the scripts do today:
 | `test-verify-and-upgrade.sh upgrade` | Rolling upgrade to a new manifest digest, verifying the cluster before and after. |
 | `test-hash-override.sh override` | A node launched with an approved override hash attests and signs. |
 | `test-hash-override.sh override-reject` | A node launched with an unapproved hash is rejected. |
-| `test-migration.sh` | A full `backup-cli` migration: keyshares out of one node, into a replacement, and back. |
+| `test-migration.sh` | A full `backup-cli` migration: keyshares out of one node, into a replacement, and back. Its soft-launch backup service registration fails against a contract that requires backup services to attest, so it needs a backup service running in a CVM first. |
 
 That already covers every row above, and none of it has CI signal today.
 
 Later the run can be extended, but only against that goal. The Rust e2e tests already
 cover resharing (`test_key_resharing`) and `backup-cli` migration
-(`migration_service__should_migrate_nodes_via_backup_cli`) with a mock attestation, so
+(`migration_service__should_migrate_nodes_via_backup_cli`) with a mock attestation, which
+only their own contract build accepts from a backup service, so
 repeating them here buys nothing but runtime on a machine we only have one of.
 
 ## Constraints

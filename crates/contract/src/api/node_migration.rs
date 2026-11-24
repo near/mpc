@@ -1,5 +1,5 @@
-//! Node migration: registering a backup service, starting and concluding a
-//! migration to new hardware, and updating a participant's URL.
+//! Node migration: starting and concluding a migration to new hardware, and updating a
+//! participant's URL.
 
 use crate::api::common::require_deposit;
 use crate::dto_mapping::{IntoContractType, TryIntoContractType};
@@ -16,45 +16,12 @@ use std::time::Duration;
 
 #[near]
 impl MpcContract {
+    /// Returns every account's registered backup service key and ongoing migration. A backup
+    /// service key listed here may have no valid attestation, which
+    /// [`MpcContract::attested_backup_service`] checks.
     pub fn migration_info(&self) -> dtos::MigrationInfo {
         log!("migration_info");
         self.node_migrations.get_all()
-    }
-
-    /// Registers or updates the backup service information for the caller account.
-    ///
-    /// The caller (`signer_account_id`) must be an existing or prospective participant.
-    /// Otherwise, the transaction will fail.
-    ///
-    /// Requires a deposit of at least [`MINIMUM_NODE_MANAGEMENT_DEPOSIT`] (excess is refunded), so
-    /// the call must be signed by a full-access key rather than the node's function-call access
-    /// key.
-    #[payable]
-    #[handle_result]
-    pub fn register_backup_service(
-        &mut self,
-        backup_service_info: dtos::BackupServiceInfo,
-    ) -> Result<(), Error> {
-        let account_id = Self::assert_caller_is_signer();
-        log!(
-            "register_backup_service: signer={:?}, backup_service_info={:?}",
-            account_id,
-            backup_service_info
-        );
-        if !self
-            .protocol_state
-            .is_existing_or_prospective_participant(&account_id)?
-        {
-            return Err(InvalidState::NotParticipant {
-                account_id: account_id.clone(),
-            }
-            .into());
-        }
-        // Checked after the participant/state validation so those errors take precedence.
-        require_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT, &account_id);
-        self.node_migrations
-            .set_backup_service_info(account_id, backup_service_info);
-        Ok(())
     }
 
     /// Sets the destination node for the calling account.
@@ -277,6 +244,9 @@ impl MpcContract {
         Ok(())
     }
 
+    /// Removes the [`MpcContract::migration_info`] entry and the attested backup service of each
+    /// account with a registered backup service that is neither a participant nor a prospective
+    /// one, and gives the backup service's attestation-storage grant back. Runs after a resharing.
     #[private]
     #[handle_result]
     pub fn cleanup_orphaned_node_migrations(&mut self) -> Result<(), Error> {
@@ -295,15 +265,16 @@ impl MpcContract {
             if !self
                 .protocol_state
                 .is_existing_or_prospective_participant(account_id)?
+                && self.node_migrations.remove_account_data(account_id)
             {
-                self.node_migrations.remove_account_data(account_id);
+                self.return_attestation_storage_grant(account_id);
             }
         }
         Ok(())
     }
 }
 
-fn assert_migration_destination_allowed(
+pub(crate) fn assert_migration_destination_allowed(
     participants: &Participants,
     tee_state: &TeeState,
     account_id: &AccountId,
@@ -363,7 +334,7 @@ fn assert_destination_tls_key_unused(
 }
 
 /// Minimum deposit required for the operator-authenticated node-management methods
-/// (`register_backup_service`, `start_node_migration`, `update_participant_url`, `cancel_node_migration`).
+/// (`start_node_migration`, `update_participant_url`, `cancel_node_migration`).
 ///
 /// A non-zero deposit forces the call to be signed by a full-access key: the node's own key
 /// is registered as a function-call access key, which cannot attach a deposit, so a leaked
@@ -532,107 +503,6 @@ mod tests {
         assert!(contract.migration_info().is_empty());
     }
 
-    fn test_register_backup_service_fail_non_participant(mut contract: MpcContract) {
-        // sanity check
-        assert!(contract.migration_info().is_empty());
-        let backup_service_info = BackupServiceInfo {
-            public_key: bogus_ed25519_public_key(),
-        };
-
-        let non_participant = gen_account_id();
-        Environment::new(None, Some(non_participant), None);
-        let res = contract.register_backup_service(backup_service_info);
-        assert_matches!(
-            res.unwrap_err(),
-            Error::InvalidState(InvalidState::NotParticipant { .. })
-        );
-        assert!(contract.migration_info().is_empty());
-    }
-
-    #[test]
-    fn test_register_backup_service_fail_non_participant_running() {
-        let (contract, _, _) = running_contract();
-        test_register_backup_service_fail_non_participant(contract);
-    }
-
-    #[test]
-    fn test_register_backup_service_fail_non_participant_initializing() {
-        let initializing_state =
-            ProtocolContractState::Initializing(gen_initializing_state(NUM_DOMAINS, 0).1);
-        let contract = MpcContract::new_from_protocol_state(initializing_state);
-        test_register_backup_service_fail_non_participant(contract);
-    }
-
-    #[test]
-    fn test_register_backup_service_fail_non_participant_resharnig() {
-        let resharing_state = ProtocolContractState::Resharing(gen_resharing_state(NUM_DOMAINS).1);
-        let contract = MpcContract::new_from_protocol_state(resharing_state);
-        test_register_backup_service_fail_non_participant(contract);
-    }
-
-    fn test_register_backup_service_success(
-        participants: &Participants,
-        mut contract: MpcContract,
-    ) {
-        // sanity check
-        assert!(contract.migration_info().is_empty());
-        let mut expected_migration_state = BTreeMap::new();
-        let mut test_env = Environment::new(None, None, None);
-        test_env.set_deposit(MINIMUM_NODE_MANAGEMENT_DEPOSIT);
-        for (account_id, _, _) in participants.participants() {
-            test_env.set_signer(account_id);
-            // sanity check
-            assert_eq!(
-                migration_info(&contract, account_id),
-                (account_id.clone(), None, None)
-            );
-            let backup_service_info = BackupServiceInfo {
-                public_key: bogus_ed25519_public_key(),
-            };
-            let res = contract.register_backup_service(backup_service_info.clone());
-            res.expect("Participant should be able to register backup service");
-            let expected_res = (account_id.clone(), Some(backup_service_info), None);
-            assert_eq!(migration_info(&contract, account_id), expected_res);
-            expected_migration_state.insert(expected_res.0, (expected_res.1, expected_res.2));
-        }
-
-        let result = contract.migration_info();
-
-        assert_eq!(*result, expected_migration_state);
-    }
-
-    #[test]
-    fn test_register_backup_service_success_running() {
-        let (contract, _, participants) = running_contract();
-        test_register_backup_service_success(&participants, contract);
-    }
-
-    #[test]
-    fn test_register_backup_service_success_resharing() {
-        let resharing_state = gen_resharing_state(NUM_DOMAINS).1;
-        let participants = resharing_state
-            .resharing_key
-            .proposed_parameters()
-            .participants()
-            .clone();
-        let resharing_state = ProtocolContractState::Resharing(resharing_state);
-        let contract = MpcContract::new_from_protocol_state(resharing_state);
-        test_register_backup_service_success(&participants, contract);
-    }
-
-    #[test]
-    fn test_register_backup_service_success_initializing() {
-        let initializing_state = gen_initializing_state(NUM_DOMAINS, 0).1;
-        let participants = initializing_state
-            .generating_key
-            .proposed_parameters()
-            .participants()
-            .clone();
-        let initializing_state = ProtocolContractState::Initializing(initializing_state);
-        let contract = MpcContract::new_from_protocol_state(initializing_state);
-        test_register_backup_service_success(&participants, contract);
-    }
-
     #[test]
     #[should_panic(expected = "Attached deposit is lower than required")]
     fn start_node_migration__should_reject_when_no_deposit_attached() {
@@ -654,23 +524,6 @@ mod tests {
         let (account_id, _, _) = participants.participants()[0].clone();
         let _ = Environment::new(None, Some(account_id.clone()), None);
         let _ = contract.cancel_node_migration();
-    }
-
-    #[test]
-    #[should_panic(expected = "Attached deposit is lower than required")]
-    fn register_backup_service__should_reject_when_no_deposit_attached() {
-        // Given
-        let (mut contract, _, participants) = running_contract();
-        let account_id = participants.participants()[0].0.clone();
-        let mut test_env = Environment::new(None, Some(account_id), None);
-        test_env.set_deposit(NearToken::ZERO);
-        let backup_service_info = BackupServiceInfo {
-            public_key: bogus_ed25519_public_key(),
-        };
-
-        // panics via `require_deposit` before the backup service is stored
-        // When, Then
-        let _ = contract.register_backup_service(backup_service_info);
     }
 
     #[test]
@@ -1121,9 +974,11 @@ mod tests {
             let backup_service_info = BackupServiceInfo {
                 public_key: bogus_ed25519_public_key(),
             };
-            contract
-                .node_migrations
-                .set_backup_service_info(account_id.clone(), backup_service_info.clone());
+            contract.node_migrations.set_backup_service(
+                account_id.clone(),
+                backup_service_info.public_key.clone(),
+                None,
+            );
             expected_vals.insert(
                 account_id.clone(),
                 (Some(backup_service_info), Some(destination_node_info)),
@@ -1139,9 +994,11 @@ mod tests {
         let backup_service_info = BackupServiceInfo {
             public_key: bogus_ed25519_public_key(),
         };
-        contract
-            .node_migrations
-            .set_backup_service_info(non_participant_account_id.clone(), backup_service_info);
+        contract.node_migrations.set_backup_service(
+            non_participant_account_id.clone(),
+            backup_service_info.public_key,
+            None,
+        );
 
         contract
             .cleanup_orphaned_node_migrations()

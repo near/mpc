@@ -25,7 +25,10 @@ use rand::{SeedableRng, rngs::StdRng};
 async fn migration_endpoint__should_track_migration_state() {
     // Given: a fresh cluster with no migration state.
     let (cluster, _running) =
-        common::must_setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |_| {}).await;
+        common::must_setup_cluster(common::MIGRATION_ENDPOINT_PORT_SEED, |c| {
+            c.contract_wasm = common::must_load_mock_attestation_contract_wasm();
+        })
+        .await;
 
     let client = reqwest::Client::new();
     let mut expected_migrations = MigrationInfo::default();

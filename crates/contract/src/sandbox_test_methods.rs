@@ -9,8 +9,10 @@
 //! costs of internal operations; the methods here are behavioral introspection hooks.
 
 use crate::MpcContract;
-use near_mpc_contract_interface::types::CKDRequest;
-use near_mpc_contract_interface::types::SignatureRequest;
+use crate::dto_mapping::IntoInterfaceType as _;
+use near_mpc_contract_interface::types::{
+    CKDRequest, CodeHashesVotes, LauncherHashVotes, MeasurementVotes, SignatureRequest,
+};
 use near_sdk::near;
 
 // Import the generated extension trait from near
@@ -47,5 +49,18 @@ impl MpcContract {
             .unwrap_or(0);
         u32::try_from(len)
             .expect("queue length must fit in u32 — bounded by MAX_PENDING_REQUEST_FAN_OUT")
+    }
+
+    /// Returns the backup service's pending image hash, launcher and OS measurement votes,
+    /// which no production view exposes.
+    pub fn backup_service_tee_votes(
+        &self,
+    ) -> (CodeHashesVotes, LauncherHashVotes, MeasurementVotes) {
+        let tee_state = &self.node_migrations.backup_service_tee_state;
+        (
+            (&tee_state.votes).into_dto_type(),
+            (&tee_state.launcher_votes).into_dto_type(),
+            (&tee_state.measurement_votes).into_dto_type(),
+        )
     }
 }

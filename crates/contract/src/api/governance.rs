@@ -2,7 +2,7 @@
 
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters};
-use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
+use crate::primitives::thresholds::ProposedGovernanceThresholdParameters;
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::TeeValidationResult;
 use crate::{MpcContract, MpcContractExt};
@@ -114,12 +114,6 @@ impl MpcContract {
     }
 }
 
-impl MpcContract {
-    pub(crate) fn threshold(&self) -> Result<GovernanceThreshold, Error> {
-        self.protocol_state.threshold()
-    }
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 #[expect(non_snake_case)]
@@ -139,7 +133,7 @@ mod tests {
     use crate::primitives::test_utils::{
         authenticate_account_as, authenticate_as, gen_participants,
     };
-    use crate::primitives::thresholds::GovernanceThresholdParameters;
+    use crate::primitives::thresholds::{GovernanceThreshold, GovernanceThresholdParameters};
     use crate::state::key_event::tests::find_leader;
     use crate::tee::tee_state::TeeState;
     use crate::tee::test_utils::Environment;

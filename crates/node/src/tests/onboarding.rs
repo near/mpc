@@ -17,7 +17,7 @@ use ed25519_dalek::{SigningKey, VerifyingKey};
 use mpc_contract::state::ProtocolContractState;
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
-    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, Protocol, ReconstructionThreshold,
+    DestinationNodeInfo, Ed25519PublicKey, Protocol, ReconstructionThreshold,
 };
 use near_mpc_contract_interface::types::{DomainConfig, DomainPurpose, Keyset};
 use near_time::Clock;
@@ -163,12 +163,10 @@ async fn test_onboarding() {
         tracing::info!("Setting backup and destination node info");
         let mut contract = setup.indexer.contract_mut().await;
         assert_matches!(&contract.state, ProtocolContractState::Running(_));
-        let backup_service_info = BackupServiceInfo {
-            public_key: Ed25519PublicKey::from(&backup_service_key.verifying_key()),
-        };
-        contract.migration_service.set_backup_service_info(
+        contract.migration_service.set_backup_service(
             onboarding_node.participant_info.near_account_id.clone(),
-            backup_service_info,
+            Ed25519PublicKey::from(&backup_service_key.verifying_key()),
+            None,
         );
         contract.migration_service.set_destination_node_info(
             onboarding_node.participant_info.near_account_id.clone(),

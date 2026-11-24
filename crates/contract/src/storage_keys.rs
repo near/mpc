@@ -50,4 +50,11 @@ pub enum StorageKey {
     ParametersVotesByProposal,
     AddDomainsVotesByVoter,
     AddDomainsVotesByProposal,
+    BackupServiceCodeHashVotesByVoter,
+    BackupServiceCodeHashVotesByProposal,
+    BackupServiceLauncherHashVotesByVoter,
+    BackupServiceLauncherHashVotesByProposal,
+    BackupServiceNodes,
+    BackupServiceMeasurementVotesByVoter,
+    BackupServiceMeasurementVotesByProposal,
 }

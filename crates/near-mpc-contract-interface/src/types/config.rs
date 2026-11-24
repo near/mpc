@@ -42,7 +42,8 @@ pub struct InitConfig {
     pub fail_on_timeout_tera_gas: Option<u64>,
     /// Prepaid gas for a `fail_attestation_submission` call.
     pub fail_attestation_submission_tera_gas: Option<u64>,
-    /// Prepaid gas for a `clean_tee_status` call.
+    /// Prepaid gas for each of the `clean_tee_status` and `clean_backup_service_tee_status`
+    /// calls.
     pub clean_tee_status_tera_gas: Option<u64>,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
     pub clean_invalid_attestations_tera_gas: Option<u64>,
@@ -56,10 +57,10 @@ pub struct InitConfig {
     pub remove_non_participant_tee_verifier_votes_tera_gas: Option<u64>,
     /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub verifier_tera_gas: Option<u64>,
-    /// Prepaid gas for the `resolve_verification` callback.
+    /// Prepaid gas for each of the `resolve_verification` and `resolve_backup_service_verification`
+    /// callbacks.
     pub resolve_verification_tera_gas: Option<u64>,
-    /// TTL for launcher hashes no current participant uses; see
-    /// [`Config::launcher_hash_unused_ttl_seconds`].
+    /// TTL for unused launcher hashes; see [`Config::launcher_hash_unused_ttl_seconds`].
     pub launcher_hash_unused_ttl_seconds: Option<u64>,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: Option<u64>,
@@ -103,7 +104,8 @@ pub struct Config {
     pub fail_on_timeout_tera_gas: u64,
     /// Prepaid gas for a `fail_attestation_submission` call.
     pub fail_attestation_submission_tera_gas: u64,
-    /// Prepaid gas for a `clean_tee_status` call.
+    /// Prepaid gas for each of the `clean_tee_status` and `clean_backup_service_tee_status`
+    /// calls.
     pub clean_tee_status_tera_gas: u64,
     /// Prepaid gas for the reshare-time `clean_invalid_attestations` promise.
     pub clean_invalid_attestations_tera_gas: u64,
@@ -117,11 +119,13 @@ pub struct Config {
     pub remove_non_participant_tee_verifier_votes_tera_gas: u64,
     /// Gas attached to the cross-contract `verify_quote_with_collateral_dates` call on the verifier.
     pub verifier_tera_gas: u64,
-    /// Prepaid gas for the `resolve_verification` callback.
+    /// Prepaid gas for each of the `resolve_verification` and `resolve_backup_service_verification`
+    /// callbacks.
     pub resolve_verification_tera_gas: u64,
-    /// How long a launcher hash that no current participant uses stays allowed after its last vote
-    /// or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can
-    /// lag this TTL; a hash in use is never removed automatically.
+    /// How long a launcher hash that no current participant uses, or a backup service launcher hash
+    /// that no registered backup service uses, stays allowed after its last vote or the last
+    /// `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this
+    /// TTL; a hash in use is never removed automatically.
     pub launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: u64,

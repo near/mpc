@@ -1,0 +1,8 @@
+---
+source: crates/contract/src/api/keys.rs
+expression: info
+---
+{
+  "url": "https://www.near0.com",
+  "tls_public_key": "ed25519:US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx"
+}

@@ -310,6 +310,18 @@ pub fn must_load_contract_wasm() -> Vec<u8> {
     )
 }
 
+/// The MPC contract built to accept mock attestations, which backup service registrations need.
+pub fn must_load_mock_attestation_contract_wasm() -> Vec<u8> {
+    const OUT_DIR: &str = "target/near/mpc_contract_mock";
+    test_utils::contract_build::must_load_wasm(
+        "MPC_CONTRACT_MOCK_ATTESTATION_WASM",
+        &format!("{OUT_DIR}/mpc_contract.wasm"),
+        test_utils::contract_build::ContractBuilder::new("crates/contract/Cargo.toml")
+            .out_dir(OUT_DIR)
+            .features(&["mock-attestation"]),
+    )
+}
+
 pub fn must_load_parallel_contract_wasm() -> Vec<u8> {
     test_utils::contract_build::must_load_wasm(
         "MPC_PARALLEL_CONTRACT_WASM",

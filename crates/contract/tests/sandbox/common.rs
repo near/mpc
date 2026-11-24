@@ -11,10 +11,12 @@ use crate::sandbox::utils::{
     sign_utils::{PendingSignRequest, make_and_submit_requests},
     transactions::{CallMpcContract, execute_async_handle_calls},
 };
+use anyhow::Context as _;
 use digest::Digest;
 use dtos::ProtocolContractState;
 use k256::ecdsa::SigningKey;
 use mpc_contract::{
+    MpcContract,
     crypto_shared::types::PublicKeyExtended,
     primitives::{
         key_state::{AttemptId, EpochId},
@@ -46,6 +48,7 @@ use near_mpc_contract_interface::types::{
     UpdateHash, VerifyForeignTransactionResponse,
 };
 use near_mpc_sdk::foreign_chain::{ExtractedValue, ForeignChainRpcRequest, Hash256};
+use near_sdk::state::ContractState as _;
 use near_workspaces::{Account, Worker, result::Execution};
 use near_workspaces::{Contract, network::Sandbox, result::ExecutionSuccess};
 use rand_core::CryptoRngCore;
@@ -397,6 +400,19 @@ pub async fn approve_contract_update(
         1,
         "exactly the threshold vote approves the update: {approvals:?}"
     );
+}
+
+/// The contract's borsh-serialized STATE entry, which excludes its collections' elements.
+pub async fn contract_state(
+    worker: &Worker<Sandbox>,
+    contract: &SandboxMpcContract,
+) -> anyhow::Result<Vec<u8>> {
+    worker
+        .view_state(contract.id())
+        .prefix(MpcContract::state_key())
+        .await?
+        .remove(MpcContract::state_key())
+        .context("the contract must have a STATE entry")
 }
 
 /// The node the contract stores when the [`Account`] attests under the given TLS key.

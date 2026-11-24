@@ -229,9 +229,7 @@ The following attestation methods must be uniform across all governance contract
 | `get_tee_accounts()` | View | Query all stored nodes, including those of non-participants |
 | `get_available_foreign_chains()` | View | Query foreign chains accepted by `verify_foreign_transaction` |
 
-> **Backup Service:** The Backup Service does not yet have TEE governance — `register_backup_service` stores only a public key, with no attestation. The [hard-launch design][backup-tee-methods] plans to add attestation via `TeeState` and the standard methods listed above, but these are not yet implemented.
-
-[backup-tee-methods]: ../archive/design/migration-service.md#backup-service-tee-methods
+> **Backup Service:** The contract keeps a separate `TeeState` for the Backup Service, whose allowlists the `allowed_backup_service_code_hashes()`, `allowed_backup_service_launcher_compose_hashes()`, `allowed_backup_service_launcher_image_hashes()` and `allowed_backup_service_os_measurements()` views list and the backup service [voting methods](#voting-methods) fill. `attested_backup_service(account_id)` returns an account's backup service only while its attestation is valid, and `get_backup_service_attestation(tls_public_key)` returns the attestation stored for a backup service. `attested_migration_destination(account_id)` returns an account's ongoing migration only while its destination node holds a valid Dstack attestation, the only destination a backup service sends keyshares to. Anyone may call `reverify_backup_services(max_scan)` to remove backup services whose attestation no longer verifies, together with their `migration_info` keys, and give their grants back. `register_backup_service(backup_service_info, attestation)` stores a backup service only once its Dstack attestation verifies against these allowlists, like `submit_participant_info` for MPC nodes; [Backup Service Attestation Data](backup-service-attestation-data.md) describes it.
 
 ### Voting Methods
 
@@ -242,6 +240,10 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 | `vote_mpc_node_manifest_digest(mpc_node_manifest_digest)` | All | Vote for a new Docker image hash |
 | `vote_add_launcher_hash(launcher_hash)` | All | Vote for a new launcher image hash (threshold) |
 | `vote_remove_launcher_hash(launcher_hash)` | All | Vote to remove a launcher image hash (unanimity). Unused hashes are also removed automatically — see [launcher-image eviction](../archive/design/auto-remove-launcher-hashes-design.md) |
+| `vote_backup_service_code_hash(code_hash)` | MPC only | Like `vote_mpc_node_manifest_digest()`, for the Backup Service's `TeeState` |
+| `vote_add_backup_service_launcher_hash(launcher_hash)` | MPC only | Like `vote_add_launcher_hash()`, for the Backup Service's `TeeState` |
+| `vote_remove_backup_service_launcher_hash(launcher_hash)` | MPC only | Like `vote_remove_launcher_hash()`, for the Backup Service's `TeeState` |
+| `vote_add_backup_service_os_measurement(measurement)` and `vote_remove_backup_service_os_measurement(measurement)` | MPC only | Vote to add (threshold) or remove (unanimity) an OS measurement set for the Backup Service |
 | `vote_foreign_chain_policy(policy)` | MPC, HOT | Vote on trusted RPC providers per chain |
 | `vote_new_parameters(...)` | MPC only | Vote for threshold and participant changes (threshold) |
 | `vote_update_governors(...)` | HOT only | Vote to change the governor set |
@@ -254,10 +256,11 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 
 When `vote_mpc_node_manifest_digest()` reaches threshold, compose hashes are derived for the new MPC hash against all existing allowed launcher hashes. When `vote_add_launcher_hash()` reaches threshold, compose hashes are derived for the new launcher hash against all existing allowed MPC hashes. When a config update gives an MPC contract its missing genesis hash, compose hashes carrying it are derived for all allowed pairs.
 
-Each service has its own launcher compose template.
+Each service has its own launcher compose template. The MPC signer contract fills the Backup Service's [`backup_service_launcher_docker_compose.yaml.template`][backup-service-launcher-template], which is the MPC node template plus a `LAUNCHED_SERVICE=backup-service` line naming the service for the launcher to start. The line also keeps the compose hashes of the two services apart. A config update that gives the contract its missing genesis hash derives the compose hashes carrying it for the Backup Service's allowed pairs as well.
 
 [launcher-compose-hash]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/primitives/src/hash.rs#L121
 [launcher-template]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/assets/launcher_docker_compose.yaml.template
+[backup-service-launcher-template]: ../../crates/contract/assets/backup_service_launcher_docker_compose.yaml.template
 
 ## Upgrade
 

@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  launcher:
+    image: nearone/mpc-launcher@sha256:{{LAUNCHER_IMAGE_HASH}}
+
+    container_name: launcher
+
+    environment:
+      - PLATFORM=TEE
+      - LAUNCHED_SERVICE=backup-service
+      - DOCKER_CONTENT_TRUST=1
+      - DEFAULT_IMAGE_DIGEST=sha256:{{DEFAULT_IMAGE_DIGEST_HASH}}
+      - MPC_CONTRACT_ID={{MPC_CONTRACT_ID}}
+      - NEAR_GENESIS_HASH={{NEAR_GENESIS_HASH}}
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - /tapp:/tapp:ro
+      - shared-volume:/mnt/shared:rw
+      - /usr/bin/dstack-util:/usr/local/bin/dstack-util:ro
+      - /run/log/dstack:/run/log/dstack:rw
+      - /sys/devices/virtual/misc/tdx_guest:/sys/devices/virtual/misc/tdx_guest:rw
+
+    devices:
+      - /dev/tdx_guest:/dev/tdx_guest
+
+    security_opt:
+      - no-new-privileges:true
+
+    read_only: true
+
+    tmpfs:
+      - /tmp
+
+volumes:
+  shared-volume:
+    name: shared-volume

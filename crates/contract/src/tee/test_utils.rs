@@ -6,18 +6,24 @@
 use crate::MpcContract;
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
+use crate::tee::attested_service::AttestedService;
 use crate::tee::launcher_compose::LauncherCompose;
 use crate::tee::tee_state::TeeState;
-use mpc_attestation::attestation::ExpectedMeasurements;
-use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
+use mpc_attestation::attestation::{ExpectedMeasurements, MockAttestation};
+use mpc_primitives::hash::{
+    KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash, NodeImageHash,
+    Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+};
 use near_account_id::AccountId;
-use near_sdk::borsh::{self, BorshDeserialize};
-use near_sdk::{BlockHeight, NearToken, PublicKey, test_utils::VMContextBuilder, testing_env};
-use rand::Rng;
-use std::time::Duration;
-
-#[cfg(test)]
 use near_mpc_contract_interface::types as dtos;
+use near_sdk::borsh::{self, BorshDeserialize};
+use near_sdk::{
+    BlockHeight, MockedBlockchain, NearToken, PublicKey, env, mock::with_mocked_blockchain,
+    test_utils::VMContextBuilder, testing_env,
+};
+use rand::Rng;
+use std::{collections::HashMap, time::Duration};
+
 #[cfg(test)]
 use test_utils::attestation::{account_key, p2p_tls_key};
 
@@ -149,6 +155,7 @@ pub fn whitelist_dstack_measurements(
 
 pub fn whitelist_dstack_in_state(
     state: &[u8],
+    service: AttestedService,
     image: NodeImageHash,
     launcher: LauncherImageHash,
     measurements: ExpectedMeasurements,
@@ -156,13 +163,59 @@ pub fn whitelist_dstack_in_state(
 ) -> Vec<u8> {
     let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
     whitelist_dstack_measurements(
-        &mut contract.tee_state,
+        tee_state_of(&mut contract, service),
         image,
         launcher,
         measurements,
         compose_hash,
     );
     borsh::to_vec(&contract).expect("STATE serializes")
+}
+
+pub(crate) fn tee_state_of(contract: &mut MpcContract, service: AttestedService) -> &mut TeeState {
+    match service {
+        AttestedService::MpcNode => &mut contract.tee_state,
+        AttestedService::BackupService => &mut contract.node_migrations.backup_service_tee_state,
+    }
+}
+
+/// Indexes the node's TLS key as its account's backup service, without storing an attestation.
+pub fn index_backup_service(contract: &mut MpcContract, node: &dtos::NodeInfo) {
+    contract.node_migrations.set_backup_service(
+        node.account_id.clone(),
+        node.tls_public_key.clone(),
+        None,
+    );
+}
+
+/// Stores the node as its account's backup service, under a mock attestation accepted at the
+/// current block time.
+pub fn store_backup_service(contract: &mut MpcContract, node: dtos::NodeInfo) {
+    index_backup_service(contract, &node);
+    contract
+        .node_migrations
+        .backup_service_tee_state
+        .verify_and_store_mock(node, MockAttestation::Valid, Duration::MAX)
+        .expect("a valid mock attestation is stored");
+}
+
+/// Returns the storage writes that [`store_backup_service`] makes for each node at the given block
+/// time, in the contract whose STATE is given. Only STATE is loaded, so the contract must hold no
+/// backup service yet.
+pub fn store_backup_services_in_state(
+    state: &[u8],
+    block_timestamp_nanos: u64,
+    nodes: Vec<dtos::NodeInfo>,
+) -> HashMap<Vec<u8>, Vec<u8>> {
+    set_block_timestamp(block_timestamp_nanos);
+    with_mocked_blockchain(MockedBlockchain::take_storage);
+    let mut contract = MpcContract::try_from_slice(state).expect("STATE deserializes");
+    for node in nodes {
+        store_backup_service(&mut contract, node);
+    }
+    env::state_write(&contract);
+    drop(contract);
+    with_mocked_blockchain(MockedBlockchain::take_storage)
 }
 
 #[cfg(test)]
@@ -178,6 +231,33 @@ pub(crate) fn allow_launcher(
 }
 
 #[cfg(test)]
+pub(crate) const LAUNCHER_TTL: Duration = Duration::from_secs(100);
+#[cfg(test)]
+pub(crate) const OLD_LAUNCHER_ADDED_AT_SECS: u64 = 1;
+#[cfg(test)]
+pub(crate) const NEWEST_LAUNCHER_ADDED_AT_SECS: u64 = OLD_LAUNCHER_ADDED_AT_SECS + 1;
+#[cfg(test)]
+const VERY_FAR_IN_FUTURE_SECS: u64 = 1_000_000;
+
+#[cfg(test)]
+pub(crate) fn after_retention(added_at_secs: u64) -> u64 {
+    added_at_secs + LAUNCHER_TTL.as_secs() + 1
+}
+
+#[cfg(test)]
+pub(crate) fn launcher_mock(
+    launcher: &LauncherImageHash,
+    mpc_hash: &NodeImageHash,
+) -> MockAttestation {
+    MockAttestation::WithConstraints {
+        mpc_docker_image_hash: None,
+        launcher_docker_compose_hash: Some(MPC_NODE_COMPOSE.hash(launcher, mpc_hash)),
+        expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
+        expected_measurements: None,
+    }
+}
+
+#[cfg(test)]
 pub(crate) fn dummy_code_hash(val: u8) -> NodeImageHash {
     NodeImageHash::from([val; 32])
 }
@@ -185,6 +265,16 @@ pub(crate) fn dummy_code_hash(val: u8) -> NodeImageHash {
 #[cfg(test)]
 pub(crate) fn dummy_launcher_hash(val: u8) -> LauncherImageHash {
     LauncherImageHash::from([val; 32])
+}
+
+pub fn make_measurement(byte: u8) -> dtos::ExpectedMeasurements {
+    dtos::ExpectedMeasurements {
+        mrtd: MrtdHash::from([byte; 48]),
+        rtmr0: Rtmr0Hash::from([byte.wrapping_add(1); 48]),
+        rtmr1: Rtmr1Hash::from([byte.wrapping_add(2); 48]),
+        rtmr2: Rtmr2Hash::from([byte.wrapping_add(3); 48]),
+        key_provider_event_digest: KeyProviderEventDigest::from([byte.wrapping_add(4); 48]),
+    }
 }
 
 #[cfg(test)]

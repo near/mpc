@@ -123,11 +123,16 @@ impl MpcContract {
                 .with_unused_gas_weight(0)
                 .remove_non_participant_contract_update_votes()
                 .detach();
-            // Spawn a promise to drop votes cast by non-participants.
+            // Spawn promises to drop TEE votes cast by non-participants.
             Self::ext_self()
                 .with_static_gas(Gas::from_tgas(self.config.clean_tee_status_tera_gas))
                 .with_unused_gas_weight(0)
                 .clean_tee_status()
+                .detach();
+            Self::ext_self()
+                .with_static_gas(Gas::from_tgas(self.config.clean_tee_status_tera_gas))
+                .with_unused_gas_weight(0)
+                .clean_backup_service_tee_status()
                 .detach();
             // Spawn a bounded sweep over stored attestations to prune invalid / expired entries.
             Self::ext_self()
