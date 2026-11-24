@@ -4113,6 +4113,7 @@ expression: abi
               "$ref": "#/definitions/EpochId"
             },
             "instance": {
+              "description": "The attempt active at the queried block height, if any.",
               "anyOf": [
                 {
                   "$ref": "#/definitions/KeyEventInstance"
