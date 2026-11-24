@@ -78,8 +78,8 @@ pub struct VerifyArgs {
     #[arg(long = "launcher-compose-file")]
     pub launcher_compose_file: PathBuf,
 
-    /// Path to expected TCB measurements JSON file. If not provided, uses the compiled-in
-    /// measurements of the production OS image. The contract and node check against the
+    /// Path to expected TCB measurements JSON file. If not provided, accepts the compiled-in
+    /// measurements of any production OS image. The contract and node check against the
     /// measurements voted in on chain instead.
     #[arg(long = "expected-measurements")]
     pub expected_measurements: Option<PathBuf>,

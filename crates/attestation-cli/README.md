@@ -34,7 +34,7 @@ Before running verification you need:
 
 2. **Launcher docker-compose YAML file** — The launcher compose file used by the TEE environment. The CLI computes the SHA256 hash internally and compares it against the hash attested by the node.
 
-3. **(Optional) Expected measurements JSON file** — A `tcb_info.json` file containing the expected TDX measurements (MRTD, RTMR0-2, key-provider event digest). If not provided, the CLI uses the compiled-in measurements of the production OS image (`crates/mpc-attestation/assets/tcb_info.json`). The contract instead checks against the measurements voted in on chain (`allowed_os_measurements`).
+3. **(Optional) Expected measurements JSON file** — A `tcb_info.json` file containing the expected TDX measurements (MRTD, RTMR0-2, key-provider event digest). If not provided, the CLI accepts the compiled-in measurements of the production OS images: dstack 0.6.5 (`crates/mpc-attestation/assets/tcb_info.json`) and, until every node has moved to 0.6, dstack 0.5.8 (`crates/mpc-attestation/assets/tcb_info_dstack_0.5.8.json`). The contract instead checks against the measurements voted in on chain (`allowed_os_measurements`).
 
 ## Usage
 
@@ -60,7 +60,7 @@ attestation-cli verify [OPTIONS]
 
 | Flag | Description |
 |------|-------------|
-| `--expected-measurements <PATH>` | Path to expected TCB measurements JSON file (defaults to the compiled-in production OS image measurements) |
+| `--expected-measurements <PATH>` | Path to expected TCB measurements JSON file (defaults to the compiled-in measurements of the dstack 0.6.5 and 0.5.8 production OS images) |
 
 ## Examples
 

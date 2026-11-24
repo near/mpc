@@ -83,10 +83,8 @@ All files will be written into the specified output directory.
    fixture's `tcb_info.json`. It is the attestation CLI's default and the measurement set operators
    vote in with `vote_add_os_measurement`. It covers `mrtd`, `rtmr0`-`rtmr2` and the key-provider
    event, none of which the compose files affect; `rtmr0` depends on the CVM's vCPU and memory
-   configuration.
-
-   TODO(#5069): it still holds the 0.5.8 release set; switch it to 0.6.5 together with the
-   operator docs.
+   configuration. While nodes still run the previous OS image, keep its set as
+   `tcb_info_dstack_<version>.json` in `production_measurements()`, so the CLI accepts both.
 
 8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
    contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test
