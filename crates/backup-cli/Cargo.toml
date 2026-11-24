@@ -11,15 +11,19 @@ chain-gateway = { workspace = true }
 clap = { workspace = true }
 ed25519-dalek = { workspace = true }
 mpc-node = { workspace = true }
+mpc-node-config = { workspace = true }
 near-account-id = { workspace = true }
 near-contract-transport = { workspace = true, features = ["near-kit"] }
 near-kit = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
+node-types = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tee-authority = { workspace = true }
+tee-context = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
@@ -32,6 +36,7 @@ built = { workspace = true }
 [dev-dependencies]
 libc = { workspace = true }
 mpc-node = { workspace = true, features = ["test-utils"] }
+near-contract-transport = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }

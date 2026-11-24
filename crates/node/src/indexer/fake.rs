@@ -8,7 +8,7 @@ use super::participants::ContractState;
 use super::types::ChainSendTransactionRequest;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
-use crate::migration_service::types::MigrationInfo;
+use crate::migration_service::types::{MigrationInfo, active_migration, backup_service_tls_key};
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
@@ -39,6 +39,7 @@ use std::{
     assert_matches,
     collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
 };
+use tee_context::TeeStateMonitors;
 use tokio::sync::{broadcast, mpsc, watch};
 
 /// A simplification of the real MPC contract state for testing.
@@ -979,8 +980,15 @@ impl FakeIndexerOneNode {
             AutoAbortTask::from(tokio::spawn(async move {
                 loop {
                     let state = core_migration_change_receiver.recv().await.unwrap();
-                    let state =
-                        MigrationInfo::from_contract_state(&account_id, &p2p_public_key, &state);
+                    // The fake contract holds no attestations, so every backup service it lists
+                    // counts as attested
+                    let state = MigrationInfo {
+                        backup_service_tls_key: state
+                            .get(&account_id)
+                            .and_then(|(backup_service, _)| backup_service.as_ref())
+                            .and_then(backup_service_tls_key),
+                        active_migration: active_migration(&account_id, &p2p_public_key, &state),
+                    };
 
                     api_migration_info_sender.send_if_modified(|watched_state| {
                         let state_changed = *watched_state != state;
@@ -1145,17 +1153,11 @@ impl FakeIndexerManager {
         let (api_signature_request_sender, api_signature_request_receiver) =
             mpsc::unbounded_channel();
         let (api_txn_sender, api_txn_receiver) = mpsc::channel(1000);
-        let (_allowed_docker_images_sender, allowed_docker_images_receiver) =
-            watch::channel(vec![]);
-        let (_allowed_launcher_compose_sender, allowed_launcher_compose_receiver) =
-            watch::channel(vec![]);
-        let (_allowed_os_measurements_sender, allowed_os_measurements_receiver) =
-            watch::channel(vec![]);
-        let (_my_attestation_sender, my_attestation_receiver) = watch::channel(None);
+        let (_tee_state_monitors, tee) = TeeStateMonitors::new();
 
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
-                backup_service_info: None,
+                backup_service_tls_key: None,
                 active_migration: false,
             });
 
@@ -1168,11 +1170,8 @@ impl FakeIndexerManager {
                 api_signature_request_receiver,
             )),
             txn_sender: mock_transaction_sender,
-            allowed_docker_images_receiver,
-            allowed_launcher_compose_receiver,
-            allowed_os_measurements_receiver,
+            tee,
             my_migration_info_receiver,
-            my_attestation_receiver,
             foreign_chain_supporters_receiver: self.foreign_chain_supporters_receiver.clone(),
             foreign_chain_whitelist_receiver: self.foreign_chain_whitelist_receiver.clone(),
             foreign_chains_configs_receiver: self.foreign_chains_configs_receiver.clone(),

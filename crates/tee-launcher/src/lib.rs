@@ -8,12 +8,9 @@ use launcher_interface::types::{
 };
 use mpc_primitives::hash::MPC_IMAGE_HASH_EVENT;
 
-use compose::launch_mpc_container;
-use config::{intercept_node_config, validate_image_reference};
-use constants::{
-    DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, DSTACK_UTIL_PATH, IMAGE_DIGEST_FILE,
-    MPC_CONFIG_SHARED_PATH,
-};
+use compose::launch_container;
+use config::{intercept_service_config, validate_image_reference};
+use constants::{DSTACK_UNIX_SOCKET, DSTACK_USER_CONFIG_FILE, DSTACK_UTIL_PATH, IMAGE_DIGEST_FILE};
 use error::LauncherError;
 use selection::select_image_hash;
 use types::{CliArgs, Config, Platform};
@@ -34,12 +31,13 @@ pub async fn run() -> Result<(), LauncherError> {
 
     tracing::info!(
         platform = ?args.platform,
+        launched_service = ?args.launched_service,
         mpc_contract_id = %args.mpc_contract_id,
         near_genesis_hash = %args.near_genesis_hash,
         "starting launcher"
     );
 
-    let config = load_config()?;
+    let (launcher_config, service_config) = load_config()?.into_parts(args.launched_service)?;
 
     let approved_hashes_on_disk = load_approved_hashes(&args.default_image_digest)?;
 
@@ -48,15 +46,15 @@ pub async fn run() -> Result<(), LauncherError> {
     let manifest_digest = select_image_hash(
         approved_hashes_on_disk.as_ref(),
         &args.default_image_digest,
-        config.launcher_config.mpc_hash_override.as_ref(),
+        launcher_config.mpc_hash_override.as_ref(),
     )?;
 
     pull_with_retry(
-        &config.launcher_config.image_reference,
+        &launcher_config.image_reference,
         &manifest_digest,
-        config.launcher_config.pull_max_retries,
-        config.launcher_config.pull_retry_interval_secs,
-        config.launcher_config.pull_max_delay_secs,
+        launcher_config.pull_max_retries,
+        launcher_config.pull_retry_interval_secs,
+        launcher_config.pull_max_delay_secs,
     )
     .await?;
 
@@ -65,20 +63,25 @@ pub async fn run() -> Result<(), LauncherError> {
     }
 
     let tee_config = build_tee_config(args.platform, manifest_digest.clone());
-    let mpc_node_config = intercept_node_config(
-        config.mpc_node_config,
+    let service_config = intercept_service_config(
+        args.launched_service,
+        service_config,
         &tee_config,
         &args.mpc_contract_id,
         &args.near_genesis_hash,
     )?;
 
-    write_config_atomically(&mpc_node_config)?;
+    write_config_atomically(
+        &service_config,
+        Path::new(args.launched_service.config_path()),
+    )?;
 
-    launch_mpc_container(
+    launch_container(
         args.platform,
+        args.launched_service,
         &manifest_digest,
-        &config.launcher_config.image_reference,
-        &config.launcher_config.port_mappings,
+        &launcher_config.image_reference,
+        &launcher_config.port_mappings,
     )?;
 
     Ok(())
@@ -179,16 +182,15 @@ fn build_tee_config(platform: Platform, image_hash: DockerSha256Digest) -> TeeCo
     }
 }
 
-fn write_config_atomically(mpc_node_config: &toml::Table) -> Result<(), LauncherError> {
-    let mpc_config_toml =
-        toml::to_string(mpc_node_config).expect("re-serializing a toml::Table always succeeds");
+fn write_config_atomically(config: &toml::Table, dest: &Path) -> Result<(), LauncherError> {
+    let config_toml =
+        toml::to_string(config).expect("re-serializing a toml::Table always succeeds");
 
-    let dest = Path::new(MPC_CONFIG_SHARED_PATH);
     let config_dir = dest.parent().unwrap_or(Path::new("/"));
 
     let mut tmp =
         tempfile::NamedTempFile::new_in(config_dir).map_err(LauncherError::TempFileCreate)?;
-    tmp.write_all(mpc_config_toml.as_bytes())
+    tmp.write_all(config_toml.as_bytes())
         .map_err(|source| LauncherError::FileWrite {
             path: dest.display().to_string(),
             source,

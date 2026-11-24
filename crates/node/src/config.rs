@@ -1,6 +1,6 @@
-use crate::durable_fs::{write_file_durably, write_file_durably_with_permissions};
 use crate::home_paths::{backup_encryption_key_file, secrets_file};
 use crate::primitives::ParticipantId;
+use durable_fs::{write_file_durably, write_file_durably_with_permissions};
 use mpc_node_config::ConfigFile;
 
 use anyhow::Context;
@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
 
 pub(crate) mod start;
+
+pub use start::ensure_near_initialized;
 
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];

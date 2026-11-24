@@ -1,29 +1,15 @@
-//! Waiting for the next round of a periodic task.
-
-#[cfg(test)]
 use std::sync::Arc;
-#[cfg(test)]
+
 use tokio::sync::Semaphore;
 
-/// Allows repeatedly awaiting for something, like a [`tokio::time::Interval`].
-pub trait Tick {
-    async fn tick(&mut self);
-}
-
-impl Tick for tokio::time::Interval {
-    async fn tick(&mut self) {
-        self.tick().await;
-    }
-}
+use crate::Tick;
 
 /// Advances the loop under test by a counted number of rounds rather than by elapsed time.
-#[cfg(test)]
 #[derive(Clone)]
 pub struct MockTicker {
     scheduled: Arc<Semaphore>,
 }
 
-#[cfg(test)]
 impl MockTicker {
     pub fn new(count: usize) -> Self {
         Self {
@@ -42,7 +28,6 @@ impl MockTicker {
     }
 }
 
-#[cfg(test)]
 impl Tick for MockTicker {
     async fn tick(&mut self) {
         let round = self

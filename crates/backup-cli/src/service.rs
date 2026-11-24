@@ -296,7 +296,7 @@ mod tests {
     use super::{BackedUpKeyset, BackupOutcome, Service, SkipReason, VERIFICATION_INTERVAL};
 
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+    use std::sync::atomic::Ordering as AtomicOrdering;
     use std::time::Duration;
 
     use mpc_node::keyshare::Keyshare;
@@ -306,17 +306,18 @@ mod tests {
     use rand::SeedableRng;
     use rand::rngs::StdRng;
     use rstest::rstest;
-    use tokio::sync::{Mutex, Notify, watch};
+    use tokio::sync::{Notify, watch};
     use tokio::time::timeout;
     use tokio_util::sync::CancellationToken;
 
-    use crate::ports::{self, GetCurrentTime, KeyShareRepository, P2PClient, ReportBackupStatus};
-    use crate::test_utils::{keyset_with_epoch, keyset_without_domains};
+    use crate::ports::{self, GetCurrentTime, KeyShareRepository, ReportBackupStatus};
+    use crate::test_utils::{
+        FakeKeyshareStorage, FakeP2PClient, TEST_RETRY_DELAY, keyset_with_epoch,
+        keyset_without_domains, keyshares_for,
+    };
 
     const FIXTURE_DOMAIN_IDS: [u64; 2] = [0, 1];
     const EPOCH_ID: u64 = 5;
-    /// Only the retry test waits it out, and it does so under a paused clock.
-    const TEST_RETRY_DELAY: Duration = Duration::from_mins(1);
 
     type TestService = Service<
         FakeP2PClient,
@@ -347,129 +348,6 @@ mod tests {
     impl GetCurrentTime for FakeClock {
         fn unix_now_seconds(&self) -> Option<u64> {
             Some(TEST_UNIX_NOW_SECONDS)
-        }
-    }
-
-    struct FakeP2PClient {
-        get_keyshares_calls: AtomicUsize,
-        fetched: Arc<Notify>,
-        /// Domains the node holds, or all domains of the requested keyset when `None`.
-        held_domain_ids: Option<Vec<u64>>,
-        fail: bool,
-        hang: bool,
-    }
-
-    impl FakeP2PClient {
-        fn new() -> Self {
-            Self {
-                get_keyshares_calls: AtomicUsize::new(0),
-                fetched: Arc::new(Notify::new()),
-                held_domain_ids: None,
-                fail: false,
-                hang: false,
-            }
-        }
-
-        fn holding_domains(domain_ids: &[u64]) -> Self {
-            Self {
-                held_domain_ids: Some(domain_ids.to_vec()),
-                ..Self::new()
-            }
-        }
-
-        fn failing() -> Self {
-            Self {
-                fail: true,
-                ..Self::new()
-            }
-        }
-
-        /// Accepts the fetch and never answers it.
-        fn hanging() -> Self {
-            Self {
-                hang: true,
-                ..Self::new()
-            }
-        }
-
-        fn get_keyshares_calls(&self) -> usize {
-            self.get_keyshares_calls.load(AtomicOrdering::SeqCst)
-        }
-    }
-
-    impl P2PClient for FakeP2PClient {
-        type Error = anyhow::Error;
-
-        async fn get_keyshares(&self, keyset: &Keyset) -> Result<Vec<Keyshare>, Self::Error> {
-            self.get_keyshares_calls
-                .fetch_add(1, AtomicOrdering::SeqCst);
-            self.fetched.notify_one();
-            if self.hang {
-                std::future::pending::<()>().await;
-            }
-            if self.fail {
-                anyhow::bail!("mpc node is unreachable");
-            }
-            let domain_ids = self.held_domain_ids.clone().unwrap_or_else(|| {
-                keyset
-                    .domains
-                    .iter()
-                    .map(|domain| domain.domain_id.0)
-                    .collect()
-            });
-            Ok(keyshares_for(keyset.epoch_id.get(), &domain_ids))
-        }
-
-        async fn put_keyshares(&self, _keyshares: &[Keyshare]) -> Result<(), Self::Error> {
-            unreachable!("the automatic backup service never pushes keyshares")
-        }
-    }
-
-    struct FakeKeyshareStorage {
-        keyshares: Mutex<Vec<Keyshare>>,
-        fail_load_after_store: bool,
-        stored: Arc<AtomicUsize>,
-        stored_notify: Arc<Notify>,
-    }
-
-    impl FakeKeyshareStorage {
-        fn empty() -> Self {
-            Self::with_keyshares(vec![])
-        }
-
-        fn with_keyshares(keyshares: Vec<Keyshare>) -> Self {
-            Self {
-                keyshares: Mutex::new(keyshares),
-                fail_load_after_store: false,
-                stored: Arc::new(AtomicUsize::new(0)),
-                stored_notify: Arc::new(Notify::new()),
-            }
-        }
-
-        fn failing_load_after_store() -> Self {
-            Self {
-                fail_load_after_store: true,
-                ..Self::empty()
-            }
-        }
-    }
-
-    impl KeyShareRepository for FakeKeyshareStorage {
-        type Error = anyhow::Error;
-
-        async fn store_keyshares(&self, keyshares: &[Keyshare]) -> Result<(), Self::Error> {
-            *self.keyshares.lock().await = keyshares.to_vec();
-            self.stored.fetch_add(1, AtomicOrdering::SeqCst);
-            // `notify_one` stores a permit, so a waiter that registers late still observes it.
-            self.stored_notify.notify_one();
-            Ok(())
-        }
-
-        async fn load_keyshares(&self) -> Result<Vec<Keyshare>, Self::Error> {
-            if self.fail_load_after_store && self.stored.load(AtomicOrdering::SeqCst) > 0 {
-                anyhow::bail!("storage is unreadable");
-            }
-            Ok(self.keyshares.lock().await.clone())
         }
     }
 
@@ -526,14 +404,6 @@ mod tests {
     }
 
     impl ports::WatchCurrentKeyset for FakeWatchCurrentKeyset {}
-
-    fn keyshares_for(epoch_id: u64, domain_ids: &[u64]) -> Vec<Keyshare> {
-        let mut rng = StdRng::seed_from_u64(42);
-        domain_ids
-            .iter()
-            .map(|domain_id| generate_dummy_keyshare(epoch_id, *domain_id, 1, &mut rng))
-            .collect()
-    }
 
     fn backed_up(epoch_id: u64, domain_ids: &[u64]) -> Option<BackedUpKeyset> {
         Some(BackedUpKeyset {
@@ -627,6 +497,7 @@ mod tests {
         assert_eq!(service.backed_up, backed_up(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
         let stored = service.storage.load_keyshares().await.unwrap();
         assert_eq!(stored, keyshares_for(EPOCH_ID, &FIXTURE_DOMAIN_IDS));
+        assert_eq!(service.keyshares.put_keyshares_calls(), 0);
     }
 
     #[tokio::test]
@@ -753,6 +624,7 @@ mod tests {
             ]
         );
         assert_eq!(service.storage.stored.load(AtomicOrdering::SeqCst), 0);
+        assert_eq!(service.keyshares.put_keyshares_calls(), 0);
     }
 
     #[tokio::test]

@@ -1,100 +1,142 @@
 # TEE Context
 
-The TEE Context is a shared crate (`crates/tee-context`) for the TEE attestation lifecycle. It polls governance contract state (allowed image hashes) and exposes methods for attestation submission and verification — so that each service gets these capabilities without reimplementing contract interactions. Each service is responsible for its own attestation scheduling (when to submit, when to call `verify_tee`). The MPC node depends on both the MPC Context (for protocol orchestration) and the TEE Context (for attestation) as separate, parallel components. Other services (Archive Signer, Backup Service) use the TEE Context directly.
+The TEE Context is a shared crate (`crates/tee-context`) for the TEE attestation lifecycle. It keeps the contract's TEE state up to date, writes the approved image hashes to disk for the [Launcher][launcher-pattern], and regenerates and submits the service's attestation every hour, so that each service gets these tasks without reimplementing them. The MPC node and the Backup Service use it.
+
+[launcher-pattern]: securing-mpc-with-tee/securing-mpc-with-tee.md#launcher-pattern
 
 ## Interface
 
 ```rust
-/// Allowed TEE hashes fetched from the governance contract.
-pub struct AllowedTeeHashes {
-    pub allowed_docker_image_hashes: Vec<AllowedMpcDockerImageHash>,
-    pub allowed_launcher_compose_hashes: Vec<LauncherDockerComposeHash>,
+/// The TEE state on the contract that an attestation is checked against. Each value is empty
+/// until its first successful read.
+#[derive(Clone)]
+pub struct TeeStateReceivers {
+    pub allowed_image_hashes: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
+    pub allowed_launcher_compose_hashes: watch::Receiver<Vec<LauncherDockerComposeHash>>,
+    pub allowed_os_measurements: watch::Receiver<Vec<ExpectedMeasurements>>,
+    /// The attestation the contract stores for the service's TLS public key.
+    pub stored_attestation: watch::Receiver<Option<StoredAttestation>>,
 }
 
-/// Generic over the chain backend: `S` is any `ViewContract` +
-/// `SubmitFunctionCall` + `HasPollInterval` (the chain gateway in
-/// production, a mock in tests).
-pub struct TeeContext<S> { .. }
+/// The service whose TEE state `TeeStateMonitors` read. The contract keeps a separate TEE state
+/// for each.
+#[derive(Clone, Copy)]
+pub enum TeeService {
+    MpcNode,
+    BackupService,
+}
 
-impl<S> TeeContext<S> {
-    /// Subscribes to the governance contract's allowed image and launcher
-    /// hash view methods, waits for the first successful poll of each, then
-    /// spawns a background task that merges updates into a single
-    /// `AllowedTeeHashes` watch channel. The task is cancelled when the
-    /// `TeeContext` is dropped.
-    pub async fn new(
-        chain_gateway: S,
-        // e.g. v1.signer (MPC node) or the HOT governance contract (Archive Signer).
-        governance_contract: AccountId,
-        signer: TransactionSigner,
-    ) -> Result<Self, TeeContextError>;
+/// Keeps `TeeStateReceivers` up to date with the contract.
+pub struct TeeStateMonitors { .. }
 
-    /// Returns a `watch::Receiver` for the allowed TEE hashes.
-    /// Use `.borrow()` to read the latest value, `.changed()` to wait for updates.
-    pub fn watch_allowed_tee_hashes(&self) -> watch::Receiver<AllowedTeeHashes>;
+impl TeeStateMonitors {
+    pub fn new() -> (Self, TeeStateReceivers);
 
-    /// Submits an attestation to the governance contract via
-    /// submit_participant_info(). The caller generates the attestation
-    /// quote via tee-authority; TeeContext just submits it.
-    pub async fn submit_attestation(
-        &self,
-        attestation: Attestation,
+    /// Spawns one task per contract view. Each task polls its view every second and retries
+    /// failed reads forever.
+    pub fn spawn<V: ViewContract + Clone + Send + Sync + 'static>(
+        self,
+        contract: MpcContractHandle<V>,
+        service: TeeService,
         tls_public_key: Ed25519PublicKey,
-    ) -> Result<(), TeeContextError>;
-
-    /// Calls verify_tee() on the governance contract, triggering on-chain
-    /// re-validation of the participants' attestations. The caller is responsible
-    /// for scheduling (e.g., every 2 days).
-    pub async fn verify_tee(&self) -> Result<(), TeeContextError>;
+    );
 }
+
+/// Writes the allowed image hashes to disk for the Launcher whenever they change. Sends on
+/// `shutdown_signal_sender` and returns when a write fails or the receiver closes.
+pub async fn monitor_allowed_image_hashes<Storage: AllowedImageHashesStorage + Send + Sync + 'static>(
+    cancellation_token: CancellationToken,
+    current_image: NodeImageHash,
+    allowed_hashes_in_contract: watch::Receiver<Vec<AllowedMpcDockerImageHash>>,
+    image_hash_storage: Storage,
+    shutdown_signal_sender: mpsc::Sender<()>,
+) -> Result<(), ExitError>;
+
+/// Generates a TDX quote over the given report data; implemented for `TeeAuthority`.
+pub trait GenerateAttestation: Send + Sync {
+    fn generate_attestation(
+        &self,
+        report_data: ReportData,
+    ) -> impl Future<Output = Result<Attestation, AttestationError>> + Send;
+}
+
+/// Sends an attestation for a TLS public key to the contract.
+pub trait SubmitAttestation: Clone + Send + Sync {
+    /// Succeeds once the transaction is sent. Whether the contract accepted the attestation
+    /// shows only in `TeeStateReceivers::stored_attestation`.
+    fn submit(
+        &self,
+        attestation: dtos::Attestation,
+        tls_public_key: Ed25519PublicKey,
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+}
+
+pub struct AttestationSubmitter<S, A> {
+    pub tee_authority: A,
+    pub submitter: S,
+    pub tls_public_key: Ed25519PublicKey,
+    pub account_public_key: Ed25519PublicKey,
+    pub tee: TeeStateReceivers,
+    /// Publishes each attestation the task generates, whether or not the contract accepts it.
+    pub latest_attestation: watch::Sender<Option<Attestation>>,
+}
+
+/// Generates the attestation to serve until the first periodic round replaces it. Returns
+/// [`None`] when the collateral cannot be fetched, which the periodic rounds retry, and fails on
+/// any other generation error.
+pub async fn generate_initial_attestation(
+    tee_authority: &impl GenerateAttestation,
+    tls_public_key: &Ed25519PublicKey,
+    account_public_key: &Ed25519PublicKey,
+) -> anyhow::Result<Option<Attestation>>;
+
+/// Regenerates and submits the attestation every hour. Never returns.
+pub async fn run_periodic_attestation_submission<S: SubmitAttestation, A: GenerateAttestation>(
+    submitter: AttestationSubmitter<S, A>,
+);
 ```
 
-Callers subscribe to allowed hashes via `watch_allowed_tee_hashes()`, which returns a `watch::Receiver`. The background task polls the Chain Gateway and pushes updates through the channel. The TEE Context does not write to disk — persistence is the caller's responsibility.
+The monitors read the views of the given `TeeService`, listed in [Backup Service Attestation Data](backup-service-attestation-data.md#tee-context).
 
-`ReportData` is versioned per service — each service defines what goes into its attestation quote. For example, the MPC node includes its TLS public key in `ReportData` (needed for P2P connections), while the Archive Signer does not. This keeps services decoupled: changes to the MPC node's `ReportData` format do not require changes in other services.
+Submission is a port because each service signs with its own key and calls its own contract method. The MPC node implements it by sending `submit_participant_info` through its transaction sender, which holds the only signer of the node's access key: a second signer would keep its own nonce counter and race the node's other transactions. The Backup Service implements it by calling `register_backup_service` with no deposit, signed by the account key it generated inside the TEE, which nothing else signs with.
 
-Each service passes its governance contract address to `TeeContext::new()`. All governance contracts expose the same attestation-related methods (see [Attestation Methods][tee-context-methods]) since they share [`TeeState`][tee-state]. Voting methods vary per contract.
+Each hourly round:
 
-[tee-context-methods]: tee-lifecycle.md#attestation-methods
+1. Generates an attestation whose report data binds the TLS public key and the account public key, and publishes it on `latest_attestation`.
+2. Checks it against the allowed image hashes, launcher compose hashes and OS measurements in `TeeStateReceivers`. A failed check is logged as a warning and the attestation is submitted anyway: the contract runs the authoritative check, and the local view of the allowed lists may be stale.
+3. Submits it, retrying with exponential backoff until `stored_attestation` holds an attestation that can be the submitted one. A stored mock attestation does not confirm a submitted Dstack attestation.
+4. Abandons a stage still running at the end of the round. The next round starts over with a fresh attestation.
 
-[tee-state]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/contract/src/tee/tee_state.rs#L92
+Before each round, it warns if the contract has not accepted an attestation for this TLS public key in the last one and a half rounds.
 
-### Usage
+The attestation lifecycle metrics (`mpc_tee_attestation_*`, `mpc_attestation_*` and `mpc_own_image_hash_*`) are registered by this crate in the default Prometheus registry.
 
-Every TEE service follows the same pattern: start the TEE Context, spawn a watcher loop to write hashes to disk for the [Launcher][launcher-pattern], and periodically re-submit attestations.
+## Usage
 
-[archive-signer]: ../archive/design/hot-tee-signing-design.md
-[launcher-pattern]: securing-mpc-with-tee/securing-mpc-with-tee.md#launcher-pattern
+The MPC node wires the crate up as follows, and serves the attestation in `latest_attestation_receiver` on `/public_data`:
 
 ```rust
-let tee_ctx = TeeContext::new(chain_gateway, governance_contract, signer).await?;
+let attestation =
+    generate_initial_attestation(&tee_authority, &tls_public_key, &account_public_key).await?;
+let (latest_attestation, latest_attestation_receiver) = watch::channel(attestation);
 
-// Write hashes to disk for the Launcher whenever they change.
-let mut hashes_rx = tee_ctx.watch_allowed_tee_hashes();
-tokio::spawn(async move {
-    while hashes_rx.changed().await.is_ok() {
-        let hashes = hashes_rx.borrow().clone();
-        if let Err(error) = write_hashes_to_disk(&hashes.allowed_docker_image_hashes).await {
-            tracing::error!(%error, "writing the allowed hashes to disk failed");
-        }
-    }
-});
+let (tee_state_monitors, tee) = TeeStateMonitors::new();
+tee_state_monitors.spawn(contract, TeeService::MpcNode, tls_public_key.clone());
 
-// Periodic attestation submission (every hour); failures are logged and retried on the
-// next interval, so the task never dies.
-tokio::spawn({
-    let tee_ctx = tee_ctx.clone();
-    async move {
-        loop {
-            let submission = async {
-                let quote = tee_authority.generate_quote(&report_data)?;
-                tee_ctx.submit_attestation(quote).await
-            };
-            if let Err(error) = submission.await {
-                tracing::error!(%error, "attestation submission failed");
-            }
-            tokio::time::sleep(Duration::from_secs(3600)).await;
-        }
-    }
-});
+tokio::spawn(monitor_allowed_image_hashes(
+    cancellation_token.child_token(),
+    current_image,
+    tee.allowed_image_hashes.clone(),
+    AllowedImageHashesFile::from(latest_allowed_hash_file_path),
+    image_hash_shutdown_sender,
+));
+
+tokio::spawn(run_periodic_attestation_submission(AttestationSubmitter {
+    tee_authority,
+    submitter: SubmitParticipantInfo(transaction_sender),
+    tls_public_key,
+    account_public_key,
+    tee,
+    latest_attestation,
+}));
 ```

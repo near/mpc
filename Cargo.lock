@@ -1001,6 +1001,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-testing"
+version = "3.19.0"
+dependencies = [
+ "futures",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1281,16 +1288,20 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "libc",
  "mpc-node",
+ "mpc-node-config",
  "near-account-id",
  "near-contract-transport",
  "near-kit",
  "near-mpc-contract-interface",
+ "node-types",
  "prometheus",
  "rand 0.8.8",
  "rand_core 0.6.4",
  "rstest",
  "serde",
  "serde_json",
+ "tee-authority",
+ "tee-context",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -3205,6 +3216,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "durable-fs"
+version = "3.19.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3237,6 +3255,7 @@ dependencies = [
  "near-mpc-crypto-types",
  "near-mpc-sdk",
  "near-sandbox",
+ "node-types",
  "rand 0.8.8",
  "rcgen",
  "regex",
@@ -6088,6 +6107,7 @@ version = "3.19.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
+ "async-testing",
  "async-trait",
  "average",
  "axum",
@@ -6102,6 +6122,7 @@ dependencies = [
  "chain-gateway",
  "clap",
  "derive_more 2.1.1",
+ "durable-fs",
  "ed25519-dalek 2.2.0",
  "elliptic-curve 0.13.8",
  "flume",
@@ -6125,7 +6146,6 @@ dependencies = [
  "launcher-interface",
  "lru 0.19.0",
  "mappings",
- "mockall",
  "mpc-attestation",
  "mpc-contract",
  "mpc-node-config",
@@ -6162,12 +6182,14 @@ dependencies = [
  "sha3 0.10.9",
  "socket2",
  "tee-authority",
+ "tee-context",
  "tempfile",
  "test-log",
  "test-port-allocator",
  "thiserror 2.0.21",
  "thread-priority 3.1.1",
  "threshold-signatures",
+ "tick",
  "tikv-jemallocator",
  "time",
  "tokio",
@@ -11192,14 +11214,28 @@ dependencies = [
 name = "tee-context"
 version = "3.19.0"
 dependencies = [
- "chain-gateway",
+ "anyhow",
+ "async-testing",
+ "backon",
+ "derive_more 2.1.1",
+ "durable-fs",
  "ed25519-dalek 2.2.0",
+ "itertools 0.15.0",
+ "launcher-interface",
+ "mockall",
+ "mpc-attestation",
  "mpc-primitives",
- "near-account-id",
  "near-contract-transport",
+ "near-mpc-bounded-collections",
  "near-mpc-contract-interface",
+ "near-time 2.15.0-rc.1",
+ "prometheus",
+ "rand 0.8.8",
+ "rstest",
  "serde_json",
+ "tee-authority",
  "thiserror 2.0.21",
+ "tick",
  "tokio",
  "tokio-util",
  "tracing",
@@ -11500,6 +11536,13 @@ dependencies = [
  "threshold-signatures",
  "wycheproof",
  "zeroize",
+]
+
+[[package]]
+name = "tick"
+version = "3.19.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

@@ -8,7 +8,7 @@ Node migration allows you to move your MPC node from one host to another without
 
 **Changing only your URL?** If your node keeps the same TLS key and you only need to point peers at a new address (e.g. fixing a typo or moving to a new domain), call `update_participant_url` on the contract instead of running a migration. It updates just your registered URL; peers pick it up without a resharing or reconnecting existing sessions.
 
-**Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](../archive/design/migration-service.md).
+**Important:** This guide covers the **Soft Launch** migration process. To restore from a backup service running in TDX instead, see [Running a backup service in TDX](running-a-backup-service-in-tdx.md#restoring-into-a-new-node).
 
 ## Environment Variables Setup
 
@@ -162,7 +162,7 @@ This creates a `secrets.json` file in your backup home directory containing:
 
 Before you can backup keyshares, the MPC contract must list your backup-cli's public key as your account's backup service.
 
-The contract registers a backup service only together with a TDX attestation that the backup service produces inside its own CVM and signs with an account key generated there (see [Backup Service Attestation Data](../design/backup-service-attestation-data.md)). A `backup-cli` running outside a TEE cannot produce one, so it cannot register. A key registered before the contract required attestations stays listed in `migration_info`, and MPC nodes keep accepting it, as long as `secrets.json` in your backup home directory holds its `p2p_private_key`.
+The contract registers a backup service only together with a TDX attestation that the backup service produces inside its own CVM and signs with an account key generated there (see [Backup Service Attestation Data](../design/backup-service-attestation-data.md)). A `backup-cli` running outside a TEE cannot produce one, so it cannot register. A key registered before the contract required attestations stays listed in `migration_info`, but MPC nodes exchange keyshares only with the backup service that the `attested_backup_service` view returns for their account, and the view returns it only while that service's attestation is valid. The steps below therefore work with such a key only while both the old and the new node run an image that predates this check, and while `secrets.json` in your backup home directory holds that key's `p2p_private_key`.
 
 ### Verify Registration
 ```bash
@@ -236,7 +236,7 @@ This is the key you pass to the backup-cli — if the node is already deployed, 
 - These are two different keys serving different purposes
 
 
-**TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. For TEE-to-TEE migrations in the Hard Launch phase, the backup service will run autonomously within a TEE and handle encryption keys securely without file system access. Refer to [migration-service.md](../archive/design/migration-service.md) for Hard Launch details.
+**TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. A [backup service running in TDX](running-a-backup-service-in-tdx.md) keeps the key shares inside its CVM instead.
 
 
 ## Step 4: Backup Keyshares from Old Node
@@ -322,7 +322,7 @@ Notes:
 - Keyshares already backed up are never overwritten, so restarting the service is safe and older epochs' files are kept.
 - On startup and then every hour, the service fetches the current keyset again even when it is already stored, and compares it with the stored keyshares. A difference is logged at `error` and the stored backup is left as it is. These fetches also keep the node's `mpc_last_backup_served_*` metrics current after a node restart or migration (see [Metrics for node operators](node-operator-metrics.md#backups)).
 - It re-reads the contract every `--poll-interval-seconds` (default 60) and backs up when the keyset changed. A successful backup logs at `info`, a failed fetch at `warn`, and a failed fetch is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
-- `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup, or the last check that confirmed it, as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`. When unset (the default), nothing is served. After a restart the backup time is unknown, so until the first fetch from the node succeeds `/status` reports `timestamp_seconds: null` and the timestamp gauge is absent, so an alert on that gauge returns no data then rather than firing.
+- `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup, or the last check that confirmed it, as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`, followed by the embedded NEAR node's metrics when the service reads the chain through one. When unset (the default), nothing is served. After a restart the backup time is unknown, so until the first fetch from the node succeeds `/status` reports `timestamp_seconds: null` and the timestamp gauge is absent, so an alert on that gauge returns no data then rather than firing.
 - This is the backup direction only. Restoring (Steps 6–8) stays manual.
 
 See [Automatic backups](../archive/design/migration-service.md#automatic-backups-backup-cli-run) for what the service does and does not guarantee, including the RPC endpoint's role.

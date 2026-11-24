@@ -1,5 +1,7 @@
 use launcher_interface::types::DockerSha256Digest;
 
+use crate::types::Service;
+
 #[derive(thiserror::Error, Debug)]
 pub enum LauncherError {
     #[error("failed to run dstack-util: {0}")]
@@ -54,9 +56,12 @@ pub enum LauncherError {
     },
 
     #[error(
-        "User config sets reserved key [{0}] to a value other than the launcher's; remove it from mpc_node_config"
+        "User config sets reserved key [{0}] to a value other than the launcher's; remove it from the service's config"
     )]
     ReservedConfigKey(String),
+
+    #[error("User config has no config table for the launched service {0:?}")]
+    MissingServiceConfig(Service),
 
     #[error("Image pull failed: {0}")]
     ImageDigestValidationFailed(#[from] ImageDigestValidationFailed),

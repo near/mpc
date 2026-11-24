@@ -1,11 +1,14 @@
 use near_account_id::AccountId;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Notify;
 
-use crate::{HasPollInterval, PollInterval, SerializedObservation, ViewArgs, ViewContract};
+use crate::{
+    HasPollInterval, ObservedState, PollInterval, SerializedObservation, ViewArgs, ViewContract,
+};
 
 struct ViewState {
     response: Result<SerializedObservation, MockViewError>,
@@ -100,3 +103,10 @@ impl HasPollInterval for MockViewContract {
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("mock view error: {0}")]
 pub struct MockViewError(pub &'static str);
+
+pub fn observed(value: &impl Serialize) -> Result<SerializedObservation, MockViewError> {
+    Ok(ObservedState {
+        observed_at: 0.into(),
+        value: serde_json::to_vec(value).unwrap(),
+    })
+}

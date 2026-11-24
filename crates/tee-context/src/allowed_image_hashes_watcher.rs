@@ -1,5 +1,5 @@
-use crate::durable_fs::write_file_durably;
 use derive_more::From;
+use durable_fs::write_file_durably;
 use itertools::Itertools;
 use launcher_interface::types::{ApprovedHashes, DockerSha256Digest};
 use mpc_primitives::hash::NodeImageHash;
@@ -16,7 +16,7 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::tee::image_expiry_metrics;
+use crate::image_expiry_metrics;
 
 #[cfg(test)]
 use mockall::automock;

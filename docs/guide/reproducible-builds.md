@@ -1,7 +1,7 @@
 # Reproducible Builds
 
-This project supports reproducible builds for the node and launcher Docker
-images, and for the on-chain MPC contract WASM. Reproducible builds ensure that
+This project supports reproducible builds for the node, launcher and backup
+service Docker images, and for the on-chain MPC contract WASM. Reproducible builds ensure that
 the same source code always produces identical binaries, which is important for
 security and verification purposes.
 
@@ -58,7 +58,8 @@ The script will output the image hashes and other build information, which can b
 
 CI also builds every image with [Nix](https://nixos.org/download/) (flakes
 enabled), as an alternative to the script above, and publishes it as
-`nearone/<image>:<branch>-<short-sha>-nix`.
+`nearone/<image>:<branch>-<short-sha>-nix`. The backup service image is built
+only this way.
 
 Every build step runs in the Nix sandbox, from inputs pinned by `flake.lock`,
 `Cargo.lock` and `rust-toolchain.toml`; only fetching those pinned inputs, or
@@ -105,9 +106,10 @@ Take the full `<commit-hash>` from `main` or the release branch, since GitHub
 also serves commits from any fork under `near/mpc`. For a release that includes
 these images, the version tag works too (e.g. `github:near/mpc/3.17.0#…`):
 our releases are immutable, so their tags cannot be moved. Use
-`mpc-launcher-image` for the launcher image. From a checkout,
-`.#packages.x86_64-linux.mpc-node-image` gives the same digest only with a clean
-working tree, because the node binary embeds the commit hash.
+`mpc-launcher-image` for the launcher image and `backup-service-image` for the
+backup service image. From a checkout, the node and backup service images give
+the same digest only with a clean working tree, because their binaries embed the
+commit hash.
 
 ## mpc-contract
 

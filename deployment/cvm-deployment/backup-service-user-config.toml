@@ -1,0 +1,45 @@
+# Example user-config.toml for a backup service CVM. Defaults target testnet;
+# inline `# mainnet: ...` comments show the value to use on mainnet.
+#
+# The launcher adds `tee`, plus `mpc_contract_id` and `genesis_hash` from its
+# measured compose file, and rejects a config that sets them to other values.
+#
+# MUST be replaced with real values before deploying:
+#   - account_id
+#   - near_init.tier3_public_addr
+#   - secrets.secret_store_key_hex
+#   - secrets.backup_encryption_key_hex
+
+[launcher_config]
+image_reference = "nearone/backup-service"
+port_mappings = [
+    { host = 8080, container = 8080 },   # /health, /status, /metrics, /public_data
+    { host = 24567, container = 24567 }, # decentralized state sync
+]
+
+[backup_service_config]
+# The operator's account. Add the account key the service shows on
+# /public_data to it as a function-call key for the MPC contract.
+account_id = "your-mpc-account.testnet"
+# Port the account's MPC node serves keyshares on (its `migration_web_ui`).
+mpc_node_migration_port = 8079
+listen_address = "0.0.0.0:8080"
+
+[backup_service_config.near_init]
+chain_id = "testnet" # mainnet: "mainnet"
+download_genesis = true
+download_config = "rpc"
+# boot_nodes = "..." # optional: the `boot_nodes` string from user-config.toml
+tier3_public_addr = "REPLACE_WITH_NODE_PUBLIC_IP:24567"
+
+[backup_service_config.secrets]
+# Generate: `openssl rand -hex 16`.
+secret_store_key_hex = "REPLACE_ME_WITH_16_BYTE_HEX_KEY_"
+# The `backup_encryption_key_hex` of the account's MPC node.
+backup_encryption_key_hex = "REPLACE_ME_WITH_32_BYTE_HEX_KEY_REPLACE_ME_WITH_32_BYTE_HEX_KEY_"
+
+[[backup_service_config.pccs_endpoints]]
+url = "https://pccs.phala.network/"
+
+[[backup_service_config.pccs_endpoints]]
+url = "https://api.trustedservices.intel.com/"

@@ -375,7 +375,9 @@ pub async fn monitor_contract_state<V: ViewContract + Clone + Send + Sync + 'sta
 /// and stalling every node.
 const UNREACHABLE_PARTICIPANT_ADDRESS: &str = "192.0.2.1";
 
-fn parse_participant_address(
+/// The host of a participant's URL, with the given port if any, else the URL's port or its
+/// scheme's default
+pub fn parse_participant_address(
     url: &str,
     port_override: Option<u16>,
 ) -> anyhow::Result<(String, u16)> {

@@ -7,7 +7,7 @@ use url::Url;
 
 const SHA256_PREFIX: &str = "sha256:";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TeeConfig {
     pub authority: TeeAuthorityConfig,
     /// The hash of the running image.
@@ -16,7 +16,7 @@ pub struct TeeConfig {
     pub latest_allowed_hash_file_path: PathBuf,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TeeAuthorityConfig {
     Local,

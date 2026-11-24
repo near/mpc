@@ -104,9 +104,9 @@ The following walkthroughs show how the attestation data defined above is used i
 
 **On boot (one-time):**
 
-1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the hash of the app compose, which embeds the launcher compose file. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses the [`DEFAULT_IMAGE_DIGEST`][launcher-default-image-digest] set in its compose file (same pattern as MPC node launcher). On subsequent boots, the backup service will have written the updated hashes it receives from [`TeeContext`][tee-context] to disk.
+1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the hash of the app compose, which embeds the launcher compose file. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses the [`DEFAULT_IMAGE_DIGEST`][launcher-default-image-digest] set in its compose file (same pattern as MPC node launcher). On subsequent boots, the backup service will have written the updated hashes it receives from the shared TEE lifecycle to disk.
 2. Backup service generates an Ed25519 TLS keypair and a NEAR account keypair inside the TEE.
-3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as a function-call access key to their NEAR account, as for MPC nodes (see [securing-mpc-with-tee §Secret key Handling](securing-mpc-with-tee/securing-mpc-with-tee.md#secret-key-handling)).
+3. Operator retrieves the account public key from the backup service's HTTP endpoint, verifies it against the attestation with `attestation-cli`, and adds it as a function-call access key to their NEAR account, as for MPC nodes (see [securing-mpc-with-tee §Secret key Handling](securing-mpc-with-tee/securing-mpc-with-tee.md#secret-key-handling) and [Running a backup service in TDX](../guide/running-a-backup-service-in-tdx.md)).
 
 **Attestation registration (periodic — every hour, starting on first boot):**
 
@@ -115,7 +115,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 **Keyshare monitoring (continuous):**
 
-6. Backup service polls the contract for missing keyshares, and finds its MPC node's TLS key and URL with `participant_info(account_id)` instead of in host-controlled configuration.
+6. Backup service polls the contract for missing keyshares, and finds its MPC node's TLS key and URL with `participant_info(account_id)` instead of in host-controlled configuration. It fetches the keyshares via mTLS from the host of that URL, on the configured migration port, verifying that TLS key.
 7. MPC node looks up its operator's backup service with `attested_backup_service(account_id)`, which returns the TLS key from [`backup_services_info`][backup-services-info-field] only while its attestation in `backup_service_tee_state` is valid (see [Required Changes](#contract-methods)), then, once the contract lists the node's own TLS key for its account, sends encrypted keyshares over mTLS.
 
 **On restart:**
@@ -128,7 +128,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 1. **Operator trigger (manual)**: Operator calls [`start_node_migration(destination_node_info)`][start-node-migration].
 2. **Detection (automated)**: Backup service polls `attested_migration_destination(account_id)`, which returns the operator's ongoing migration only while the operator is a participant of the running state and the destination node passes the checks of `start_node_migration()` with a [`Dstack`][attestation-dstack] attestation (see [Required Changes](#contract-methods)).
-3. **Transfer**: Backup service connects to that destination via mTLS, verifying its TLS key, and sends encrypted keyshares.
+3. **Transfer**: Backup service connects via mTLS to the host of that destination's URL, on the migration port its configuration names, verifying the destination's TLS key from the view, and sends encrypted keyshares. A host-supplied port can only make the transfer fail. It sends them again every minute while the view returns the migration, since the destination may not accept them yet or may lose them before it concludes the migration.
 4. **Verification**: New node queries the contract to verify the backup service's attestation before saving keyshares.
 5. **Finalization**: New node calls [`conclude_node_migration(keyset)`][conclude-node-migration].
 
@@ -164,15 +164,17 @@ The contract needs the following changes, most of them in the [migration service
 
 The allowed compose hashes also need a backup service template. [`LauncherCompose::hash()`](../../crates/contract/src/tee/launcher_compose.rs) fills in a launcher compose template, including the contract's own account id as [`MPC_CONTRACT_ID`][mpc-contract-id] and the genesis hash of the chain the contract runs on as `NEAR_GENESIS_HASH`, which the MPC node launcher takes from this measured compose rather than from its user config. The [backup service template](../../crates/contract/assets/backup_service_launcher_docker_compose.yaml.template) is the MPC node template plus a `LAUNCHED_SERVICE=backup-service` line naming the service for the launcher to start. No placeholder expands to a line break, so a filled backup service template always has one more line than a filled MPC node template, and no backup service compose hash is also an MPC node one, even for the same launcher and image hashes. The backup service votes derive their compose hashes from this template. The backup service takes the contract id and genesis hash from its measured compose rather than its user config, so its embedded NEAR node reads only this contract and refuses to follow another chain. Its launcher also fixes the home directory, so the embedded node stays on the chain its disk started on.
 
-### TeeContext
+### TEE Context
 
-[`TeeContext`](./tee-context-design.md) hardcodes MPC node method names and needs parameterization:
+The [TEE Context](./tee-context-design.md) crate keeps the TEE state of the service it runs in up to date and submits that service's attestation every hour. Its `TeeService` parameter selects the views it reads, and each service implements the submission port:
 
-| What | Current | Backup service needs |
-|------|---------|---------------------|
+| What | MPC node | Backup service |
+|------|----------|----------------|
 | Submit attestation | [`submit_participant_info`][submit-participant-info] | [`register_backup_service`][register-backup-service] |
 | Poll image hashes | [`allowed_docker_image_hashes`][allowed-docker-image-hashes] | `allowed_backup_service_code_hashes` |
 | Poll compose hashes | [`allowed_launcher_compose_hashes`][allowed-launcher-compose-hashes] | `allowed_backup_service_launcher_compose_hashes` |
+| Poll OS measurements | `allowed_os_measurements` | `allowed_backup_service_os_measurements` |
+| Poll its stored attestation by its TLS key | [`get_attestation`][get-attestation] | `get_backup_service_attestation` |
 
 
 <!-- Code permalinks (main @ 483e9ff, except seed-measurements @ 249bd1e; docs.rs links at the Cargo.lock versions) -->
@@ -217,7 +219,6 @@ The allowed compose hashes also need a backup service template. [`LauncherCompos
 [mpc-image-hash-event-usage]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/mpc-attestation/src/attestation.rs#L435
 [launcher-image-hash-event]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/tee-launcher/src/lib.rs#L132-L158
 [launcher-default-image-digest]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/tee-launcher/src/types.rs#L21-L23
-[tee-context]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/tee-context/src/lib.rs#L21
 [seed-measurements]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/v3_7_0_state.rs#L76-L83
 [persistent-secrets]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/node/src/config.rs#L229
 [public-data]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/node/src/web.rs#L311

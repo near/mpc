@@ -30,9 +30,11 @@ counters tell you whether that is working:
 
 ## Backups
 
-The node hands its key shares to the backup service registered for it after
-every resharing, and every hour so the backup service can check its stored copy.
-These gauges say whether that happened:
+The node hands its key shares to its account's attested
+[backup service](running-a-backup-service-in-tdx.md) after every resharing, and
+every hour so the backup service can check its stored copy. These gauges say
+whether that happened, and the backup service exports
+[metrics of its own](running-a-backup-service-in-tdx.md#monitoring):
 
 | Metric | What it tracks | When to worry |
 | --- | --- | --- |

@@ -169,14 +169,14 @@ pub async fn monitor_foreign_chain_whitelist<V: ViewContract + Clone + Send + Sy
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use near_contract_transport::mock::{MockViewContract, MockViewError};
-    use near_contract_transport::{ObservedState, SerializedObservation};
+    use near_contract_transport::mock::{MockViewContract, MockViewError, observed};
     use near_mpc_bounded_collections::NonEmptyBTreeMap;
     use near_mpc_contract_interface::method_names::{
         GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     };
 
     use super::*;
+    use crate::indexer::tests::contract;
 
     fn whitelist(provider: &str) -> ForeignChainWhitelist {
         let config = dtos::ProviderConfig {
@@ -189,17 +189,6 @@ mod tests {
             quorum: 1,
         };
         BTreeMap::from([(dtos::ForeignChain::Polygon, entry)])
-    }
-
-    fn observed(value: &impl serde::Serialize) -> Result<SerializedObservation, MockViewError> {
-        Ok(ObservedState {
-            observed_at: 0.into(),
-            value: serde_json::to_vec(value).unwrap(),
-        })
-    }
-
-    fn contract(viewer: &MockViewContract) -> MpcContractHandle<MockViewContract> {
-        MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap())
     }
 
     #[tokio::test]
@@ -286,10 +275,9 @@ mod tests {
             observed(&dtos::AvailableForeignChains::default()),
         );
         viewer.set_view_response_for_method(GET_FOREIGN_CHAINS_CONFIGS, observed(&configs));
-        let contract = MpcContractHandle::new(viewer, "mpc.near".parse().unwrap());
 
         // When
-        let registrations = monitor_foreign_chain_registrations(contract).await;
+        let registrations = monitor_foreign_chain_registrations(contract(&viewer)).await;
 
         // Then
         assert_eq!(*registrations.configs.borrow(), configs);

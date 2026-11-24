@@ -1,4 +1,4 @@
-use std::{fmt, net::SocketAddr, str::FromStr, sync::LazyLock};
+use std::{fmt, net::SocketAddr, path::PathBuf, str::FromStr, sync::LazyLock};
 
 use near_account_id::AccountId;
 
@@ -53,6 +53,9 @@ impl fmt::Display for NodeAddress {
     }
 }
 
+pub(crate) const DEFAULT_REQUEST_TIMEOUT_SECONDS: u64 = 30;
+pub(crate) const DEFAULT_POLL_INTERVAL_SECONDS: u64 = 60;
+
 static VERSION: LazyLock<String> = LazyLock::new(|| {
     format!(
         "{} (commit {}) ({})",
@@ -83,6 +86,12 @@ pub enum Command {
     /// Run the automatic backup service: watch the MPC contract and back up keyshares whenever
     /// the stored ones no longer cover its keyset.
     Run(RunArgs),
+    /// Start the backup service from the TOML configuration file a launcher writes. It reads
+    /// the chain only through its embedded NEAR node.
+    StartWithConfigFile {
+        /// Path to the TOML configuration file.
+        config_path: PathBuf,
+    },
 }
 
 #[derive(clap::Args, Debug)]
@@ -102,7 +111,7 @@ pub struct NodeConnectionArgs {
     #[arg(long, env, hide_env_values = true)]
     pub backup_encryption_key_hex: String,
     /// Deadline for a single network request
-    #[arg(long, env, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(long, env, default_value_t = DEFAULT_REQUEST_TIMEOUT_SECONDS, value_parser = clap::value_parser!(u64).range(1..))]
     pub request_timeout_seconds: u64,
 }
 
@@ -126,7 +135,7 @@ pub struct RunArgs {
     pub node: NodeConnectionArgs,
     /// How often to poll the contract state, in seconds.
     /// Without --rpc-url, only the delay before re-attempting a failed backup.
-    #[arg(long, env, default_value_t = 60, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(long, env, default_value_t = DEFAULT_POLL_INTERVAL_SECONDS, value_parser = clap::value_parser!(u64).range(1..))]
     pub poll_interval_seconds: u64,
     /// Address to serve /health, /status and /metrics on (e.g. 127.0.0.1:8080).
     /// The endpoints are not served when unset.

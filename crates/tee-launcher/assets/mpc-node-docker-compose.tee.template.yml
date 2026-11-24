@@ -15,7 +15,7 @@ services:
       - shared-volume:/mnt/shared
       - mpc-data:/data
       - "{{DSTACK_UNIX_SOCKET}}:{{DSTACK_UNIX_SOCKET}}"
-    command: ["/app/mpc-node", "start-with-config-file", "{{MPC_CONFIG_SHARED_PATH}}"]
+    command: [{{COMMAND}}]
 
 volumes:
   shared-volume:

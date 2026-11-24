@@ -126,9 +126,7 @@ mod tests {
     use crate::adapters::p2p_client::{Error, MpcP2PClient};
     use crate::cli::NodeAddress;
     use crate::ports::P2PClient;
-
-    /// Long enough that no passing test can hit it; the timeout test passes its own.
-    const TEST_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+    use crate::test_utils::TEST_REQUEST_TIMEOUT;
 
     #[tokio::test]
     async fn test_get_keyshares() {

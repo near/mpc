@@ -8,21 +8,17 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
+use e2e_tests::MpcNodeState;
 use e2e_tests::metrics as node_metrics;
 use e2e_tests::mpc_node::{MpcNodeSetup, ProcessGuard};
-use e2e_tests::{MpcNodeState, PARTICIPANT_ATTESTATIONS_TIMEOUT};
-use near_contract_transport::WatchContractState;
 use near_mpc_contract_interface::types::{
-    BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey, Keyset, MigrationInfo,
-    ParticipantInfo, ProtocolContractState,
+    BackupServiceInfo, Ed25519PublicKey, Keyset, ProtocolContractState,
 };
 use rand::SeedableRng;
 use rstest::rstest;
 use test_port_allocator::reserve_port;
 
 const MIGRATION_PORT_TIMEOUT: Duration = Duration::from_mins(2);
-const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_mins(1);
-const BACKUP_TIMEOUT: Duration = Duration::from_mins(1);
 
 struct BackupService {
     home_dir: e2e_tests::TestDir,
@@ -175,15 +171,6 @@ impl BackupService {
         })
     }
 
-    /// Keyshare files the service has written, named `epoch_<n>_with_<m>_domains` by
-    /// [`PermanentKeyStorage`].
-    fn stored_keyshare_files(&self) -> Vec<String> {
-        list_permanent_keys(self.home_dir.path())
-            .into_iter()
-            .map(|(name, _size)| name)
-            .collect()
-    }
-
     fn put_keyshares(
         &self,
         node_migration_address: &str,
@@ -226,21 +213,6 @@ struct RunArgs<'a> {
     backup_encryption_key_hex: &'a str,
 }
 
-/// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
-/// (see `build-backup-cli` task in Makefile.toml).
-///
-/// Plumbing helper: a missing binary means the test wasn't built correctly,
-/// not that the system under test failed, so we panic.
-fn must_get_backup_cli_path() -> PathBuf {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/backup-cli");
-    assert!(
-        path.exists(),
-        "backup-cli binary not found at {}. Run `cargo make e2e-tests` to build it.",
-        path.display()
-    );
-    path
-}
-
 async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
     let timeout = MIGRATION_PORT_TIMEOUT;
     (|| async {
@@ -258,72 +230,6 @@ async fn wait_for_migration_port(address: &str) -> anyhow::Result<()> {
     )
     .await
     .with_context(|| format!("migration port {address} never became reachable"))
-}
-
-/// Fetch one node's `/debug/migrations` endpoint and deserialize the body
-/// into the typed [`MigrationInfo`] map (the second element of the
-/// `(indexer_height, MigrationInfo)` tuple the endpoint returns).
-async fn fetch_debug_migration_info(
-    http_client: &reqwest::Client,
-    web_addr: &str,
-) -> anyhow::Result<MigrationInfo> {
-    let body = http_client
-        .get(format!("http://{web_addr}/debug/migrations"))
-        .send()
-        .await?
-        .text()
-        .await?;
-    let (_indexer_height, info) = serde_json::from_str::<(u64, MigrationInfo)>(&body)
-        .with_context(|| format!("failed to parse /debug/migrations: {body}"))?;
-    Ok(info)
-}
-
-/// Poll a node's `/debug/migrations` endpoint with `common::INDEXER_SYNC_TIMEOUT`,
-/// re-running `check` against the typed [`MigrationInfo`] until it
-/// returns `Ok` (or the timeout elapses). `description` is interpolated
-/// into the timeout error.
-async fn wait_for_debug_migration<F>(
-    web_addr: &str,
-    description: &str,
-    check: F,
-) -> anyhow::Result<()>
-where
-    F: Fn(&MigrationInfo) -> anyhow::Result<()>,
-{
-    let http_client = reqwest::Client::new();
-    (|| async {
-        let info = fetch_debug_migration_info(&http_client, web_addr).await?;
-        check(&info)
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (common::INDEXER_SYNC_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis())
-                    as usize,
-            ),
-    )
-    .await
-    .with_context(|| format!("timed out waiting for {description}"))
-}
-
-fn running_state_matches_participant_key(
-    state: &ProtocolContractState,
-    account_id: &str,
-    expected_pk: &str,
-) -> bool {
-    match state {
-        ProtocolContractState::Running(r) => {
-            r.parameters
-                .participants
-                .participants
-                .iter()
-                .any(|(a, _, info)| {
-                    a.as_str() == account_id && String::from(&info.tls_public_key) == expected_pk
-                })
-        }
-        _ => false,
-    }
 }
 
 /// Register a backup service for the source node and wait for both the
@@ -361,7 +267,7 @@ async fn register_backup_service_and_wait(
         MpcNodeState::Running(n) => n.web_address(),
         _ => bail!("source node not running"),
     };
-    wait_for_debug_migration(
+    common::wait_for_debug_migration(
         &source_web_addr,
         "source node debug endpoint to show backup registration",
         |info| {
@@ -408,97 +314,6 @@ async fn get_keyshares_from_source(
     )
 }
 
-/// Start node migration on the contract, wait for confirmation, and return the
-/// submitted [`DestinationNodeInfo`].
-async fn start_migration_and_wait(
-    cluster: &e2e_tests::MpcCluster,
-    source_idx: usize,
-    target_idx: usize,
-) -> anyhow::Result<DestinationNodeInfo> {
-    let source_account_id = cluster.nodes[source_idx].account_id().clone();
-    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
-    let target_p2p_url = cluster.nodes[target_idx].p2p_url();
-    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
-
-    let destination_node_info = DestinationNodeInfo {
-        signer_account_pk: target_signer_pk,
-        destination_node_info: ParticipantInfo {
-            url: target_p2p_url,
-            tls_public_key: target_p2p_key.clone(),
-        },
-    };
-    cluster
-        .mpc_contract_handle
-        .get_tee_accounts()
-        .subscribe()
-        .await
-        .wait_for(PARTICIPANT_ATTESTATIONS_TIMEOUT, |nodes| {
-            nodes.iter().any(|node| {
-                node.account_id == source_account_id && node.tls_public_key == target_p2p_key
-            })
-        })
-        .await
-        .context("timed out waiting for the target node's attestation")?;
-    let outcome = cluster
-        .start_node_migration(source_idx, destination_node_info.clone())
-        .await
-        .context("failed to start node migration")?;
-    anyhow::ensure!(
-        outcome.is_success(),
-        "start_node_migration failed: {:?}",
-        outcome.failure_message()
-    );
-
-    cluster
-        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id)
-                .is_some_and(|(_, destination)| {
-                    destination.as_ref() == Some(&destination_node_info)
-                })
-        })
-        .await
-        .context("timed out waiting for contract to reflect node migration")?;
-
-    // Wait for the target's own indexer to ingest start_node_migration
-    // before backup-cli does PUT keyshares. Otherwise the target's
-    // `MigrationInfo.active_migration` flips mid-PUT, fires the
-    // migration web-server's per-connection cancellation token, and
-    // tears down the in-flight TLS stream.
-    //
-    // Note: we check destination_node_info.tls_public_key because it's
-    // populated by indexing the same start_node_migration block that
-    // flips active_migration to true.
-    //
-    // There's still a residual race window between this confirmation and
-    // PUT keyshares completing: any other migration-info-affecting block
-    // landing in that window would re-fire the cancellation token. This
-    // test only runs one migration at a time, so the assumption holds —
-    // but if it's ever extended to run alongside other migration activity,
-    // this assumption breaks silently.
-    let target_web_addr = match &cluster.nodes[target_idx] {
-        MpcNodeState::Running(n) => n.web_address(),
-        _ => bail!("target node not running"),
-    };
-    wait_for_debug_migration(
-        &target_web_addr,
-        "target node to index node migration",
-        |info| {
-            let actual = info
-                .get(&source_account_id)
-                .and_then(|(_, destination)| destination.as_ref())
-                .map(|d| &d.destination_node_info.tls_public_key);
-            anyhow::ensure!(
-                actual == Some(&target_p2p_key),
-                "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key:?}"
-            );
-            Ok(())
-        },
-    )
-    .await?;
-
-    Ok(destination_node_info)
-}
-
 /// PUT keyshares to the target node via the backup CLI.
 async fn put_keyshares_to_target(
     cluster: &e2e_tests::MpcCluster,
@@ -519,37 +334,6 @@ async fn put_keyshares_to_target(
     )
 }
 
-/// Wait for the target to become an active participant and for migration
-/// state to clear from the contract.
-async fn wait_for_migration_completion(
-    cluster: &e2e_tests::MpcCluster,
-    source_idx: usize,
-    target_idx: usize,
-) -> anyhow::Result<()> {
-    let source_account_id = cluster.nodes[source_idx].account_id().clone();
-    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
-
-    cluster
-        .wait_for_state(MIGRATION_COMPLETION_TIMEOUT, |state| {
-            running_state_matches_participant_key(
-                state,
-                source_account_id.as_str(),
-                &target_p2p_key,
-            )
-        })
-        .await
-        .context("timed out waiting for migration to complete")?;
-
-    cluster
-        .wait_for_migration_info(common::INDEXER_SYNC_TIMEOUT, |info| {
-            info.get(&source_account_id)
-                .is_some_and(|(_, destination)| destination.is_none())
-        })
-        .await
-        .context("migration state did not clear")?;
-    Ok(())
-}
-
 /// Returns the sorted (filename, length) pairs of files in the node's
 /// `permanent_keys/` directory. Empty if the directory doesn't exist.
 /// Used by the back-migration test to assert keyshares survive a
@@ -559,24 +343,7 @@ fn snapshot_permanent_keys(cluster: &e2e_tests::MpcCluster, idx: usize) -> Vec<(
         MpcNodeState::Running(n) => n.setup().home_dir().to_path_buf(),
         MpcNodeState::Stopped(s) => s.home_dir().to_path_buf(),
     };
-    list_permanent_keys(&home_dir)
-}
-
-fn list_permanent_keys(home_dir: &Path) -> Vec<(String, u64)> {
-    let Ok(read_dir) = std::fs::read_dir(home_dir.join("permanent_keys")) else {
-        return Vec::new();
-    };
-    let mut entries: Vec<(String, u64)> = read_dir
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            Some((
-                entry.file_name().into_string().ok()?,
-                entry.metadata().ok()?.len(),
-            ))
-        })
-        .collect();
-    entries.sort();
-    entries
+    common::list_permanent_keys(&home_dir)
 }
 
 /// Drives one full backup-CLI migration round (register → GET → start →
@@ -600,13 +367,13 @@ async fn run_migration_round(
     get_keyshares_from_source(cluster, source_idx, &backup_service)
         .await
         .unwrap_or_else(|e| panic!("{direction_label}: get_keyshares_from_source failed: {e:?}"));
-    start_migration_and_wait(cluster, source_idx, target_idx)
+    common::start_migration_and_wait(cluster, source_idx, target_idx)
         .await
         .unwrap_or_else(|e| panic!("{direction_label}: start_migration_and_wait failed: {e:?}"));
     put_keyshares_to_target(cluster, target_idx, &backup_service)
         .await
         .unwrap_or_else(|e| panic!("{direction_label}: put_keyshares_to_target failed: {e:?}"));
-    wait_for_migration_completion(cluster, source_idx, target_idx)
+    common::wait_for_migration_completion(cluster, source_idx, target_idx)
         .await
         .unwrap_or_else(|e| {
             panic!("{direction_label}: wait_for_migration_completion failed: {e:?}")
@@ -626,7 +393,7 @@ async fn run_migration_round(
 #[tokio::test]
 #[expect(non_snake_case)]
 async fn migration_service__should_migrate_nodes_via_backup_cli() {
-    let backup_cli = must_get_backup_cli_path();
+    let backup_cli = common::must_get_backup_cli_path();
 
     // Given: cluster with 2 participants + 2 migration targets. Targets start
     // alongside the participants so their indexers sync before blocks pile up.
@@ -675,13 +442,13 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
         get_keyshares_from_source(&cluster, source_idx, &backup_service)
             .await
             .expect("get_keyshares_from_source failed");
-        start_migration_and_wait(&cluster, source_idx, target_idx)
+        common::start_migration_and_wait(&cluster, source_idx, target_idx)
             .await
             .expect("start_migration_and_wait failed");
         put_keyshares_to_target(&cluster, target_idx, &backup_service)
             .await
             .expect("put_keyshares_to_target failed");
-        wait_for_migration_completion(&cluster, source_idx, target_idx)
+        common::wait_for_migration_completion(&cluster, source_idx, target_idx)
             .await
             .expect("wait_for_migration_completion failed");
         cluster
@@ -699,32 +466,6 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
 
         tracing::info!(source_idx, target_idx, "migration completed successfully");
     }
-}
-
-/// Poll the backup service's storage until it holds a keyshare file for `epoch_id`.
-async fn wait_for_backed_up_epoch(
-    backup_service: &BackupService,
-    epoch_id: u64,
-    num_domains: usize,
-) -> anyhow::Result<()> {
-    let expected = format!("epoch_{epoch_id}_with_{num_domains}_domains");
-    (|| async {
-        let stored = backup_service.stored_keyshare_files();
-        anyhow::ensure!(
-            stored.contains(&expected),
-            "backup service has not stored {expected} yet, found {stored:?}"
-        );
-        Ok(())
-    })
-    .retry(
-        ConstantBuilder::default()
-            .with_delay(common::POLL_INTERVAL)
-            .with_max_times(
-                (BACKUP_TIMEOUT.as_millis() / common::POLL_INTERVAL.as_millis()) as usize,
-            ),
-    )
-    .await
-    .with_context(|| format!("timed out waiting for the backup service to store epoch {epoch_id}"))
 }
 
 fn must_get_running_epoch_and_domains(state: &ProtocolContractState) -> (u64, usize) {
@@ -750,7 +491,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     #[case] contract_state_source: ContractStateSource,
     #[case] port_seed: u16,
 ) {
-    let backup_cli = must_get_backup_cli_path();
+    let backup_cli = common::must_get_backup_cli_path();
 
     // Given
     let source_idx = 0;
@@ -788,7 +529,7 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
 
     // When
     assert!(
-        backup_service.stored_keyshare_files().is_empty(),
+        common::stored_keyshare_files(backup_service.home_dir.path()).is_empty(),
         "backup service should start with no keyshares"
     );
     let _service = backup_service
@@ -803,9 +544,13 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
         .expect("failed to start backup-cli run");
 
     // Then
-    wait_for_backed_up_epoch(&backup_service, initial_epoch_id, num_domains)
-        .await
-        .expect("service did not back up the initial epoch");
+    common::wait_for_backed_up_epoch(
+        backup_service.home_dir.path(),
+        initial_epoch_id,
+        num_domains,
+    )
+    .await
+    .expect("service did not back up the initial epoch");
     // Epoch 0 is indistinguishable from an unset gauge, so this only proves the metric is
     // registered; the assert after the resharing pins the value.
     assert_eq!(
@@ -827,15 +572,19 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
     );
 
     // Then
-    wait_for_backed_up_epoch(&backup_service, resharing_epoch_id, resharing_num_domains)
-        .await
-        .expect("service did not back up the epoch produced by the resharing");
+    common::wait_for_backed_up_epoch(
+        backup_service.home_dir.path(),
+        resharing_epoch_id,
+        resharing_num_domains,
+    )
+    .await
+    .expect("service did not back up the epoch produced by the resharing");
     assert_eq!(
         last_backup_served_epoch(&cluster, source_idx).await,
         Some(i64::try_from(resharing_epoch_id).unwrap()),
         "node should report having served epoch {resharing_epoch_id}"
     );
-    let stored = backup_service.stored_keyshare_files();
+    let stored = common::stored_keyshare_files(backup_service.home_dir.path());
     assert!(
         stored.contains(&format!(
             "epoch_{initial_epoch_id}_with_{num_domains}_domains"
@@ -882,7 +631,7 @@ async fn last_backup_served_epoch(cluster: &e2e_tests::MpcCluster, node_idx: usi
 // TODO(#3605): re-enable once the nearcore restart-panic fix (nearcore#15867) lands.
 #[ignore = "flaky: near-indexer panics on restart, blocked on nearcore#15867"]
 async fn migration_service__should_handle_back_migration_a_to_b_to_a() {
-    let backup_cli = must_get_backup_cli_path();
+    let backup_cli = common::must_get_backup_cli_path();
 
     // Given: 2 participants (A0, A1) + 1 migration target (B0).
     let num_nodes = 2;
@@ -1025,7 +774,7 @@ async fn migration_service__cancel_node_migration_clears_ongoing_migration_info(
     );
 
     // When: the source registers a migration destination.
-    let destination_node_info = start_migration_and_wait(&cluster, source_idx, target_idx)
+    let destination_node_info = common::start_migration_and_wait(&cluster, source_idx, target_idx)
         .await
         .expect("start_migration_and_wait failed");
 

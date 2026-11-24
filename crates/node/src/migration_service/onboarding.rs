@@ -470,11 +470,11 @@ mod tests {
     }
 
     const INACTIVE_MIGRATION: MigrationInfo = MigrationInfo {
-        backup_service_info: None,
+        backup_service_tls_key: None,
         active_migration: false,
     };
     const ACTIVE_MIGRATION: MigrationInfo = MigrationInfo {
-        backup_service_info: None,
+        backup_service_tls_key: None,
         active_migration: true,
     };
 

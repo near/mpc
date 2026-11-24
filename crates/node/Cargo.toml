@@ -21,6 +21,7 @@ bytes = { workspace = true }
 chain-gateway = { workspace = true }
 clap = { workspace = true }
 derive_more = { workspace = true }
+durable-fs = { workspace = true }
 ed25519-dalek = { workspace = true }
 flume = { workspace = true }
 foreign-chain-health-check = { workspace = true }
@@ -39,7 +40,7 @@ itertools = { workspace = true }
 k256 = { workspace = true, default-features = true }
 launcher-interface = { workspace = true }
 lru = { workspace = true }
-mpc-attestation = { workspace = true, features = ["local-verify"] }
+mpc-attestation = { workspace = true }
 mpc-node-config = { workspace = true }
 mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }
@@ -78,11 +79,13 @@ serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
 tee-authority = { workspace = true }
+tee-context = { workspace = true }
 tempfile = { workspace = true }
 test-port-allocator = { workspace = true, optional = true }
 thiserror = { workspace = true }
 thread-priority = { workspace = true }
 threshold-signatures = { workspace = true }
+tick = { workspace = true }
 tikv-jemallocator = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
@@ -111,6 +114,7 @@ pprof = { workspace = true, features = ["frame-pointer"] }
 built = { workspace = true }
 
 [dev-dependencies]
+async-testing = { workspace = true }
 average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
@@ -118,7 +122,6 @@ elliptic-curve = { workspace = true }
 httpmock = { workspace = true }
 insta = { workspace = true }
 itertools = { workspace = true }
-mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 near-contract-transport = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
@@ -127,6 +130,7 @@ tempfile = { workspace = true }
 test-log = { workspace = true }
 test-port-allocator = { workspace = true }
 threshold-signatures = { workspace = true, features = ["test-utils"] }
+tick = { workspace = true, features = ["test-utils"] }
 tokio = { workspace = true, features = ["test-util"] }
 tracing-test = { workspace = true }
 

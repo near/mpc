@@ -1,3 +1,4 @@
+pub mod chain_listed_nodes;
 pub mod clock;
 pub mod contract_state_fixture;
 pub mod current_keyset_subscription;

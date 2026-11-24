@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "crates/async-testing",
     "crates/attestation",
     "crates/attestation-cli",
     "crates/attestation-types",
@@ -11,6 +12,7 @@ members = [
     "crates/contract",
     "crates/contract-history",
     "crates/devnet",
+    "crates/durable-fs",
     "crates/e2e-tests",
     "crates/foreign-chain-config-tester",
     "crates/foreign-chain-health-check",
@@ -43,6 +45,7 @@ members = [
     "crates/test-port-allocator",
     "crates/test-utils",
     "crates/threshold-signatures",
+    "crates/tick",
     "crates/tls",
 ]
 
@@ -54,11 +57,13 @@ repository = "https://github.com/near/mpc"
 
 [workspace.dependencies]
 #workspace members
+async-testing = { path = "crates/async-testing" }
 attestation = { path = "crates/attestation" }
 attestation-types = { path = "crates/attestation-types" }
 chain-gateway = { path = "crates/chain-gateway" }
 chain-gateway-test-contract = { path = "crates/chain-gateway-test-contract" }
 contract-history = { path = "crates/contract-history" }
+durable-fs = { path = "crates/durable-fs" }
 foreign-chain-health-check = { path = "crates/foreign-chain-health-check" }
 foreign-chain-inspector = { path = "crates/foreign-chain-inspector" }
 foreign-chain-rpc-factory = { path = "crates/foreign-chain-rpc-factory" }
@@ -81,11 +86,13 @@ near-mpc-sdk = { path = "crates/near-mpc-sdk", version = "0.0.1" }
 near-mpc-signature-verifier = { path = "crates/near-mpc-signature-verifier", version = "0.0.1" }
 node-types = { path = "crates/node-types" }
 tee-authority = { path = "crates/tee-authority" }
+tee-context = { path = "crates/tee-context" }
 tee-verifier-conversions = { path = "crates/tee-verifier-conversions" }
 tee-verifier-interface = { path = "crates/tee-verifier-interface" }
 test-port-allocator = { path = "crates/test-port-allocator" }
 test-utils = { path = "crates/test-utils" }
 threshold-signatures = { path = "crates/threshold-signatures" }
+tick = { path = "crates/tick" }
 
 aes-gcm = "0.11.0"
 anyhow = "1.0.102"
