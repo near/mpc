@@ -4,9 +4,9 @@
 
 The multi party computation (MPC) system we develop and maintain runs threshold cryptography protocols. These protocols may not require all nodes in an MPC cluster to be live, but may succeed if only a subset of those nodes are live.
 
-A lot of threshold cryptography protocols are split into two computation rounds. In a first round, participants of the computation compute some form of asset (e.g. triples or presignatures), which is then used as input to a second computation round, with the same participants.
+A lot of threshold cryptography protocols are split into two computation phases. In a _preprocessing phase_, participants jointly compute correlated material (e.g. triples or presignatures), which is then consumed in a subsequent _online phase_.
 
-This allows to distribute computation load and reduces the time to conclude the full protocol.
+This split keeps the _online phase_ short, reducing latency and allows to front-load heavy computations during idle periods.
 
 One caveat is that currently, and to guarantee security for some of these protocols, we require all participants in a computation to have live connections with one another.
 
@@ -65,9 +65,13 @@ Terminology:
     - A peer's `IndexerHeightReport`, containing the block height the reporter's indexer has last processed, as well as the last reported indexer block height of each peer, who is bidirectionally connected to the reporter.
 
   Note that this report is broadcast once a second by every node in the cluster.
-- a _producer_ is something that can produce a _peer report_. Currently, we have two producers in the node:
-    - the node's own indexer height broadcast task: it inspects the network layer and filters for all participants that are currently bidirectionally connected to the node, checks the latest indexer heights it has received from these nodes and also has a current view of the last processed indexer height of the node itself. It broadcasts that information to all its peers. This will be a source we must process.
-    - the network layer, which forwards peer reports received from connected nodes.
+- a _producer_ is something that can produce a _peer report_. We have two sources of peer reports in the node, both of which will need to be taken into account for the node's network connectivity view:
+    - the node's own indexer height broadcast task, which generates the nodes own `IndexerHeightReport`. It does so by:
+        - inspecting the network layer and filtering for all participants that are currently bidirectionally connected to the node;
+        - checking the latest indexer heights it has received from these nodes;
+        - comparing those heights against its own, currently last processed indexer block height;
+        - broadcasting that information to all its peers.
+    - the network layer, which receives peer reports received from connected nodes.
 
 ```rust
 /// Generic over node type `N`. Right now, `N` is `ParticipantId`
@@ -199,7 +203,7 @@ Note that at this stage, we do not need to commit to any specific link or connec
 - A link observation is of some type `O`. Unlike the types above, `O` is not a free parameter of the `ConnectivityMonitor`: it is determined by the `PeerReport` it is derived from. Currently, we only have one peer report and the only link observation type derived form it is `IndexerHeightLag` (c.f. [Network Connectivity Link Observations](./network-connectivity-link-observations.md)). In the future, we may add more peer reports and more observation types (such as results from echo-connection checks).
 
 Now, we do require these types to fulfill certain traits:
-- The link type must be able to report link status `LS` (the `LinkStatuses<N, LS>` above), which helps determine whether an observation led to a link status change.
+- The link type `L` must be able to report link status `LS` (the `LinkStatuses<N, LS>` above), which helps determine whether an observation led to a link status change.
 ```rust
 pub trait ReportLinkStatus {
     type LinkStatus;
