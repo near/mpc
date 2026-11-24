@@ -16,7 +16,10 @@ Scripts for deploying and testing MPC nodes with the launcher on localnet (TDX C
 
 - Local NEAR network running (`mpc-localnet`)
 - dstack VMM running (default: `http://127.0.0.1:10000`)
-- OS image: `dstack-0.6.5`, on a `dstack-vmm` 0.6.5 host with `qemu_hotplug_off = false`
+- OS image: `dstack-0.6.5`, on a `dstack-vmm` 0.6.5 host with `qemu_hotplug_off = false` and
+  `guest:containers` and `guest:logs` in `[cvm.guest_agent_api] anonymous_scopes`, so the scripts can
+  read the CVM's logs (see step 3 of the operator guide's
+  [Dstack Setup](../../../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#2-dstack-setup-and-configuration))
 - MPC node image must support TOML config (`start-with-config-file`), e.g. `main-9515e18` or later
 - Tools: `near`, `jq`, `curl`, `envsubst`, `docker`
 
