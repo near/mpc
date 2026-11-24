@@ -93,6 +93,34 @@ impl NearBlockchain {
         })
     }
 
+    /// Adds a key that may call any method of the given contract without an allowance limit.
+    pub async fn add_function_call_key(
+        &self,
+        account_id: &near_account_id::AccountId,
+        signer_key: &SigningKey,
+        key_to_add: near_kit::signer::PublicKey,
+        receiver_id: &near_account_id::AccountId,
+    ) -> anyhow::Result<()> {
+        let outcome = self
+            .make_client(account_id, signer_key)
+            .transaction(account_id.clone())
+            .add_action(Action::add_function_call_key(
+                key_to_add,
+                receiver_id.clone(),
+                vec![],
+                None,
+            ))
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("failed to add a function-call key on {account_id}: {e}")
+            })?;
+        anyhow::ensure!(
+            !outcome.is_failure(),
+            "adding a function-call key on {account_id} failed"
+        );
+        Ok(())
+    }
+
     pub async fn delete_access_key(
         &self,
         account_id: &near_account_id::AccountId,

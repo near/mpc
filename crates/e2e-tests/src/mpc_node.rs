@@ -439,33 +439,18 @@ impl MpcNodeSetup {
                 secret_store_key_hex: self.secret_store_key_hex.clone(),
                 backup_encryption_key_hex: Some(self.backup_encryption_key_hex.clone()),
             },
-            tee: TeeConfig {
-                image_hash: DUMMY_IMAGE_HASH.parse().unwrap(),
-                latest_allowed_hash_file_path: "latest_allowed_hash.txt".into(),
-                authority: TeeAuthorityConfig::Local,
-            },
+            tee: local_tee_config("latest_allowed_hash.txt".into()),
             log: LogConfig {
                 format: LogFormat::Plain,
                 filter: Some("debug".to_string()),
             },
-            near_init: Some(NearInitConfig {
-                chain_id: ChainId::Custom(self.chain_id.clone()),
-                boot_nodes: Some(self.near_boot_nodes.clone()),
-                genesis_path: Some(self.near_genesis_path.clone()),
-                download_config: None,
-                download_config_url: None,
-                download_genesis: false,
-                download_genesis_url: None,
-                download_genesis_records_url: None,
-                rpc_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_rpc))),
-                network_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_network))),
-                // nearcore won't learn a loopback address from its peers, and a node without
-                // an address is not a state sync host.
-                tier3_public_addr: Some(SocketAddr::from((
-                    [127, 0, 0, 1],
-                    self.ports.near_network,
-                ))),
-            }),
+            near_init: Some(sandbox_near_init(
+                self.chain_id.clone(),
+                self.near_boot_nodes.clone(),
+                self.near_genesis_path.clone(),
+                self.ports.near_rpc,
+                self.ports.near_network,
+            )),
             node: ConfigFile {
                 my_near_account_id: signer,
                 web_ui: format!("127.0.0.1:{}", self.ports.web_ui).parse()?,
@@ -505,6 +490,40 @@ impl MpcNodeSetup {
 
         tracing::debug!(path = %self.config_path.display(), "wrote start_config.toml");
         Ok(())
+    }
+}
+
+/// [`TeeConfig`] of a service that runs outside a TEE and attests with mock attestations.
+pub fn local_tee_config(latest_allowed_hash_file_path: PathBuf) -> TeeConfig {
+    TeeConfig {
+        image_hash: DUMMY_IMAGE_HASH.parse().unwrap(),
+        latest_allowed_hash_file_path,
+        authority: TeeAuthorityConfig::Local,
+    }
+}
+
+/// [`NearInitConfig`] of an embedded NEAR node that follows the sandbox chain.
+pub fn sandbox_near_init(
+    chain_id: String,
+    boot_nodes: String,
+    genesis_path: PathBuf,
+    rpc_port: u16,
+    network_port: u16,
+) -> NearInitConfig {
+    NearInitConfig {
+        chain_id: ChainId::Custom(chain_id),
+        boot_nodes: Some(boot_nodes),
+        genesis_path: Some(genesis_path),
+        download_config: None,
+        download_config_url: None,
+        download_genesis: false,
+        download_genesis_url: None,
+        download_genesis_records_url: None,
+        rpc_addr: Some(SocketAddr::from(([0, 0, 0, 0], rpc_port))),
+        network_addr: Some(SocketAddr::from(([0, 0, 0, 0], network_port))),
+        // nearcore won't learn a loopback address from its peers, and a node without
+        // an address is not a state sync host.
+        tier3_public_addr: Some(SocketAddr::from(([127, 0, 0, 1], network_port))),
     }
 }
 

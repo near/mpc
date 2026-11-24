@@ -1,3 +1,4 @@
+mod backup_service_tee;
 mod cancellation_of_resharing;
 mod ckd_verification;
 mod cleanup_lagging_node;

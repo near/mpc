@@ -1,19 +1,27 @@
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use backon::{ConstantBuilder, Retryable};
 use blstrs::{G1Projective, Scalar};
-use e2e_tests::{CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, metrics};
+use e2e_tests::{
+    CLUSTER_WAIT_TIMEOUT, MpcCluster, MpcClusterConfig, MpcNodeState,
+    PARTICIPANT_ATTESTATIONS_TIMEOUT, metrics,
+};
 use group::Group;
+use near_contract_transport::WatchContractState;
 use near_mpc_contract_interface::types::{
-    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DomainConfig, DomainId, DomainPurpose, Payload,
-    Protocol, ProtocolContractState, PublicKey, PublicKeyExtended, ReconstructionThreshold,
-    RunningContractState,
+    Bls12381G2PublicKey, CKDAppPublicKey, Curve, DestinationNodeInfo, DomainConfig, DomainId,
+    DomainPurpose, MigrationInfo, ParticipantInfo, Payload, Protocol, ProtocolContractState,
+    PublicKey, PublicKeyExtended, ReconstructionThreshold, RunningContractState,
 };
 use near_mpc_crypto_types::Bls12381G1PublicKey;
 
 pub const POLL_INTERVAL: Duration = Duration::from_millis(500);
 pub const INDEXER_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
+// Leaves room for a backup service to retry a failed keyshare upload, which it does after a minute
+const MIGRATION_COMPLETION_TIMEOUT: Duration = Duration::from_mins(2);
+const BACKUP_TIMEOUT: Duration = Duration::from_mins(1);
 
 pub const SIGN_REQUEST_PER_SCHEME_PORT_SEED: u16 = 1;
 pub const WEB_ENDPOINTS_PORT_SEED: u16 = 2;
@@ -47,6 +55,7 @@ pub const BACKUP_SERVICE_RUN_EMBEDDED_NODE_PORT_SEED: u16 = 29;
 pub const LEADER_FAILOVER_PORT_SEED: u16 = 30;
 pub const FOREIGN_TX_DOMAIN_AFTER_REGISTRATION_PORT_SEED: u16 = 31;
 pub const MAINNET_PROTOCOL_PORT_SEED: u16 = 32;
+pub const BACKUP_SERVICE_TEE_PORT_SEED: u16 = 33;
 
 /// Start a cluster, wait for Running state and, if a domain uses [`Protocol::CaitSith`], for
 /// triples to buffer.
@@ -535,4 +544,256 @@ pub fn build_providers_from_urls(
         .collect();
     map.try_into()
         .unwrap_or_else(|_| panic!("at least one {chain_name} provider must be configured"))
+}
+
+/// Resolve the backup-cli binary path. Built by `cargo make e2e-tests`
+/// (see `build-backup-cli` task in Makefile.toml).
+///
+/// Plumbing helper: a missing binary means the test wasn't built correctly,
+/// not that the system under test failed, so we panic.
+pub fn must_get_backup_cli_path() -> PathBuf {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/release/backup-cli");
+    assert!(
+        path.exists(),
+        "backup-cli binary not found at {}. Run `cargo make e2e-tests` to build it.",
+        path.display()
+    );
+    path
+}
+
+/// Fetch one node's `/debug/migrations` endpoint and deserialize the body
+/// into the typed [`MigrationInfo`] map (the second element of the
+/// `(indexer_height, MigrationInfo)` tuple the endpoint returns).
+async fn fetch_debug_migration_info(
+    http_client: &reqwest::Client,
+    web_addr: &str,
+) -> anyhow::Result<MigrationInfo> {
+    let body = http_client
+        .get(format!("http://{web_addr}/debug/migrations"))
+        .send()
+        .await?
+        .text()
+        .await?;
+    let (_indexer_height, info) = serde_json::from_str::<(u64, MigrationInfo)>(&body)
+        .with_context(|| format!("failed to parse /debug/migrations: {body}"))?;
+    Ok(info)
+}
+
+/// Poll a node's `/debug/migrations` endpoint with `INDEXER_SYNC_TIMEOUT`,
+/// re-running `check` against the typed [`MigrationInfo`] until it
+/// returns `Ok` (or the timeout elapses). `description` is interpolated
+/// into the timeout error.
+pub async fn wait_for_debug_migration<F>(
+    web_addr: &str,
+    description: &str,
+    check: F,
+) -> anyhow::Result<()>
+where
+    F: Fn(&MigrationInfo) -> anyhow::Result<()>,
+{
+    let http_client = reqwest::Client::new();
+    (|| async {
+        let info = fetch_debug_migration_info(&http_client, web_addr).await?;
+        check(&info)
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times(
+                (INDEXER_SYNC_TIMEOUT.as_millis() / POLL_INTERVAL.as_millis()) as usize,
+            ),
+    )
+    .await
+    .with_context(|| format!("timed out waiting for {description}"))
+}
+
+fn running_state_matches_participant_key(
+    state: &ProtocolContractState,
+    account_id: &str,
+    expected_pk: &str,
+) -> bool {
+    match state {
+        ProtocolContractState::Running(r) => {
+            r.parameters
+                .participants
+                .participants
+                .iter()
+                .any(|(a, _, info)| {
+                    a.as_str() == account_id && String::from(&info.tls_public_key) == expected_pk
+                })
+        }
+        _ => false,
+    }
+}
+
+/// Start node migration on the contract, wait for confirmation, and return the
+/// submitted [`DestinationNodeInfo`].
+pub async fn start_migration_and_wait(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    target_idx: usize,
+) -> anyhow::Result<DestinationNodeInfo> {
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
+    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key();
+    let target_p2p_url = cluster.nodes[target_idx].p2p_url();
+    let target_signer_pk = cluster.nodes[target_idx].near_signer_public_key();
+
+    let destination_node_info = DestinationNodeInfo {
+        signer_account_pk: target_signer_pk,
+        destination_node_info: ParticipantInfo {
+            url: target_p2p_url,
+            tls_public_key: target_p2p_key.clone(),
+        },
+    };
+    cluster
+        .mpc_contract_handle
+        .get_tee_accounts()
+        .subscribe()
+        .await
+        .wait_for(PARTICIPANT_ATTESTATIONS_TIMEOUT, |nodes| {
+            nodes.iter().any(|node| {
+                node.account_id == source_account_id && node.tls_public_key == target_p2p_key
+            })
+        })
+        .await
+        .context("timed out waiting for the target node's attestation")?;
+    let outcome = cluster
+        .start_node_migration(source_idx, destination_node_info.clone())
+        .await
+        .context("failed to start node migration")?;
+    anyhow::ensure!(
+        outcome.is_success(),
+        "start_node_migration failed: {:?}",
+        outcome.failure_message()
+    );
+
+    cluster
+        .wait_for_migration_info(INDEXER_SYNC_TIMEOUT, |info| {
+            info.get(&source_account_id)
+                .is_some_and(|(_, destination)| {
+                    destination.as_ref() == Some(&destination_node_info)
+                })
+        })
+        .await
+        .context("timed out waiting for contract to reflect node migration")?;
+
+    // Wait for the target's own indexer to ingest start_node_migration
+    // before backup-cli does PUT keyshares. Otherwise the target's
+    // `MigrationInfo.active_migration` flips mid-PUT, fires the
+    // migration web-server's per-connection cancellation token, and
+    // tears down the in-flight TLS stream.
+    //
+    // Note: we check destination_node_info.tls_public_key because it's
+    // populated by indexing the same start_node_migration block that
+    // flips active_migration to true.
+    //
+    // There's still a residual race window between this confirmation and
+    // PUT keyshares completing: any other migration-info-affecting block
+    // landing in that window would re-fire the cancellation token. This
+    // test only runs one migration at a time, so the assumption holds —
+    // but if it's ever extended to run alongside other migration activity,
+    // this assumption breaks silently.
+    let target_web_addr = match &cluster.nodes[target_idx] {
+        MpcNodeState::Running(n) => n.web_address(),
+        _ => bail!("target node not running"),
+    };
+    wait_for_debug_migration(
+        &target_web_addr,
+        "target node to index node migration",
+        |info| {
+            let actual = info
+                .get(&source_account_id)
+                .and_then(|(_, destination)| destination.as_ref())
+                .map(|d| &d.destination_node_info.tls_public_key);
+            anyhow::ensure!(
+                actual == Some(&target_p2p_key),
+                "target debug endpoint destination_node_info.tls_public_key={actual:?}, expected {target_p2p_key:?}"
+            );
+            Ok(())
+        },
+    )
+    .await?;
+
+    Ok(destination_node_info)
+}
+
+/// Wait for the target to become an active participant and for migration
+/// state to clear from the contract.
+pub async fn wait_for_migration_completion(
+    cluster: &e2e_tests::MpcCluster,
+    source_idx: usize,
+    target_idx: usize,
+) -> anyhow::Result<()> {
+    let source_account_id = cluster.nodes[source_idx].account_id().clone();
+    let target_p2p_key = cluster.nodes[target_idx].p2p_public_key_str();
+
+    cluster
+        .wait_for_state(MIGRATION_COMPLETION_TIMEOUT, |state| {
+            running_state_matches_participant_key(
+                state,
+                source_account_id.as_str(),
+                &target_p2p_key,
+            )
+        })
+        .await
+        .context("timed out waiting for migration to complete")?;
+
+    cluster
+        .wait_for_migration_info(INDEXER_SYNC_TIMEOUT, |info| {
+            info.get(&source_account_id)
+                .is_some_and(|(_, destination)| destination.is_none())
+        })
+        .await
+        .context("migration state did not clear")?;
+    Ok(())
+}
+
+pub fn list_permanent_keys(home_dir: &Path) -> Vec<(String, u64)> {
+    let Ok(read_dir) = std::fs::read_dir(home_dir.join("permanent_keys")) else {
+        return Vec::new();
+    };
+    let mut entries: Vec<(String, u64)> = read_dir
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            Some((
+                entry.file_name().into_string().ok()?,
+                entry.metadata().ok()?.len(),
+            ))
+        })
+        .collect();
+    entries.sort();
+    entries
+}
+
+/// Keyshare files a backup service has written to its home dir, named
+/// `epoch_<n>_with_<m>_domains` by [`PermanentKeyStorage`].
+pub fn stored_keyshare_files(home_dir: &Path) -> Vec<String> {
+    list_permanent_keys(home_dir)
+        .into_iter()
+        .map(|(name, _size)| name)
+        .collect()
+}
+
+/// Poll the backup service's storage until it holds a keyshare file for `epoch_id`.
+pub async fn wait_for_backed_up_epoch(
+    home_dir: &Path,
+    epoch_id: u64,
+    num_domains: usize,
+) -> anyhow::Result<()> {
+    let expected = format!("epoch_{epoch_id}_with_{num_domains}_domains");
+    (|| async {
+        let stored = stored_keyshare_files(home_dir);
+        anyhow::ensure!(
+            stored.contains(&expected),
+            "backup service has not stored {expected} yet, found {stored:?}"
+        );
+        Ok(())
+    })
+    .retry(
+        ConstantBuilder::default()
+            .with_delay(POLL_INTERVAL)
+            .with_max_times((BACKUP_TIMEOUT.as_millis() / POLL_INTERVAL.as_millis()) as usize),
+    )
+    .await
+    .with_context(|| format!("timed out waiting for the backup service to store epoch {epoch_id}"))
 }
