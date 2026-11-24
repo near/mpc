@@ -60,7 +60,7 @@ attestation-cli verify [OPTIONS]
 
 | Flag | Description |
 |------|-------------|
-| `--expected-measurements <PATH>` | Path to expected TCB measurements JSON file (defaults to the compiled-in production OS image measurements) |
+| `--expected-measurements <PATH>` | Path to expected TCB measurements JSON file (defaults to the compiled-in measurements of the dstack 0.6.5 and 0.5.8 production OS images) |
 
 ## Examples
 

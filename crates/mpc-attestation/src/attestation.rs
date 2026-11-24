@@ -313,7 +313,7 @@ impl VerifiedAttestation {
     }
 }
 
-/// Returns the compiled-in TCB measurements of the production OS image.
+/// Returns the compiled-in TCB measurements of the latest production OS image.
 pub fn default_measurements() -> ExpectedMeasurements {
     include_measurements!("assets/tcb_info.json")
 }
