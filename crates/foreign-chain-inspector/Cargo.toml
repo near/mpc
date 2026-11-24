@@ -30,6 +30,7 @@ foreign-chain-inspector = { path = ".", features = ["test-utils"] }
 foreign-chain-rpc-factory = { workspace = true }
 http = { workspace = true }
 httpmock = { workspace = true }
+mockall = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

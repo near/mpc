@@ -18,6 +18,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::tee::image_expiry_metrics;
 
+#[cfg(test)]
+use mockall::automock;
+#[cfg_attr(test, automock)]
 pub trait AllowedImageHashesStorage {
     fn set(
         &mut self,
@@ -183,37 +186,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockall::predicate;
     use rstest::rstest;
-    use std::{
-        assert_matches,
-        sync::{Arc, Mutex},
-        time::Duration,
-    };
+    use std::{assert_matches, sync::Arc, time::Duration};
     use tokio::sync::{Notify, mpsc::error::TryRecvError};
     use tokio_util::time::FutureExt;
 
     const TEST_TIMEOUT_DURATION: Duration = Duration::from_secs(5);
-
-    #[derive(Clone, Default)]
-    struct RecordingStorage {
-        fail_writes: bool,
-        writes: Arc<Mutex<Vec<NonEmptyVec<NodeImageHash>>>>,
-        write_is_called: Arc<Notify>,
-    }
-
-    impl AllowedImageHashesStorage for RecordingStorage {
-        async fn set(
-            &mut self,
-            approved_hashes: NonEmptyVec<NodeImageHash>,
-        ) -> Result<(), io::Error> {
-            self.writes.lock().unwrap().push(approved_hashes);
-            self.write_is_called.notify_one();
-            if self.fail_writes {
-                return Err(io::Error::other("Expected test error."));
-            }
-            Ok(())
-        }
-    }
 
     fn image_hash_1() -> NodeImageHash {
         NodeImageHash::from([1; 32])
@@ -254,22 +233,30 @@ mod tests {
             let (sender, receiver) = watch::channel(entries(allowed_images.clone().to_vec()));
             let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
-            let storage = RecordingStorage::default();
+            let write_is_called = Arc::new(Notify::new());
+
+            let mut storage_mock = MockAllowedImageHashesStorage::new();
+            {
+                let write_is_called = write_is_called.clone();
+                storage_mock
+                    .expect_set()
+                    .once()
+                    .with(predicate::eq(allowed_images.clone()))
+                    .returning(move |_| {
+                        write_is_called.notify_one();
+                        Box::pin(async { Ok(()) })
+                    });
+            }
 
             let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
                 cancellation_token.child_token(),
                 *current_hash,
                 receiver,
-                storage.clone(),
+                storage_mock,
                 sender_shutdown,
             ));
 
-            storage.write_is_called.notified().await;
-
-            assert_eq!(
-                *storage.writes.lock().unwrap(),
-                vec![allowed_images.clone()]
-            );
+            write_is_called.notified().await;
 
             assert_matches!(
                 receiver_shutdown.try_recv(),
@@ -295,20 +282,21 @@ mod tests {
         #[case] current_image: NodeImageHash,
         #[case] allowed_images: Vec<NodeImageHash>,
     ) {
-        let storage = RecordingStorage {
-            fail_writes: true,
-            ..Default::default()
-        };
+        let mut mock = MockAllowedImageHashesStorage::new();
+
+        mock.expect_set()
+            .once()
+            .returning(|_| Box::pin(async { Err(io::Error::other("Expected test error.")) }));
 
         let cancellation_token = CancellationToken::new();
-        let (_sender, receiver) = watch::channel(entries(allowed_images.clone()));
+        let (_sender, receiver) = watch::channel(entries(allowed_images));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
         let join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             current_image,
             receiver,
-            storage.clone(),
+            mock,
             sender_shutdown,
         ));
 
@@ -319,10 +307,6 @@ mod tests {
 
         let result = join_handle.await.unwrap();
         assert_matches!(result, Err(ExitError::StorageProviderError(_)));
-        assert_eq!(
-            *storage.writes.lock().unwrap(),
-            vec![NonEmptyVec::from_vec(allowed_images).unwrap()]
-        );
     }
 
     /// Ensures that when the allowed image hash list changes and the
@@ -344,19 +328,30 @@ mod tests {
         let (_sender, receiver) = watch::channel(entries(allowed_list.clone()));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
-        let storage = RecordingStorage::default();
+        let write_is_called = Arc::new(Notify::new());
+
+        let mut storage_mock = MockAllowedImageHashesStorage::new();
+        {
+            let write_is_called = write_is_called.clone();
+            storage_mock
+                .expect_set()
+                .once()
+                .with(predicate::eq(expected_non_empty.clone()))
+                .returning(move |_| {
+                    write_is_called.notify_one();
+                    Box::pin(async { Ok(()) })
+                });
+        }
 
         let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             current_image,
             receiver,
-            storage.clone(),
+            storage_mock,
             sender_shutdown,
         ));
 
-        storage.write_is_called.notified().await;
-
-        assert_eq!(*storage.writes.lock().unwrap(), vec![expected_non_empty]);
+        write_is_called.notified().await;
 
         assert_matches!(
             receiver_shutdown.try_recv(),
@@ -389,13 +384,22 @@ mod tests {
 
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
-        let storage = RecordingStorage::default();
+        let mut storage_mock = MockAllowedImageHashesStorage::new();
+        {
+            let expected = NonEmptyVec::from_vec(allowed_images.clone()).unwrap();
+
+            storage_mock
+                .expect_set()
+                .once()
+                .with(predicate::eq(expected))
+                .returning(|_| Box::pin(async { Ok(()) }));
+        }
 
         let join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             image_hash_1(), // current image (irrelevant for this test)
             receiver,
-            storage.clone(),
+            storage_mock,
             sender_shutdown,
         ));
 
@@ -406,11 +410,6 @@ mod tests {
             .unwrap();
 
         assert_matches!(exit_reason, Err(ExitError::IndexerClosed));
-
-        assert_eq!(
-            *storage.writes.lock().unwrap(),
-            vec![NonEmptyVec::from_vec(allowed_images).unwrap()]
-        );
 
         assert_matches!(
             receiver_shutdown.try_recv(),
@@ -426,6 +425,7 @@ mod tests {
     async fn test_full_hash_list_is_written_to_storage() {
         // Contract sends a list of three hashes
         let allowed_images = vec![image_hash_1(), image_hash_2(), image_hash_3()];
+        let full_list = allowed_images.clone();
 
         // Current running image (could be any)
         let current_image = image_hash_1();
@@ -434,23 +434,34 @@ mod tests {
         let (_sender, receiver) = watch::channel(entries(allowed_images.clone()));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
-        let storage = RecordingStorage::default();
+        let write_is_called = Arc::new(Notify::new());
+
+        // Mock storage expecting exactly the full list
+        let mut storage_mock = MockAllowedImageHashesStorage::new();
+        {
+            let expected = NonEmptyVec::from_vec(full_list.clone()).unwrap();
+            let write_is_called = write_is_called.clone();
+
+            storage_mock
+                .expect_set()
+                .once()
+                .with(predicate::eq(expected))
+                .returning(move |_| {
+                    write_is_called.notify_one();
+                    Box::pin(async { Ok(()) })
+                });
+        }
 
         let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token,
             current_image,
             receiver,
-            storage.clone(),
+            storage_mock,
             sender_shutdown,
         ));
 
         // Wait for the write
-        storage.write_is_called.notified().await;
-
-        assert_eq!(
-            *storage.writes.lock().unwrap(),
-            vec![NonEmptyVec::from_vec(allowed_images).unwrap()]
-        );
+        write_is_called.notified().await;
 
         // No shutdown expected
         assert_matches!(
@@ -473,20 +484,18 @@ mod tests {
         let (_sender, receiver) = watch::channel(entries(allowed_images));
         let (sender_shutdown, mut receiver_shutdown) = mpsc::channel(1);
 
-        let storage = RecordingStorage::default();
+        // Storage must NOT be called
+        let mut storage_mock = MockAllowedImageHashesStorage::new();
+        storage_mock.expect_set().never();
 
         // Spawn watcher
         let _join_handle = tokio::spawn(monitor_allowed_image_hashes(
             cancellation_token.child_token(),
             current_image,
             receiver,
-            storage.clone(),
+            storage_mock,
             sender_shutdown,
         ));
-
-        tokio::task::yield_now().await;
-
-        assert_eq!(*storage.writes.lock().unwrap(), vec![]);
 
         // No shutdown signal should be sent
         assert_matches!(

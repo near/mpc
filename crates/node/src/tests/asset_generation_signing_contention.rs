@@ -63,6 +63,7 @@ use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_time::Clock;
+use statrs::statistics::{Data, Max, OrderStatistics, Statistics};
 use std::time::Duration;
 
 const NUM_PARTICIPANTS: usize = 4;
@@ -100,8 +101,9 @@ const MEASURED_SIGNATURES: usize = 8;
 /// post-resharing contention without the fix trips it.
 const PER_SIGNATURE_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Summary statistics over a batch of signing attempts. Timeouts are counted
-/// separately since they have no finite latency
+/// Summary statistics over a batch of signing attempts. Latency stats are computed
+/// with the `statrs` crate (as in the threshold-signatures benches); timeouts are
+/// counted separately since they have no finite latency.
 struct LatencyReport {
     label: &'static str,
     n_ok: usize,
@@ -115,8 +117,10 @@ struct LatencyReport {
 impl LatencyReport {
     fn from_attempts(label: &'static str, attempts: &[Option<Duration>]) -> Self {
         let timeouts = attempts.iter().filter(|a| a.is_none()).count();
-        let mut latencies: Vec<Duration> = attempts.iter().flatten().copied().collect();
-        latencies.sort();
+        let latencies: Vec<f64> = attempts
+            .iter()
+            .filter_map(|a| a.map(|d| d.as_secs_f64()))
+            .collect();
         let n_ok = latencies.len();
 
         // Every request timed out: report the timeout bound as a sentinel so the
@@ -133,14 +137,15 @@ impl LatencyReport {
             };
         }
 
+        let mut latencies = Data::new(latencies);
         Self {
             label,
             n_ok,
             timeouts,
-            mean: latencies.iter().sum::<Duration>() / u32::try_from(n_ok).unwrap(),
-            p50: latencies[n_ok / 2],
-            p90: latencies[n_ok * 9 / 10],
-            max: latencies[n_ok - 1],
+            mean: Duration::from_secs_f64(latencies.iter().mean()),
+            p50: Duration::from_secs_f64(latencies.percentile(50)),
+            p90: Duration::from_secs_f64(latencies.percentile(90)),
+            max: Duration::from_secs_f64(latencies.max()),
         }
     }
 

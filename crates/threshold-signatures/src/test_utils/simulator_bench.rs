@@ -4,6 +4,8 @@ use std::env;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
+use statrs::statistics::Statistics;
+
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
 
@@ -153,11 +155,12 @@ pub fn bench_simulation(name: &str, run: &dyn Fn() -> SimulationMetrics, samples
 
 fn print_spread(label: &str, values_ms: impl Iterator<Item = f64>) {
     let values_ms: Vec<f64> = values_ms.collect();
-    let samples = u32::try_from(values_ms.len()).expect("sample count fits in u32");
-    let mean = values_ms.iter().sum::<f64>() / f64::from(samples);
-    let min = values_ms.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = values_ms.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    println!("{label}: avg {mean:.3} ms, min {min:.3} ms, max {max:.3} ms");
+    println!(
+        "{label}: avg {:.3} ms, min {:.3} ms, max {:.3} ms",
+        Statistics::mean(&values_ms),
+        Statistics::min(&values_ms),
+        Statistics::max(&values_ms)
+    );
 }
 
 /// Extensible to statistical distributions (normal, log-normal, etc.).
@@ -202,10 +205,10 @@ impl SimulationMetrics {
     }
 
     fn avg_compute_ms(&self) -> f64 {
-        let participants = u32::try_from(self.compute_time_per_participant.len())
-            .expect("participant count fits in u32");
-        let total: Duration = self.compute_time_per_participant.values().sum();
-        (total / participants).as_secs_f64() * 1e3
+        self.compute_time_per_participant
+            .values()
+            .map(|time| time.as_secs_f64() * 1e3)
+            .mean()
     }
 
     fn record_sent(&mut self, sender: Participant, data: &[u8]) {

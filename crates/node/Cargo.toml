@@ -118,10 +118,12 @@ elliptic-curve = { workspace = true }
 httpmock = { workspace = true }
 insta = { workspace = true }
 itertools = { workspace = true }
+mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 near-contract-transport = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+statrs = { workspace = true }
 tempfile = { workspace = true }
 test-log = { workspace = true }
 test-port-allocator = { workspace = true }
