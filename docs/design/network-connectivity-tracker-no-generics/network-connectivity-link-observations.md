@@ -88,8 +88,19 @@ pub struct ObservationContext<'a> {
 This is exactly what we do now:
 
 ```rust
-impl IndexerHeightReport {
+impl PeerReport {
     pub fn derive_link_observations(
+        &self,
+        context: &ObservationContext<'_>,
+    ) -> Vec<DerivedLinkObservation> {
+        match self {
+            PeerReport::IndexerHeightReport(report) => report.derive_link_observations(context),
+        }
+    }
+}
+
+impl IndexerHeightReport {
+    fn derive_link_observations(
         &self,
         context: &ObservationContext<'_>,
     ) -> Vec<DerivedLinkObservation> {
@@ -104,7 +115,8 @@ impl IndexerHeightReport {
                 continue;
             };
             let peer_reported_height = indexer_heights.get(my_peer);
-            let observation = IndexerHeightLag::new(first_hand, peer_reported_height.copied());
+            let lag = IndexerHeightLag::new(first_hand, peer_reported_height.copied());
+            let observation = LinkObservation::IndexerHeightLag(lag);
             res.push(DerivedLinkObservation { link, observation });
         }
         res
@@ -151,7 +163,7 @@ Now, the link status is a condensed view of the link history, aggregated from a 
 The idea is that we use uptime history to model the probability that the link will remain up for a given duration.
 We also track block height lags, as even though a link may be up, if it is very slow, it may not be suitable for some computations.
 
-The `LinkHistory` is what processes and stores our link observations of type `IndexerHeightLag`, and produces a `LinkStatus`:
+The `LinkHistory` is what processes and stores our link observations (`LinkObservation`), and produces a `LinkStatus`:
 
 ```rust
 /// What has been measured about one directed link: how far the heights it carries lag behind, and
@@ -192,11 +204,23 @@ impl LinkHistory {
 
     pub fn update_with_observation(
         &mut self,
-        observation: IndexerHeightLag,
+        observation: LinkObservation,
         at: Instant,
     ) -> LinkStatusChange {
         let previous = self.link_status();
         match observation {
+            LinkObservation::IndexerHeightLag(lag) => self.record_indexer_height_lag(lag, at),
+        }
+        let status = self.link_status();
+        if status == previous {
+            LinkStatusChange::Unchanged
+        } else {
+            LinkStatusChange::Changed(status)
+        }
+    }
+
+    fn record_indexer_height_lag(&mut self, lag: IndexerHeightLag, at: Instant) {
+        match lag {
             IndexerHeightLag::Present(lag) => {
                 self.uptime_history.record_up(at);
                 self.lags.record(lag);
@@ -206,12 +230,6 @@ impl LinkHistory {
                 self.uptime_history.record_down(at);
                 self.lags.clear();
             }
-        }
-        let status = self.link_status();
-        if status == previous {
-            LinkStatusChange::Unchanged
-        } else {
-            LinkStatusChange::Changed(status)
         }
     }
 }

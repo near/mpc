@@ -185,7 +185,7 @@ The `ConnectivityMonitor` works with the following types:
 - `ConnectionStatus` is the status of a connection `A <--> B`.
 - `LinkHistory` is the type used to track a link `A --> B` and its status.
 - `LinkStatus` is the status of a link. It is what a `LinkHistory` reports about itself.
-- A link observation is an `IndexerHeightLag`. It is derived from the `IndexerHeightReport`, which currently is our only peer report. In the future, we may add more peer reports and more observation types (such as results from echo-connection checks).
+- A link observation is a `LinkObservation`, with one variant per kind of peer report. Currently, the only one is `IndexerHeightLag`, derived from the `IndexerHeightReport`. In the future, we may add more peer reports and more observation types (such as results from echo-connection checks).
 
 The connection status, link, link status and link observation types are defined in [Network Connectivity Link Observations](./network-connectivity-link-observations.md). Here, we only list what the `ConnectivityMonitor` and the consumers use of them:
 - The `LinkHistory` reports its `LinkStatus` (the `LinkStatuses` above), which helps determine whether an observation led to a link status change.
@@ -200,7 +200,7 @@ impl LinkHistory {
     /// Reports the new status in case it changed.
     pub fn update_with_observation(
         &mut self,
-        observation: IndexerHeightLag,
+        observation: LinkObservation,
         at: Instant,
     ) -> LinkStatusChange;
 }
@@ -251,9 +251,9 @@ pub enum ComputationDuration {
     HalfMinute,
 }
 ```
-- And lastly, the link observations `IndexerHeightLag` are derived from the `IndexerHeightReport` of the provided `PeerReport`:
+- And lastly, the link observations are derived from the provided `PeerReport`:
 ```rust
-impl IndexerHeightReport {
+impl PeerReport {
     /// The link observations derived from this report.
     pub fn derive_link_observations(
         &self,
@@ -263,7 +263,11 @@ impl IndexerHeightReport {
 
 pub struct DerivedLinkObservation {
     pub link: DirectedEdge<ParticipantId>,
-    pub observation: IndexerHeightLag,
+    pub observation: LinkObservation,
+}
+
+pub enum LinkObservation {
+    IndexerHeightLag(IndexerHeightLag),
 }
 
 pub struct ObservationContext<'a> {
