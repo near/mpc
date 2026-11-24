@@ -12,11 +12,12 @@ Time is divided into *epochs*. Keygen, every reshare and every refresh (see
 [DKG](./dkg.md)) start a new one, in which a fixed set of participants holds
 shares of the master secret key under a fixed $\mathsf{threshold}$. The
 adversary is *mobile*: it can move from one participant to another, and a
-participant it loses control of, for example after a patch or a reinstall, is no
-longer corrupted. The master secret key stays hidden as long as, in every epoch,
-fewer than that epoch's $\mathsf{threshold}$ participants are corrupted. A
-participant corrupted during a reshare or refresh counts as corrupted in both
-the old and the new epoch, since it then holds shares of both.
+participant it loses control of, for example after a reinstall that replaces its
+authentication key, is no longer corrupted. The master secret key stays hidden
+as long as, in every epoch, fewer than that epoch's $\mathsf{threshold}$
+participants are corrupted. A participant corrupted during a reshare or refresh
+counts as corrupted in both the old and the new epoch, since it then holds
+shares of both.
 
 ## Refreshing the shares
 
