@@ -1,4 +1,3 @@
-pub mod compat;
 pub mod local;
 pub mod permanent;
 #[cfg(any(test, feature = "test-utils"))]
