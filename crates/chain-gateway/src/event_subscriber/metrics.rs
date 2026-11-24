@@ -33,6 +33,26 @@ pub static MPC_BLOCK_UPDATES_DROPPED: LazyLock<prometheus::IntCounter> = LazyLoc
     .unwrap()
 });
 
+pub static MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_indexer_num_receipt_execution_outcomes",
+            "Number of receipt execution outcomes processed by the near indexer"
+        )
+        .unwrap()
+    });
+
+pub static MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS: LazyLock<prometheus::IntCounter> =
+    LazyLock::new(|| {
+        prometheus::register_int_counter!(
+            "mpc_indexer_num_unconvertible_predecessor_ids",
+            "Number of requests dropped because the receipt's predecessor could not be \
+             converted between the two `near-account-id` versions in the dependency graph. \
+             Expected to stay at zero; a non-zero value means those versions have diverged"
+        )
+        .unwrap()
+    });
+
 pub static MPC_INDEXER_LATEST_BLOCK_HEIGHT: LazyLock<prometheus::IntGauge> = LazyLock::new(|| {
     prometheus::register_int_gauge!(
         "mpc_indexer_latest_block_height",
