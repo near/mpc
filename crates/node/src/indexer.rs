@@ -85,7 +85,7 @@ impl IndexerRpcHandler {
         let response = self
             .rpc_handler
             .send_async(near_client::ProcessTxRequest {
-                transaction,
+                transaction: transaction.into(),
                 is_forwarded: false,
                 check_only: false,
             })

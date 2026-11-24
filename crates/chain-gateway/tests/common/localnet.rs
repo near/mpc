@@ -140,6 +140,25 @@ impl LocalnetBuilder {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
+        // The validator broadcasts its `AccountData` only after looking up its public IP, which
+        // can be after the observer syncs its first block. A transaction the observer forwards
+        // before that is dropped.
+        let validator_id = "validator.near".parse().unwrap();
+        while !localnet
+            .observer
+            .chain_gateway
+            .knows_producer(&validator_id)
+            .await
+            .unwrap()
+        {
+            localnet.assert_nodes_alive();
+            assert!(
+                Instant::now() < deadline,
+                "Timed out waiting for the observer to receive the validator's AccountData"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
         localnet
     }
 }
