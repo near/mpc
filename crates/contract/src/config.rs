@@ -91,7 +91,7 @@ pub(crate) struct Config {
     pub(crate) launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, charged for one attestation-storage grant.
     pub(crate) attestation_storage_fee_millinear: u64,
-    /// Genesis hash that a migration stores if the contract has none.
+    /// Genesis hash that the contract stores when this config is applied, if it has none.
     // TODO(#5267): remove once the migration requires the genesis hash
     pub(crate) migration_genesis_hash: Option<GenesisHash>,
 }
