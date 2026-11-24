@@ -343,10 +343,6 @@ impl MpcClient {
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
-                            DebugRequestKind::RecentBlocks => {
-                                let debug_output = format!("{:?}", recent_blocks);
-                                debug_request.respond(debug_output);
-                            }
                             DebugRequestKind::RecentSignatures => {
                                 let debug_output = format!("{:?}", pending_signatures);
                                 debug_request.respond(debug_output);

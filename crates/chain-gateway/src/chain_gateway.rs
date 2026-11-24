@@ -8,6 +8,7 @@ use near_async::ActorSystem;
 use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_indexer_primitives::CryptoHash;
 use near_store::db::RocksDB;
 use nearcore::{NearConfig, NearNode};
 use tokio::sync::mpsc::Receiver;
@@ -207,6 +208,23 @@ impl ChainGateway {
     /// Can be removed once <https://github.com/near/nearcore/issues/16004> is resolved.
     pub async fn ensure_head_follows_tip(&self) {
         nearcore_workarounds::ensure_head_follows_tip(&self.client).await
+    }
+
+    /// Hash of the genesis block of the chain the node follows.
+    pub async fn genesis_hash(&self) -> Result<CryptoHash, NearClientError> {
+        self.client.genesis_hash().await
+    }
+}
+
+#[cfg(any(test, feature = "test-utils"))]
+impl ChainGateway {
+    /// Whether this node has received the `AccountData` that the validator `account_id`
+    /// broadcasts. Until it has, the node drops every transaction it would forward to that
+    /// validator, while still reporting the submission as routed.
+    pub async fn knows_producer(&self, account_id: &AccountId) -> Result<bool, NearClientError> {
+        self.client
+            .knows_producer(&crate::account_id_compat::to_near_internal(account_id))
+            .await
     }
 }
 
