@@ -3018,11 +3018,12 @@ For errors caught before the transaction executes (account balance, nonce, acces
 
 ```
 ERROR mpc_node::indexer::tx_sender: Failed to forward transaction
-  SubmitParticipantInfo(...) err=unexpected ProcessTxResponse:
-  InvalidTx(LackBalanceForState { signer_id: ..., amount: ... })
+  SubmitParticipantInfo(...) err=failed to submit signed transaction while
+  submitting function call <contract>.submit_participant_info signed by <account>:
+  received invalid response: InvalidTx(LackBalanceForState { signer_id: ..., amount: ... })
 ```
 
-The error after `err=` is the NEAR runtime error. Common ones:
+The NEAR runtime error is the last part of `err=`, after `received invalid response:`. Common ones:
 
 - **`InvalidTx(LackBalanceForState { signer_id, amount })`** — the node's account doesn't have enough NEAR to cover the storage-staking threshold the contract is about to write. Top up the account by at least `amount` yoctoNEAR.
 - **`InvalidTx(InvalidAccessKey(...))`** — the node's access key was not added to the account, was removed, or doesn't grant the `submit_participant_info` method.
@@ -3030,7 +3031,7 @@ The error after `err=` is the NEAR runtime error. Common ones:
 
 #### 3. Contract-rejection errors — only visible on the explorer / RPC
 
-If the transaction reaches execution and the contract panics, the node logs only the generic retry line above, or, once a TEE attestation is stored for its key, the transaction hash (`sending tx …`) and, at the start of the next round, the warning above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call. The error appears under the action's status / logs. The contract wraps the attestation-side error like this:
+If the transaction reaches execution and the contract panics, the node logs only the generic retry line above, or, once a TEE attestation is stored for its key, the transaction hash (`sending transaction tx_hash=…`) and, at the start of the next round, the warning above; the actual message lives in the transaction receipt. Find the tx on `https://testnet.nearblocks.io/address/<your-account>` and open the failed `submit_participant_info` call. The error appears under the action's status / logs. The contract wraps the attestation-side error like this:
 
 ```
 Smart contract panicked: the submitted attestation failed verification, reason: custom error: `...`

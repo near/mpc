@@ -47,7 +47,6 @@ near-account-id = { workspace = true }
 near-async = { workspace = true }
 near-config-utils = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
-near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
@@ -120,6 +119,7 @@ itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 near-contract-transport = { workspace = true, features = ["test-utils"] }
+near-crypto = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
 tempfile = { workspace = true }
