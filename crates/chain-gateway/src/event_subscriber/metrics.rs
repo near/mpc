@@ -25,6 +25,24 @@ pub static MPC_FINALIZED_BLOCKS_INDEXED: LazyLock<prometheus::IntCounter> = Lazy
     .unwrap()
 });
 
+pub static MPC_BLOCKS_INDEXED_WITHOUT_PARENT: LazyLock<prometheus::IntCounter> = LazyLock::new(
+    || {
+        prometheus::register_int_counter!(
+            "mpc_blocks_indexed_without_parent_total",
+            "Number of blocks fed to the shared RecentBlocksTracker whose parent it does not track, not counting the first block"
+        )
+        .unwrap()
+    },
+);
+
+pub static MPC_BLOCKS_MADE_NON_CANONICAL: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
+    prometheus::register_int_counter!(
+        "mpc_blocks_made_non_canonical_total",
+        "Number of blocks the shared RecentBlocksTracker moved off the canonical chain after a reorg"
+    )
+    .unwrap()
+});
+
 pub static MPC_BLOCK_UPDATES_DROPPED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_block_updates_dropped_total",
