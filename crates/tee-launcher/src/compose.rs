@@ -95,7 +95,7 @@ pub fn launch_container(
         });
     }
 
-    tracing::info!(?service, "service launched");
+    tracing::info!(?service, "MPC launched successfully.");
     Ok(())
 }
 
