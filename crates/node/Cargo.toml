@@ -45,7 +45,6 @@ mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }
 near-async = { workspace = true }
-near-client = { workspace = true }
 near-config-utils = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
 near-crypto = { workspace = true }
