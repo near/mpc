@@ -4,7 +4,6 @@ use near_mpc_contract_interface::types::{
     BackupServiceInfo, DestinationNodeInfo, Ed25519PublicKey,
 };
 use near_mpc_crypto_types::Keyset;
-use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -12,39 +11,18 @@ use crate::{
     indexer::{migrations::ContractMigrationInfo, participants::ContractState},
 };
 
-pub struct NodeBackupServiceInfo {
-    pub p2p_key: VerifyingKey,
-}
-
-impl NodeBackupServiceInfo {
-    pub fn from_contract(info: BackupServiceInfo) -> anyhow::Result<Self> {
-        let p2p_key = match ed25519_dalek::VerifyingKey::try_from(&info.public_key) {
-            Ok(res) => res,
-            Err(err) => {
-                anyhow::bail!("can't convert key: {}", err);
-            }
-        };
-        Ok(Self { p2p_key })
-    }
-}
-
-#[derive(PartialEq, Debug, Clone, Serialize)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct MigrationInfo {
-    pub backup_service_info: Option<BackupServiceInfo>,
+    /// The TLS key of this account's backup service, kept only while the contract holds a valid
+    /// attestation for it.
+    pub backup_service_tls_key: Option<VerifyingKey>,
     pub active_migration: bool,
 }
 
-impl MigrationInfo {
-    pub fn get_pk_backup_service(self) -> Option<VerifyingKey> {
-        self.backup_service_info
-            .and_then(|info| match NodeBackupServiceInfo::from_contract(info) {
-                Ok(service) => Some(service.p2p_key),
-                Err(err) => {
-                    tracing::warn!("could not convert backup service info: {}", err);
-                    None
-                }
-            })
-    }
+pub(crate) fn backup_service_tls_key(info: &BackupServiceInfo) -> Option<VerifyingKey> {
+    VerifyingKey::try_from(&info.public_key)
+        .inspect_err(|err| tracing::warn!(?err, "could not parse the backup service's TLS key"))
+        .ok()
 }
 
 #[derive(Clone)]
@@ -92,24 +70,17 @@ impl OnboardingJob {
     }
 }
 
-impl MigrationInfo {
-    pub fn from_contract_state(
-        my_account_id: &AccountId,
-        my_p2p_public_key: &VerifyingKey,
-        contract_state: &ContractMigrationInfo,
-    ) -> Self {
-        let (backup_service_info, active_migration) = match contract_state.get(my_account_id) {
-            Some((backup_service_info, destination_node_info)) => (
-                backup_service_info.clone(),
-                infer_migration_status(my_p2p_public_key, destination_node_info),
-            ),
-            None => (None, false),
-        };
-        Self {
-            backup_service_info,
-            active_migration,
-        }
-    }
+/// Whether the contract lists this node as the destination of its account's migration.
+pub(crate) fn active_migration(
+    my_account_id: &AccountId,
+    my_p2p_public_key: &VerifyingKey,
+    contract_state: &ContractMigrationInfo,
+) -> bool {
+    contract_state
+        .get(my_account_id)
+        .is_some_and(|(_, destination_node_info)| {
+            infer_migration_status(my_p2p_public_key, destination_node_info)
+        })
 }
 
 fn infer_migration_status(
@@ -142,6 +113,7 @@ fn infer_migration_status(
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 pub mod tests {
     use ed25519_dalek::VerifyingKey;
     use mpc_contract::{
@@ -159,40 +131,41 @@ pub mod tests {
         indexer::{migrations::ContractMigrationInfo, participants::ContractState},
     };
 
-    use super::{BackupServiceInfo, DestinationNodeInfo, MigrationInfo, OnboardingJob};
+    use super::{
+        BackupServiceInfo, DestinationNodeInfo, MigrationInfo, OnboardingJob, active_migration,
+        backup_service_tls_key,
+    };
 
     #[test]
-    fn test_migration_get_pk_backup_service() {
-        let empty = MigrationInfo {
-            backup_service_info: None,
-            active_migration: true,
-        };
-        assert!(empty.get_pk_backup_service().is_none());
-
+    fn backup_service_tls_key__should_parse_the_contract_key() {
+        // Given
         let public_key = bogus_ed25519_public_key();
-        let pk_converted: ed25519_dalek::VerifyingKey = (&public_key).try_into().unwrap();
-        let backup_service_info = Some(BackupServiceInfo { public_key });
-        let populated = MigrationInfo {
-            backup_service_info,
-            active_migration: true,
-        };
-        assert_eq!(populated.get_pk_backup_service(), Some(pk_converted))
+        let expected = VerifyingKey::try_from(&public_key).unwrap();
+
+        // When
+        let tls_key = backup_service_tls_key(&BackupServiceInfo { public_key });
+
+        // Then
+        assert_eq!(tls_key, Some(expected));
     }
 
     #[test]
-    fn test_migration_status_constructor_empty() {
+    fn active_migration__should_be_false_without_migration_info() {
+        // Given
         let state = ContractMigrationInfo::default();
         let (account_id, _) = gen_participant(0);
-        let p2p_public_key =
-            ed25519_dalek::VerifyingKey::try_from(&bogus_ed25519_public_key()).unwrap();
+        let p2p_public_key = VerifyingKey::try_from(&bogus_ed25519_public_key()).unwrap();
 
-        let res = MigrationInfo::from_contract_state(&account_id, &p2p_public_key, &state);
-        assert!(!res.active_migration);
-        assert_eq!(res.backup_service_info, None);
+        // When
+        let migrating = active_migration(&account_id, &p2p_public_key, &state);
+
+        // Then
+        assert!(!migrating);
     }
 
     #[test]
-    fn test_migration_status_constructor_populated() {
+    fn active_migration__should_hold_only_for_this_nodes_destination_key() {
+        // Given
         let mut state = ContractMigrationInfo::default();
         let (account_id_0, participant_info_0) = gen_participant(0);
         let (account_id_1, _) = gen_participant(1);
@@ -203,32 +176,27 @@ pub mod tests {
             destination_node_info: participant_info_0.clone().into(),
         };
 
-        let backup_service_info = BackupServiceInfo {
-            public_key: bogus_ed25519_public_key(),
-        };
         state.insert(
             account_id_1.clone(),
             (
-                Some(backup_service_info.clone()),
+                Some(BackupServiceInfo {
+                    public_key: bogus_ed25519_public_key(),
+                }),
                 Some(destination_node_info.clone()),
             ),
         );
-        let participating_key =
-            ed25519_dalek::VerifyingKey::try_from(&participant_tls_public_key).unwrap();
-        let non_participating_key =
-            ed25519_dalek::VerifyingKey::try_from(&signer_account_pk).unwrap();
+        let participating_key = VerifyingKey::try_from(&participant_tls_public_key).unwrap();
+        let non_participating_key = VerifyingKey::try_from(&signer_account_pk).unwrap();
 
-        let res = MigrationInfo::from_contract_state(&account_id_0, &participating_key, &state);
-        assert!(!res.active_migration);
-        assert_eq!(res.backup_service_info, None);
+        // When
+        let migrating = [
+            active_migration(&account_id_0, &participating_key, &state),
+            active_migration(&account_id_1, &non_participating_key, &state),
+            active_migration(&account_id_1, &participating_key, &state),
+        ];
 
-        let res = MigrationInfo::from_contract_state(&account_id_1, &non_participating_key, &state);
-        assert!(!res.active_migration);
-        assert_eq!(res.backup_service_info, Some(backup_service_info.clone()));
-
-        let res = MigrationInfo::from_contract_state(&account_id_1, &participating_key, &state);
-        assert!(res.active_migration);
-        assert_eq!(res.backup_service_info, Some(backup_service_info.clone()));
+        // Then
+        assert_eq!(migrating, [false, false, true]);
     }
 
     struct OnboardingJobConstructorTestCase {
@@ -405,11 +373,11 @@ pub mod tests {
     impl OnboardingJobConstructorTestSetup {
         fn new() -> Self {
             let active_migration = MigrationInfo {
-                backup_service_info: None,
+                backup_service_tls_key: None,
                 active_migration: true,
             };
             let inactive_migration = MigrationInfo {
-                backup_service_info: None,
+                backup_service_tls_key: None,
                 active_migration: false,
             };
             let non_participant = config::tests::gen_participant();

@@ -116,3 +116,14 @@ pub struct IndexerAPI<TransactionSender> {
     /// The foreign chains each node registered, keyed by TLS key, seeded with the first successful read.
     pub foreign_chains_configs_receiver: watch::Receiver<dtos::ForeignChainsConfigs>,
 }
+
+#[cfg(test)]
+mod tests {
+    use near_contract_transport::mock::MockViewContract;
+
+    use super::MpcContractHandle;
+
+    pub(super) fn contract(viewer: &MockViewContract) -> MpcContractHandle<MockViewContract> {
+        MpcContractHandle::new(viewer.clone(), "mpc.near".parse().unwrap())
+    }
+}

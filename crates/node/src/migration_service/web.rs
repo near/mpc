@@ -11,7 +11,6 @@ pub mod types;
 mod tests {
 
     use ed25519_dalek::SigningKey;
-    use near_mpc_contract_interface::types::BackupServiceInfo;
     use rand::SeedableRng as _;
     use rand::rngs::{OsRng, StdRng};
     use serial_test::serial;
@@ -44,9 +43,7 @@ mod tests {
     async fn test_web_failure() {
         let test_setup = setup(port_seed::MIGRATION_WEBSERVER_FAILURE_TEST).await;
         let wrong_backup_service_info = MigrationInfo {
-            backup_service_info: Some(BackupServiceInfo {
-                public_key: SigningKey::generate(&mut OsRng).to_bytes().into(),
-            }),
+            backup_service_tls_key: Some(SigningKey::generate(&mut OsRng).verifying_key()),
             active_migration: false,
         };
         test_setup
@@ -285,9 +282,7 @@ mod tests {
         let res = make_hello_request(&mut send_request).await.unwrap();
         assert_eq!("Hello, world!", res);
         let wrong_backup_service_info = MigrationInfo {
-            backup_service_info: Some(BackupServiceInfo {
-                public_key: SigningKey::generate(&mut OsRng).to_bytes().into(),
-            }),
+            backup_service_tls_key: Some(SigningKey::generate(&mut OsRng).verifying_key()),
             active_migration: false,
         };
         test_setup

@@ -8,7 +8,7 @@ use super::participants::ContractState;
 use super::types::ChainSendTransactionRequest;
 use crate::config::{self, ParticipantsConfig};
 use crate::indexer::handler::{CKDRequestFromChain, VerifyForeignTxRequestFromChain};
-use crate::migration_service::types::MigrationInfo;
+use crate::migration_service::types::{MigrationInfo, active_migration, backup_service_tls_key};
 use crate::tests::common::MockTransactionSender;
 use crate::tracking::{AutoAbortTask, AutoAbortTaskCollection};
 use crate::types::SignatureId;
@@ -980,8 +980,15 @@ impl FakeIndexerOneNode {
             AutoAbortTask::from(tokio::spawn(async move {
                 loop {
                     let state = core_migration_change_receiver.recv().await.unwrap();
-                    let state =
-                        MigrationInfo::from_contract_state(&account_id, &p2p_public_key, &state);
+                    // The fake contract holds no attestations, so every backup service it lists
+                    // counts as attested
+                    let state = MigrationInfo {
+                        backup_service_tls_key: state
+                            .get(&account_id)
+                            .and_then(|(backup_service, _)| backup_service.as_ref())
+                            .and_then(backup_service_tls_key),
+                        active_migration: active_migration(&account_id, &p2p_public_key, &state),
+                    };
 
                     api_migration_info_sender.send_if_modified(|watched_state| {
                         let state_changed = *watched_state != state;
@@ -1150,7 +1157,7 @@ impl FakeIndexerManager {
 
         let (my_migration_info_sender, my_migration_info_receiver) =
             watch::channel(MigrationInfo {
-                backup_service_info: None,
+                backup_service_tls_key: None,
                 active_migration: false,
             });
 

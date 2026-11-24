@@ -91,7 +91,7 @@ mod tests {
         migration_service::web::test_utils::{TestSetup, setup},
         p2p::testing::{TestPorts, port_seed},
     };
-    use near_contract_transport::mock::{MockViewContract, MockViewError};
+    use near_contract_transport::mock::{MockViewContract, MockViewError, observed};
     use near_mpc_contract_interface::method_names::{
         ATTESTED_MIGRATION_DESTINATION, PARTICIPANT_INFO,
     };
@@ -103,8 +103,8 @@ mod tests {
     use crate::{
         ports::P2PClient as _,
         test_utils::{
-            TEST_REQUEST_TIMEOUT, migration_destination, mpc_contract, observed,
-            operator_account_id, participant_info,
+            TEST_REQUEST_TIMEOUT, migration_destination, mpc_contract, operator_account_id,
+            participant_info,
         },
     };
 

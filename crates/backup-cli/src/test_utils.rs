@@ -8,13 +8,11 @@ use std::{
 
 use mpc_node::keyshare::{Keyshare, test_utils::generate_dummy_keyshare};
 use near_account_id::AccountId;
-use near_contract_transport::{ObservedState, SerializedObservation, mock::MockViewError};
 use near_mpc_contract_interface::{
     client::MpcContractHandle,
     types::{DestinationNodeInfo, Ed25519PublicKey, EpochId, Keyset, ParticipantInfo},
 };
 use rand::{SeedableRng as _, rngs::StdRng};
-use serde::Serialize;
 use tokio::sync::{Mutex, Notify};
 
 use crate::ports::{KeyShareRepository, P2PClient};
@@ -49,13 +47,6 @@ pub fn mpc_contract<V>(viewer: V) -> MpcContractHandle<V> {
 
 pub fn operator_account_id() -> AccountId {
     "operator.near".parse().unwrap()
-}
-
-pub fn observed(value: &impl Serialize) -> Result<SerializedObservation, MockViewError> {
-    Ok(ObservedState {
-        observed_at: 0.into(),
-        value: serde_json::to_vec(value).unwrap(),
-    })
 }
 
 pub fn participant_info(tls_public_key: Ed25519PublicKey) -> ParticipantInfo {

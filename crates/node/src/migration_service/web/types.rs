@@ -28,9 +28,8 @@ pub(crate) struct ExpectedPeerInfo {
 
 impl ExpectedPeerInfo {
     pub fn from_migration(migration_info: MigrationInfo, cancelled: CancellationToken) -> Self {
-        let expected_pk = migration_info.get_pk_backup_service();
         Self {
-            expected_pk,
+            expected_pk: migration_info.backup_service_tls_key,
             cancelled,
         }
     }

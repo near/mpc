@@ -54,7 +54,7 @@ pub async fn run_recovery(
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use near_contract_transport::mock::MockViewContract;
+    use near_contract_transport::mock::{MockViewContract, observed};
     use near_mpc_contract_interface::types::Ed25519PublicKey;
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
@@ -62,7 +62,7 @@ mod tests {
     use super::run_recovery;
     use crate::test_utils::{
         FakeKeyshareStorage, FakeP2PClient, TEST_RETRY_DELAY, keyshares_for, migration_destination,
-        mpc_contract, observed, operator_account_id,
+        mpc_contract, operator_account_id,
     };
 
     #[rstest]

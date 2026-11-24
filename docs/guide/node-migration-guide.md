@@ -162,7 +162,7 @@ This creates a `secrets.json` file in your backup home directory containing:
 
 Before you can backup keyshares, the MPC contract must list your backup-cli's public key as your account's backup service.
 
-The contract registers a backup service only together with a TDX attestation that the backup service produces inside its own CVM and signs with an account key generated there (see [Backup Service Attestation Data](../design/backup-service-attestation-data.md)). A `backup-cli` running outside a TEE cannot produce one, so it cannot register. A key registered before the contract required attestations stays listed in `migration_info`, and MPC nodes keep accepting it, as long as `secrets.json` in your backup home directory holds its `p2p_private_key`.
+The contract registers a backup service only together with a TDX attestation that the backup service produces inside its own CVM and signs with an account key generated there (see [Backup Service Attestation Data](../design/backup-service-attestation-data.md)). A `backup-cli` running outside a TEE cannot produce one, so it cannot register. A key registered before the contract required attestations stays listed in `migration_info`, but MPC nodes exchange keyshares only with the backup service that the `attested_backup_service` view returns for their account, and the view returns it only while that service's attestation is valid. The steps below therefore work with such a key only while both the old and the new node run an image that predates this check, and while `secrets.json` in your backup home directory holds that key's `p2p_private_key`.
 
 ### Verify Registration
 ```bash

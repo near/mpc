@@ -303,7 +303,6 @@ mod tests {
     use http_body_util::Full;
     use hyper::StatusCode;
     use mpc_primitives::EpochId;
-    use near_mpc_contract_interface::types::{BackupServiceInfo, Ed25519PublicKey};
     use near_mpc_crypto_types::Keyset;
     use rand::SeedableRng as _;
     use rand::rngs::StdRng;
@@ -349,9 +348,7 @@ mod tests {
 
     fn make_migration_info_with_key(key: &SigningKey) -> MigrationInfo {
         MigrationInfo {
-            backup_service_info: Some(BackupServiceInfo {
-                public_key: Ed25519PublicKey::from(&key.verifying_key()),
-            }),
+            backup_service_tls_key: Some(key.verifying_key()),
             active_migration: true,
         }
     }

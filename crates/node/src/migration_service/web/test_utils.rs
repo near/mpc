@@ -6,7 +6,6 @@ use std::{
 use aes_gcm::aead::Generate;
 use aes_gcm::{Aes256Gcm, Key};
 use ed25519_dalek::SigningKey;
-use near_mpc_contract_interface::types::BackupServiceInfo;
 use rand::rngs::OsRng;
 use tempfile::TempDir;
 use tokio::sync::{RwLock, watch};
@@ -41,9 +40,7 @@ pub async fn setup(ports: TestPorts) -> TestSetup {
     let target_address = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port);
 
     let (migration_state_sender, migration_state_receiver) = watch::channel(MigrationInfo {
-        backup_service_info: Some(BackupServiceInfo {
-            public_key: (&client_key.verifying_key()).into(),
-        }),
+        backup_service_tls_key: Some(client_key.verifying_key()),
         active_migration: false,
     });
 
