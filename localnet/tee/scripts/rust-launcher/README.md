@@ -43,7 +43,8 @@ export WORKDIR=/tmp/mpc-fixture-collection
 COMPOSE_TEMPLATE="$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-compose.yaml.template" \
   bash localnet/tee/scripts/rust-launcher/single-node.sh
 
-cp "$WORKDIR/public_data.json" crates/test-utils/assets/public_data.json
+mkdir -p crates/test-utils/assets/dstack-<version>
+cp "$WORKDIR/public_data.json" crates/test-utils/assets/dstack-<version>/public_data.json
 ```
 
 Then follow [the asset regeneration steps](../../../../crates/test-utils/assets/README.md#steps),
@@ -63,5 +64,5 @@ curl -s "http://127.0.0.1:<AGENT_PORT>/logs/signer-key-export?text&bare" \
   | grep -o '"near_signer_key":"[^"]*"'
 ```
 
-Put the value into `crates/test-utils/assets/near_account_secret_key` (one line, `ed25519:<base58>`).
+Put the value into `crates/test-utils/assets/dstack-<version>/near_account_secret_key` (one line, `ed25519:<base58>`).
 Only ever do this for a throwaway localnet node: the key ends up in the repo.

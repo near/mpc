@@ -48,4 +48,6 @@ pub enum StorageKey {
     MeasurementVotesByProposal,
     ParametersVotesByVoter,
     ParametersVotesByProposal,
+    AddDomainsVotesByVoter,
+    AddDomainsVotesByProposal,
 }

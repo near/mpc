@@ -457,12 +457,12 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_launcher_
 
 ## Step 9: Vote OS Measurements on Contract
 
-OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Both participants must vote for the measurement set of the production OS image, found in `crates/mpc-attestation/assets/tcb_info.json`.
+OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Both participants must vote for the measurement set of the OS image the CVMs run: `crates/mpc-attestation/assets/tcb_info.json` for dstack 0.6.5, or `crates/mpc-attestation/assets/tcb_info_dstack_0.5.8.json` for dstack 0.5.8.
 
 Extract the measurement values from it:
 
 ```bash
-TCB_FILE=crates/mpc-attestation/assets/tcb_info.json
+TCB_FILE=crates/mpc-attestation/assets/tcb_info.json  # dstack 0.5.8: tcb_info_dstack_0.5.8.json
 MRTD=$(jq -r '.mrtd' $TCB_FILE)
 RTMR0=$(jq -r '.rtmr0' $TCB_FILE)
 RTMR1=$(jq -r '.rtmr1' $TCB_FILE)

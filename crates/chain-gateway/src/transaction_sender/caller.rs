@@ -2,11 +2,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use near_account_id::AccountId;
 use near_contract_transport::{CallContract, FunctionCallArgs};
-use near_indexer_primitives::CryptoHash;
 use near_mpc_bounded_collections::NonEmptyVec;
 
 use crate::errors::ChainGatewayError;
-use crate::transaction_sender::{SubmitFunctionCall, TransactionSigner};
+use crate::transaction_sender::{SubmitFunctionCall, SubmittedTxMetadata, TransactionSigner};
 
 pub struct AccountCaller<T> {
     submitter: T,
@@ -25,14 +24,14 @@ impl<T> AccountCaller<T> {
 }
 
 impl<T: SubmitFunctionCall + Sync> CallContract for AccountCaller<T> {
-    type Output = CryptoHash;
+    type Output = SubmittedTxMetadata;
     type Error = ChainGatewayError;
 
     async fn call_contract(
         &self,
         contract_id: &AccountId,
         call_args: FunctionCallArgs,
-    ) -> Result<CryptoHash, ChainGatewayError> {
+    ) -> Result<SubmittedTxMetadata, ChainGatewayError> {
         let index = self.next.fetch_add(1, Ordering::Relaxed) % self.signers.len();
         let signer = self
             .signers
@@ -95,7 +94,7 @@ mod tests {
         let caller = AccountCaller::new(mock.clone(), vec![signer0, signer1].try_into().unwrap());
 
         // When
-        let first_hash = caller.call_contract(&contract, test_call()).await.unwrap();
+        let first = caller.call_contract(&contract, test_call()).await.unwrap();
         caller.call_contract(&contract, test_call()).await.unwrap();
         caller.call_contract(&contract, test_call()).await.unwrap();
 
@@ -105,7 +104,7 @@ mod tests {
         assert!(signed_by(&submitted[0], &key0));
         assert!(signed_by(&submitted[1], &key1));
         assert!(signed_by(&submitted[2], &key0));
-        assert_eq!(first_hash, submitted[0].get_hash());
+        assert_eq!(first.tx_hash, submitted[0].get_hash());
     }
 
     #[tokio::test]
