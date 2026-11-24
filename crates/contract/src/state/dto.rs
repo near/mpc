@@ -72,3 +72,48 @@ impl IntoInterfaceType<dtos::ProtocolContractState> for &ProtocolContractState {
         }
     }
 }
+
+#[cfg(test)]
+#[expect(non_snake_case)]
+mod tests {
+    use crate::dto_mapping::IntoInterfaceType;
+    use crate::primitives::key_state::{AttemptId, KeyEventId};
+    use crate::state::key_event::tests::find_leader;
+    use crate::state::test_utils::gen_initializing_state;
+    use near_mpc_contract_interface::types::{self as dtos, BlockCount};
+    use rstest::rstest;
+
+    const TIMEOUT_BLOCKS: u64 = 5;
+
+    #[rstest]
+    #[case::in_its_last_block(TIMEOUT_BLOCKS, Some(AttemptId::new()))]
+    #[case::once_it_timed_out(TIMEOUT_BLOCKS + 1, None)]
+    fn initializing_state_dto__should_show_the_key_event_instance_only_until_it_times_out(
+        #[case] blocks_since_start: u64,
+        #[case] expected_attempt: Option<AttemptId>,
+    ) {
+        // Given
+        let (mut env, mut state) = gen_initializing_state(1, 0);
+        let (leader, _) = find_leader(&state.generating_key);
+        env.set_signer(&leader);
+        let key_event_id = KeyEventId::new(
+            state.epoch_id,
+            state.generating_key.domain_id(),
+            AttemptId::new(),
+        );
+        state
+            .start(key_event_id, BlockCount::from(TIMEOUT_BLOCKS))
+            .unwrap();
+        env.advance_block_height(blocks_since_start);
+
+        // When
+        let dto: dtos::InitializingContractState = (&state).into_dto_type();
+
+        // Then
+        let shown_attempt = dto
+            .generating_key
+            .instance
+            .map(|instance| instance.attempt_id);
+        assert_eq!(shown_attempt, expected_attempt);
+    }
+}

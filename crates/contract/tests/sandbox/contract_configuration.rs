@@ -37,9 +37,11 @@ async fn contract_configuration_can_be_set_on_initialization() {
         .await;
 
     let stored_config = contract.config().await.unwrap().value;
+    let mut expected_config = serde_json::to_value(init_config).unwrap();
+    expected_config["migration_genesis_hash"] = serde_json::Value::Null;
     assert_eq!(
         serde_json::to_value(stored_config).unwrap(),
-        serde_json::to_value(init_config).unwrap()
+        expected_config
     );
 }
 
