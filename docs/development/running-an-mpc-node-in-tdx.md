@@ -247,9 +247,10 @@ several providers to choose from, such as
 Now data of the MPC node deployed can be accessed on your local machine:
 
 1. Go to the VM list in <http://localhost:8090>. Click on the "View logs button".
-   The 0.6.5 guest agent serves logs only to callers with the `guest:logs` scope: add it to
-   `anonymous_scopes` under `[cvm.guest_agent_api]` in `vmm.toml`. The list replaces the
-   default one, so keep `"guest:dashboard", "guest:version", "guest:health", "guest:info"` in it.
+   The 0.6.5 guest agent shows the container list and logs only to callers with the
+   `guest:containers` and `guest:logs` scopes: add both to `anonymous_scopes` under
+   `[cvm.guest_agent_api]` in `vmm.toml`. The list replaces the default one, so keep
+   `"guest:dashboard", "guest:version", "guest:health", "guest:info"` in it.
 
 2. Wait for the MPC node to start. It will take a few minutes for the near
    indexer to start, before the web endpoint is up

@@ -101,7 +101,7 @@ You can also use the example `.env` files under `configs/`:
 
 # Override both base path (the dstack checkout) and Python path
 ./deploy-launcher.sh \
-  --base-path /home/barak/project \
+  --base-path /opt/mpc/dstack \
   --python-exec python3
 ```
 
