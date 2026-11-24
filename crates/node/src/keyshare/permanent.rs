@@ -1,6 +1,5 @@
 use super::Keyshare;
 use anyhow::Context;
-use k256::{AffinePoint, Scalar};
 use mpc_primitives::{EpochId, domain::DomainId};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
@@ -51,15 +50,6 @@ impl From<PermanentKeyshareData> for PermanentKeyshareDataSerde {
 }
 
 impl PermanentKeyshareData {
-    pub fn from_legacy(legacy: &LegacyRootKeyshareData) -> Self {
-        let keyshare = Keyshare::from_legacy(legacy);
-        let keyshares = NonEmptyBTreeMap::new(keyshare.key_id.domain_id, keyshare);
-        Self {
-            epoch_id: EpochId::new(legacy.epoch),
-            keyshares,
-        }
-    }
-
     pub fn epoch_id(&self) -> EpochId {
         self.epoch_id
     }
@@ -121,21 +111,13 @@ pub struct PermanentKeyStorage {
 
 impl PermanentKeyStorage {
     pub async fn new(backend: Box<dyn PermanentKeyStorageBackend>) -> anyhow::Result<Self> {
-        let ret = Self { backend };
-
-        // Migrate legacy data if necessary.
-        let existing_data = ret.backend.load().await?;
-        if let Some(data) = existing_data
-            && serde_json::from_slice::<PermanentKeyshareData>(&data).is_err()
-        {
-            tracing::info!(
-                "Existing permanent keyshare data is not in the expected format, attempting to migrate..."
-            );
-            let legacy_data = serde_json::from_slice::<LegacyRootKeyshareData>(&data)?;
-            let new_data = PermanentKeyshareData::from_legacy(&legacy_data);
-            ret.store_unchecked(&new_data).await?;
-        }
-        Ok(ret)
+        let storage = Self { backend };
+        // Fails at startup, not at the first key use, on keyshares that cannot be decrypted or parsed.
+        storage
+            .load()
+            .await
+            .context("Loading the existing permanent keyshares")?;
+        Ok(storage)
     }
 
     pub async fn load(&self) -> anyhow::Result<Option<PermanentKeyshareData>> {
@@ -239,31 +221,19 @@ impl PermanentKeyStorage {
     }
 }
 
-/// Old version of the permanent keyshare data, for migration only.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct LegacyRootKeyshareData {
-    pub epoch: u64,
-    pub private_share: Scalar,
-    pub public_key: AffinePoint,
-}
-
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::PermanentKeyshareData;
+    use crate::keyshare::Keyshare;
     use crate::keyshare::local::LocalPermanentKeyStorageBackend;
-    use crate::keyshare::permanent::{
-        LegacyRootKeyshareData, PermanentKeyStorage, PermanentKeyStorageBackend,
-    };
+    use crate::keyshare::permanent::{PermanentKeyStorage, PermanentKeyStorageBackend};
     use crate::keyshare::test_utils::{
         KeysetBuilder, generate_dummy_keyshare, generate_dummy_keyshares, make_key_id,
     };
-    use crate::keyshare::{Keyshare, KeyshareData};
-    use k256::elliptic_curve::Field;
     use k256::{AffinePoint, Scalar};
     use mpc_primitives::EpochId;
     use rand::SeedableRng as _;
-    use threshold_signatures::frost_secp256k1::VerifyingKey;
-    use threshold_signatures::frost_secp256k1::keys::SigningShare;
 
     #[tokio::test]
     async fn test_load_store() {
@@ -342,41 +312,26 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_legacy_migration() {
+    async fn permanent_key_storage_new__should_fail_on_legacy_keyshare_format() {
+        // Given
         let temp = tempfile::tempdir().unwrap();
-        let encryption_key = [2; 16];
-        let backend =
-            LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), encryption_key)
-                .await
-                .unwrap();
-        // Write a legacy keyshare.
-        let private_share = Scalar::random(&mut rand::thread_rng());
-        let public_key = AffinePoint::GENERATOR * private_share;
-        let legacy_data = LegacyRootKeyshareData {
-            epoch: 1,
-            private_share,
-            // Do some computation to get non-identity public key
-            public_key: public_key.to_affine(),
-        };
-        let legacy_data_json = serde_json::to_vec(&legacy_data).unwrap();
-        let identifier = "whatever";
-        backend.store(&legacy_data_json, identifier).await.unwrap();
+        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
+            .await
+            .unwrap();
+        let legacy_keyshare = serde_json::json!({
+            "epoch": 1,
+            "private_share": Scalar::ONE,
+            "public_key": AffinePoint::GENERATOR,
+        });
+        backend
+            .store(&serde_json::to_vec(&legacy_keyshare).unwrap(), "legacy")
+            .await
+            .unwrap();
 
-        // Make the storage. The storage should upgrade the legacy keyshare to the new format.
-        let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
-        let loaded = storage.load().await.unwrap().unwrap();
-        assert_eq!(loaded.epoch_id().get(), 1);
-        assert_eq!(loaded.keyshares().len(), 1);
-        let keyshare = loaded.keyshares().values().next().unwrap();
-        assert_eq!(keyshare.key_id.epoch_id.get(), 1);
-        assert_eq!(keyshare.key_id.domain_id.0, 0);
-        assert_eq!(keyshare.key_id.attempt_id.get(), 0);
-        assert_eq!(
-            keyshare.data,
-            KeyshareData::Secp256k1(threshold_signatures::ecdsa::KeygenOutput {
-                private_share: SigningShare::new(legacy_data.private_share),
-                public_key: VerifyingKey::new(legacy_data.public_key.into()),
-            })
-        );
+        // When
+        let result = PermanentKeyStorage::new(Box::new(backend)).await;
+
+        // Then
+        assert!(result.is_err());
     }
 }
