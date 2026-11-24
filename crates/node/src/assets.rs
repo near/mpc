@@ -1337,7 +1337,7 @@ mod tests {
             let store = DistributedAssetStorage::<u64>::new(
                 FakeClock::default().clock(),
                 db.clone(),
-                crate::db::DBCol::Presignature,
+                DBCol::TripleV2,
                 domain_id_to_prefix(domain_id),
                 myself,
                 |_, _| true,
@@ -1370,7 +1370,7 @@ mod tests {
             let store = DistributedAssetStorage::<u64>::new(
                 FakeClock::default().clock(),
                 db.clone(),
-                crate::db::DBCol::Presignature,
+                DBCol::TripleV2,
                 domain_id_to_prefix(domain_id),
                 myself,
                 |_, _| true,
@@ -1439,7 +1439,7 @@ mod tests {
             assert_eq!(store.num_owned(), expected);
         };
         for domain_id in [None, Some(DomainId(0)), Some(DomainId(1))] {
-            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::TripleV2] {
+            for db_col in [DBCol::TripleV2, DBCol::SignRequest] {
                 assert_db_num_owned(db_col, domain_id, 0);
                 {
                     // populate the database

@@ -1,4 +1,4 @@
-use crate::assets::cleanup::{EpochData, delete_stale_triples_and_presignatures};
+use crate::assets::cleanup::{EpochData, delete_stale_triples};
 use crate::config::{MpcConfig, ParticipantInfo, ParticipantsConfig, SecretsConfig};
 use crate::db::SecretDB;
 use crate::foreign_chain_policy::{
@@ -406,7 +406,7 @@ where
                 participants: current_participants_config,
             };
             let triple_thresholds = triple::caitsith_triple_thresholds(&running_state.domains);
-            delete_stale_triples_and_presignatures(
+            delete_stale_triples(
                 &secret_db,
                 current_epoch_data,
                 my_participant_id,
