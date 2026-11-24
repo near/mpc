@@ -2589,15 +2589,15 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 
 ### Upgrading from dstack 0.5.8 to 0.6.5
 
-The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new OS measurements. Run a **second `dstack-vmm`, 0.6.5, next to your 0.5.8 one**: the old CVM stays on the 0.5.8 VMM, untouched, until you migrate, and the new CVM runs on the 0.6.5 VMM. Don't upgrade the 0.5.8 VMM in place. You can bring up the new CVM before the votes; it only attests, and takes over, once they are in.
+The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new OS measurements. The new CVM runs on a `dstack-vmm` 0.6.5, either on a spare TDX machine or next to your current one. The old CVM stays on its 0.5.8 VMM, untouched, until you migrate: don't upgrade the 0.5.8 VMM in place. You can bring up the new CVM before the votes; it only attests, and takes over, once they are in.
 
-1. **Install `dstack-vmm` 0.6.5 next to the 0.5.8 one.** Follow [Dstack Setup](#2-dstack-setup-and-configuration), steps 1–4, in a separate directory (for example `/opt/mpc/dstack-0.6.5` instead of `/opt/mpc/dstack`), and run it as a second systemd unit (for example `dstack-vmm-0.6.5.service`). In its `vmm.toml`, change these so they don't clash with the 0.5.8 VMM:
+1. **Install `dstack-vmm` 0.6.5.** On a spare TDX machine, follow [Dstack Setup](#2-dstack-setup-and-configuration) there as usual. On the same machine, run it next to the 0.5.8 one: follow [Dstack Setup](#2-dstack-setup-and-configuration), steps 1–4, in a separate directory (for example `/opt/mpc/dstack-0.6.5` instead of `/opt/mpc/dstack`), and run it as a second systemd unit (for example `dstack-vmm-0.6.5.service`). In its `vmm.toml`, change these so they don't clash with the 0.5.8 VMM:
    - `port`, for example `11000` instead of `10000`;
    - `cid_start`, for example `31000`: the CID ranges (`cid_start` to `cid_start + cid_pool_size`) of the two VMMs must not overlap;
    - `port` under `[host_api]`, for example `9301` instead of `9300`.
 
    The key provider stays as it is; both VMMs use it. Leave the 0.5.8 VMM and its CVM running as they are.
-2. **Deploy a new CVM on the 0.6.5 VMM**, with `OS_IMAGE=dstack-0.6.5`, the new launcher compose, `VMM_RPC` set to the new VMM's port and `--base-path /opt/mpc/dstack-0.6.5`. It needs its own host ports, or its own IP on the same host: see [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md). Check it with [`attestation-cli verify`](#verify-node-attestation). Until the votes are in, the contract still rejects it.
+2. **Deploy a new CVM on the 0.6.5 VMM**, with `OS_IMAGE=dstack-0.6.5`, the new launcher compose, and `VMM_RPC` and `--base-path` pointing at the 0.6.5 VMM (for example `http://127.0.0.1:11000` and `/opt/mpc/dstack-0.6.5` on the same machine). On the same machine it needs its own IP: use the IP and port-binding steps of [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md). That guide prefers one VMM for both CVMs; here you run two, as in its "Two `dstack-vmm` instances" note, since the versions differ. Check it with [`attestation-cli verify`](#verify-node-attestation). Until the votes are in, the contract still rejects it.
 3. **Wait for the votes.** The 0.6.5 OS measurements and the new launcher must be allowed on-chain (see [OS Measurement Voting](#os-measurement-voting) and [Launcher Image Voting](#launcher-image-voting)).
 4. **Migrate the key shares** to the new CVM with the [node migration guide](../node-migration-guide.md). Then stop the old CVM, and stop and disable the 0.5.8 VMM.
 
