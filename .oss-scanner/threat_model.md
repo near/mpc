@@ -31,7 +31,10 @@ docs/design/securing-mpc-with-tee/securing-mpc-with-tee.md. Past audits: audits/
    responses; this is the code a malicious RPC provider reaches.
    `crates/backup-cli` is its counterpart for node migration: the operator's
    tool that fetches keyshares from a node's migration service, keeps them
-   encrypted with the backup key, and restores them onto the new node.
+   encrypted with the backup key, and restores them onto the new node. Its
+   `start-with-config-file` mode is the TEE backup service: it runs in its own
+   CVM, attests itself on chain, and exchanges keyshares only with the nodes
+   the contract lists for its account.
 4. TEE attestation: `crates/attestation`, `crates/mpc-attestation`,
    `crates/tee-*`, `crates/tee-launcher`.
 5. Client-facing verification: `crates/near-mpc-sdk`,
@@ -70,7 +73,9 @@ files. On TEE nodes, everything the host passes through the launcher, including
 the `[mpc_node_config]` table it passes to the node, is attacker input. The
 launcher injects `tee`, `home_dir`, `node.indexer.mpc_contract_id` and
 `node.indexer.genesis_hash` itself and rejects host configs that set them to
-other values; a bypass of that check is in scope.
+other values; a bypass of that check is in scope. The same holds for the
+`[backup_service_config]` table of a backup service CVM, where the launcher
+injects `tee`, `mpc_contract_id` and `genesis_hash`.
 
 ## What to look for
 

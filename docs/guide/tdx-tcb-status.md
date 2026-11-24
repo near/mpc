@@ -30,11 +30,14 @@ derives from the SGX sealing key, which `EGETKEY` derives from CPUSVN among othe
 inputs. A TCB recovery fix moves CPUSVN, so the existing disk no longer unseals,
 and key shares, triples and the P2P identity key all live on it.
 
-So before touching firmware: take a fresh backup with the `backup-cli`
-following
-[Backup Keyshares from Old Node](node-migration-guide.md#step-4-backup-keyshares-from-old-node),
-and be ready to redeploy the CVM and restore from backup per the
-[node migration guide](node-migration-guide.md).
+So before touching firmware, check that your
+[backup service running in TDX](running-a-backup-service-in-tdx.md) holds the
+current key shares: `attested_backup_service` returns it, and its `/status`
+epoch equals the node's `mpc_current_epoch_id`
+([Step 6](running-a-backup-service-in-tdx.md#step-6-check-the-registration-and-the-backups)).
+Be ready to redeploy the CVM and restore from it. Do not update the backup
+service host's firmware at the same time: that CVM can lose its disk the same
+way, and it fetches the key shares again only from a running node.
 
 ### 2. Record what the host has now
 
@@ -68,7 +71,7 @@ candidate BIOS release actually carries the fixes.
 effect without one. Whether the CVM then starts on its existing disk depends on
 the update: if it moved CPUSVN, the sealing key moved with it and that disk will
 never unseal again, so deploy a fresh CVM and restore the step 1 backup into it
-per the [node migration guide](node-migration-guide.md). Either way a CVM has
+as in [Restoring into a new node](running-a-backup-service-in-tdx.md#restoring-into-a-new-node). Either way a CVM has
 to be running before you can check anything, since `/public_data` serves the
 node's latest quote, the first one generated at CVM boot, and `tcb-status`
 answers as soon as the node is up, with no need to wait for it to sync. Then:

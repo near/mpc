@@ -8,7 +8,7 @@ Node migration allows you to move your MPC node from one host to another without
 
 **Changing only your URL?** If your node keeps the same TLS key and you only need to point peers at a new address (e.g. fixing a typo or moving to a new domain), call `update_participant_url` on the contract instead of running a migration. It updates just your registered URL; peers pick it up without a resharing or reconnecting existing sessions.
 
-**Important:** This guide covers the **Soft Launch** migration process. For information about the architecture and future Hard Launch implementation, see [migration-service.md](../archive/design/migration-service.md).
+**Important:** This guide covers the **Soft Launch** migration process. To restore from a backup service running in TDX instead, see [Running a backup service in TDX](running-a-backup-service-in-tdx.md#restoring-into-a-new-node).
 
 ## Environment Variables Setup
 
@@ -236,7 +236,7 @@ This is the key you pass to the backup-cli — if the node is already deployed, 
 - These are two different keys serving different purposes
 
 
-**TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. For TEE-to-TEE migrations in the Hard Launch phase, the backup service will run autonomously within a TEE and handle encryption keys securely without file system access. Refer to [migration-service.md](../archive/design/migration-service.md) for Hard Launch details.
+**TEE Migration Note:** This guide covers the Soft Launch migration process where the encryption key can be accessed from the file system. A [backup service running in TDX](running-a-backup-service-in-tdx.md) keeps the key shares inside its CVM instead.
 
 
 ## Step 4: Backup Keyshares from Old Node
