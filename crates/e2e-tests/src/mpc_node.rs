@@ -459,7 +459,12 @@ impl MpcNodeSetup {
                 download_genesis_records_url: None,
                 rpc_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_rpc))),
                 network_addr: Some(SocketAddr::from(([0, 0, 0, 0], self.ports.near_network))),
-                tier3_public_addr: None,
+                // nearcore won't learn a loopback address from its peers, and a node without
+                // an address is not a state sync host.
+                tier3_public_addr: Some(SocketAddr::from((
+                    [127, 0, 0, 1],
+                    self.ports.near_network,
+                ))),
             }),
             node: ConfigFile {
                 my_near_account_id: signer,
