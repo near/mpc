@@ -31,7 +31,7 @@ and `how-to-run-deploy-tee-cluster.md` for the full reference.
 3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.
 4. Get account and TLS keys from each node.
 5. Initialize the contract with node parameters (keys, accounts, IPs), and prepay attestation storage for each node.
-6. Workaround for port override issue.
+6. Port override (not changeable on dstack 0.6).
 7. Vote for MPC code hash on the contract.
 8. Vote for launcher image hash on the contract.
 9. Vote for OS measurements on the contract.
@@ -357,24 +357,13 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT prepay_attestat
 
 ---
 
-## Step 6: Workaround for Port Override Issue (optional)
+## Step 6: Port Override
 
-**Note:** `port_override = 80` is the default on testnet. The MPC nodes will
+`port_override = 80` is the default on testnet. The MPC nodes will
 advertise URL port 80 to the contract regardless of the contract's
-`url:` field. If you need a different port (e.g. dstack on this host
-can't forward port 80), change `port_override` post-deploy as follows.
-
-> This needs a shell on the CVM, and dstack 0.6 has no dev image, so there
-> is no SSH. Prefer a deploy that can forward port 80.
-
-Once on the CVM, stop the MPC container, edit the config, restart:
-
-```bash
-docker stop mpc-node
-sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.yaml
-sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.json
-docker start mpc-node
-```
+`url:` field. Changing it needs a shell on the CVM, and dstack 0.6 has no
+dev image, so there is no SSH: if dstack on this host can't forward port 80,
+use a deploy that can.
 
 ---
 
@@ -417,7 +406,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker
 
 The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
 
-The previous steps had you set `LAUNCHER_MANIFEST_DIGEST` in `deployment/testnet/*.env` (uncommented in step 6 before running `deploy-launcher.sh`). The `.env` file is sourced by `deploy-launcher.sh` but not by your interactive shell, so re-export the value here. Either re-source the env file, or set the variable directly:
+The previous steps had you set `LAUNCHER_MANIFEST_DIGEST` in `deployment/testnet/*.env` (uncommented in step 3 before running `deploy-launcher.sh`). The `.env` file is sourced by `deploy-launcher.sh` but not by your interactive shell, so re-export the value here. Either re-source the env file, or set the variable directly:
 
 ```bash
 # Option A: pull from the env file you already edited

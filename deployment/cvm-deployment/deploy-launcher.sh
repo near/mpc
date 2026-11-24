@@ -127,6 +127,7 @@ fi
 
 # Do not change these variables
 # SSH ports (only for dev images)
+# TODO(#5324): dstack 0.6 has no dev image; remove the SSH port forward.
 INTERNAL_SSH_PORT=22
 # Address of the dstack guest agent service inside the CVM
 INTERNAL_AGENT_ADDR=8090

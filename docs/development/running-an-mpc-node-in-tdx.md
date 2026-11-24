@@ -68,6 +68,8 @@ several providers to choose from, such as
 
    dstack 0.6 ships no dev image, so there is no SSH into the CVM.
 
+   TODO(#5324): the `dstack-kms` steps below are not needed with `kms_urls = []`.
+
 4. Once it's installed you need to run `dstack-vmm` and `dstack-kms`. It's
    important these keep running persistently. You can use `tmux` for this
    purpose:

@@ -139,8 +139,11 @@ All steps below assume the current user is `mpc` and the current directory is
 > **v0.5.11** (see the [key-provider step](#3-local-gramine-sealing-key-provider-setup)),
 > which builds a reproducible `mr_enclave` from build-args.
 >
-> Moving an existing node from dstack 0.5.8? See
+> **This guide is for dstack 0.6.5.** MPC nodes are moving from dstack 0.5.8 to 0.6.5.
+> Moving an existing node? See
 > [Upgrading from dstack 0.5.8 to 0.6.5](#upgrading-from-dstack-058-to-065).
+> If you still need to deploy a dstack 0.5.8 node, use
+> [the guide from release 3.19.0](https://github.com/near/mpc/blob/3.19.0/docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md).
 
 1. **Clone dstack:**
 
@@ -2580,11 +2583,11 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 
 ### Upgrading from dstack 0.5.8 to 0.6.5
 
-The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new OS measurements. Votes come first, then each node moves.
+The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new OS measurements. You can bring up the new CVM before the votes; it only attests, and takes over, once they are in.
 
-1. **Wait for the votes.** The 0.6.5 OS measurements and the new launcher must be allowed on-chain (see [OS Measurement Voting](#os-measurement-voting) and [Launcher Image Voting](#launcher-image-voting)). Until then a 0.6.5 CVM cannot attest.
-2. **Upgrade the host to `dstack-vmm` 0.6.5** ([Dstack Setup](#2-dstack-setup-and-configuration), steps 2–4): build it, add `qemu_hotplug_off = false` and the `[cvm.guest_agent_api]` section to your `vmm.toml`, download the 0.6.5 image next to the 0.5.8 one, and restart the VMM. The running 0.5.8 CVM keeps running, and with `qemu_hotplug_off = false` it keeps its measurements if it restarts.
-3. **Deploy a new CVM** next to the old one, with `OS_IMAGE=dstack-0.6.5` and the new launcher compose. It needs its own host ports.
+1. **Upgrade the host to `dstack-vmm` 0.6.5** ([Dstack Setup](#2-dstack-setup-and-configuration), steps 2–4): build it, add `qemu_hotplug_off = false` and the `[cvm.guest_agent_api]` section to your `vmm.toml`, download the 0.6.5 image next to the 0.5.8 one, and restart the VMM. The running 0.5.8 CVM keeps running, and with `qemu_hotplug_off = false` it keeps its measurements if it restarts.
+2. **Deploy a new CVM** next to the old one, with `OS_IMAGE=dstack-0.6.5` and the new launcher compose. It needs its own host ports, or its own IP on the same host: see [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md). Check it with [`attestation-cli verify`](#verify-node-attestation). Until the votes are in, the contract still rejects it.
+3. **Wait for the votes.** The 0.6.5 OS measurements and the new launcher must be allowed on-chain (see [OS Measurement Voting](#os-measurement-voting) and [Launcher Image Voting](#launcher-image-voting)).
 4. **Migrate the key shares** to the new CVM with the [node migration guide](../node-migration-guide.md), then stop the old CVM.
 
 > **Don't redeploy a 0.5.8 CVM** once the contract runs the 0.6 launcher template: it only accepts launcher composes for dstack 0.6. A 0.5.8 CVM that is already running keeps working, and takes new MPC images on restart.
