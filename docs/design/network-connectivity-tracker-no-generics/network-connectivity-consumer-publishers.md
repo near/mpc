@@ -13,21 +13,20 @@ We assume that the connectivity monitor provides two things:
 We recall from [Network Connectivity Monitor](./network-connectivity-monitor.md), that these are the structures the monitor publishes:
 
 ```rust
-/// `N` is the node, `CS` is the connection status
-pub struct EstablishedConnections<N, CS> {
-    connections: AdjacencyMatrix<N, CS, UndirectedEdge<N>>,
+pub struct EstablishedConnections {
+    connections: AdjacencyMatrix<ParticipantId, ConnectionLagAndUptime, UndirectedEdge<ParticipantId>>,
 }
 
-pub struct FirstHandIndexerHeights<N> {
-    heights: NonEmptyBTreeMap<N, ReportedIndexerHeight>,
+pub struct FirstHandIndexerHeights {
+    heights: NonEmptyBTreeMap<ParticipantId, ReportedIndexerHeight>,
 }
 ```
 
-We further recall that the connection status `CS` can make qualitative statements about a connection:
+We further recall that the connection status `ConnectionLagAndUptime` can make qualitative statements about a connection:
 ```rust
-/// can be used to estimate whether a connection is sufficient for a specific computation duration
-pub trait CheckComputationSupport {
-    fn connection_supports(
+impl ConnectionLagAndUptime {
+    /// can be used to estimate whether a connection is sufficient for a specific computation duration
+    pub fn connection_supports(
         &self,
         duration: ComputationDuration,
         now: Instant,
@@ -49,22 +48,17 @@ pub enum ComputationDuration {
 
 This allows the struct `EstablishedConnections` to return all connections that are insufficient for supporting a given computation. In a healthy network, the set of insufficient connections is always much smaller than the set of sufficient connections.
 ```rust
-impl<N, CS> EstablishedConnections<N, CS>
-where
-    N: Ord + Hash + Clone,
-    // The connection status `CS` must be able to make a verdict whether a specific computation is supported by that connection
-    CS: CheckComputationSupport,
-{
+impl EstablishedConnections {
     /// For each of `durations`, every pair of nodes that cannot currently run a computation of
     /// that duration together: their connection is not established, or does not support it.
     pub fn connections_not_supporting(
         &self,
         durations: &BTreeSet<ComputationDuration>,
         now: Instant,
-    ) -> BTreeMap<ComputationDuration, BTreeSet<UndirectedEdge<N>>> {..};
+    ) -> BTreeMap<ComputationDuration, BTreeSet<UndirectedEdge<ParticipantId>>> {..};
 }
 ```
-We refer the reader to [Network Connectivity Link Observations](./network-connectivity-link-observations.md), for a concrete example of how a connection status or a link observation may look.
+We refer the reader to [Network Connectivity Link Observations](./network-connectivity-link-observations.md), for the definition of the connection status and the link observation.
 
 ## Consumers
 
@@ -91,18 +85,17 @@ pub trait ReadEligibleLeaders<RequestType> {
 ```rust
 /// What the participants of an asset are checked against: all of them must be alive, and no two
 /// of them may share a broken connection.
-/// Generic node type `N` (i.e. ParticipantId, or NodeId)
-pub struct NetworkReadiness<N> {
+pub struct NetworkReadiness {
     /// these participants are all reported to be alive
-    alive_participants: BTreeSet<N>,
+    alive_participants: BTreeSet<ParticipantId>,
     /// these are connections that are interrupted or not stable enough to support a signature or presignature computation.
-    broken_connections: BTreeSet<UndirectedEdge<N>>,
+    broken_connections: BTreeSet<UndirectedEdge<ParticipantId>>,
 }
 
-impl<N> NetworkReadiness<N> {
-    pub fn supports(&self, participants: &[N]) -> bool {
-        let is_alive = |participant: &N| self.alive_participants.contains(participant);
-        let is_broken = |[a, b]: [&N; 2]| self.is_broken(a, b);
+impl NetworkReadiness {
+    pub fn supports(&self, participants: &[ParticipantId]) -> bool {
+        let is_alive = |participant: &ParticipantId| self.alive_participants.contains(participant);
+        let is_broken = |[a, b]: [&ParticipantId; 2]| self.is_broken(a, b);
         participants.iter().all(is_alive)
             && !participants.iter().array_combinations::<2>().any(is_broken)
     }
@@ -176,19 +169,19 @@ flowchart TB
 
 ### Network readiness publisher
 
-The asset queue needs a publisher that maps the connection status `CS` to the required computation durations and maintains a current view of any broken connections or peers that are no longer alive.
+The asset queue needs a publisher that maps the connection status `ConnectionLagAndUptime` to the required computation durations and maintains a current view of any broken connections or peers that are no longer alive.
 
 ```rust
 /// Derives the [`NetworkReadiness`] for computations of each subscribed [`ComputationDuration`]
 /// from the connections and first-hand indexer heights.
 /// Publishes whenever the connections change and on every `publish_interval`.
-pub(super) struct NetworkReadinessPublisher<N, CS> {
+pub(super) struct NetworkReadinessPublisher {
     // this struct needs to know the concept of "me", as aliveness of a peer is a comparative criterion:
     // whether their indexer is lagging behind our indexer.
-    me: N,
+    me: ParticipantId,
     // maximum indexer height lag after which we consider the peer offline
     max_indexer_height_lag: BlockCount,
-    // how often we publish `NetworkReadiness<N>`
+    // how often we publish `NetworkReadiness`
     publish_interval: Duration,
     // concept of time, used for publish interval and may be used for assessing connection quality
     clock: Clock,
@@ -196,26 +189,22 @@ pub(super) struct NetworkReadinessPublisher<N, CS> {
     // inputs
 
     // the publisher has a current view of the network connectivity graph
-    connections: watch::Receiver<Arc<EstablishedConnections<N, CS>>>,
+    connections: watch::Receiver<Arc<EstablishedConnections>>,
     // the publisher also has a current view of indexer block heights we have collected from all peers
-    heights: watch::Receiver<FirstHandIndexerHeights<N>>,
+    heights: watch::Receiver<FirstHandIndexerHeights>,
 
     // outputs
 
     // publishes, for each computation duration, the network readiness
-    readiness: BTreeMap<ComputationDuration, watch::Sender<NetworkReadiness<N>>>,
+    readiness: BTreeMap<ComputationDuration, watch::Sender<NetworkReadiness>>,
 }
 
-impl<N, CS> NetworkReadinessPublisher<N, CS>
-where
-    N: Ord + Hash + Clone,
-    CS: CheckComputationSupport,
-{
+impl NetworkReadinessPublisher {
     // allows a consumer to subscribe to a NetworkReadiness view of a given computation duration.
     pub(super) fn subscribe(
         &mut self,
         duration: ComputationDuration,
-    ) -> watch::Receiver<NetworkReadiness<N>> {
+    ) -> watch::Receiver<NetworkReadiness> {
         self.readiness.entry(duration).or_default().subscribe()
     }
 
@@ -234,9 +223,9 @@ Participant selection is a simple wrapper over the `NetworkReadiness` channels p
 
 ```rust
 struct RandomParticipantClique {
-    any: watch::Receiver<NetworkReadiness<ParticipantId>>,
-    seconds: watch::Receiver<NetworkReadiness<ParticipantId>>,
-    half_minute: watch::Receiver<NetworkReadiness<ParticipantId>>,
+    any: watch::Receiver<NetworkReadiness>,
+    seconds: watch::Receiver<NetworkReadiness>,
+    half_minute: watch::Receiver<NetworkReadiness>,
 }
 
 impl SelectParticipants for RandomParticipantClique {
@@ -254,7 +243,7 @@ impl SelectParticipants for RandomParticipantClique {
 
 ### Eligible Leaders publisher
 
-The request queue needs something that converts `NetworkReadiness<ParticipantId>` and the `FirstHandIndexerHeights` to a view,
+The request queue needs something that converts `NetworkReadiness` and the `FirstHandIndexerHeights` to a view,
 informing it about eligible leaders by request type (and, potentially, by domain id):
 
 ```rust
@@ -270,9 +259,9 @@ pub(crate) struct EligibleLeadersPublisher {
 
     // inputs:
     // a view from the NetworkReadinessPublisher
-    readiness: watch::Receiver<NetworkReadiness<ParticipantId>>,
+    readiness: watch::Receiver<NetworkReadiness>,
     // current block heights
-    heights: watch::Receiver<FirstHandIndexerHeights<ParticipantId>>,
+    heights: watch::Receiver<FirstHandIndexerHeights>,
     // current foreign chain supporters
     foreign_chain_supporters: watch::Receiver<SupportersByForeignChain>,
 

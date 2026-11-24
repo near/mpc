@@ -33,15 +33,14 @@ The design is broken into three orthogonal parts:
 The two views are:
 
 ```rust
-/// Mapping each node `N` in the cluster to its last reported indexer height
-pub struct FirstHandIndexerHeights<N> {
-    heights: NonEmptyBTreeMap<N, ReportedIndexerHeight>,
+/// Mapping each node in the cluster to its last reported indexer height
+pub struct FirstHandIndexerHeights {
+    heights: NonEmptyBTreeMap<ParticipantId, ReportedIndexerHeight>,
 }
 
 /// A current view of established connections. If an edge is not present, it means the connection is not bidirectionally established (i.e. broken in one or both directions).
-/// `N` is the node, `CS` is the connection status
-pub struct EstablishedConnections<N, CS> {
-    connections: AdjacencyMatrix<N, CS, UndirectedEdge<N>>,
+pub struct EstablishedConnections {
+    connections: AdjacencyMatrix<ParticipantId, ConnectionLagAndUptime, UndirectedEdge<ParticipantId>>,
 }
 ```
 
@@ -74,15 +73,14 @@ Terminology:
     - the network layer, which receives peer reports received from connected nodes.
 
 ```rust
-/// Generic over node type `N`. Right now, `N` is `ParticipantId`
-pub enum PeerReport<N> {
-    IndexerHeightReport(IndexerHeightReport<N>),
+pub enum PeerReport {
+    IndexerHeightReport(IndexerHeightReport),
 }
 
-pub struct IndexerHeightReport<N> {
-    pub reporter: N,
+pub struct IndexerHeightReport {
+    pub reporter: ParticipantId,
     // the reporter's own indexer height, under its own key, and the heights it last received from its peers
-    pub indexer_heights: BTreeMap<N, ReportedIndexerHeight>,
+    pub indexer_heights: BTreeMap<ParticipantId, ReportedIndexerHeight>,
 }
 
 pub enum ReportedIndexerHeight {
@@ -120,58 +118,45 @@ flowchart LR
 ```
 
 ```rust
-struct ConnectivityMonitor<N, CS, LS, L> {
+struct ConnectivityMonitor {
     // state
     clock: Clock,
     // for periodically publishing link reports (metrics)
     report_interval: Duration,
 
     // the connection tracker, tracking connection quality and link observations
-    connection_tracker: ConnectionTracker<N, CS, L>,
+    connection_tracker: ConnectionTracker,
 
     // everything we receive from other components
-    peer_reports: mpsc::Receiver<PeerReport<N>>,
+    peer_reports: mpsc::Receiver<PeerReport>,
 
     // everything we send to other components
     /// as soon as a connection changes its status, this is updated
-    connections: watch::Sender<Arc<EstablishedConnections<N, CS>>>,
+    connections: watch::Sender<Arc<EstablishedConnections>>,
     /// the indexer heights we have for ourselves and the peers, updated with every `PeerReport`
-    heights: watch::Sender<FirstHandIndexerHeights<N>>,
+    heights: watch::Sender<FirstHandIndexerHeights>,
     /// updated every report_interval, for metrics.
-    link_statuses: watch::Sender<LinkStatuses<N, LS>>,
+    link_statuses: watch::Sender<LinkStatuses>,
 }
 
 ```
 
 ### Interface of `ConnectivityMonitor`
 
-The `ConnectivityMonitor` is able to process peer reports (c.f. subsequent subsections for explanation on the trait bounds):
+The `ConnectivityMonitor` is able to process peer reports:
 ```rust
-impl<N, CS, LS, L> ConnectivityMonitor<N, CS, LS, L>
-where
-    N: Ord + Hash + Clone,
-    CS: Clone,
-    L: ReportLinkStatus<LinkStatus = LS>,
-{
+impl ConnectivityMonitor {
     /// Returns the monitor, which the caller has to run, and its channels.
     pub fn new(
         clock: Clock,
         report_interval: Duration,
-        nodes: &NonEmptyBTreeSet<N>,
+        nodes: &NonEmptyBTreeSet<ParticipantId>,
         report_buffer_size: NonZeroUsize,
-    ) -> Result<(Self, ConnectivityMonitorHandles<N, CS, LS>), TooManyNodesError>;
-}
+    ) -> Result<(Self, ConnectivityMonitorHandles), TooManyNodesError>;
 
-impl<N, CS, LS, L> ConnectivityMonitor<N, CS, LS, L>
-where
-    N: Ord + Hash + Clone + std::fmt::Debug + std::fmt::Display,
-    CS: Clone + PartialEq,
-    L: UpdateLinkStatus<IndexerHeightLag, LinkStatus = LS>,
-    LS: InferConnection<ConnectionStatus = CS>,
-{
     /// Runs until `cancellation_token` is cancelled or every sender of peer reports is gone.
     pub async fn run(mut self, cancellation_token: CancellationToken);
-    fn apply_and_publish(&mut self, report: PeerReport<N>);
+    fn apply_and_publish(&mut self, report: PeerReport);
 }
 ```
 
@@ -179,79 +164,75 @@ where
 
 ```rust
 /// The channels of a `ConnectivityMonitor` that the other components use.
-pub struct ConnectivityMonitorHandles<N, CS, LS> {
+pub struct ConnectivityMonitorHandles {
     // producers send their peer reports here
-    pub peer_reports: mpsc::Sender<PeerReport<N>>,
-    pub connections: watch::Receiver<Arc<EstablishedConnections<N, CS>>>,
+    pub peer_reports: mpsc::Sender<PeerReport>,
+    pub connections: watch::Receiver<Arc<EstablishedConnections>>,
     // the times stored in `connections` are from this clock, so ask them with its `now`
     pub clock: Clock,
-    pub heights: watch::Receiver<FirstHandIndexerHeights<N>>,
-    pub link_statuses: watch::Receiver<LinkStatuses<N, LS>>,
+    pub heights: watch::Receiver<FirstHandIndexerHeights>,
+    pub link_statuses: watch::Receiver<LinkStatuses>,
 }
 
 /// The status of each link, keyed by its two nodes. For metrics.
-pub struct LinkStatuses<N, LS>(BTreeMap<(N, N), LS>);
+pub struct LinkStatuses(BTreeMap<(ParticipantId, ParticipantId), LinkLagAndUptime>);
 ```
 
 ### Links, Connection Status and Link Observations
 
-Note that at this stage, we do not need to commit to any specific link or connection types. All we need to know is:
-- The graphs index vertices by a label `N`, which represents a node in the MPC cluster. That label can be `ParticipantId`, or, in the future, we may want to use a more precise type, since a single participant could have multiple nodes (e.g. during migrations).
-- A connection status is of some generic type `CS`.
-- The type used to track links and their status is a generic type `L`. For the `ConnectivityMonitor` the exact shape of `L` is completely irrelevant.
-- A link status is of some generic type `LS`. It is what the link type `L` reports about itself (`L::LinkStatus`).
-- A link observation is of some type `O`. Unlike the types above, `O` is not a free parameter of the `ConnectivityMonitor`: it is determined by the `PeerReport` it is derived from. Currently, we only have one peer report and the only link observation type derived form it is `IndexerHeightLag` (c.f. [Network Connectivity Link Observations](./network-connectivity-link-observations.md)). In the future, we may add more peer reports and more observation types (such as results from echo-connection checks).
+The `ConnectivityMonitor` works with the following types:
+- The graphs index vertices by `ParticipantId`, which represents a node in the MPC cluster. In the future, we may want to use a more precise type, since a single participant could have multiple nodes (e.g. during migrations).
+- A connection status is a `ConnectionLagAndUptime`.
+- The type used to track a link and its status is `LagsAndUptimeHistory`.
+- A link status is a `LinkLagAndUptime`. It is what a `LagsAndUptimeHistory` reports about itself.
+- A link observation is an `IndexerHeightLag`. It is derived from the `IndexerHeightReport`, which currently is our only peer report. In the future, we may add more peer reports and more observation types (such as results from echo-connection checks).
 
-Now, we do require these types to fulfill certain traits:
-- The link type `L` must be able to report link status `LS` (the `LinkStatuses<N, LS>` above), which helps determine whether an observation led to a link status change.
+The connection status, link, link status and link observation types are defined in [Network Connectivity Link Observations](./network-connectivity-link-observations.md). Here, we only list what the `ConnectivityMonitor` and the consumers use of them:
+- The link `LagsAndUptimeHistory` reports its link status (the `LinkStatuses` above), which helps determine whether an observation led to a link status change.
 ```rust
-pub trait ReportLinkStatus {
-    type LinkStatus;
-    fn link_status(&self) -> Self::LinkStatus;
+impl LagsAndUptimeHistory {
+    pub fn link_status(&self) -> LinkLagAndUptime;
 }
 ```
-- The link type `L` must be able to process any of the link observations that the producers want the connectivity monitor to process. Additionally, it must report whether an observation led to a new link status:
+- The link `LagsAndUptimeHistory` processes the link observations that the producers want the connectivity monitor to process. Additionally, it reports whether an observation led to a new link status:
 ```rust
-/// Implemented once per kind of observation `O` a link can take in. Reports the new status in case it changed.
-pub trait UpdateLinkStatus<O>: ReportLinkStatus + Default {
-    fn update_with_observation(
+impl LagsAndUptimeHistory {
+    /// Reports the new status in case it changed.
+    pub fn update_with_observation(
         &mut self,
-        observation: O,
+        observation: IndexerHeightLag,
         at: Instant,
-    ) -> LinkStatusChange<Self::LinkStatus>;
+    ) -> LinkStatusChange;
 }
 
-pub enum LinkStatusChange<LS> {
+pub enum LinkStatusChange {
     // status changed, contained is the new status
-    Changed(LS),
+    Changed(LinkLagAndUptime),
     Unchanged,
 }
 ```
-- The connection status `CS` for a connection `A <--> B` must be inferrable from the link statuses `LS` of the two links `A --> B` and `B --> A`:
+- The connection status `ConnectionLagAndUptime` for a connection `A <--> B` is inferred from the link statuses `LinkLagAndUptime` of the two links `A --> B` and `B --> A`:
 ```rust
-/// Implemented by a link status type.
-pub trait InferConnection: Sized {
-    type ConnectionStatus;
+impl LinkLagAndUptime {
     /// The connection that the two links between a pair of nodes add up to. A link is `None`
     /// while it has no observations.
-    fn infer_connection(
+    pub fn infer_connection(
         a: Option<Self>,
         b: Option<Self>,
-    ) -> InferredConnection<Self::ConnectionStatus>;
+    ) -> InferredConnection;
 }
 
 /// What two link statuses add up to: a connection with a status, or no connection.
-/// `CS` is the generic connection status
-pub enum InferredConnection<CS> {
-    Established(CS),
+pub enum InferredConnection {
+    Established(ConnectionLagAndUptime),
     NotEstablished,
 }
 ```
-- The connection status `CS` must be able to make qualitative statements about a connection's quality (c.f. [Network readiness publisher](./network-connectivity-consumer-publishers.md#network-readiness-publisher)):
+- The connection status `ConnectionLagAndUptime` makes qualitative statements about a connection's quality (c.f. [Network readiness publisher](./network-connectivity-consumer-publishers.md#network-readiness-publisher)):
 ```rust
-/// can be used to estimate whether a connection is sufficient for a specific computation duration
-pub trait CheckComputationSupport {
-    fn connection_supports(
+impl ConnectionLagAndUptime {
+    /// can be used to estimate whether a connection is sufficient for a specific computation duration
+    pub fn connection_supports(
         &self,
         duration: ComputationDuration,
         now: Instant,
@@ -270,24 +251,23 @@ pub enum ComputationDuration {
     HalfMinute,
 }
 ```
-- And lastly, the link observations of type `O` can be derived from the provided `PeerReport`:
+- And lastly, the link observations `IndexerHeightLag` are derived from the `IndexerHeightReport` of the provided `PeerReport`:
 ```rust
-/// Implemented by a report type: the link observations derived from it.
-pub trait DeriveLinkObservations<N> {
-    type Observation;
-    fn derive_link_observations(
+impl IndexerHeightReport {
+    /// The link observations derived from this report.
+    pub fn derive_link_observations(
         &self,
-        context: &ObservationContext<'_, N>,
-    ) -> Vec<DerivedLinkObservation<N, Self::Observation>>;
+        context: &ObservationContext<'_>,
+    ) -> Vec<DerivedLinkObservation>;
 }
 
-pub struct DerivedLinkObservation<N, O> {
-    pub link: DirectedEdge<N>,
-    pub observation: O,
+pub struct DerivedLinkObservation {
+    pub link: DirectedEdge<ParticipantId>,
+    pub observation: IndexerHeightLag,
 }
 
-pub struct ObservationContext<'a, N> {
-    pub first_hand_indexer_heights: &'a FirstHandIndexerHeights<N>,
+pub struct ObservationContext<'a> {
+    pub first_hand_indexer_heights: &'a FirstHandIndexerHeights,
 }
 
 ```
@@ -300,10 +280,10 @@ flowchart LR
     connection["connection status,<br/>one per connection"]
     support["ComputationSupported"]
 
-    report -- "DeriveLinkObservations" --> observation
-    observation -- "UpdateLinkStatus" --> link
-    link -- "InferConnection" --> connection
-    connection -- "CheckComputationSupport" --> support
+    report -- "derive_link_observations" --> observation
+    observation -- "update_with_observation" --> link
+    link -- "infer_connection" --> connection
+    connection -- "connection_supports" --> support
 ```
 
 ### `ConnectionTracker`
@@ -312,42 +292,30 @@ The `ConnectionTracker` is the component responsible for maintaining the `Establ
 Besides the undirected `EstablishedConnections` graph, it keeps a directed graph to track network links `A --> B`. This directed graph is updated with every new link observation.
 
 ```rust
-/// N is node (e.g. `ParticipantId`), CS is connection status, L is link
-pub struct ConnectionTracker<N, CS, L> {
+pub struct ConnectionTracker {
     // a link is a directed connection node A --> B,
     // each link is measured, such that we can infer link quality from the measurements.
-    link_measurements: LinkMeasurements<N, L>,
+    link_measurements: LinkMeasurements,
     // a connection is a bidirectional connection `A <--> B`.
     // It is as good as the worse of the two links `A --> B` and `B --> A`
-    established_connections: EstablishedConnections<N, CS>,
+    established_connections: EstablishedConnections,
 }
 
-/// `N` is the node, `L` is the link type
-pub struct LinkMeasurements<N, L> {
-    measurements: AdjacencyMatrix<N, L, DirectedEdge<N>>,
+pub struct LinkMeasurements {
+    measurements: AdjacencyMatrix<ParticipantId, LagsAndUptimeHistory, DirectedEdge<ParticipantId>>,
 }
 ```
 
 The interface of the `ConnectionTracker` reflects what it does:
 - it processes a link observation `A --> B` via `update_with_observation` and reports whether the observation changed the qualitative verdict about connection `A <--> B`;
 ```rust
-impl<N: Ord + Hash + Clone, CS, L> ConnectionTracker<N, CS, L> {
+impl ConnectionTracker {
     // this is to process a new link observation
-    pub fn update_with_observation<O>(
+    pub fn update_with_observation(
         &mut self,
-        observation: DerivedLinkObservation<N, O>,
+        observation: DerivedLinkObservation,
         now: Instant,
-    ) -> Result<ConnectionChanged, UnknownNodeError<N>>
-    where
-        // the link type `L` must be able to process observation of type `O`
-        L: UpdateLinkStatus<O>,
-        // the link type `L` must be able to infer a connection status of type `CS`
-        // from the two links.
-        // I.e. the connection A <--> B must be inferrable from links A --> B and B --> A.
-        L::LinkStatus: InferConnection<ConnectionStatus = CS>,
-        // we must be able to tell whether the connection status `CS` changed
-        CS: PartialEq,
-    {...}
+    ) -> Result<ConnectionChanged, UnknownNodeError<ParticipantId>> {...}
 }
 
 /// Whether an update changed the connection it was applied to.
@@ -358,21 +326,18 @@ pub enum ConnectionChanged {
 ```
 - it provides a view of the current connection status via `established_connections`.
 ```rust
-impl<N: Ord + Hash + Clone, CS, L> ConnectionTracker<N, CS, L> {
+impl ConnectionTracker {
     // this returns the currently established connections
-    pub fn established_connections(&self) -> &EstablishedConnections<N, CS>
+    pub fn established_connections(&self) -> &EstablishedConnections
 }
 ```
 - it additionally offers a constructor and a link status report, which may be used for improving observability (i.e. metrics), but is not assumed to be of interest to any of the consumers:
 ```rust
-impl<N: Ord + Hash + Clone, CS, L> ConnectionTracker<N, CS, L> {
-    // constructor, taking as input the current network participants (generic type `N`)
-    pub fn new(nodes: &NonEmptyBTreeSet<N>) -> Result<Self, TooManyNodesError>
+impl ConnectionTracker {
+    // constructor, taking as input the current network participants
+    pub fn new(nodes: &NonEmptyBTreeSet<ParticipantId>) -> Result<Self, TooManyNodesError>
     // this is for metrics only, we may want to periodically track individual link statuses
-    pub fn report_link_statuses(&self) -> LinkStatuses<N, L::LinkStatus>
-    where
-        L: ReportLinkStatus,
-    {..}
+    pub fn report_link_statuses(&self) -> LinkStatuses {..}
 }
 ```
 
