@@ -428,7 +428,6 @@ mod tests {
             }),
             payload_version: dtos::ForeignTxPayloadVersion::V1,
             expected_payload_hash: None,
-            entropy: [4; 32],
             timestamp_nanosec: 0,
             domain_id: mpc_primitives::domain::DomainId(0),
         }

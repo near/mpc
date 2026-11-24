@@ -119,7 +119,7 @@ fn load_measurements(
                 .context("parsing expected measurements JSON")?;
             Ok(vec![measurement])
         }
-        None => Ok(vec![mpc_attestation::attestation::default_measurements()]),
+        None => Ok(mpc_attestation::attestation::production_measurements().into()),
     }
 }
 
@@ -178,6 +178,26 @@ mod tests {
         assert_eq!(
             runtime.key_provider_event_digest,
             compiled.key_provider_event_digest
+        );
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn load_measurements__should_return_dstack_0_6_5_and_0_5_8_sets_when_no_file_given() {
+        // Given
+        let dstack_0_6_5 = include_str!("../../mpc-attestation/assets/tcb_info.json");
+        let dstack_0_5_8 = include_str!("../../mpc-attestation/assets/tcb_info_dstack_0.5.8.json");
+
+        // When
+        let measurements = load_measurements(&None).unwrap();
+
+        // Then
+        assert_eq!(
+            measurements,
+            vec![
+                parse_measurements_from_json(dstack_0_6_5).unwrap(),
+                parse_measurements_from_json(dstack_0_5_8).unwrap(),
+            ]
         );
     }
 

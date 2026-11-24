@@ -30,7 +30,7 @@ mod sandbox_test_methods;
 pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
-    foreign_chains_metadata::ForeignChainsMetadata,
+    foreign_chains_metadata::ForeignChainsMetadata, primitives::domain::AddDomainsVotes,
     primitives::threshold_votes::GovernanceThresholdParametersVotes, tee::tee_state::TeeState,
     tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
@@ -72,10 +72,13 @@ pub struct MpcContract {
     parameters_votes: GovernanceThresholdParametersVotes,
     /// Genesis hash of the chain this contract runs on, which a contract cannot read from its
     /// environment. The launcher compose carries it, so that TEE nodes follow no other chain.
-    /// [`None`] if the contract was migrated on a chain other than mainnet or testnet; the
-    /// launcher then refuses to start its TEE nodes.
-    // TODO(#5254): let participants vote in a genesis hash while it is unset
+    /// [`None`] if the contract was migrated on a chain other than mainnet or testnet, until a
+    /// config update provides [`Config::migration_genesis_hash`]. While it is [`None`], the
+    /// launcher refuses to start its TEE nodes.
+    // TODO(#5267): require the genesis hash once every contract has one
     genesis_hash: Option<GenesisHash>,
+    /// Pending votes to add domains; storage-backed, so kept outside [`ProtocolContractState`].
+    add_domains_votes: AddDomainsVotes,
 }
 
 impl Default for MpcContract {

@@ -288,6 +288,13 @@ impl TeeState {
             .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
 
+    pub fn add_compose_hashes(&mut self, genesis_hash: &GenesisHash, upgrade_deadline: Duration) {
+        for mpc_image_hash in self.get_allowed_mpc_docker_image_hashes(upgrade_deadline) {
+            self.allowed_launcher_images
+                .add_mpc_image_compose_hashes(&mpc_image_hash, Some(genesis_hash));
+        }
+    }
+
     pub fn get_allowed_launcher_compose_hashes(&self) -> Vec<LauncherDockerComposeHash> {
         self.allowed_launcher_images.all_compose_hashes()
     }
@@ -541,7 +548,7 @@ mod tests {
     };
     use test_utils::attestation::{
         VALID_ATTESTATION_TIMESTAMP, collateral_dates, image_digest, launcher_compose_digest,
-        launcher_image_hash, mock_expiring_at, mock_tcb_info, verified_report,
+        launcher_image_hash, measurements, mock_expiring_at, mock_tcb_info, verified_report,
     };
 
     #[test]
@@ -1082,6 +1089,7 @@ mod tests {
             &mut tee_state,
             image_digest(),
             launcher_image_hash(),
+            measurements(),
             Some(launcher_compose_digest()),
         );
         (tee_state, dstack_fixture_node())

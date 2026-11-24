@@ -250,8 +250,9 @@ async fn handle_message(
         }
     }
 
-    crate::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT.set(u64::from(block_height) as i64);
-    crate::metrics::MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS.set(
+    chain_gateway::event_subscriber::metrics::MPC_INDEXER_LATEST_BLOCK_HEIGHT
+        .set(i64::try_from(u64::from(block_height)).unwrap_or(i64::MAX));
+    chain_gateway::event_subscriber::metrics::MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS.set(
         i64::try_from(streamer_message.block.header.timestamp_nanosec / 1_000_000_000)
             .unwrap_or(i64::MAX),
     );
@@ -263,7 +264,6 @@ async fn handle_message(
                 height: streamer_message.block.header.height.into(),
                 prev_hash: streamer_message.block.header.prev_hash,
                 last_final_block: streamer_message.block.header.last_final_block,
-                entropy: streamer_message.block.header.random_value.into(),
                 timestamp_nanosec: streamer_message.block.header.timestamp_nanosec,
             },
             signature_requests,
