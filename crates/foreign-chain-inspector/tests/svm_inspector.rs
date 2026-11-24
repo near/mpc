@@ -27,7 +27,7 @@ use std::{
 const TX_SLOT: u64 = 296_112_296;
 const ACCOUNT_OWNER: SvmAddress = SvmAddress([8; 32]);
 
-/// Like `SequentialResponseMockClientBuilder`, but records each request's method and
+/// Like [`common::SequentialResponseMockClientBuilder`], but records each request's method and
 /// params — the `common` mocks discard both, so they cannot pin what the inspector sends.
 #[derive(Clone)]
 struct RecordingClient(Arc<RecordingClientInner>);
@@ -207,8 +207,18 @@ async fn extract_from(
 )]
 #[case::distinct_accounts(
     vec![6, 7],
-    vec![confirmed_tx(), account_info(b"first"), account_info(b"second")],
-    vec![account_state(b"first"), account_state(b"second")],
+    vec![
+        confirmed_tx(),
+        account_info(b"first"),
+        patched(account_info(b"second"), "/value/owner", json!(key(9))),
+    ],
+    vec![
+        account_state(b"first"),
+        SvmExtractedValue::AccountState(SvmAccount {
+            owner: SvmAddress([9; 32]),
+            data: b"second".to_vec(),
+        }),
+    ],
     vec![key(6), key(7)],
 )]
 #[tokio::test]
