@@ -201,7 +201,8 @@ range = [
 ]
 
 # What the CVM's guest agent (port 8090) serves without a token. The list replaces the default;
-# guest:containers and guest:logs let you read the container logs from the host.
+# guest:containers and guest:logs let you read the container logs from the host. Host-side, not
+# measured, so changing it doesn't affect attestation.
 [cvm.guest_agent_api]
 anonymous_scopes = ["guest:dashboard", "guest:version", "guest:health", "guest:info", "guest:containers", "guest:logs"]
 
@@ -2601,7 +2602,7 @@ The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new 
 3. **Wait for the votes.** The 0.6.5 OS measurements and the new launcher must be allowed on-chain (see [OS Measurement Voting](#os-measurement-voting) and [Launcher Image Voting](#launcher-image-voting)).
 4. **Migrate the key shares** to the new CVM with the [node migration guide](../node-migration-guide.md). Then stop the old CVM, and stop and disable the 0.5.8 VMM.
 
-> **Don't redeploy a 0.5.8 CVM** once the contract runs the 0.6 launcher template: it only accepts launcher composes for dstack 0.6. A 0.5.8 CVM that is already running keeps working, and takes new MPC images on restart.
+> **Don't use dstack 0.5.8 with the new launcher**: it needs a dstack 0.6 guest. Once the contract runs the new launcher template, deploy new CVMs on 0.6.5 only. A 0.5.8 CVM that is already running keeps working with its old launcher, and takes new MPC images on restart.
 
 ### Launcher Image Voting
 
