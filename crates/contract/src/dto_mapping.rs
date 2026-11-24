@@ -951,7 +951,12 @@ impl IntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
             epoch_id: self.epoch_id(),
             domain: self.domain().clone(),
             parameters: self.proposed_parameters().into_dto_type(),
-            instance: self.instance().as_ref().map(|i| i.into_dto_type()),
+            // A timed out instance stays in storage until the next call on this key event.
+            instance: self
+                .instance()
+                .as_ref()
+                .filter(|instance| instance.active())
+                .map(|instance| instance.into_dto_type()),
             next_attempt_id: self.next_attempt_id(),
         }
     }

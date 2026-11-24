@@ -240,6 +240,7 @@ pub struct KeyEvent {
     pub epoch_id: EpochId,
     pub domain: DomainConfig,
     pub parameters: GovernanceThresholdParameters,
+    /// The active attempt. [`None`] if none was started or the last one timed out.
     pub instance: Option<KeyEventInstance>,
     pub next_attempt_id: AttemptId,
 }
