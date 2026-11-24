@@ -8,6 +8,7 @@ use near_async::ActorSystem;
 use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_indexer_primitives::CryptoHash;
 use near_store::db::RocksDB;
 use nearcore::{NearConfig, NearNode};
 use tokio::sync::mpsc::Receiver;
@@ -207,6 +208,11 @@ impl ChainGateway {
     /// Can be removed once <https://github.com/near/nearcore/issues/16004> is resolved.
     pub async fn ensure_head_follows_tip(&self) {
         nearcore_workarounds::ensure_head_follows_tip(&self.client).await
+    }
+
+    /// Hash of the genesis block of the chain the node follows.
+    pub async fn genesis_hash(&self) -> Result<CryptoHash, NearClientError> {
+        self.client.genesis_hash().await
     }
 }
 
