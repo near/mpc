@@ -11,14 +11,14 @@ Concretely, in this document, we explore how we can leverage an `IndexerHeightRe
 flowchart LR
     observation["IndexerHeightLag"]
 
-    subgraph history["LagsAndUptimeHistory"]
+    subgraph history["LinkHistory"]
         lags["BlockHeightLags"]
         uptime["UptimeHistory"]
     end
 
-    link["LinkLagAndUptime"]
-    opposite["LinkLagAndUptime<br/>of the opposite link"]
-    connection["ConnectionLagAndUptime:<br/>RoundTripLag and<br/>two UptimeSummary"]
+    link["LinkStatus"]
+    opposite["LinkStatus<br/>of the opposite link"]
+    connection["ConnectionStatus:<br/>RoundTripLag and<br/>two UptimeSummary"]
 
     observation -- "lag" --> lags
     observation -- "up or down" --> uptime
@@ -114,7 +114,7 @@ impl IndexerHeightReport {
 
 ## The link status
 
-Recall the link status `LinkLagAndUptime` from [Network Connectivity Monitor](./network-connectivity-monitor.md).
+Recall the `LinkStatus` from [Network Connectivity Monitor](./network-connectivity-monitor.md).
 We want the link status to describe:
 - whether the link is up or down
 - for how long the link has been up
@@ -122,7 +122,7 @@ We want the link status to describe:
 - if the link is qualitatively insufficient (is too slow? do block heights arrive too late?)
 
 ```rust
-pub enum LinkLagAndUptime {
+pub enum LinkStatus {
     /// The last observation was `Absent`.
     Down,
     Up(UpLink),
@@ -151,13 +151,13 @@ Now, the link status is a condensed view of the link history, aggregated from a 
 The idea is that we use uptime history to model the probability that the link will remain up for a given duration.
 We also track block height lags, as even though a link may be up, if it is very slow, it may not be suitable for some computations.
 
-The link is what processes and stores our link observations of type `IndexerHeightLag`, and produces a `LinkLagAndUptime`:
+The `LinkHistory` is what processes and stores our link observations of type `IndexerHeightLag`, and produces a `LinkStatus`:
 
 ```rust
 /// What has been measured about one directed link: how far the heights it carries lag behind, and
 /// when it was up.
 #[derive(Default)]
-pub struct LagsAndUptimeHistory {
+pub struct LinkHistory {
     lags: BlockHeightLags,
     uptime_history: UptimeHistory,
 }
@@ -179,14 +179,14 @@ struct UptimeHistory {
 ```
 
 ```rust
-impl LagsAndUptimeHistory {
-    pub fn link_status(&self) -> LinkLagAndUptime {
+impl LinkHistory {
+    pub fn link_status(&self) -> LinkStatus {
         match self.uptime_history.summary() {
-            Some(uptime) => LinkLagAndUptime::Up(UpLink {
+            Some(uptime) => LinkStatus::Up(UpLink {
                 mean_lag: self.lags.mean(),
                 uptime,
             }),
-            None => LinkLagAndUptime::Down,
+            None => LinkStatus::Down,
         }
     }
 
@@ -223,7 +223,7 @@ impl LagsAndUptimeHistory {
 And finally, recall that two link statuses `A --> B` and `B --> A` must yield the connection status for `A <--> B`:
 
 ```rust
-impl LinkLagAndUptime {
+impl LinkStatus {
     pub fn infer_connection(
         a: Option<Self>,
         b: Option<Self>,
@@ -231,22 +231,21 @@ impl LinkLagAndUptime {
         let (Some(Self::Up(a)), Some(Self::Up(b))) = (a, b) else {
             return InferredConnection::NotEstablished;
         };
-        match ConnectionLagAndUptime::new(a, b) {
+        match ConnectionStatus::new(a, b) {
             Some(connection) => InferredConnection::Established(connection),
             None => InferredConnection::NotEstablished,
         }
     }
 }
 
-/// the actual connection status
-pub struct ConnectionLagAndUptime {
+pub struct ConnectionStatus {
     round_trip_lag: RoundTripLag,
     /// One per link, each judged on its own. Sorted, so that the status does not depend on which
     /// link changed last.
     uptimes: [UptimeSummary; 2],
 }
 
-impl ConnectionLagAndUptime {
+impl ConnectionStatus {
     /// `None` if the round trip lag of the two links is too high for a connection.
     fn new(a: UpLink, b: UpLink) -> Option<Self> {
         let round_trip_lag = RoundTripLag::new(a.mean_lag, b.mean_lag)?;
@@ -283,7 +282,7 @@ impl RoundTripLag {
 
 Finally, the connection status can be used to make a prediction about whether the connection will live long enough to support a computation of a given duration.
 ```rust
-impl ConnectionLagAndUptime {
+impl ConnectionStatus {
     pub fn connection_supports(
         &self,
         duration: ComputationDuration,

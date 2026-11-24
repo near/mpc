@@ -14,7 +14,7 @@ We recall from [Network Connectivity Monitor](./network-connectivity-monitor.md)
 
 ```rust
 pub struct EstablishedConnections {
-    connections: AdjacencyMatrix<ParticipantId, ConnectionLagAndUptime, UndirectedEdge<ParticipantId>>,
+    connections: AdjacencyMatrix<ParticipantId, ConnectionStatus, UndirectedEdge<ParticipantId>>,
 }
 
 pub struct FirstHandIndexerHeights {
@@ -22,9 +22,9 @@ pub struct FirstHandIndexerHeights {
 }
 ```
 
-We further recall that the connection status `ConnectionLagAndUptime` can make qualitative statements about a connection:
+We further recall that the `ConnectionStatus` can make qualitative statements about a connection:
 ```rust
-impl ConnectionLagAndUptime {
+impl ConnectionStatus {
     /// can be used to estimate whether a connection is sufficient for a specific computation duration
     pub fn connection_supports(
         &self,
@@ -169,7 +169,7 @@ flowchart TB
 
 ### Network readiness publisher
 
-The asset queue needs a publisher that maps the connection status `ConnectionLagAndUptime` to the required computation durations and maintains a current view of any broken connections or peers that are no longer alive.
+The asset queue needs a publisher that maps the `ConnectionStatus` to the required computation durations and maintains a current view of any broken connections or peers that are no longer alive.
 
 ```rust
 /// Derives the [`NetworkReadiness`] for computations of each subscribed [`ComputationDuration`]

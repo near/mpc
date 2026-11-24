@@ -40,7 +40,7 @@ pub struct FirstHandIndexerHeights {
 
 /// A current view of established connections. If an edge is not present, it means the connection is not bidirectionally established (i.e. broken in one or both directions).
 pub struct EstablishedConnections {
-    connections: AdjacencyMatrix<ParticipantId, ConnectionLagAndUptime, UndirectedEdge<ParticipantId>>,
+    connections: AdjacencyMatrix<ParticipantId, ConnectionStatus, UndirectedEdge<ParticipantId>>,
 }
 ```
 
@@ -175,28 +175,28 @@ pub struct ConnectivityMonitorHandles {
 }
 
 /// The status of each link, keyed by its two nodes. For metrics.
-pub struct LinkStatuses(BTreeMap<(ParticipantId, ParticipantId), LinkLagAndUptime>);
+pub struct LinkStatuses(BTreeMap<(ParticipantId, ParticipantId), LinkStatus>);
 ```
 
 ### Links, Connection Status and Link Observations
 
 The `ConnectivityMonitor` works with the following types:
 - The graphs index vertices by `ParticipantId`, which represents a node in the MPC cluster. In the future, we may want to use a more precise type, since a single participant could have multiple nodes (e.g. during migrations).
-- A connection status is a `ConnectionLagAndUptime`.
-- The type used to track a link and its status is `LagsAndUptimeHistory`.
-- A link status is a `LinkLagAndUptime`. It is what a `LagsAndUptimeHistory` reports about itself.
+- `ConnectionStatus` is the status of a connection `A <--> B`.
+- `LinkHistory` is the type used to track a link `A --> B` and its status.
+- `LinkStatus` is the status of a link. It is what a `LinkHistory` reports about itself.
 - A link observation is an `IndexerHeightLag`. It is derived from the `IndexerHeightReport`, which currently is our only peer report. In the future, we may add more peer reports and more observation types (such as results from echo-connection checks).
 
 The connection status, link, link status and link observation types are defined in [Network Connectivity Link Observations](./network-connectivity-link-observations.md). Here, we only list what the `ConnectivityMonitor` and the consumers use of them:
-- The link `LagsAndUptimeHistory` reports its link status (the `LinkStatuses` above), which helps determine whether an observation led to a link status change.
+- The `LinkHistory` reports its `LinkStatus` (the `LinkStatuses` above), which helps determine whether an observation led to a link status change.
 ```rust
-impl LagsAndUptimeHistory {
-    pub fn link_status(&self) -> LinkLagAndUptime;
+impl LinkHistory {
+    pub fn link_status(&self) -> LinkStatus;
 }
 ```
-- The link `LagsAndUptimeHistory` processes the link observations that the producers want the connectivity monitor to process. Additionally, it reports whether an observation led to a new link status:
+- The `LinkHistory` processes the link observations that the producers want the connectivity monitor to process. Additionally, it reports whether an observation led to a new link status:
 ```rust
-impl LagsAndUptimeHistory {
+impl LinkHistory {
     /// Reports the new status in case it changed.
     pub fn update_with_observation(
         &mut self,
@@ -207,13 +207,13 @@ impl LagsAndUptimeHistory {
 
 pub enum LinkStatusChange {
     // status changed, contained is the new status
-    Changed(LinkLagAndUptime),
+    Changed(LinkStatus),
     Unchanged,
 }
 ```
-- The connection status `ConnectionLagAndUptime` for a connection `A <--> B` is inferred from the link statuses `LinkLagAndUptime` of the two links `A --> B` and `B --> A`:
+- The `ConnectionStatus` for a connection `A <--> B` is inferred from the `LinkStatus` of each of the two links `A --> B` and `B --> A`:
 ```rust
-impl LinkLagAndUptime {
+impl LinkStatus {
     /// The connection that the two links between a pair of nodes add up to. A link is `None`
     /// while it has no observations.
     pub fn infer_connection(
@@ -224,13 +224,13 @@ impl LinkLagAndUptime {
 
 /// What two link statuses add up to: a connection with a status, or no connection.
 pub enum InferredConnection {
-    Established(ConnectionLagAndUptime),
+    Established(ConnectionStatus),
     NotEstablished,
 }
 ```
-- The connection status `ConnectionLagAndUptime` makes qualitative statements about a connection's quality (c.f. [Network readiness publisher](./network-connectivity-consumer-publishers.md#network-readiness-publisher)):
+- The `ConnectionStatus` makes qualitative statements about a connection's quality (c.f. [Network readiness publisher](./network-connectivity-consumer-publishers.md#network-readiness-publisher)):
 ```rust
-impl ConnectionLagAndUptime {
+impl ConnectionStatus {
     /// can be used to estimate whether a connection is sufficient for a specific computation duration
     pub fn connection_supports(
         &self,
@@ -302,7 +302,7 @@ pub struct ConnectionTracker {
 }
 
 pub struct LinkMeasurements {
-    measurements: AdjacencyMatrix<ParticipantId, LagsAndUptimeHistory, DirectedEdge<ParticipantId>>,
+    measurements: AdjacencyMatrix<ParticipantId, LinkHistory, DirectedEdge<ParticipantId>>,
 }
 ```
 
