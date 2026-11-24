@@ -73,7 +73,7 @@ pub struct MpcContract {
     /// Genesis hash of the chain this contract runs on, which a contract cannot read from its
     /// environment. The launcher compose carries it, so that TEE nodes follow no other chain.
     /// [`None`] if the contract was migrated on a chain other than mainnet or testnet, until a
-    /// later migration stores [`Config::migration_genesis_hash`]. While it is [`None`], the
+    /// config update provides [`Config::migration_genesis_hash`]. While it is [`None`], the
     /// launcher refuses to start its TEE nodes.
     // TODO(#5267): require the genesis hash once every contract has one
     genesis_hash: Option<GenesisHash>,
