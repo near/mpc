@@ -700,9 +700,8 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
     }
 }
 
-/// Poll the backup service's storage until it holds a keyshare file for `epoch_id`.
-/// Waits until the backup holds only the given keyset: its file appears before the keyset it
-/// replaced is deleted.
+/// Polls the backup service's storage until it holds only the keyshare file for `epoch_id`:
+/// the new file appears before the one it replaces is deleted.
 async fn wait_for_backed_up_epoch(
     backup_service: &BackupService,
     epoch_id: u64,
