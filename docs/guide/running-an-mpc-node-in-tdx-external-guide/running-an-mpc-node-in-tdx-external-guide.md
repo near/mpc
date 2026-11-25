@@ -2609,20 +2609,33 @@ The new CVM needs a launcher compose rendered from the new template. Check out t
 
 #### Option B: same machine, second VMM
 
-1. **Install `dstack-vmm` 0.6.5 next to the 0.5.8 one.** Follow [Dstack Setup](#2-dstack-setup-and-configuration), steps 1–4, in a separate directory (for example `/opt/mpc/dstack-0.6.5` instead of `/opt/mpc/dstack`), and run it as a second systemd unit (for example `dstack-vmm-0.6.5.service`). The key provider stays as it is; both VMMs use it.
+1. **Install `dstack-vmm` 0.6.5 next to the 0.5.8 one.** Follow [Dstack Setup](#2-dstack-setup-and-configuration), steps 1–4, in a separate directory: clone with `git clone https://github.com/Dstack-TEE/dstack dstack-0.6.5`, so you get `/opt/mpc/dstack-0.6.5` next to `/opt/mpc/dstack`. Run it as a second systemd unit (for example `dstack-vmm-0.6.5.service`). The key provider stays as it is; both VMMs use it.
 2. **Give it its own ports.** In its `vmm.toml`, change these so they don't clash with the 0.5.8 VMM:
    - `port`, for example `11000` instead of `10000`;
    - `cid_start`, for example `31000`: the CID ranges (`cid_start` to `cid_start + cid_pool_size`) of the two VMMs must not overlap;
    - `port` under `[host_api]`, for example `9301` instead of `9300`.
-3. **Give the new CVM its own IP.** Use the IP and port-binding steps of [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md). That guide prefers one VMM for both CVMs; here you run two, as in its "Two `dstack-vmm` instances" note, since the versions differ.
-4. **Deploy a new CVM on the 0.6.5 VMM**, with `OS_IMAGE=dstack-0.6.5`, the new launcher compose, and `VMM_RPC` and `--base-path` pointing at the 0.6.5 VMM (for example `http://127.0.0.1:11000` and `/opt/mpc/dstack-0.6.5`). Leave the 0.5.8 VMM and its CVM running as they are.
+3. **Bind the old CVM to its own IP.** The new CVM needs a second public IP, and both CVMs use the same public ports. If your 0.5.8 CVM binds them on `0.0.0.0` (the single-node default), the new CVM can't bind them and fails to start. Re-bind the old CVM to IP 1 on the **0.5.8** VMM. This means a short downtime, and doesn't change its measurements:
+
+   ```bash
+   VMM_CLI="python3 /opt/mpc/dstack/vmm/src/vmm-cli.py --url http://127.0.0.1:10000"
+   $VMM_CLI stop <vm-id>
+   $VMM_CLI lsvm   # wait until it shows "stopped" before update-ports
+   $VMM_CLI update-ports <vm-id> \
+     --port tcp:<IP_1>:80:80 --port tcp:<IP_1>:8080:8080 \
+     --port tcp:<IP_1>:24567:24567 --port tcp:<IP_1>:8079:8079 \
+     --port tcp:127.0.0.1:3030:3030 --port tcp:127.0.0.1:<dstack_agent_port>:8090
+   $VMM_CLI start <vm-id>
+   ```
+
+   `update-ports` replaces the whole list, so pass every forward the CVM has today (`$VMM_CLI lsvm --json` shows them under `ports`).
+4. **Deploy a new CVM on the 0.6.5 VMM**, bound to IP 2: use the IP and port-binding steps of [Running multiple MPC nodes on one host](../running-multiple-mpc-nodes-on-one-host.md). That guide prefers one VMM for both CVMs; here you run two, as in its "Two `dstack-vmm` instances" note, since the versions differ. Use `OS_IMAGE=dstack-0.6.5`, the new launcher compose, and `VMM_RPC` and `--base-path` pointing at the 0.6.5 VMM (for example `http://127.0.0.1:11000` and `/opt/mpc/dstack-0.6.5`). Its local ports (`3030`, the agent port) must differ from the old CVM's. Apart from the re-bind, leave the 0.5.8 VMM and its CVM running as they are.
 5. **Check it** with [`attestation-cli verify`](#verify-node-attestation). Until the votes are in, the contract still rejects it.
 
 #### Then, for both options
 
 1. **Wait for the votes.** The 0.6.5 OS measurements and the new launcher must be allowed on-chain (see [OS Measurement Voting](#os-measurement-voting) and [Launcher Image Voting](#launcher-image-voting)).
 2. **Migrate the key shares** to the new CVM with the [node migration guide](../node-migration-guide.md), then stop the old CVM.
-3. **Option B only:** stop and disable the 0.5.8 VMM.
+3. **Option B only:** stop and disable the 0.5.8 VMM. From now on, wherever this guide says `/opt/mpc/dstack`, `:10000` or `dstack-vmm.service`, use the 0.6.5 ones (`/opt/mpc/dstack-0.6.5`, `:11000`, `dstack-vmm-0.6.5.service`).
 
 > **Don't use dstack 0.5.8 with the new launcher**: it needs a dstack 0.6 guest. Once the contract runs the new launcher template, deploy new CVMs on 0.6.5 only. A 0.5.8 CVM that is already running keeps working with its old launcher, and takes new MPC images on restart.
 

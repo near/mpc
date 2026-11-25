@@ -170,7 +170,8 @@ Define 2 external IPs available on the server that will be used by each MPC node
 `port_override = 80` is set by default in `deployment/testnet/{frodo,sam}.toml`, as in every testnet
 and mainnet deployment: each node listens on, and dials every peer at, port 80, whatever port the
 participant URL in the contract has. To use another port, change `port_override` (under
-`[mpc_node_config.node.indexer]`) and the matching `port_mappings` entry before rendering.
+`[mpc_node_config.node.indexer]`) and the matching `port_mappings` entry before rendering, and
+`EXTERNAL_MPC_MAIN_PORT`/`INTERNAL_MPC_MAIN_PORT` in `deployment/testnet/{frodo,sam}.env`.
 
 ```bash
 envsubst < deployment/testnet/frodo.toml > "/tmp/$USER/frodo.toml"
