@@ -261,6 +261,7 @@ mod tests {
     use k256::{AffinePoint, Scalar};
     use mpc_primitives::EpochId;
     use rand::SeedableRng as _;
+    use rstest::rstest;
 
     #[tokio::test]
     async fn test_load_store() {
@@ -362,25 +363,21 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[rstest]
+    #[case::next_epoch(keysets_of_consecutive_epochs())]
+    #[case::added_domain(keysets_before_and_after_adding_a_domain())]
     #[tokio::test]
-    async fn store__should_delete_superseded_keyshare_files() {
+    async fn store__should_delete_superseded_keyshare_files(
+        #[case] keysets: (PermanentKeyshareData, PermanentKeyshareData),
+    ) {
         // Given
-        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let (older, latest) = keysets;
         let temp = tempfile::tempdir().unwrap();
         let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
             .await
             .unwrap();
         let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
-        let (key_epoch_0, other_share) = generate_dummy_keyshares(0, 0, 1, &mut rng);
-        let key_epoch_1 = Keyshare {
-            key_id: make_key_id(1, 0, 1),
-            data: other_share.data,
-        };
-        storage
-            .store(&KeysetBuilder::from_keyshares(0, &[key_epoch_0]).permanent_key_data())
-            .await
-            .unwrap();
-        let latest = KeysetBuilder::from_keyshares(1, &[key_epoch_1]).permanent_key_data();
+        storage.store(&older).await.unwrap();
 
         // When
         storage.store(&latest).await.unwrap();
@@ -391,6 +388,30 @@ mod tests {
             vec![latest.storage_identifier()]
         );
         assert_eq!(storage.load().await.unwrap().unwrap(), latest);
+    }
+
+    fn keysets_of_consecutive_epochs() -> (PermanentKeyshareData, PermanentKeyshareData) {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let (key_epoch_0, other_share) = generate_dummy_keyshares(0, 0, 1, &mut rng);
+        let key_epoch_1 = Keyshare {
+            key_id: make_key_id(1, 0, 1),
+            data: other_share.data,
+        };
+        (
+            KeysetBuilder::from_keyshares(0, &[key_epoch_0]).permanent_key_data(),
+            KeysetBuilder::from_keyshares(1, &[key_epoch_1]).permanent_key_data(),
+        )
+    }
+
+    fn keysets_before_and_after_adding_a_domain() -> (PermanentKeyshareData, PermanentKeyshareData)
+    {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let first = generate_dummy_keyshare(0, 0, 1, &mut rng);
+        let second = generate_dummy_keyshare(0, 1, 1, &mut rng);
+        (
+            KeysetBuilder::from_keyshares(0, std::slice::from_ref(&first)).permanent_key_data(),
+            KeysetBuilder::from_keyshares(0, &[first, second]).permanent_key_data(),
+        )
     }
 
     #[tokio::test]
