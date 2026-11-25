@@ -625,6 +625,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
+name = "approx"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab112f0a86d568ea0e627cc1d6be74a1e9cd55214684db5561995f6dad897c6"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1117,17 +1126,6 @@ name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
-
-[[package]]
-name = "average"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04c5a79a6c36c527e1c31bc0effa93af02e7278b7369b83e0674255290b6c1b0"
-dependencies = [
- "easy-cast",
- "float-ord",
- "num-traits",
-]
 
 [[package]]
 name = "aws-creds"
@@ -3256,15 +3254,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "easy-cast"
-version = "0.5.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "59e68c9e2b6f969aa527564744c81d1ad24da08a36422a268ec6b61002a7eecd"
-dependencies = [
- "libm",
-]
-
-[[package]]
 name = "easy-ext"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3764,12 +3753,6 @@ dependencies = [
  "miniz_oxide",
  "zlib-rs",
 ]
-
-[[package]]
-name = "float-ord"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8ce81f49ae8a0482e4c55ea62ebbd7e5a686af544c00b9d090bba3ff9be97b3d"
 
 [[package]]
 name = "fluent-uri"
@@ -6089,7 +6072,6 @@ dependencies = [
  "aes-gcm",
  "anyhow",
  "async-trait",
- "average",
  "axum",
  "backon",
  "backtrace",
@@ -6161,6 +6143,7 @@ dependencies = [
  "serial_test",
  "sha3 0.10.9",
  "socket2",
+ "statrs",
  "tee-authority",
  "tempfile",
  "test-log",
@@ -10868,6 +10851,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
+name = "statrs"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1837f9a1bd13dabbdbb04489c39451482d3cdd35a6e1a0d0f3570dea2b8c8be"
+dependencies = [
+ "approx",
+ "num-traits",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "str_stack"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11465,7 +11459,6 @@ dependencies = [
 name = "threshold-signatures"
 version = "0.1.0"
 dependencies = [
- "average",
  "blstrs",
  "borsh",
  "criterion",
@@ -11495,6 +11488,7 @@ dependencies = [
  "serde_with",
  "sha2 0.10.9",
  "sha3 0.10.9",
+ "statrs",
  "subtle",
  "thiserror 2.0.21",
  "threshold-signatures",

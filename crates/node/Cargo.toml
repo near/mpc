@@ -111,7 +111,6 @@ pprof = { workspace = true, features = ["frame-pointer"] }
 built = { workspace = true }
 
 [dev-dependencies]
-average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 elliptic-curve = { workspace = true }
@@ -123,6 +122,7 @@ mpc-contract = { workspace = true, features = ["test-utils"] }
 near-contract-transport = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+statrs = { workspace = true }
 tempfile = { workspace = true }
 test-log = { workspace = true }
 test-port-allocator = { workspace = true }
