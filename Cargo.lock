@@ -1068,7 +1068,6 @@ dependencies = [
  "hex",
  "mpc-attestation",
  "mpc-primitives",
- "near-mpc-crypto-types",
  "node-types",
  "reqwest 0.13.5",
  "rstest",

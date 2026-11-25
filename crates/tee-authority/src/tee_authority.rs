@@ -782,8 +782,8 @@ mod tests {
     async fn test_generate_and_verify_attestation_local(
         #[values(true, false)] quote_verification_result: bool,
     ) {
-        let tls_key = p2p_tls_key();
-        let account_key = account_key();
+        let tls_key = p2p_tls_key().0;
+        let account_key = account_key().0;
         let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
         let authority =
@@ -808,7 +808,7 @@ mod tests {
             PathBuf::from("/nonexistent/dstack.sock"),
             endpoints(&["https://unused.example/"]),
         ));
-        let report_data: ReportData = ReportDataV1::new(p2p_tls_key(), account_key()).into();
+        let report_data: ReportData = ReportDataV1::new(p2p_tls_key().0, account_key().0).into();
 
         // When
         let result = authority.generate_attestation(report_data).await;
@@ -827,7 +827,7 @@ mod tests {
             socket_path,
             endpoints(&["https://unused.example/"]),
         ));
-        let report_data: ReportData = ReportDataV1::new(p2p_tls_key(), account_key()).into();
+        let report_data: ReportData = ReportDataV1::new(p2p_tls_key().0, account_key().0).into();
         let start = tokio::time::Instant::now();
 
         // When

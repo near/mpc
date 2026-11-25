@@ -226,7 +226,7 @@ async fn test_submit_participant_info_succeeds_with_mock_attestation() -> Result
         &mpc_signer_accounts[0],
         &contract,
         &Attestation::Mock(MockAttestation::Valid),
-        &p2p_tls_key().into(),
+        &p2p_tls_key(),
     )
     .await?
     .is_success();
@@ -391,7 +391,7 @@ async fn clean_invalid_attestations__should_remove_expired_entries() -> Result<(
     // Submit an attestation from a non-participant that will expire shortly.
     let (stale_accounts, _stale_participants) = gen_accounts(&worker, 1).await;
     let stale_account = &stale_accounts[0];
-    let stale_tls_key: dtos::Ed25519PublicKey = p2p_tls_key().into();
+    let stale_tls_key = p2p_tls_key();
     let block_info = worker.view_block().await?;
     let expiry_timestamp_seconds =
         block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;
@@ -475,7 +475,7 @@ async fn new_hash_and_previous_hashes_under_grace_period_pass_attestation_verifi
             };
             let attestation = Attestation::Mock(mock_attestation);
 
-            let dummy_tls_key = p2p_tls_key().into();
+            let dummy_tls_key = p2p_tls_key();
 
             let validation_success = submit_participant_info(
                 participant_account_1,

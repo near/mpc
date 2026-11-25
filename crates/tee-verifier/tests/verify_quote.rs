@@ -219,8 +219,8 @@ fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_loc
     let contract = TeeVerifier::default();
     let (quote, collateral) = (fixture.quote(), fixture.collateral());
     let report_data = ReportData::V1(ReportDataV1::new(
-        fixture.p2p_tls_key(),
-        fixture.account_key(),
+        fixture.p2p_tls_key().0,
+        fixture.account_key().0,
     ));
     let AcceptedAttestation {
         attestation: VerifiedAttestation::Dstack(locally_verified),

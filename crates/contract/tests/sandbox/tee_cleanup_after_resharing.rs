@@ -146,7 +146,7 @@ async fn reshare__should_evict_expired_attestations_via_post_reshare_sweep() -> 
     // Insert an attestation from an outsider whose expiry is a few seconds away.
     let (stale_accounts, _) = gen_accounts(&worker, 1).await;
     let stale_account = &stale_accounts[0];
-    let stale_tls_key: dtos::Ed25519PublicKey = p2p_tls_key().into();
+    let stale_tls_key = p2p_tls_key();
     let block_info = worker.view_block().await?;
     let expiry_timestamp_seconds =
         block_info.timestamp() / 1_000_000_000 + ATTESTATION_EXPIRY_SECONDS;

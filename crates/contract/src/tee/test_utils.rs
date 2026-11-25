@@ -179,7 +179,7 @@ pub(crate) fn allow_launcher(
 pub(crate) fn dstack_fixture_node() -> dtos::NodeInfo {
     dtos::NodeInfo {
         account_id: "alice.near".parse().unwrap(),
-        tls_public_key: p2p_tls_key().into(),
-        account_public_key: account_key().into(),
+        tls_public_key: p2p_tls_key(),
+        account_public_key: account_key(),
     }
 }
