@@ -2590,9 +2590,16 @@ For full design details, see the [CVM Upgrades section in the TEE design doc](..
 
 ### Upgrading from dstack 0.5.8 to 0.6.5
 
-The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new OS measurements. The new CVM runs on a `dstack-vmm` 0.6.5, either on a spare TDX machine (option A) or next to your current one (option B). Don't upgrade the 0.5.8 VMM in place: the old CVM stays on it, untouched, until you migrate. You can bring up the new CVM before the votes; it only attests, and takes over, once they are in.
+The move to dstack 0.6.5 is a CVM upgrade as above, with a new launcher and new OS measurements.
 
-For the new CVM, render the launcher compose from the new template: check out the release that ships it, and either run `deploy-launcher.sh` from that checkout (it renders the template for you) or render it by hand as in [Preparing a Docker Compose File](#preparing-a-docker-compose-file).
+- The new CVM runs on a `dstack-vmm` 0.6.5, either on a spare TDX machine (option A) or next to your current one (option B).
+- Don't upgrade the 0.5.8 VMM in place. The old CVM stays on it, untouched, until you migrate.
+- You can bring up the new CVM before the votes. It only attests, and takes over, once they are in.
+
+The new CVM needs a launcher compose rendered from the new template. Check out the release that ships it, then either:
+
+- run `deploy-launcher.sh` from that checkout, which renders the template for you; or
+- render it by hand, as in [Preparing a Docker Compose File](#preparing-a-docker-compose-file).
 
 #### Option A: spare TDX machine
 
