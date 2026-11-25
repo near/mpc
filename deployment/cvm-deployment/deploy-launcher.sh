@@ -19,7 +19,6 @@ COMPOSE_TEMPLATE="${COMPOSE_TEMPLATE:-$REPO_ROOT/crates/contract/assets/launcher
 check_ports_in_use() {
     PORT_VARS="
     EXTERNAL_DSTACK_AGENT_PORT
-    EXTERNAL_SSH_PORT
     EXTERNAL_MPC_PUBLIC_DEBUG_PORT
     EXTERNAL_MPC_LOCAL_DEBUG_PORT
     EXTERNAL_MPC_DECENTRALIZED_STATE_SYNC
@@ -126,9 +125,6 @@ fi
 
 
 # Do not change these variables
-# SSH ports (only for dev images)
-# TODO(#5324): dstack 0.6 has no dev image; remove the SSH port forward.
-INTERNAL_SSH_PORT=22
 # Address of the dstack guest agent service inside the CVM
 INTERNAL_AGENT_ADDR=8090
 
@@ -296,7 +292,6 @@ cmd="$CLI deploy \
   --compose .app-compose.json \
   --image $OS_IMAGE \
   --port tcp:$EXTERNAL_DSTACK_AGENT_PORT:$INTERNAL_AGENT_ADDR \
-  --port tcp:$EXTERNAL_SSH_PORT:$INTERNAL_SSH_PORT \
   --port tcp:$EXTERNAL_MPC_PUBLIC_DEBUG_PORT:$INTERNAL_MPC_PUBLIC_DEBUG_PORT \
   --port tcp:$EXTERNAL_MPC_LOCAL_DEBUG_PORT:$INTERNAL_MPC_LOCAL_DEBUG_PORT \
   --port tcp:$EXTERNAL_MPC_MAIN_PORT:$INTERNAL_MPC_MAIN_PORT \

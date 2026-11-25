@@ -121,9 +121,6 @@ SEALING_KEY_TYPE=SGX
 # Port on the host machine to connect to the dstack guest agent
 EXTERNAL_DSTACK_AGENT_PORT=127.0.0.1:9206
 
-# SSH port on the host
-EXTERNAL_SSH_PORT=127.0.0.1:9207
-
 # External MPC ports (host machine).
 # The address part is the host IP qemu binds each forward to.
 #   0.0.0.0  — bind on every host interface; the canonical single-node default.
