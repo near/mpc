@@ -302,7 +302,7 @@ impl Default for DstackTeeAuthorityConfig {
 ///
 /// Also emits one WARN per [`Insecure`](PccsTlsTrust::Insecure) endpoint at startup so operators
 /// see the security signal up front instead of buried in fetch logs.
-pub fn validate_pccs_endpoints(
+pub(crate) fn validate_pccs_endpoints(
     pccs_endpoints: &NonEmptyVec<PccsEndpointConfig>,
 ) -> anyhow::Result<()> {
     for endpoint in pccs_endpoints.iter() {

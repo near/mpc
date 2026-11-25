@@ -1,6 +1,7 @@
 use std::fmt;
 
 use near_account_id::AccountId;
+use near_indexer::near_primitives::hash::CryptoHash;
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum NearClientError {
@@ -95,6 +96,17 @@ pub enum ChainGatewayError {
 
     #[error("starting neard node failed with {msg}")]
     StartupFailed { msg: String },
+
+    #[error("failed to query the node status: {0}")]
+    Status(NearClientError),
+
+    #[error(
+        "expected the chain with genesis {expected}, but the node follows the chain with genesis {actual}"
+    )]
+    ChainMismatch {
+        expected: CryptoHash,
+        actual: CryptoHash,
+    },
 
     #[error("failed to submit signed transaction while {op}: {message}")]
     SubmitSignedTransaction { op: ChainGatewayOp, message: String },

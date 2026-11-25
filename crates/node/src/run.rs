@@ -1,7 +1,7 @@
 use crate::{
     config::{
         PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
-        start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
+        start::{ensure_near_initialized, read_near_config_json},
     },
     coordinator::Coordinator,
     db::SecretDB,
@@ -10,11 +10,12 @@ use crate::{
     keyshare::{KeyStorageConfig, KeyshareStorage},
     migration_service::spawn_recovery_server_and_run_onboarding,
     profiler,
+    tee::SubmitParticipantInfo,
     tracing::init_logging,
     tracking::{self, start_root_task},
     types::SubmittedTransaction,
     web::{
-        DebugRequest,
+        DebugRequest, PublicData,
         recent_transactions::{
             RECENT_TRANSACTIONS_CHANNEL_SIZE, RecentTransactionsLogger, SharedRecentTransactions,
             spawn_recent_transactions_drain,
@@ -24,11 +25,9 @@ use crate::{
 };
 use anyhow::{Context, anyhow};
 use itertools::Itertools;
-use mpc_attestation::report_data::ReportDataV1;
 use mpc_node_config::{
     ConfigFile, ForeignChainsConfig, StartConfig, foreign_chains::resolve_with_embedded,
 };
-use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
 use near_time::Clock;
 use std::{
@@ -37,15 +36,14 @@ use std::{
     time::Duration,
 };
 use tee_authority::tee_authority::TeeAuthority;
+use tee_context::{
+    AllowedImageHashesFile, AttestationSubmitter, generate_initial_attestation,
+    monitor_allowed_image_hashes, run_periodic_attestation_submission,
+};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-
-use crate::tee::{
-    AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
-};
 
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
 
@@ -67,8 +65,14 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
     // Must run before `spawn_real_indexer` loads/validates the config, and
-    // after `init_logging` so its logs are emitted. No-op for the `start` path.
-    config.ensure_near_initialized()?;
+    // after `init_logging` so its logs are emitted
+    if let Some(near_init) = &config.near_init {
+        ensure_near_initialized(
+            &config.home_dir,
+            near_init,
+            &config.node.indexer.mpc_contract_id,
+        )?;
+    }
 
     // Log startup info
     tracing::info!("{}", *crate::MPC_VERSION_STRING);
@@ -139,45 +143,18 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     )?;
 
     // Generate attestation
-    let tee_authority = config
-        .tee
-        .clone()
-        .into_tee_authority(config.pccs_endpoints.clone())?;
+    let tee_authority =
+        TeeAuthority::new(config.tee.authority.clone(), config.pccs_endpoints.clone())?;
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
-    let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
-
-    let report_data = ReportDataV1::new(
-        *Ed25519PublicKey::from(tls_public_key).as_bytes(),
-        *Ed25519PublicKey::from(account_public_key).as_bytes(),
+    let keys = static_web_data(&persistent_secrets, None);
+    let attestation = generate_initial_attestation(
+        &tee_authority,
+        &keys.near_p2p_public_key,
+        &keys.near_signer_public_key,
     )
-    .into();
-
-    let attestation = match tee_authority.generate_attestation(report_data).await {
-        Ok(att) => {
-            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_SUCCESS])
-                .inc();
-            tracing::info!("TEE attestation generated successfully");
-            Some(att)
-        }
-        Err(tee_authority::tee_authority::AttestationError::CollateralFetch(e)) => {
-            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
-                .inc();
-            tracing::error!(
-                error = %e,
-                "TEE attestation failed. Node will continue without attestation and retry periodically",
-            );
-            None
-        }
-        Err(e) => {
-            crate::metrics::MPC_TEE_ATTESTATION_ATTEMPTS_TOTAL
-                .with_label_values(&[crate::metrics::MPC_TEE_ATTESTATION_OUTCOME_FAILURE])
-                .inc();
-            return Err(anyhow::anyhow!(e).context("TEE attestation failed, cannot continue"));
-        }
-    };
+    .await?;
+    let (latest_attestation, latest_attestation_receiver) = watch::channel(attestation);
 
     // Create communication channels and runtime
     let (debug_request_sender, _) = tokio::sync::broadcast::channel(10);
@@ -202,7 +179,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
-            static_web_data(&secrets, attestation),
+            PublicData {
+                keys: keys.clone(),
+                latest_attestation: latest_attestation_receiver,
+            },
             protocol_state_receiver,
             migration_state_receiver,
             config.node.clone(),
@@ -245,7 +225,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     let cancellation_token = CancellationToken::new();
 
-    let allowed_hashes_in_contract = indexer_api.allowed_docker_images_receiver.clone();
+    let allowed_hashes_in_contract = indexer_api.tee.allowed_image_hashes.clone();
     let image_hash_storage =
         AllowedImageHashesFile::from(config.tee.latest_allowed_hash_file_path.clone());
 
@@ -263,6 +243,15 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         image_hash_shutdown_sender,
     ));
 
+    root_runtime.spawn(run_periodic_attestation_submission(AttestationSubmitter {
+        tee_authority,
+        submitter: SubmitParticipantInfo(indexer_api.txn_sender.clone()),
+        tls_public_key: keys.near_p2p_public_key,
+        account_public_key: keys.near_signer_public_key,
+        tee: indexer_api.tee.clone(),
+        latest_attestation,
+    }));
+
     let root_future = create_root_future(
         config.home_dir,
         node_config.clone(),
@@ -270,7 +259,6 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         indexer_api,
         debug_request_sender,
         root_task_handle,
-        tee_authority,
     );
 
     let root_task = root_runtime.spawn(start_root_task("root", root_future).0);
@@ -341,7 +329,6 @@ async fn create_root_future<TransactionSenderImpl>(
     // Cloning a OnceLock returns a new cell, which is why we have to wrap it in an arc.
     // Otherwise we would not write to the same cell/lock.
     root_task_handle_once_lock: Arc<OnceLock<Arc<tracking::TaskHandle>>>,
-    tee_authority: TeeAuthority,
 ) -> anyhow::Result<()>
 where
     TransactionSenderImpl: TransactionSender + 'static,
@@ -352,29 +339,12 @@ where
         .set(root_task_handle.clone())
         .map_err(|_| anyhow!("Root task handle was already set"))?;
 
-    let tls_public_key =
-        Ed25519PublicKey::from(&secrets.persistent_secrets.p2p_private_key.verifying_key());
-    let account_public_key =
-        Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
-
     let secret_db = SecretDB::new(&assets_dir(&home_dir), secrets.local_storage_aes_key)?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
         local_encryption_key: secrets.local_storage_aes_key,
     };
-
-    let submitter = AttestationSubmitter {
-        tee_authority,
-        tx_sender: indexer_api.txn_sender.clone(),
-        tls_public_key,
-        account_public_key,
-        allowed_image_hashes: indexer_api.allowed_docker_images_receiver.clone(),
-        allowed_launcher_compose_hashes: indexer_api.allowed_launcher_compose_receiver.clone(),
-        allowed_os_measurements: indexer_api.allowed_os_measurements_receiver.clone(),
-        stored_attestation: indexer_api.my_attestation_receiver.clone(),
-    };
-    tokio::spawn(run_periodic_attestation_submission(submitter));
 
     let keyshare_storage: Arc<RwLock<KeyshareStorage>> =
         RwLock::new(key_storage_config.create().await?).into();

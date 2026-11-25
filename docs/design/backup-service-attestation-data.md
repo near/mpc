@@ -105,7 +105,7 @@ The following walkthroughs show how the attestation data defined above is used i
 
 **On boot (one-time):**
 
-1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the hash of the app compose, which embeds the launcher compose file. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses the [`DEFAULT_IMAGE_DIGEST`][launcher-default-image-digest] set in its compose file (same pattern as MPC node launcher). On subsequent boots, the backup service will have written the updated hashes it receives from [`TeeContext`][tee-context] to disk.
+1. Operator starts the backup service CVM. Dstack boots, extends RTMR3 with the hash of the app compose, which embeds the launcher compose file. Launcher verifies the image hash, extends RTMR3, starts the container. On first boot, the launcher uses the [`DEFAULT_IMAGE_DIGEST`][launcher-default-image-digest] set in its compose file (same pattern as MPC node launcher). On subsequent boots, the backup service will have written the updated hashes it receives from the shared TEE lifecycle to disk.
 2. Backup service generates an Ed25519 TLS keypair and a NEAR account keypair inside the TEE.
 3. Operator retrieves the account public key from the backup service's HTTP endpoint and adds it as a function-call access key to their NEAR account, as for MPC nodes (see [securing-mpc-with-tee §Secret key Handling](securing-mpc-with-tee/securing-mpc-with-tee.md#secret-key-handling)).
 
@@ -163,6 +163,8 @@ The allowed compose hashes also need a backup service template. [`get_docker_com
 
 ### TeeContext
 
+**Status:** Partially superseded. TODO(#2730): `TeeContext` was removed. The `tee-context` crate now holds the TEE state monitors, which read the MPC node views below, and the hourly attestation submission, which sends through a port each service implements.
+
 [`TeeContext`](./tee-context-design.md) hardcodes MPC node method names and needs parameterization:
 
 | What | Current | Backup service needs |
@@ -213,7 +215,6 @@ The allowed compose hashes also need a backup service template. [`get_docker_com
 [mpc-image-hash-event-usage]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/mpc-attestation/src/attestation.rs#L435
 [launcher-image-hash-event]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/tee-launcher/src/lib.rs#L132-L158
 [launcher-default-image-digest]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/tee-launcher/src/types.rs#L21-L23
-[tee-context]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/tee-context/src/lib.rs#L21
 [seed-measurements]: https://github.com/near/mpc/blob/249bd1e5a33610299940d802d0c9e7d48a6b8acb/crates/contract/src/v3_7_0_state.rs#L76-L83
 [persistent-secrets]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/node/src/config.rs#L229
 [public-data]: https://github.com/near/mpc/blob/483e9ff202a0b2308dfb740070e49def3951daf1/crates/node/src/web.rs#L311

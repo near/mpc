@@ -1,24 +1,22 @@
 use crate::migration_service::types::MigrationInfo;
 
 use self::stats::IndexerStats;
-use anyhow::Context;
 use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
-use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
 use near_async::{messaging::CanSendAsync, multithread::MultithreadRuntimeHandle};
 use near_client::RpcHandlerActor;
-use near_indexer::near_primitives::{hash::CryptoHash, transaction::SignedTransaction};
+use near_indexer::near_primitives::transaction::SignedTransaction;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
 use std::sync::Arc;
+use tee_context::TeeStateReceivers;
 use tokio::sync::{
     Mutex, {mpsc, watch},
 };
 use types::ChainSendTransactionRequest;
 
-pub mod chain_binding;
 pub mod configs;
 pub mod foreign_chain;
 pub mod handler;
@@ -27,7 +25,6 @@ pub mod near_data_wipe;
 pub mod participants;
 pub mod real;
 pub mod stats;
-pub mod tee;
 pub mod tx_sender;
 pub mod tx_signer;
 pub mod types;
@@ -59,18 +56,6 @@ impl IndexerState {
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
-    }
-
-    async fn ensure_chain_matches_contract(
-        &self,
-        expected_genesis_hash: Option<CryptoHash>,
-    ) -> anyhow::Result<()> {
-        let genesis_hash = self
-            .gateway
-            .genesis_hash()
-            .await
-            .context("querying the genesis hash")?;
-        chain_binding::ensure_chain_matches_contract(expected_genesis_hash, genesis_hash)
     }
 }
 
@@ -118,16 +103,9 @@ pub struct IndexerAPI<TransactionSender> {
     pub block_update_receiver: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<ChainBlockUpdate>>>,
     /// Handle to transaction processor.
     pub txn_sender: TransactionSender,
-    /// Watcher that keeps track of [`dtos::AllowedMpcDockerImageHash`]es on the contract
-    pub allowed_docker_images_receiver: watch::Receiver<Vec<dtos::AllowedMpcDockerImageHash>>,
-    /// Watcher that keeps track of allowed [`LauncherDockerComposeHash`]es on the contract.
-    pub allowed_launcher_compose_receiver: watch::Receiver<Vec<LauncherDockerComposeHash>>,
-    /// Watcher that keeps track of the allowed OS [`dtos::ExpectedMeasurements`] on the contract.
-    pub allowed_os_measurements_receiver: watch::Receiver<Vec<dtos::ExpectedMeasurements>>,
+    pub tee: TeeStateReceivers,
 
     pub my_migration_info_receiver: watch::Receiver<MigrationInfo>,
-
-    pub my_attestation_receiver: watch::Receiver<Option<dtos::StoredAttestation>>,
 
     /// Watcher that tracks the contract's available foreign chains and their
     /// registered supporters (by TLS key). Seeded with the first successful read

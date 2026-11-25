@@ -19,7 +19,6 @@ use crate::storage::{
     CKDRequestStorage, SignRequestStorage, VerifyForeignTransactionRequestStorage,
 };
 use crate::tracking::{self, AutoAbortTaskCollection};
-use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::SignatureRequest;
 use crate::types::{CKDRequest, RequestsUpdate, VerifyForeignTxRequest};
 use crate::web::{DebugRequest, DebugRequestKind};
@@ -583,7 +582,7 @@ impl MpcClient {
                 let response = self.ckd_provider.make_signature(request.id).await?;
 
                 let response = contract_args::CKDRespondArgs::new(
-                    request.into_contract_interface_type(),
+                    request.into(),
                     CKDResponse {
                         big_y: (&response.0.0).into(),
                         big_c: (&response.0.1).into(),

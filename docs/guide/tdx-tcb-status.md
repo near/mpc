@@ -70,8 +70,8 @@ the update: if it moved CPUSVN, the sealing key moved with it and that disk will
 never unseal again, so deploy a fresh CVM and restore the step 1 backup into it
 per the [node migration guide](node-migration-guide.md). Either way a CVM has
 to be running before you can check anything, since `/public_data` serves the
-quote generated at CVM boot, and `tcb-status` answers as soon as the node is up,
-with no need to wait for it to sync. Then:
+node's latest quote, the first one generated at CVM boot, and `tcb-status`
+answers as soon as the node is up, with no need to wait for it to sync. Then:
 
 - `tcb-status` must read `UpToDate` on the `Intel standard` row, the verdict
   against collateral it fetches from Intel as it runs, and `tee_tcb_svn` must
@@ -115,7 +115,7 @@ only yours.
 The node logs the reason once per attempt:
 
 ```text
-WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
+WARN periodic_attestation_submission: tee_context::remote_attestation:
   Attestation is not valid: TCB status `OutOfDate` is not up to date
   (QE: UpToDate, platform: OutOfDate, advisories: ["INTEL-SA-01192", "INTEL-SA-01245"])
 ```

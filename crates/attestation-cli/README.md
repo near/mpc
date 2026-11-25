@@ -191,7 +191,7 @@ The node's quote is evaluated against three sets, and all three are reported:
 
 | Collateral source | What it tells you |
 |-------------------|-------------------|
-| served by the node | What the node's own boot-time collateral says. `/public_data` serves the attestation built at CVM boot, so this can lag reality by days. |
+| served by the node | What the collateral of the node's latest attestation says. `/public_data` serves the attestation the node generated most recently: at boot, then every hour once the node has synced. |
 | Intel `standard` | What the contract will decide the next time the node re-attests. Omitting the `update` parameter is what selects the `standard` tier, and it is what the node does too. The fetch goes straight to Intel rather than through the node's PCCS, so the two can differ in cache freshness. |
 | Intel `early` | What the contract will decide once Intel promotes the set it already publishes under `update=early`. A platform demoted here is still accepted today, which is the point: it is the only advance warning of a TCB recovery. The early set can be more than one ahead of `standard`, so the demotion lands at some upcoming promotion, not necessarily the next. |
 
@@ -203,7 +203,7 @@ It takes the same `--url` / `--file` data source as `verify`. Unlike `verify`, n
 
 `--evaluation-data-set <standard|early>` evaluates only that set, which then decides the exit code. Left out, both are evaluated and `standard` decides, so a demoted `early` row still exits 0: the platform is accepted until Intel promotes.
 
-`--as-of <unix-timestamp>` evaluates collateral validity at a past instant instead of now. Intel serves only current collateral, so this is for reading a saved quote whose boot-time snapshot has since expired. The Intel rows and the exit code stay present-day verdicts, so neither is meaningful with it set.
+`--as-of <unix-timestamp>` evaluates collateral validity at a past instant instead of now. Intel serves only current collateral, so this is for reading a saved quote whose collateral has since expired. The Intel rows and the exit code stay present-day verdicts, so neither is meaningful with it set.
 
 ```bash
 attestation-cli tcb-status --url http://<node-host>:8080/public_data
@@ -249,7 +249,7 @@ attestation-cli tcb-status --url http://<node-host>:8080/public_data \
 
 A non-zero exit there means the platform will be demoted at some upcoming promotion, not that it is rejected today.
 
-The served row can also lag the `standard` row by days, or by a whole set. The node itself is not stuck when it does: it re-attests every hour with freshly fetched collateral. What is frozen is `/public_data`, which keeps returning the snapshot built at CVM boot. So a stale served row does not mean the node is submitting stale attestations, and the `standard` row is the one that predicts what the next submission will be judged against.
+The served row can also lag the `standard` row: the node re-attests only every hour, and only once it has synced, and its PCCS can cache an older set than Intel serves. The `standard` row is the one that predicts what the next submission will be judged against.
 
 A quote is judged in two independent halves, and either one can demote the platform.
 
@@ -276,7 +276,7 @@ The SHA256 of the `--launcher-compose-file` you provided does not match the comp
 The `--expected-measurements` file could not be read or parsed. Ensure it is valid JSON in the `tcb_info.json` format.
 
 **`tcb-status` reports `Rejected` for "served by the node"**
-The collateral in the node's boot-time snapshot has expired. The Intel rows are evaluated against freshly fetched collateral, so their verdicts still stand; restart the CVM to make the served row meaningful again.
+The collateral in the node's latest attestation has expired: the node has yet to sync, its recent hourly attestations failed, or its PCCS serves expired collateral. The Intel rows are evaluated against freshly fetched collateral, so their verdicts still stand. Check the node's attestation logs and its PCCS.
 
 **DCAP verification errors (quote validation, certificate chain, etc.)**
 These indicate the TDX attestation quote failed cryptographic verification. This could mean the attestation is invalid, expired, or the measurements do not match.

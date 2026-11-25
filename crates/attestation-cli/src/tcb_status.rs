@@ -42,8 +42,8 @@ pub enum TcbVerdict {
         /// `UpToDate`; the other two print a line saying nothing can be raised.
         shortfalls: Vec<SvnShortfall>,
     },
-    /// No status at all. Usually expired collateral in a long-running node's
-    /// boot-time snapshot.
+    /// No status at all. Usually expired collateral in the node's latest
+    /// attestation.
     Rejected(String),
 }
 
@@ -66,7 +66,7 @@ pub struct Report {
     /// Parsed from the quote itself, so the platform's own numbers survive even
     /// when no collateral verifies.
     pub td_report: TDReport10,
-    /// What the node's own boot-time collateral says, which can lag by days.
+    /// What the collateral of the node's latest attestation says.
     pub served: TcbVerdict,
     /// What the contract decides today, against collateral fetched just now.
     pub standard: Option<TcbVerdict>,

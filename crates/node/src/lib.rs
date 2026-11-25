@@ -34,15 +34,11 @@ pub mod web;
 
 pub(crate) mod log_throttle;
 pub(crate) mod profiler;
-pub(crate) mod trait_extensions;
 
 mod assets;
-#[cfg(test)]
-mod async_testing;
 mod background;
 mod coordinator;
 mod db;
-mod durable_fs;
 mod foreign_chain_policy;
 mod foreign_chain_probe;
 mod foreign_chain_registrar;
@@ -61,5 +57,4 @@ mod storage;
 mod tee;
 #[cfg(test)]
 mod tests;
-mod tick;
 mod tracking;

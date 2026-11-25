@@ -2040,7 +2040,7 @@ If the verdict is FAIL, **do not use the keys**. See the [attestation-cli troubl
 
 #### Check the platform's TCB status
 
-`verify` judges the attestation against the collateral the node embedded at boot, which can be days old. To see where the host stands against what Intel demands *today*, use the sibling subcommand:
+`verify` judges the attestation against the collateral embedded in the node's latest attestation, which can be an hour old, or older while the node syncs or fails to regenerate it. To see where the host stands against what Intel demands *today*, use the sibling subcommand:
 
 ```bash
 attestation-cli tcb-status --url http://<IP>:8080/public_data
@@ -2985,7 +2985,7 @@ and `DCAP error` is a catch-all for that verification failing. Two causes:
 When the contract rejects a submission while no TEE attestation is stored for the node's TLS key, the node retries on a backoff and logs a generic line every attempt:
 
 ```
-ERROR periodic_attestation_submission: mpc_node::tee::remote_attestation:
+ERROR periodic_attestation_submission: tee_context::remote_attestation:
   failed to submit attestation
   cause=attestation submission was not executed backoff_duration=60s
 ```
@@ -2997,7 +2997,7 @@ This line **doesn't tell you why**: `cause` is `attestation submission was not e
 Before submitting, the node runs a pre-flight check against the contract's allowed-image, allowed-launcher-compose and allowed-OS-measurement lists. Failures are logged as a non-blocking warning (the node still submits, and the contract will reject for the same reason):
 
 ```
-WARN periodic_attestation_submission: mpc_node::tee::remote_attestation:
+WARN periodic_attestation_submission: tee_context::remote_attestation:
   Attestation is not valid: custom error: `the allowed mpc image hashes list is empty`
 ```
 

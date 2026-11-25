@@ -5,24 +5,36 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-chain-gateway = { workspace = true }
+anyhow = { workspace = true }
+backon = { workspace = true }
+derive_more = { workspace = true }
+durable-fs = { workspace = true }
+itertools = { workspace = true }
+launcher-interface = { workspace = true }
+mpc-attestation = { workspace = true, features = ["local-verify"] }
 mpc-primitives = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
+near-mpc-bounded-collections = { workspace = true }
 near-mpc-contract-interface = { workspace = true, features = ["client"] }
-
-near-account-id = { workspace = true }
+near-time = { workspace = true, features = ["clock"] }
+prometheus = { workspace = true }
+serde_json = { workspace = true }
+tee-authority = { workspace = true }
 thiserror = { workspace = true }
+tick = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-chain-gateway = { workspace = true, features = ["test-utils"] }
+async-testing = { workspace = true }
 ed25519-dalek = { workspace = true }
-mpc-primitives = { workspace = true }
-near-contract-transport = { workspace = true, features = ["test-utils"] }
-serde_json = { workspace = true }
-tokio = { workspace = true, features = ["test-util", "macros"] }
+mockall = { workspace = true }
+near-mpc-contract-interface = { workspace = true, features = ["ed25519-dalek"] }
+rand = { workspace = true }
+rstest = { workspace = true }
+tick = { workspace = true, features = ["test-utils"] }
+tokio = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

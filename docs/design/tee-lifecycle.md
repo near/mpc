@@ -12,7 +12,7 @@ For MPC-network-specific TEE integration (threat model, participant management, 
 
 ## Overview
 
-Services run inside Dstack CVMs, booted through a [Launcher][launcher] that measures the application image (see [Boot](#boot)). All services share a dependency on the [TEE Context][tee-context-design] for attestation lifecycle management. TEE Context relies on [`tee-authority`] for TDX quote generation, [`mpc-attestation`] for on-chain DCAP verification, and the [Chain Gateway][chain-indexer] ([Contract State Subscriber][contract-state-subscriber] + [Transaction Sender][transaction-sender]) for governance contract communication.
+Services run inside Dstack CVMs, booted through a [Launcher][launcher] that measures the application image (see [Boot](#boot)). All services share a dependency on the [TEE Context][tee-context-design] for attestation lifecycle management. TEE Context relies on [`tee-authority`] for TDX quote generation, [`mpc-attestation`] for on-chain DCAP verification, and the [Chain Gateway][chain-indexer] for governance contract communication: it reads the contract through the [Contract State Subscriber][contract-state-subscriber], and each service submits its attestations through its own [Transaction Sender][transaction-sender].
 
 | Component | Purpose |
 |-----------|---------|
@@ -140,13 +140,13 @@ Individual services may add steps between "Start application container" and the 
 
 ## TEE Context
 
-The [TEE Context][tee-context-design] is a shared crate managing the TEE attestation lifecycle. The MPC node already implements the attestation tasks in [`remote_attestation.rs`][remote-attestation] and [`allowed_image_hashes_watcher.rs`][allowed-hashes-watcher]; they will be extracted into a standalone crate, depending on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation], reusable by all services.
+The [TEE Context][tee-context-design] is a shared crate managing the TEE attestation lifecycle, reusable by all services. It holds the [allowed image hashes watcher][allowed-hashes-watcher] and the attestation submission in [`remote_attestation.rs`][remote-attestation], which depends on [`tee-authority`][tee-authority] and [`mpc-attestation`][mpc-attestation] and sends attestations through a port that each service implements.
 
 [mpc-context]: ../archive/design/chain-gateway-design.md
 
-[remote-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs
-[allowed-hashes-watcher]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/allowed_image_hashes_watcher.rs#L103
-[periodic-attestation]: https://github.com/near/mpc/blob/ce53324f472aa89fdf702d7482211bbdb6a44967/crates/node/src/tee/remote_attestation.rs#L140
+[remote-attestation]: ../../crates/tee-context/src/remote_attestation.rs
+[allowed-hashes-watcher]: ../../crates/tee-context/src/allowed_image_hashes_watcher.rs
+[periodic-attestation]: ../../crates/tee-context/src/remote_attestation.rs
 
 ### Tasks
 
@@ -159,7 +159,7 @@ title: TEE Context Tasks
 flowchart LR
 
 subgraph TEE_CTX["TEE Context"]
-    POLL_HASHES["Poll Allowed Hashes<br/>(ContractStateSubscriber)"]
+    POLL_HASHES["Poll TEE State<br/>(ContractStateSubscriber)"]
     POLL_FCP["Poll Foreign Chain Policy<br/>(ContractStateSubscriber)"]
     ATTEST["Periodic Attestation<br/>(every hour)"]
 end
@@ -179,9 +179,9 @@ classDef ctx stroke:#2563eb,stroke-width:2px;
 class TEE_CTX ctx;
 ```
 
-1. **Poll allowed hashes** — Periodically queries the governance contract for [`allowed_docker_image_hashes()`][allowed-docker-image-hashes] and [`allowed_launcher_compose_hashes()`][allowed-launcher-compose-hashes] via the [Contract State Subscriber][contract-state-subscriber]. Writes updates to disk for the Launcher to use on next boot. (Reference: [`monitor_allowed_image_hashes`][allowed-hashes-watcher])
+1. **Poll TEE state** — Periodically queries the governance contract for [`allowed_docker_image_hashes()`][allowed-docker-image-hashes], [`allowed_launcher_compose_hashes()`][allowed-launcher-compose-hashes], `allowed_os_measurements()` and the service's own stored attestation via the [Contract State Subscriber][contract-state-subscriber]. Writes the image hashes to disk for the Launcher to use on next boot. (Reference: [`monitor_allowed_image_hashes`][allowed-hashes-watcher])
 
-2. **Periodic attestation** — Every hour, generates a fresh TDX attestation quote and submits it to the governance contract via [`submit_participant_info()`][submit-participant-info]. Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][periodic-attestation])
+2. **Periodic attestation** — Every hour, generates a fresh TDX attestation quote and submits it through the service's `SubmitAttestation` port (the MPC node sends [`submit_participant_info()`][submit-participant-info]). Includes exponential backoff retries. (Reference: [`periodic_attestation_submission`][periodic-attestation])
 
 3. **Poll foreign chain policy** — Subscribes to the governance contract's [`get_foreign_chain_policy()`][get-foreign-chain-policy] view method via the Contract State Subscriber. Provides the active [`ForeignChainPolicy`][foreign-chain-policy-type] to consumers — for the MPC node this feeds [foreign transaction verification][foreign-tx-verification], for the Archive Signer it configures the validation SDK's RPC providers. (Reference: the MPC node currently fetches this [on-demand in the coordinator][coordinator-fcp]; the TEE Context will move it to continuous polling.)
 
@@ -202,7 +202,7 @@ After boot, every service must continuously prove to the governance contract tha
 2. **Periodic renewal** — every hour a fresh quote is generated and resubmitted, so the contract always holds a recent proof.
 3. **Collective verification**: every 2 days, any participant can trigger `verify_tee()` on the governance contract to re-validate the participants' attestations. While any participant's image hash is no longer on the approved list, the contract stops accepting signature requests.
 
-The [TEE Context][tee-context-design] crate provides the contract interface for the above — each service is responsible for its own attestation scheduling. See the [TEE Context design doc][tee-context-design] for the interface and usage examples.
+The [TEE Context][tee-context-design] crate submits the attestation on start and renews it every hour, and each service provides how its attestation reaches the governance contract. See the [TEE Context design doc][tee-context-design] for the interface and usage examples.
 
 The governance contract verifies each submitted quote by checking the cryptographic chain of trust, replaying the TDX event log to reconstruct enclave measurements, and confirming that the Docker image and launcher compose hashes match the allowed lists. For the full verification steps, see [Attestation verification on the contract][attestation-verification].
 
@@ -218,7 +218,7 @@ Every governance contract reuses [`TeeState`][tee-state] — a shared on-chain d
 
 ### Attestation Methods
 
-The following attestation methods must be uniform across all governance contracts. These are the methods the [TEE Context][tee-context-design] calls — it hardcodes them as compile-time constants and parameterizes only the contract account.
+The following attestation methods must be uniform across all governance contracts. The [TEE Context][tee-context-design] reads the allowed lists through the contract interface crate's typed client, and the MPC node submits its attestation with `submit_participant_info`.
 
 | Method | Type | Description |
 |--------|------|-------------|
