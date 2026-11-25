@@ -273,7 +273,7 @@ Therefore, node attestation submissions will fail.
 **Sample Error Log (Expected Before Voting):**
 
 ```
-mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
+chain_gateway::transaction_sender::traits: sending transaction tx_hash=381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
 ..
 ..
 ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed

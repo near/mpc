@@ -4,7 +4,7 @@ use std::env;
 use std::io::Write;
 use std::time::{Duration, Instant};
 
-use average::{Max, Mean, Min};
+use statrs::statistics::Statistics;
 
 use crate::participants::Participant;
 use crate::protocol::{Action, Protocol};
@@ -155,14 +155,11 @@ pub fn bench_simulation(name: &str, run: &dyn Fn() -> SimulationMetrics, samples
 
 fn print_spread(label: &str, values_ms: impl Iterator<Item = f64>) {
     let values_ms: Vec<f64> = values_ms.collect();
-    let mean: Mean = values_ms.iter().collect();
-    let min: Min = values_ms.iter().collect();
-    let max: Max = values_ms.iter().collect();
     println!(
         "{label}: avg {:.3} ms, min {:.3} ms, max {:.3} ms",
-        mean.mean(),
-        min.min(),
-        max.max()
+        Statistics::mean(&values_ms),
+        Statistics::min(&values_ms),
+        Statistics::max(&values_ms)
     );
 }
 
@@ -211,7 +208,6 @@ impl SimulationMetrics {
         self.compute_time_per_participant
             .values()
             .map(|time| time.as_secs_f64() * 1e3)
-            .collect::<Mean>()
             .mean()
     }
 

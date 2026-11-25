@@ -288,10 +288,6 @@ compares the current epoch data with what was stored in `RocksDB`:
 | Same epoch, no participant TLS key changes | Keep all assets |
 | Same epoch, some participant changed TLS key | Delete only assets involving changed participants |
 
-Deleting all triples on epoch change is a conservative choice: triples
-are independent of key shares and could theoretically be preserved if
-the participant set remains compatible.
-
 A participant's P2P public key changes when they regenerate their
 `secrets.json` (e.g. the node is redeployed from scratch). The P2P key
 itself is unrelated to the cryptographic shares, but changing it signals
