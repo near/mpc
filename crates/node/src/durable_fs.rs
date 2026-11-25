@@ -63,7 +63,12 @@ pub fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
 
 /// Fsyncs the directory containing `path`. Does not sync the file itself.
 pub fn sync_parent_dir(path: &Path) -> io::Result<()> {
-    fs::File::open(parent_dir(path))?.sync_all()
+    sync_dir(parent_dir(path))
+}
+
+/// Fsyncs `dir`, making the entries created, renamed or removed in it durable.
+pub fn sync_dir(dir: &Path) -> io::Result<()> {
+    fs::File::open(dir)?.sync_all()
 }
 
 /// A bare file name's parent is `.`, not the empty path.

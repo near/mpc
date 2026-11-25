@@ -103,7 +103,9 @@ impl TemporaryKeyStorage {
     ///
     /// This must only be called when the permanent keyshare has already advanced to the given
     /// epoch. This is because once we do this, we lose the protection that each key ID can only be
-    /// generated once. But if the permanent keyshare has advanced
+    /// generated once. But once the permanent keyshare has advanced to the given epoch,
+    /// [`KeyshareStorage`](super::KeyshareStorage) refuses to start key events of earlier epochs
+    /// anyway.
     pub async fn delete_keyshares_prior_to_epoch_id(
         &self,
         epoch_id: EpochId,

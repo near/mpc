@@ -89,6 +89,16 @@ impl PermanentKeyshareData {
             keyshares,
         })
     }
+
+    fn storage_identifier(&self) -> String {
+        storage_identifier(self.epoch_id, self.keyshares().len())
+    }
+}
+
+/// Identifier under which [`PermanentKeyStorage`] stores a keyset of `num_domains` domains in
+/// `epoch_id`.
+pub(crate) fn storage_identifier(epoch_id: EpochId, num_domains: usize) -> String {
+    format!("epoch_{}_with_{num_domains}_domains", epoch_id.get())
 }
 
 /// Backend for storing the permanent keyshare data.
@@ -96,15 +106,20 @@ impl PermanentKeyshareData {
 pub trait PermanentKeyStorageBackend: Send + Sync {
     /// Loads the latest stored data; or None if no data was ever stored.
     async fn load(&self) -> anyhow::Result<Option<Vec<u8>>>;
-    /// Stores the data, making it the latest. The identifier is used for the local backend to write
-    /// the data to a separate file and then linking it to the main file (acting as a backup
-    /// mechanism).
+    /// Stores the data, making it the latest. The local backend writes the data to a file named
+    /// after `identifier` and then points the main file at it.
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()>;
+    /// Deletes the data stored under any identifier other than `identifier`. Never changes what
+    /// [`Self::load`] returns.
+    async fn delete_all_except(&self, identifier: &str) -> anyhow::Result<()>;
 }
 
 /// Manages permanent keyshares. These are the keyshares we see from the Running state.
 /// When we generate or reshare a key, that key goes into temporary key storage first,
 /// and only when we transition to Running do we move it to permanent key storage.
+///
+/// Only the latest keyset is kept: storing a keyset deletes the ones stored before it, since a
+/// share of an earlier epoch still counts towards reconstructing the key.
 pub struct PermanentKeyStorage {
     backend: Box<dyn PermanentKeyStorageBackend>,
 }
@@ -125,9 +140,23 @@ impl PermanentKeyStorage {
         Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
     }
 
-    #[expect(rustdoc::private_intra_doc_links)]
+    /// Deletes the keysets that the stored keyset replaced. Deletes nothing when no keyset is
+    /// stored.
+    pub async fn delete_replaced(&self) -> anyhow::Result<()> {
+        // Without a stored keyset, the files may be the only copies left.
+        let Some(stored) = self.load().await? else {
+            return Ok(());
+        };
+        self.backend
+            .delete_all_except(&stored.storage_identifier())
+            .await
+    }
+
     /// Attempts to store the given [`PermanentKeyshareData`] in persistent storage,
     /// replacing existing data only if the new keyset is considered valid.
+    ///
+    /// The replaced keysets are deleted, so only call this with the keyset the contract is
+    /// Running in, or Resharing from.
     ///
     /// Validation is performed against the latest stored keyset to prevent
     /// accidental downgrades or mismatches.
@@ -137,8 +166,6 @@ impl PermanentKeyStorage {
     /// - It has a **lower epoch id** than the existing keyset.
     /// - It does not contain keshares for existing domains and public keys.
     /// - If has the **same epoch id** as the existing keyset, but **does not** extend the keyset.
-    ///
-    /// Only if all checks succeed will the new keyset be stored via [`Self::store_unchecked`].
     ///
     /// # Errors
     /// Returns an [`anyhow::Error`] if validation fails or if persistence fails.
@@ -207,17 +234,15 @@ impl PermanentKeyStorage {
                 }
             }
         }
-        self.store_unchecked(keyshare_data).await
-    }
-
-    async fn store_unchecked(&self, keyshare_data: &PermanentKeyshareData) -> anyhow::Result<()> {
-        let data_json = serde_json::to_vec(keyshare_data)?;
-        let identifier = format!(
-            "epoch_{}_with_{}_domains",
-            keyshare_data.epoch_id().get(),
-            keyshare_data.keyshares().len()
-        );
-        self.backend.store(&data_json, &identifier).await
+        let identifier = keyshare_data.storage_identifier();
+        self.backend
+            .store(&serde_json::to_vec(keyshare_data)?, &identifier)
+            .await?;
+        // The new keyset is stored either way, so a failed deletion does not fail the store.
+        if let Err(err) = self.backend.delete_all_except(&identifier).await {
+            tracing::error!(?err, "failed to delete the replaced permanent keyshares");
+        }
+        Ok(())
     }
 }
 
@@ -225,15 +250,18 @@ impl PermanentKeyStorage {
 #[expect(non_snake_case)]
 mod tests {
     use super::PermanentKeyshareData;
+    use crate::home_paths::permanent_key_link;
     use crate::keyshare::Keyshare;
     use crate::keyshare::local::LocalPermanentKeyStorageBackend;
     use crate::keyshare::permanent::{PermanentKeyStorage, PermanentKeyStorageBackend};
     use crate::keyshare::test_utils::{
-        KeysetBuilder, generate_dummy_keyshare, generate_dummy_keyshares, make_key_id,
+        KeysetBuilder, generate_dummy_keyshare, generate_dummy_keyshares, list_permanent_key_files,
+        make_key_id,
     };
     use k256::{AffinePoint, Scalar};
     use mpc_primitives::EpochId;
     use rand::SeedableRng as _;
+    use rstest::rstest;
 
     #[tokio::test]
     async fn test_load_store() {
@@ -333,5 +361,117 @@ mod tests {
 
         // Then
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::next_epoch(keysets_of_consecutive_epochs())]
+    #[case::added_domain(keysets_before_and_after_adding_a_domain())]
+    #[tokio::test]
+    async fn store__should_delete_superseded_keyshare_files(
+        #[case] keysets: (PermanentKeyshareData, PermanentKeyshareData),
+    ) {
+        // Given
+        let (older, latest) = keysets;
+        let temp = tempfile::tempdir().unwrap();
+        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
+            .await
+            .unwrap();
+        let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
+        storage.store(&older).await.unwrap();
+
+        // When
+        storage.store(&latest).await.unwrap();
+
+        // Then
+        assert_eq!(
+            list_permanent_key_files(temp.path()),
+            vec![latest.storage_identifier()]
+        );
+        assert_eq!(storage.load().await.unwrap().unwrap(), latest);
+    }
+
+    fn keysets_of_consecutive_epochs() -> (PermanentKeyshareData, PermanentKeyshareData) {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let (key_epoch_0, other_share) = generate_dummy_keyshares(0, 0, 1, &mut rng);
+        let key_epoch_1 = Keyshare {
+            key_id: make_key_id(1, 0, 1),
+            data: other_share.data,
+        };
+        (
+            KeysetBuilder::from_keyshares(0, &[key_epoch_0]).permanent_key_data(),
+            KeysetBuilder::from_keyshares(1, &[key_epoch_1]).permanent_key_data(),
+        )
+    }
+
+    fn keysets_before_and_after_adding_a_domain() -> (PermanentKeyshareData, PermanentKeyshareData)
+    {
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let first = generate_dummy_keyshare(0, 0, 1, &mut rng);
+        let second = generate_dummy_keyshare(0, 1, 1, &mut rng);
+        (
+            KeysetBuilder::from_keyshares(0, std::slice::from_ref(&first)).permanent_key_data(),
+            KeysetBuilder::from_keyshares(0, &[first, second]).permanent_key_data(),
+        )
+    }
+
+    #[tokio::test]
+    async fn delete_replaced__should_keep_only_the_stored_keyset() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let temp = tempfile::tempdir().unwrap();
+        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
+            .await
+            .unwrap();
+        let older = KeysetBuilder::new_populated(0, 1, &mut rng).permanent_key_data();
+        let latest = KeysetBuilder::new_populated(1, 1, &mut rng).permanent_key_data();
+        for keyset in [&older, &latest] {
+            backend
+                .store(
+                    &serde_json::to_vec(keyset).unwrap(),
+                    &keyset.storage_identifier(),
+                )
+                .await
+                .unwrap();
+        }
+        let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
+
+        // When
+        storage.delete_replaced().await.unwrap();
+
+        // Then
+        assert_eq!(
+            list_permanent_key_files(temp.path()),
+            vec![latest.storage_identifier()]
+        );
+        assert_eq!(storage.load().await.unwrap().unwrap(), latest);
+    }
+
+    #[tokio::test]
+    async fn delete_replaced__should_delete_nothing_without_a_stored_keyset() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let temp = tempfile::tempdir().unwrap();
+        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
+            .await
+            .unwrap();
+        let keyset = KeysetBuilder::new_populated(0, 1, &mut rng).permanent_key_data();
+        backend
+            .store(
+                &serde_json::to_vec(&keyset).unwrap(),
+                &keyset.storage_identifier(),
+            )
+            .await
+            .unwrap();
+        std::fs::remove_file(permanent_key_link(temp.path())).unwrap();
+        let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
+
+        // When
+        storage.delete_replaced().await.unwrap();
+
+        // Then
+        assert_eq!(
+            list_permanent_key_files(temp.path()),
+            vec![keyset.storage_identifier()]
+        );
     }
 }
