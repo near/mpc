@@ -403,7 +403,7 @@ near contract call-function as-read-only \
   now
 ```
 
-**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs keep repeating `failed to submit attestation`, check `available_attestation_grants` for your account; if it is `0`, prepay a grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage). The rejected `submit_participant_info` transaction (its hash is logged as `sending tx …`) shows `no attestation storage grant available` in an explorer or via `near transaction view-status`. The node retries the submission on its own once a grant exists.
+**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs keep repeating `failed to submit attestation`, check `available_attestation_grants` for your account; if it is `0`, prepay a grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage). The rejected `submit_participant_info` transaction (its hash is logged as `sending transaction tx_hash=…`) shows `no attestation storage grant available` in an explorer or via `near transaction view-status`. The node retries the submission on its own once a grant exists.
 
 Output should look like this:
 

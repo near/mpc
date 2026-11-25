@@ -6115,7 +6115,6 @@ dependencies = [
  "mpc-tls",
  "near-account-id",
  "near-async",
- "near-client",
  "near-config-utils 2.15.0-rc.1",
  "near-contract-transport",
  "near-crypto 2.15.0-rc.1",
