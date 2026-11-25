@@ -114,8 +114,8 @@ on, so wait for the runs on `release/vX.Y`:
 - **Major/minor**: they fire when the admin pushes the new release branch.
   The `main` builds from the prep PR merge are not used.
 
-The contract artifact is looked up by commit SHA, so either run's artifact
-works. Wait for all three to finish successfully. The Release workflow refuses
+The contract and verifier artifacts are looked up by commit SHA, so either run's
+artifacts work. Wait for all three to finish successfully. The Release workflow refuses
 to run if any artifact is missing.
 
 <!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->

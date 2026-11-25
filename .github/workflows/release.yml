@@ -17,7 +17,7 @@ jobs:
     environment: production
     permissions:
       contents: write # creates the draft release
-      actions: read # downloads the contract from the build run
+      actions: read # downloads the contract and verifier from the build run
 
     steps:
       - name: Refuse if not on a release branch
