@@ -194,8 +194,8 @@ release."
 The verifier hash differs between releases even when its code doesn't, because the
 WASM embeds the release version and commit. To see whether the verifier changed
 since the deployed one, compare its source and dependencies between the two release
-tags (for example, `git diff <deployed-tag> <new-tag> -- crates/tee-verifier*` and
-the `dcap-qvl` version in `Cargo.lock`).
+tags (for example, `git diff <deployed-tag> <new-tag> -- crates/tee-verifier*`, and
+the `dcap-qvl` version or its dependencies in `Cargo.lock`).
 
 Publishing creates the `3.11.0` git tag at the released commit.
 

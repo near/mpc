@@ -140,6 +140,13 @@ sha256sum target/near/mpc_contract/mpc_contract.wasm
 
 To verify a release artifact, compare the SHA-256 above against the
 `sha256:<digest>` value listed under "MPC contract" in the GitHub release notes.
+The TEE verifier is checked the same way, against "TEE verifier contract" (see
+[`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md)):
+
+```bash
+cargo near build reproducible-wasm --manifest-path crates/tee-verifier/Cargo.toml
+sha256sum target/near/tee_verifier/tee_verifier.wasm
+```
 
 ### Nix
 

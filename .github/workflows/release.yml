@@ -199,11 +199,12 @@ jobs:
           HASH=$(sha256sum "$WASM" | awk '{print $1}')
           HASH_BS58=$(python3 -c 'import sys
           A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-          n, s = int(sys.argv[1], 16), ""
+          b = bytes.fromhex(sys.argv[1])
+          n, s = int.from_bytes(b, "big"), ""
           while n:
               n, r = divmod(n, 58)
               s = A[r] + s
-          print(s)' "$HASH")
+          print("1" * (len(b) - len(b.lstrip(b"\0"))) + s)' "$HASH")
 
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
           echo "hash-bs58=$HASH_BS58" >> "$GITHUB_OUTPUT"
