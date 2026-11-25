@@ -526,14 +526,4 @@ timeout_sec = 60
         );
         assert_eq!(config.node.indexer.genesis_hash, Some(genesis_hash));
     }
-
-    #[test]
-    fn secret_types__should_zeroize_on_drop() {
-        // Given
-        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-
-        // When / Then
-        assert_zeroize_on_drop::<SecretsStartConfig>();
-        assert_zeroize_on_drop::<crate::foreign_chains::TokenConfig>();
-    }
 }

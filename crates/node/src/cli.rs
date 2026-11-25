@@ -1,5 +1,5 @@
 use crate::{
-    config::{load_config_file, start::NearInitConfigExt},
+    config::{AesKey128, load_config_file, start::NearInitConfigExt},
     keyshare::{
         compat::legacy_ecdsa_key_from_keyshares,
         local::LocalPermanentKeyStorageBackend,
@@ -8,7 +8,6 @@ use crate::{
     run::run_mpc_node,
 };
 use clap::{Args, Parser, Subcommand};
-use hex::FromHex;
 use launcher_interface::types::{TeeAuthorityConfig, TeeConfig};
 use mpc_node_config::{
     ChainId, ConfigFile, DownloadConfigType, LogConfig, LogFormat, NearInitConfig,
@@ -227,8 +226,8 @@ impl ImportKeyshareCmd {
             println!("Importing keyshare to local storage...");
 
             // Parse the encryption key
-            let encryption_key_bytes = <[u8; 16]>::from_hex(&self.local_encryption_key_hex)
-                .map_err(|_| {
+            let encryption_key =
+                AesKey128::from_hex(&self.local_encryption_key_hex).map_err(|_| {
                     anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
                 })?;
 
@@ -248,8 +247,7 @@ impl ImportKeyshareCmd {
             }
 
             let storage =
-                LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes)
-                    .await?;
+                LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key).await?;
 
             // Check for existing keyshare
             if storage.load().await?.is_some() {
@@ -273,8 +271,8 @@ impl ExportKeyshareCmd {
         runtime.block_on(async {
             println!("Exporting keyshare from local storage...");
 
-            let encryption_key_bytes = <[u8; 16]>::from_hex(&self.local_encryption_key_hex)
-                .map_err(|_| {
+            let encryption_key =
+                AesKey128::from_hex(&self.local_encryption_key_hex).map_err(|_| {
                     anyhow::anyhow!("Invalid encryption key: must be 32 hex characters (16 bytes)")
                 })?;
 
@@ -290,8 +288,7 @@ impl ExportKeyshareCmd {
             }
 
             let storage = PermanentKeyStorage::new(Box::new(
-                LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key_bytes)
-                    .await?,
+                LocalPermanentKeyStorageBackend::new(home_dir.clone(), encryption_key).await?,
             ))
             .await?;
 

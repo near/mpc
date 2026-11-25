@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::{assert_matches, net::SocketAddr};
 
-use crate::config::{AesKey256, NodeStatus, ParticipantInfo, ParticipantStatus};
+use crate::config::{AesKey128, AesKey256, NodeStatus, ParticipantInfo, ParticipantStatus};
 use crate::indexer::fake::participant_info_from_config;
 use crate::indexer::participants::ContractState;
 use crate::migration_service;
@@ -28,7 +28,7 @@ use super::OneNodeTestConfig;
 struct MigrationTestNodeInfo {
     participant_info: ParticipantInfo,
     home_dir: PathBuf,
-    storage_key: [u8; 16],
+    storage_key: AesKey128,
     migration_service_addr: SocketAddr,
     p2p_public_key: VerifyingKey,
     near_signer_key: VerifyingKey,
@@ -50,7 +50,7 @@ impl MigrationTestNodeInfo {
         Self {
             participant_info,
             home_dir: config.home_dir.clone(),
-            storage_key: *config.secrets.local_storage_aes_key.as_bytes(),
+            storage_key: config.secrets.local_storage_aes_key.clone(),
             migration_service_addr: config.config.migration_web_ui,
             p2p_public_key,
             near_signer_key,
@@ -251,7 +251,7 @@ async fn test_onboarding() {
             loop {
                 if let Ok(keyshares) = get_keyshares(
                     onboarding_node.home_dir.clone(),
-                    onboarding_node.storage_key,
+                    onboarding_node.storage_key.clone(),
                     &keyset,
                 )
                 .await

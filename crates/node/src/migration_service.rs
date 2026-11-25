@@ -16,7 +16,6 @@ pub mod onboarding;
 pub mod types;
 pub mod web;
 
-#[derive(zeroize::ZeroizeOnDrop)]
 pub struct MigrationSecrets {
     pub backup_encryption_key: AesKey256,
     pub p2p_private_key: SigningKey,
@@ -45,7 +44,7 @@ pub async fn spawn_recovery_server_and_run_onboarding(
     let web_server_state = web::types::WebServerState {
         import_keyshares_sender,
         keyshare_storage: keyshare_storage.clone(),
-        backup_encryption_key: migration_secrets.backup_encryption_key.clone(),
+        backup_encryption_key: migration_secrets.backup_encryption_key,
         onboarded: onboarded_receiver,
     };
 

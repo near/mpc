@@ -143,7 +143,7 @@ mod tests {
     fn get_epoch_data__should_bail_on_legacy_8_byte_entry() {
         // Given a DB whose EpochData entry is the legacy raw 8-byte epoch id.
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let mut writer = db.update();
         writer.put(DBCol::EpochData, EPOCH_ID_KEY, &7u64.to_be_bytes());
         writer.commit().unwrap();
@@ -264,7 +264,7 @@ mod tests {
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let client = new_test_client(all_participants.clone(), my_participant_id);
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
@@ -327,7 +327,7 @@ mod tests {
             .copied()
             .collect();
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let client = new_test_client(all_participants.clone(), my_participant_id);
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),
@@ -380,7 +380,7 @@ mod tests {
             .find(|p| **p != my_participant_id)
             .unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let client = new_test_client(all_participants.clone(), my_participant_id);
         let triple_store = TripleStorage::new(
             FakeClock::default().clock(),

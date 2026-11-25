@@ -13,7 +13,6 @@ jsonrpsee = { workspace = true }
 mpc-node-config = { workspace = true }
 near-mpc-contract-interface = { workspace = true }
 url = { workspace = true }
-zeroize = { workspace = true }
 
 [dev-dependencies]
 rstest = { workspace = true }

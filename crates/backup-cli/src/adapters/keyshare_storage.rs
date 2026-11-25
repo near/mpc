@@ -16,7 +16,7 @@ pub struct KeyshareStorageAdapter {
 
 impl KeyshareStorageAdapter {
     pub async fn new(home_dir: PathBuf, encryption_key: [u8; 16]) -> anyhow::Result<Self> {
-        let backend = LocalPermanentKeyStorageBackend::new(home_dir, encryption_key).await?;
+        let backend = LocalPermanentKeyStorageBackend::new(home_dir, encryption_key.into()).await?;
         let storage = PermanentKeyStorage::new(Box::new(backend)).await?;
 
         Ok(Self { storage })

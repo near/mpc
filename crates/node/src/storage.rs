@@ -226,7 +226,7 @@ mod tests {
     #[tokio::test]
     async fn test_sig_request_storage() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let storage = SignRequestStorage::new(db).unwrap();
 
         let req1 = SignatureRequest {
@@ -269,7 +269,7 @@ mod tests {
     #[tokio::test]
     async fn test_ckd_request_storage() {
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let storage = CKDRequestStorage::new(db).unwrap();
 
         let req1 = CKDRequest {

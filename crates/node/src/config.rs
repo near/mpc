@@ -202,7 +202,7 @@ pub struct ParticipantInfo {
     pub near_account_id: AccountId,
 }
 
-#[derive(Clone, zeroize::ZeroizeOnDrop)]
+#[derive(Clone)]
 pub struct SecretsConfig {
     // Ed25519 keys. `near_crypto` API too rigid to store this exact enum type.
     // e.g. you can not call `public_key` on the `ED25519SecretKey` type.
@@ -252,7 +252,7 @@ impl SecretsConfig {
 /// Secrets that are stored on disk. They are generated on the first run.
 /// The idea is when using a TEE, it's safer to generate them inside enclave, rather than provide it
 /// from outside.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, zeroize::ZeroizeOnDrop)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct PersistentSecrets {
     #[serde(
         serialize_with = "serialize_signing_key",

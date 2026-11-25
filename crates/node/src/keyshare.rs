@@ -6,6 +6,7 @@ pub mod test_utils;
 
 mod temporary;
 
+use crate::config::AesKey128;
 use anyhow::Context;
 use mpc_primitives::{EpochId, KeyEventId};
 use near_mpc_contract_interface::types::{
@@ -453,22 +454,21 @@ impl KeyshareStorage {
 }
 
 /// Config for how to construct a KeyshareStorage.
-#[derive(zeroize::ZeroizeOnDrop)]
 pub struct KeyStorageConfig {
-    #[zeroize(skip)]
     pub home_dir: std::path::PathBuf,
-    pub local_encryption_key: [u8; 16],
+    pub local_encryption_key: AesKey128,
 }
 
 impl KeyStorageConfig {
     pub async fn create(&self) -> anyhow::Result<KeyshareStorage> {
         let backend = local::LocalPermanentKeyStorageBackend::new(
             self.home_dir.clone(),
-            self.local_encryption_key,
+            self.local_encryption_key.clone(),
         )
         .await?;
         let permanent = PermanentKeyStorage::new(Box::new(backend)).await?;
-        let temporary = TemporaryKeyStorage::new(self.home_dir.clone(), self.local_encryption_key)?;
+        let temporary =
+            TemporaryKeyStorage::new(self.home_dir.clone(), self.local_encryption_key.clone())?;
         Ok(KeyshareStorage {
             temporary,
             permanent,
@@ -480,7 +480,7 @@ impl KeyStorageConfig {
 pub fn generate_key_storage_config() -> (KeyStorageConfig, tempfile::TempDir) {
     let tempdir = tempfile::tempdir().unwrap();
     let home_dir = tempdir.path().to_path_buf();
-    let local_encryption_key = [3; 16];
+    let local_encryption_key = [3; 16].into();
     (
         KeyStorageConfig {
             home_dir,
@@ -1272,22 +1272,11 @@ pub mod tests {
 
     #[test]
     #[expect(non_snake_case)]
-    fn secret_types__should_zeroize_on_drop() {
+    fn aes_gcm_ciphers__should_zeroize_on_drop() {
         // Given
         fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
 
         // When / Then
-        assert_zeroize_on_drop::<crate::config::AesKey128>();
-        assert_zeroize_on_drop::<crate::config::AesKey256>();
-        assert_zeroize_on_drop::<crate::config::SecretsConfig>();
-        assert_zeroize_on_drop::<crate::config::PersistentSecrets>();
-        assert_zeroize_on_drop::<crate::migration_service::MigrationSecrets>();
-        assert_zeroize_on_drop::<crate::migration_service::web::types::WebServerState>();
-        assert_zeroize_on_drop::<super::KeyStorageConfig>();
-        assert_zeroize_on_drop::<super::TemporaryKeyStorage>();
-        assert_zeroize_on_drop::<super::PendingKeyshareStorageHandle>();
-        assert_zeroize_on_drop::<super::local::LocalPermanentKeyStorageBackend>();
-        assert_zeroize_on_drop::<super::permanent::LegacyRootKeyshareData>();
         assert_zeroize_on_drop::<aes_gcm::Aes128Gcm>();
         assert_zeroize_on_drop::<aes_gcm::Aes256Gcm>();
     }

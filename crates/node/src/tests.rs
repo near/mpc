@@ -14,7 +14,7 @@ use std::{
 
 use tokio::sync::{RwLock, watch};
 
-use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
+use crate::config::{AesKey128, ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::IndexerAPI;
@@ -87,7 +87,7 @@ pub struct OneNodeTestConfig {
 
 pub fn make_key_storage_config(
     home_dir: PathBuf,
-    local_encryption_key: [u8; 16],
+    local_encryption_key: AesKey128,
 ) -> KeyStorageConfig {
     KeyStorageConfig {
         home_dir,
@@ -97,7 +97,7 @@ pub fn make_key_storage_config(
 
 pub async fn get_keyshares(
     home_dir: PathBuf,
-    local_encryption_key: [u8; 16],
+    local_encryption_key: AesKey128,
     keyset: &near_mpc_contract_interface::types::Keyset,
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
@@ -135,13 +135,10 @@ impl OneNodeTestConfig {
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
 
-                let secret_db = SecretDB::new(
-                    &self.home_dir,
-                    *self.secrets.local_storage_aes_key.as_bytes(),
-                )?;
+                let secret_db = SecretDB::new(&self.home_dir, &self.secrets.local_storage_aes_key)?;
                 let key_storage_config = make_key_storage_config(
                     self.home_dir,
-                    *self.secrets.local_storage_aes_key.as_bytes(),
+                    self.secrets.local_storage_aes_key.clone(),
                 );
                 let keystore = Arc::new(RwLock::new(
                     key_storage_config

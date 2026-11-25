@@ -2,7 +2,6 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_with::{DisplayFromStr, serde_as};
 use url::Url;
-use zeroize::Zeroizing;
 
 use super::provider_identity::{self, ConfiguredAuth};
 
@@ -43,7 +42,7 @@ impl<'a> From<&'a AuthConfig> for ConfiguredAuth<'a> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, zeroize::ZeroizeOnDrop)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum TokenConfig {
     Env { env: String },
@@ -51,8 +50,8 @@ pub enum TokenConfig {
 }
 
 impl TokenConfig {
-    pub fn resolve(&self) -> anyhow::Result<Zeroizing<String>> {
-        let token = match self {
+    pub fn resolve(&self) -> anyhow::Result<String> {
+        match self {
             // TODO(#2335): do not resolve env variables this deep in the binary.
             // Should be resolved at start, preferably in the config so we can kill env configs
             //
@@ -61,8 +60,7 @@ impl TokenConfig {
                 std::env::var(env).with_context(|| format!("environment variable {env} is not set"))
             }
             TokenConfig::Val { val } => Ok(val.clone()),
-        }?;
-        Ok(Zeroizing::new(token))
+        }
     }
 }
 

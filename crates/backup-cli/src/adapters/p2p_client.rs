@@ -24,15 +24,11 @@ pub enum Error {
     Timeout(Duration),
 }
 
-#[derive(zeroize::ZeroizeOnDrop)]
 pub struct MpcP2PClient {
-    #[zeroize(skip)]
     mpc_node_address: NodeAddress,
-    #[zeroize(skip)]
     mpc_node_p2p_key: VerifyingKey,
     p2p_private_key: SigningKey,
     backup_encryption_key: AesKey256,
-    #[zeroize(skip)]
     request_timeout: Duration,
 }
 
@@ -261,15 +257,5 @@ mod tests {
             .clone();
 
         assert_eq!(keyshares, expected_keyshares);
-    }
-
-    #[test]
-    fn secret_types__should_zeroize_on_drop() {
-        // Given
-        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-
-        // When / Then
-        assert_zeroize_on_drop::<super::MpcP2PClient>();
-        assert_zeroize_on_drop::<crate::types::PersistentSecrets>();
     }
 }

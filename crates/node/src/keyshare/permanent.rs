@@ -272,7 +272,7 @@ mod tests {
     async fn test_load_store() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let temp = tempfile::tempdir().unwrap();
-        let encryption_key = [2; 16];
+        let encryption_key = [2; 16].into();
         let backend =
             LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), encryption_key)
                 .await
@@ -347,7 +347,7 @@ mod tests {
     #[tokio::test]
     async fn test_legacy_migration() {
         let temp = tempfile::tempdir().unwrap();
-        let encryption_key = [2; 16];
+        let encryption_key = [2; 16].into();
         let backend =
             LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), encryption_key)
                 .await

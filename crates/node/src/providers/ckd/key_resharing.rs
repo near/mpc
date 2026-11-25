@@ -194,14 +194,4 @@ mod tests {
         })
         .await;
     }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn key_resharing_computation__should_zeroize_on_drop() {
-        // Given
-        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-
-        // When / Then
-        assert_zeroize_on_drop::<KeyResharingComputation>();
-    }
 }

@@ -1,4 +1,5 @@
 use super::Keyshare;
+use crate::config::AesKey128;
 use crate::db::{decrypt, encrypt};
 use crate::durable_fs::sync_parent_dir;
 use aes_gcm::{Aes128Gcm, KeyInit};
@@ -13,15 +14,13 @@ use zeroize::Zeroizing;
 /// or resharing attempt is stored here before voting for its success on the contract; that way
 /// if the contract then tells us that we should be using the keyshare from a specific attempt,
 /// we are sure to have persisted them in temporary key storage.
-#[derive(zeroize::ZeroizeOnDrop)]
 pub struct TemporaryKeyStorage {
-    #[zeroize(skip)]
     storage_dir: PathBuf,
-    local_encryption_key: [u8; 16],
+    local_encryption_key: AesKey128,
 }
 
 impl TemporaryKeyStorage {
-    pub fn new(home_dir: PathBuf, local_encryption_key: [u8; 16]) -> anyhow::Result<Self> {
+    pub fn new(home_dir: PathBuf, local_encryption_key: AesKey128) -> anyhow::Result<Self> {
         let storage_dir = home_dir.join("temporary_keys");
         std::fs::create_dir_all(&storage_dir)?;
         sync_parent_dir(&storage_dir)?;
@@ -66,7 +65,7 @@ impl TemporaryKeyStorage {
         Ok(PendingKeyshareStorageHandle {
             path,
             key_id,
-            local_encryption_key: self.local_encryption_key,
+            local_encryption_key: self.local_encryption_key.clone(),
         })
     }
 
@@ -79,7 +78,7 @@ impl TemporaryKeyStorage {
         }
 
         let data = tokio::fs::read(&path).await?;
-        let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
+        let cipher = Aes128Gcm::new(self.local_encryption_key.as_bytes().into());
         let decrypted = Zeroizing::new(decrypt(&cipher, &data)?);
         let keyshare: Keyshare = serde_json::from_slice(&decrypted)?;
         if keyshare.key_id != key_id {
@@ -126,13 +125,10 @@ impl TemporaryKeyStorage {
 }
 
 /// Handle to write a completed Keyshare to temporary key storage.
-#[derive(zeroize::ZeroizeOnDrop)]
 pub struct PendingKeyshareStorageHandle {
-    #[zeroize(skip)]
     pub path: PathBuf,
-    #[zeroize(skip)]
     key_id: KeyEventId,
-    local_encryption_key: [u8; 16],
+    local_encryption_key: AesKey128,
 }
 
 impl PendingKeyshareStorageHandle {
@@ -146,13 +142,13 @@ impl PendingKeyshareStorageHandle {
             keyshare.key_id
         );
         let data = Zeroizing::new(serde_json::to_vec(&keyshare)?);
-        let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
+        let cipher = Aes128Gcm::new(self.local_encryption_key.as_bytes().into());
         let encrypted = encrypt(&cipher, &data);
 
         let mut file = tokio::fs::File::create_new(&self.path).await?;
         file.write_all(&encrypted).await?;
         file.sync_all().await?;
-        sync_parent_dir_async(self.path.clone()).await?;
+        sync_parent_dir_async(self.path).await?;
         Ok(())
     }
 }
@@ -175,7 +171,7 @@ mod tests {
     async fn test_temporary_key_storage() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let home_dir = tempfile::tempdir().unwrap();
-        let local_encryption_key = [3; 16];
+        let local_encryption_key = [3; 16].into();
         let storage =
             TemporaryKeyStorage::new(home_dir.path().to_path_buf(), local_encryption_key).unwrap();
 
