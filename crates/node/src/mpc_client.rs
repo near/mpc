@@ -74,8 +74,6 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
             EcdsaTaskId::ManyTriples { .. } => true,
             EcdsaTaskId::KeyGeneration { .. }
             | EcdsaTaskId::KeyResharing { .. }
-            | EcdsaTaskId::Presignature { .. }
-            | EcdsaTaskId::Signature { .. }
             | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
         MpcTaskId::RobustEcdsaTaskId(id) => match id {
@@ -753,24 +751,6 @@ mod tests {
                 .into(),
                 false,
             ),
-            // ECDSA: retired stored-presignature tasks are only rejected.
-            (
-                EcdsaTaskId::Presignature {
-                    id: uid(),
-                    domain_id: DomainId(0),
-                    paired_triple_id: uid(),
-                }
-                .into(),
-                false,
-            ),
-            (
-                EcdsaTaskId::Signature {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }
-                .into(),
-                false,
-            ),
             (
                 RobustEcdsaTaskId::Signature {
                     id: CryptoHash::default(),
@@ -809,14 +789,6 @@ mod tests {
             ),
             (
                 VerifyForeignTxTaskId::VerifyForeignTx {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }
-                .into(),
-                false,
-            ),
-            (
-                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
                     id: CryptoHash::default(),
                     paired_triple_id: uid(),
                 }

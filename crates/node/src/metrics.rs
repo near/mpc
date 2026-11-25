@@ -465,7 +465,6 @@ pub(crate) const CKD_PROTOCOL_SCHEME_LABEL: &str = "ckd";
 pub(crate) const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
 pub(crate) const MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL: &str = "make_online_presign_signature";
 pub(crate) const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
-pub(crate) const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
 pub(crate) const KEY_GENERATION_TASK_LABEL: &str = "key_generation";
 pub(crate) const KEY_RESHARING_TASK_LABEL: &str = "key_resharing";
 pub(crate) const CKD_TASK_LABEL: &str = "ckd";
@@ -485,8 +484,6 @@ impl MpcTaskId {
                     EcdsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
                     EcdsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
                     EcdsaTaskId::ManyTriples { .. } => TRIPLE_GENERATION_TASK_LABEL,
-                    EcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
-                    EcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
                     EcdsaTaskId::OnlinePresignSignature { .. } => {
                         MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL
                     }
@@ -519,10 +516,7 @@ impl MpcTaskId {
             MpcTaskId::VerifyForeignTxTaskId(task) => (
                 ECDSA_PROTOCOL_SCHEME_LABEL,
                 match task {
-                    VerifyForeignTxTaskId::VerifyForeignTx { .. }
-                    | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. } => {
-                        VERIFY_FOREIGN_TX_TASK_LABEL
-                    }
+                    VerifyForeignTxTaskId::VerifyForeignTx { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
                 },
             ),
         };

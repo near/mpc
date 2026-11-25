@@ -235,17 +235,12 @@ impl VerifyForeignTxProvider {
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
-            MpcTaskId::VerifyForeignTxTaskId(
-                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
-                    id,
-                    paired_triple_id,
-                },
-            ) => {
-                self.make_verify_foreign_tx_online_presign_follower(channel, id, paired_triple_id)
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx {
+                id,
+                paired_triple_id,
+            }) => {
+                self.make_verify_foreign_tx_follower(channel, id, paired_triple_id)
                     .await?;
-            }
-            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
-                anyhow::bail!("Retired stored-presignature task rejected");
             }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",
