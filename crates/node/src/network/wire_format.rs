@@ -198,7 +198,6 @@ mod tests {
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::KeyEventId;
     use rstest::rstest;
-    use std::assert_matches;
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 
@@ -321,18 +320,18 @@ mod tests {
     }
 
     #[rstest]
-    #[case::ecdsa_presignature((0u8, 3u8, uid(1), DomainId(2), uid(3)))]
-    #[case::ecdsa_signature((0u8, 4u8, hash(1), uid(2)))]
-    #[case::verify_foreign_tx_with_presignature((4u8, 0u8, hash(1), uid(2)))]
-    fn mpc_task_id__should_not_decode_retired_discriminant(#[case] retired: impl BorshSerialize) {
-        // Given
-        let bytes = borsh::to_vec(&retired).unwrap();
-
+    #[case::ecdsa_presignature([0, 3])]
+    #[case::ecdsa_signature([0, 4])]
+    #[case::verify_foreign_tx_with_presignature([4, 0])]
+    fn mpc_task_id__should_not_decode_retired_discriminant(#[case] retired_prefix: [u8; 2]) {
         // When
-        let decoded = borsh::from_slice::<MpcTaskId>(&bytes);
+        let error = borsh::from_slice::<MpcTaskId>(&retired_prefix).unwrap_err();
 
         // Then
-        assert_matches!(decoded, Err(_));
+        assert_eq!(
+            error.to_string(),
+            format!("Unexpected variant tag: {}", retired_prefix[1])
+        );
     }
 
     #[test]
