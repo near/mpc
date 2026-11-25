@@ -11,8 +11,12 @@ transfers.
 
 The inputs to this protocol are:
 
-1) The choice bits $b_ 1, \ldots, b_ \ell$, held by $\mathcal{R}$ only.
-2) The messages $M_ {i, 0}, M_ {i, 1} \in \mathbb{G}$ for $i \in [\ell]$, held by $\mathcal{S}$ only.
+1) The session identifier $\mathsf{sid}$, shared by both parties.
+2) The choice bits $b_ 1, \ldots, b_ \ell$, held by $\mathcal{R}$ only.
+3) The messages $M_ {i, 0}, M_ {i, 1} \in \mathbb{G}$ for $i \in [\ell]$, held by $\mathcal{S}$ only.
+
+The signing algorithm provides $\mathsf{sid}$ as an input to this protocol.
+It extracts $\mathsf{sid}$ from the master public key of the signing session.
 
 # Protocol
 
@@ -25,11 +29,11 @@ A failed assertion aborts the protocol.
 Each party derives the four points from four distinct inputs:
 
 $$
-(G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathcal{S}, \mathcal{R}, j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
+(G_ 0, H_ 0, G_ 1, H_ 1) \gets \left(\mathsf{HashToCurve}_ {\mathsf{DST}}(\mathsf{sid}, \mathcal{S}, \mathcal{R}, j)\right)_ {j \in \\\{0, 1, 2, 3\\\}}
 $$
 
 The hash takes the identities of the two parties as the ordered pair $(\mathcal{S}, \mathcal{R})$.
-The tuple $(\mathcal{S}, \mathcal{R}, j)$ is encoded injectively.
+The tuple $(\mathsf{sid}, \mathcal{S}, \mathcal{R}, j)$ is encoded injectively.
 
 **Round 1 (Receiver):**
 
@@ -95,7 +99,8 @@ The four inputs must be distinct: equal inputs give $x_ 0 = x_ 1$.
 
 **Hash inputs.** The ordered pair $(\mathcal{S}, \mathcal{R})$ gives each pair
 of parties and each direction its own string.
-The pair reuses it across runs, which PVW08 allows.
+$\mathsf{sid}$ binds the string to the master public key.
+The pair reuses the string across runs under that key, which PVW08 allows.
 
 **Identity check.** The pair $(0, 0)$ gives $V_ {i, 0} = V_ {i, 1} = 0$, which
 sends both messages in the clear, so the sender rejects it in round 1.
