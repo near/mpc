@@ -701,17 +701,19 @@ async fn migration_service__should_migrate_nodes_via_backup_cli() {
 }
 
 /// Poll the backup service's storage until it holds a keyshare file for `epoch_id`.
+/// Waits until the backup holds only the given keyset: its file appears before the keyset it
+/// replaced is deleted.
 async fn wait_for_backed_up_epoch(
     backup_service: &BackupService,
     epoch_id: u64,
     num_domains: usize,
 ) -> anyhow::Result<()> {
-    let expected = format!("epoch_{epoch_id}_with_{num_domains}_domains");
+    let expected = vec![format!("epoch_{epoch_id}_with_{num_domains}_domains")];
     (|| async {
         let stored = backup_service.stored_keyshare_files();
         anyhow::ensure!(
-            stored.contains(&expected),
-            "backup service has not stored {expected} yet, found {stored:?}"
+            stored == expected,
+            "backup service does not hold only {expected:?} yet, found {stored:?}"
         );
         Ok(())
     })
@@ -832,13 +834,6 @@ async fn backup_service_run__should_back_up_keyshares_on_startup_and_after_resha
         last_backup_served_epoch(&cluster, source_idx).await,
         Some(i64::try_from(resharing_epoch_id).unwrap()),
         "node should report having served epoch {resharing_epoch_id}"
-    );
-    let stored = backup_service.stored_keyshare_files();
-    assert!(
-        stored.contains(&format!(
-            "epoch_{initial_epoch_id}_with_{num_domains}_domains"
-        )),
-        "the pre-resharing backup should be kept, found {stored:?}"
     );
 }
 

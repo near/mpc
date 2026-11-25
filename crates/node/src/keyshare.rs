@@ -263,7 +263,8 @@ impl KeyshareStorage {
     /// The returned keys are in increasing order of DomainId.
     ///
     /// Since this is only expected to be called when we already know which attempt to use, this
-    /// function also deletes keyshares in temporary storage that are below the keyset's epoch ID.
+    /// function also deletes keyshares in temporary storage that are below the keyset's epoch ID,
+    /// and the permanent keysets that the stored one replaced.
     /// (We could also delete attempts in the same epoch ID but this is not necessary from a
     /// security perspective, since the same epoch ID corresponds to the same set of participants
     /// and the threshold value.)
@@ -275,7 +276,14 @@ impl KeyshareStorage {
             ._load_keyshares_from_permanent_or_temporary(keyset)
             .await?
         {
-            LoadedKeyset::Permanent(keyshares) => Ok(keyshares),
+            LoadedKeyset::Permanent(keyshares) => {
+                // Storing deletes the replaced keysets, but earlier versions kept them all, and a
+                // failed deletion leaves some behind.
+                if let Err(err) = self.permanent.delete_replaced().await {
+                    tracing::error!(?err, "failed to delete the replaced permanent keyshares");
+                }
+                Ok(keyshares)
+            }
             LoadedKeyset::PermanentAndTemporary(keyshares) => {
                 self._store_new_permanent_keyset_data_delete_temporary(
                     keyset.epoch_id,
