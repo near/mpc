@@ -4876,8 +4876,8 @@
     },
     {
       "datasource": {
-        "type": "mixed",
-        "uid": "-- Mixed --"
+        "type": "prometheus",
+        "uid": "${DS_GRAFANACLOUD_PROM}"
       },
       "description": "Highest peer indexer height this node knows about minus its own MPC indexer height, both from the same scrape, so there is no scrape skew. This is the comparison the node itself makes when deciding whether it may lead. A few blocks is normal.",
       "fieldConfig": {
