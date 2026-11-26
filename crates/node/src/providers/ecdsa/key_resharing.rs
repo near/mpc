@@ -9,6 +9,7 @@ use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::participants::Participant;
+use zeroize::Zeroizing;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_resharing_client_internal(
@@ -23,7 +24,7 @@ impl EcdsaSignatureProvider {
             reconstruction_threshold: new_reconstruction_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
             old_reconstruction_threshold,
-            my_share,
+            my_share: my_share.map(Zeroizing::new),
             public_key,
         }
         .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
@@ -47,16 +48,11 @@ impl EcdsaSignatureProvider {
 ///     - the number of participants common between old and new is smaller than
 ///       the old threshold; or
 ///     - the threshold is larger than the number of participants.
-#[derive(zeroize::ZeroizeOnDrop)]
 pub struct KeyResharingComputation {
-    #[zeroize(skip)]
     reconstruction_threshold: ReconstructionThreshold,
-    #[zeroize(skip)]
     old_participants: Vec<ParticipantId>,
-    #[zeroize(skip)]
     old_reconstruction_threshold: ReconstructionThreshold,
-    my_share: Option<SigningShare>,
-    #[zeroize(skip)]
+    my_share: Option<Zeroizing<SigningShare>>,
     public_key: VerifyingKey,
 }
 
@@ -77,8 +73,7 @@ impl MpcLeaderCentricComputation<KeygenOutput> for KeyResharingComputation {
 
         let old_participants = self
             .old_participants
-            .iter()
-            .copied()
+            .into_iter()
             .map(Participant::from)
             .collect::<Vec<_>>();
 
@@ -117,6 +112,7 @@ mod tests {
     use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
     use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
     use tokio::sync::mpsc;
+    use zeroize::Zeroizing;
 
     #[tokio::test]
     async fn test_key_resharing() {
@@ -164,7 +160,7 @@ mod tests {
                         reconstruction_threshold,
                         old_participants,
                         old_reconstruction_threshold: reconstruction_threshold,
-                        my_share: keyshare,
+                        my_share: keyshare.map(Zeroizing::new),
                         public_key: pubkey,
                     }
                     .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))

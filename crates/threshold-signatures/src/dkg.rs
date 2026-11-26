@@ -18,6 +18,7 @@ use frost_core::{
     Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey,
 };
 use rand_core::CryptoRngCore;
+use zeroize::Zeroizing;
 
 /// This function prevents calling keyshare function with inproper inputs
 fn assert_keyshare_inputs<C: Ciphersuite>(
@@ -611,7 +612,7 @@ pub async fn do_reshare<C: Ciphersuite>(
     participants: ParticipantList,
     me: Participant,
     threshold: impl Into<ReconstructionThreshold>,
-    old_signing_key: Option<SigningShare<C>>,
+    old_signing_key: Option<Zeroizing<SigningShare<C>>>,
     old_public_key: VerifyingKey<C>,
     old_participants: ParticipantList,
     mut rng: impl CryptoRngCore,
@@ -648,7 +649,7 @@ pub fn assert_reshare_keys_invariants<C: Ciphersuite>(
     participants: &[Participant],
     me: Participant,
     threshold: impl Into<ReconstructionThreshold>,
-    old_signing_key: Option<SigningShare<C>>,
+    old_signing_key: Option<&SigningShare<C>>,
     old_threshold: impl Into<ReconstructionThreshold>,
     old_participants: &[Participant],
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
@@ -698,6 +699,7 @@ pub mod test {
     use frost_core::{Field, Group};
     use rand_core::{CryptoRngCore, SeedableRng};
     use rstest::rstest;
+    use zeroize::Zeroizing;
 
     #[test]
     fn test_domain_separate_hash() {
@@ -922,7 +924,7 @@ pub mod test {
                     &new_participants,
                     p,
                     new_threshold,
-                    old_signing_key,
+                    old_signing_key.as_ref(),
                     old_threshold,
                     &participants,
                 )
@@ -932,7 +934,7 @@ pub mod test {
                     participant_list,
                     p,
                     new_threshold,
-                    old_signing_key,
+                    old_signing_key.map(Zeroizing::new),
                     old_public_key,
                     old_participant_list,
                     rng_p,

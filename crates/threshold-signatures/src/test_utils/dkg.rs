@@ -1,5 +1,6 @@
 use rand::SeedableRng;
 use rand_core::CryptoRngCore;
+use zeroize::Zeroizing;
 
 use frost_core::{Field, Group, keys::SigningShare};
 
@@ -62,7 +63,7 @@ pub fn run_refresh<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
     for (p, out) in keys {
         let rng_p = R::seed_from_u64(rng.next_u64());
         let protocol = refresh::<C, _, _>(
-            Some(out.private_share),
+            Some(Zeroizing::new(out.private_share)),
             out.public_key,
             participants,
             threshold,
@@ -111,7 +112,7 @@ pub fn run_reshare<C: Ciphersuite, R: CryptoRngCore + SeedableRng + Send + 'stat
         let protocol = reshare(
             participants,
             old_threshold,
-            out.0,
+            out.0.map(Zeroizing::new),
             out.1,
             new_participants,
             new_threshold,
