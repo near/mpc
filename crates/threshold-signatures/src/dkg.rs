@@ -351,7 +351,7 @@ async fn do_keyshare<C: Ciphersuite>(
     participants: ParticipantList,
     me: Participant,
     threshold: ReconstructionThreshold,
-    secret: Scalar<C>,
+    secret: Zeroizing<SigningShare<C>>,
     old_reshare_package: Option<(VerifyingKey<C>, ParticipantList)>,
     rng: &mut impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
@@ -359,7 +359,7 @@ async fn do_keyshare<C: Ciphersuite>(
     let mut domain_separator = DomainSeparator::new();
     // Make sure you do not call do_keyshare with zero as secret on an old participant
     let (old_verification_key, old_participants) =
-        assert_keyshare_inputs(me, &secret, old_reshare_package)?;
+        assert_keyshare_inputs(me, &secret.to_scalar(), old_reshare_package)?;
 
     // Start Round 1
     // Step 1.2
@@ -381,7 +381,8 @@ async fn do_keyshare<C: Ciphersuite>(
         .value()
         .checked_sub(1)
         .ok_or(ProtocolError::IntegerOverflow)?;
-    let secret_coefficients = Polynomial::<C>::generate_polynomial(Some(secret), degree, rng)?;
+    let secret_coefficients =
+        Polynomial::<C>::generate_polynomial(Some(secret.to_scalar()), degree, rng)?;
 
     // Compute the multiplication of every coefficient of p with the generator G
     // Step 2.4
@@ -556,7 +557,9 @@ pub async fn do_keygen<C: Ciphersuite>(
 ) -> Result<KeygenOutput<C>, ProtocolError> {
     let threshold = threshold.into();
     // pick share at random
-    let secret = SigningKey::<C>::new(&mut rng).to_scalar();
+    let secret = Zeroizing::new(SigningShare::new(
+        SigningKey::<C>::new(&mut rng).to_scalar(),
+    ));
     // call keyshare
     let keygen_output =
         do_keyshare::<C>(chan, participants, me, threshold, secret, None, &mut rng).await?;
@@ -624,10 +627,10 @@ pub async fn do_reshare<C: Ciphersuite>(
         .map(|x_i| {
             intersection
                 .lagrange::<C>(me)
-                .map(|lambda| lambda * x_i.to_scalar())
+                .map(|lambda| Zeroizing::new(SigningShare::new(lambda * x_i.to_scalar())))
         })
         .transpose()?
-        .unwrap_or_else(<C::Group as Group>::Field::zero);
+        .unwrap_or_default();
 
     let old_reshare_package = Some((old_public_key, old_participants));
     let keygen_output = do_keyshare::<C>(
