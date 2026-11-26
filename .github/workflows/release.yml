@@ -197,17 +197,8 @@ jobs:
           mv tee_verifier.wasm "$WASM"
           tar -czf "tee-verifier-v${VERSION}.tar.gz" "$WASM"
           HASH=$(sha256sum "$WASM" | awk '{print $1}')
-          HASH_BS58=$(python3 -c 'import sys
-          A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-          b = bytes.fromhex(sys.argv[1])
-          n, s = int.from_bytes(b, "big"), ""
-          while n:
-              n, r = divmod(n, 58)
-              s = A[r] + s
-          print("1" * (len(b) - len(b.lstrip(b"\0"))) + s)' "$HASH")
 
           echo "hash=$HASH" >> "$GITHUB_OUTPUT"
-          echo "hash-bs58=$HASH_BS58" >> "$GITHUB_OUTPUT"
           echo "archive=$PWD/tee-verifier-v${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Compose release notes
@@ -217,7 +208,6 @@ jobs:
           LAUNCHER_DIGEST: ${{ steps.digests.outputs.mpc_launcher_digest }}
           CONTRACT_HASH: ${{ steps.contract.outputs.hash }}
           VERIFIER_HASH: ${{ steps.verifier.outputs.hash }}
-          VERIFIER_HASH_BS58: ${{ steps.verifier.outputs.hash-bs58 }}
         run: |
           set -euo pipefail
           cp release-notes-raw.md release-notes.md
@@ -237,7 +227,7 @@ jobs:
 
           ## TEE verifier contract
 
-          - digest: \`sha256:${VERIFIER_HASH}\` (bs58: \`${VERIFIER_HASH_BS58}\`)
+          - digest: \`sha256:${VERIFIER_HASH}\`
           EOF
 
       - name: Create draft release
