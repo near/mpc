@@ -22,8 +22,6 @@ resp. associated to the (master) Beaver triples $(a, b, c)$ and $(k, d, e)$
 
 *Note: neither* $d_i$ *nor* $C$ *are actually used in the algorithm.*
 
-*Note: the key derivation is not a separate step. The tweak* $\epsilon$ *only adds* $\epsilon \cdot k_i$ *to* $\sigma_i$ *in Round 2.*
-
 **Round 1:**
 
 1. Each $P_i$ linearizes their shares, setting:
