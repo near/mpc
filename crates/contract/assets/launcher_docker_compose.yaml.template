@@ -11,6 +11,7 @@ services:
       - DOCKER_CONTENT_TRUST=1
       - DEFAULT_IMAGE_DIGEST=sha256:{{DEFAULT_IMAGE_DIGEST_HASH}}
       - MPC_CONTRACT_ID={{MPC_CONTRACT_ID}}
+      - NEAR_GENESIS_HASH={{NEAR_GENESIS_HASH}}
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

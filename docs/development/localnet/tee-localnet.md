@@ -72,7 +72,7 @@ There are additional ports defined in frodo/sam.env, but you may change those to
 Those are the recommended configuration settings:
 you will need the following files:
 
-* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template): rendered with the launcher and MPC node manifest digests and the contract account id before deployment (see below)
+* [launcher_docker_compose.yaml.template](../../../crates/contract/assets/launcher_docker_compose.yaml.template): rendered with the launcher and MPC node manifest digests, the contract account id and the localnet's genesis hash before deployment (see below)
 * [frodo.toml](../../../deployment/localnet/tee/frodo.toml) / [sam.toml](../../../deployment/localnet/tee/sam.toml)
 * [frodo.env](../../../deployment/localnet/tee/frodo.env)/ [sam.env](../../../deployment/localnet/tee/sam.env)    - if you use the deployment script
 
@@ -88,7 +88,8 @@ Set the launcher and MPC node manifest digests in the env file
 (`LAUNCHER_MANIFEST_DIGEST` and `MPC_MANIFEST_DIGEST`). `deploy-launcher.sh`
 renders the contract template at deploy time, substituting these digests
 into the `image:` and `DEFAULT_IMAGE_DIGEST` fields, and the env file's
-`MPC_CONTRACT_ID` into the `MPC_CONTRACT_ID` field.
+`MPC_CONTRACT_ID` and `NEAR_GENESIS_HASH` (read from the localnet) into the
+fields of the same name.
 
 Example values:
 
@@ -204,6 +205,7 @@ export FRODO_P2P_KEY=$(curl -s localhost:18081/public_data | jq -r '.near_p2p_pu
 export SAM_P2P_KEY=$(curl -s localhost:18082/public_data | jq -r '.near_p2p_public_key')
 
 export MPC_HOST=$MACHINE_IP
+export NEAR_GENESIS_HASH=$(curl -s localhost:3030/status | jq -r .genesis_hash)
 ```
 
 ### Add the Keys to User Accounts
@@ -271,7 +273,7 @@ Therefore, node attestation submissions will fail.
 **Sample Error Log (Expected Before Voting):**
 
 ```
-mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
+chain_gateway::transaction_sender::traits: sending transaction tx_hash=381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
 ..
 ..
 ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
@@ -348,10 +350,10 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_launc
 
 ### Vote for OS Measurements
 
-The allowed OS measurements start empty too, and the contract rejects every Dstack attestation until one set is voted in. Both nodes vote for the measurement set of the OS image, found in `crates/mpc-attestation/assets/tcb_info.json`:
+The allowed OS measurements start empty too, and the contract rejects every Dstack attestation until one set is voted in. Both nodes vote for the measurement set of the OS image the CVMs run: `crates/mpc-attestation/assets/tcb_info.json` for dstack 0.6.5, or `crates/mpc-attestation/assets/tcb_info_dstack_0.5.8.json` for dstack 0.5.8:
 
 ```bash
-TCB_FILE=crates/mpc-attestation/assets/tcb_info.json
+TCB_FILE=crates/mpc-attestation/assets/tcb_info.json  # dstack 0.5.8: tcb_info_dstack_0.5.8.json
 MRTD=$(jq -r '.mrtd' $TCB_FILE)
 RTMR0=$(jq -r '.rtmr0' $TCB_FILE)
 RTMR1=$(jq -r '.rtmr1' $TCB_FILE)

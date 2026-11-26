@@ -56,16 +56,19 @@ several providers to choose from, such as
    ```
 
 3. Follow the instructions in
-   [Dstack's Getting Started section in their README](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#-getting-started)
-   until before
-   [step 2](https://github.com/Dstack-TEE/dstack?tab=readme-ov-file#2-download-or-build-guest-image).
-   At this point your current directory should be `WORKING_DIRECTORY_NAME/meta-dstack/build/`.
-   Download the development version of the `0.5.8` by running:
+   [Dstack's Getting Started section in their README](https://github.com/Dstack-TEE/dstack/tree/v0.6.5?tab=readme-ov-file#-getting-started)
+   to build `dstack-vmm` at tag `v0.6.5`. In `vmm.toml`, set `qemu_hotplug_off = false` under
+   `[cvm]`: the on-chain OS measurements are taken with it, and the default (`true`) changes
+   RTMR0. Then download the 0.6.5 guest image into the VMM's image directory:
 
    ```bash
-   # This will download the guest image from the release page.
-   ../build.sh dl -dev 0.5.8
+   wget https://github.com/Dstack-TEE/dstack/releases/download/mkosi-os-v0.6.5/dstack-0.6.5.tar.gz
+   tar -xvf dstack-0.6.5.tar.gz -C images/
    ```
+
+   dstack 0.6 ships no dev image, so there is no SSH into the CVM.
+
+   TODO(#5324): the `dstack-kms` steps below are not needed with `kms_urls = []`.
 
 4. Once it's installed you need to run `dstack-vmm` and `dstack-kms`. It's
    important these keep running persistently. You can use `tmux` for this
@@ -117,7 +120,7 @@ several providers to choose from, such as
 3. Fill in the form
 
    - name: `mpc_tee_test` (this parameter can be selected at will)
-   - image: `dstack-dev-0.5.8`
+   - image: `dstack-0.6.5`
    - 8 CPUs
    - 64GiB Memory
    - 200GiB Storage
@@ -223,19 +226,6 @@ several providers to choose from, such as
    ssh -NL 8090:localhost:17190 USER_NAME@TDX_SERVER
    ```
 
-   If you want to have ssh access to the VM, you can do the same with port `22` on the VM,
-   for example by adding the map `17022`:`22`. This will allow you to log into the VM from the TDX server using:
-
-   ```bash
-   ssh root@localhost -p 17022
-   ```
-
-   Once inside the VM it is possible to call the dstack curl [API endpoints](https://github.com/Dstack-TEE/dstack/blob/c41c17d465b6f0a213e091d677699181b9ba75ca/sdk/curl/api.md#endpoints), for example:
-
-   ```bash
-   curl --unix-socket /var/run/dstack.sock -X POST -H "Content-Type: application/json" -d '{}' http://localhost/Info
-   ```
-
 6. Activate features
    Only activate the following features:
 
@@ -256,7 +246,11 @@ several providers to choose from, such as
 
 Now data of the MPC node deployed can be accessed on your local machine:
 
-1. Go to the VM list in <http://localhost:8090>. Click on the "View logs button"
+1. Go to the VM list in <http://localhost:8090>. Click on the "View logs button".
+   The 0.6.5 guest agent shows the container list and logs only to callers with the
+   `guest:containers` and `guest:logs` scopes: add both to `anonymous_scopes` under
+   `[cvm.guest_agent_api]` in `vmm.toml`. The list replaces the default one, so keep
+   `"guest:dashboard", "guest:version", "guest:health", "guest:info"` in it.
 
 2. Wait for the MPC node to start. It will take a few minutes for the near
    indexer to start, before the web endpoint is up

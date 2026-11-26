@@ -174,7 +174,8 @@ Before using either scheme, enforce the following constraints:
    [triple generation](./triples.md), used at most once: in one role of one run of one scheme,
    aborted runs included. Generation guarantees that triples are independent; the caller must
    guarantee that they are not reused. Otherwise the secret key $x$ can be extracted by solving
-   a system of two linear equations, and no party can detect this.
+   a system of two linear equations, and no party can detect this. Triple shares must also not
+   outlive their epoch, see [Proactive Security](../../proactive-security.md).
 
 2. **Never sign twice under the same $R$.** Nothing binds $R$ to $h$ or $\epsilon$: $R$ is
    determined by the triple $(k, d, e)$ alone. It is known to every party once round 1 completes,

@@ -15,12 +15,6 @@ BorshSchemaContainer {
                 "ParticipantInfo",
             ],
         },
-        "(AuthenticatedParticipantId, Vec<DomainConfig>)": Tuple {
-            elements: [
-                "AuthenticatedParticipantId",
-                "Vec<DomainConfig>",
-            ],
-        },
         "(DomainId, ReconstructionThreshold)": Tuple {
             elements: [
                 "DomainId",
@@ -35,12 +29,9 @@ BorshSchemaContainer {
             ),
         },
         "AddDomainsVotes": Struct {
-            fields: NamedFields(
+            fields: UnnamedFields(
                 [
-                    (
-                        "proposal_by_account",
-                        "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>",
-                    ),
+                    "Votes<AuthenticatedParticipantId>",
                 ],
             ),
         },
@@ -102,11 +93,6 @@ BorshSchemaContainer {
                     "ParticipantId",
                 ],
             ),
-        },
-        "BTreeMap<AuthenticatedParticipantId, Vec<DomainConfig>>": Sequence {
-            length_width: 4,
-            length_range: 0..=4294967295,
-            elements: "(AuthenticatedParticipantId, Vec<DomainConfig>)",
         },
         "BTreeMap<DomainId, ReconstructionThreshold>": Sequence {
             length_width: 4,
@@ -227,6 +213,10 @@ BorshSchemaContainer {
                     (
                         "attestation_storage_fee_millinear",
                         "u64",
+                    ),
+                    (
+                        "migration_genesis_hash",
+                        "Option<GenesisHash>",
                     ),
                 ],
             ),
@@ -354,6 +344,13 @@ BorshSchemaContainer {
                         "key_provider_event_digest",
                         "KeyProviderEventDigest",
                     ),
+                ],
+            ),
+        },
+        "GenesisHash": Struct {
+            fields: UnnamedFields(
+                [
+                    "[u8; 32]",
                 ],
             ),
         },
@@ -619,6 +616,14 @@ BorshSchemaContainer {
                         "parameters_votes",
                         "GovernanceThresholdParametersVotes",
                     ),
+                    (
+                        "genesis_hash",
+                        "Option<GenesisHash>",
+                    ),
+                    (
+                        "add_domains_votes",
+                        "AddDomainsVotes",
+                    ),
                 ],
             ),
         },
@@ -655,6 +660,21 @@ BorshSchemaContainer {
                     1,
                     "Some",
                     "EpochId",
+                ),
+            ],
+        },
+        "Option<GenesisHash>": Enum {
+            tag_width: 1,
+            variants: [
+                (
+                    0,
+                    "None",
+                    "()",
+                ),
+                (
+                    1,
+                    "Some",
+                    "GenesisHash",
                 ),
             ],
         },
@@ -931,10 +951,6 @@ BorshSchemaContainer {
                     (
                         "parameters",
                         "GovernanceThresholdParameters",
-                    ),
-                    (
-                        "add_domains_votes",
-                        "AddDomainsVotes",
                     ),
                     (
                         "previously_cancelled_resharing_epoch_id",

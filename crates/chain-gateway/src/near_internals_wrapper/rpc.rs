@@ -31,7 +31,7 @@ impl SubmitSignedTransaction for NearRpcActorHandle {
         let response = near_async::messaging::CanSendAsync::send_async(
             self.rpc_handler.as_ref(),
             near_client::ProcessTxRequest {
-                transaction,
+                transaction: transaction.into(),
                 is_forwarded: false,
                 check_only: false,
             },

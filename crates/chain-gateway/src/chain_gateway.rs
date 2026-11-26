@@ -8,18 +8,22 @@ use near_async::ActorSystem;
 use near_contract_transport::{HasPollInterval, PollInterval, ViewArgs, ViewContract};
 use near_indexer::StreamerMessage;
 use near_indexer::near_primitives::transaction::SignedTransaction;
+use near_indexer_primitives::CryptoHash;
 use near_store::db::RocksDB;
 use nearcore::{NearConfig, NearNode};
 use tokio::sync::mpsc::Receiver;
+use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
 use crate::errors::{ChainGatewayError, NearClientError, NearRpcError, NearViewClientError};
 use crate::event_subscriber;
+use crate::event_subscriber::IndexerStats;
 use crate::event_subscriber::block_events::BlockUpdate;
 use crate::event_subscriber::subscriber::BlockEventSubscriptions;
 use crate::near_internals_wrapper::{
     NearClientActorHandle, NearRpcActorHandle, NearViewClientActorHandle,
 };
+use crate::nearcore_workarounds;
 use crate::node_config::NodeConfig;
 use crate::primitives::{
     FetchLatestFinalBlockInfo, IsSyncing, SubmitSignedTransaction, view_when_synced,
@@ -134,6 +138,14 @@ impl Drop for NodeHandle {
     }
 }
 
+pub struct BlockEventStream {
+    /// At most one update per block with at least one matched event;
+    /// dropped when this channel is full.
+    pub updates: Receiver<BlockUpdate>,
+    /// Progress tracking every block received from nearcore indexer.
+    pub progress: watch::Receiver<IndexerStats>,
+}
+
 impl ChainGateway {
     pub fn from_near_node(near_node: &NearNode, near_config: &NearConfig) -> Self {
         Self::new(near_node, expected_block_time(near_config))
@@ -151,19 +163,12 @@ impl ChainGateway {
     /// Spawns a NEAR node with [`NodeConfig`].
     /// The [`NodeHandle`] can be used to shut down the actor system for the node and liveness checks.
     /// The node dies if [`NodeHandle`] is dropped.
-    /// Returns a stream for BlockUpdates if BlockEventSubscriptions is not None.
+    /// Returns a [`BlockEventStream`] if `subscriber` is `Some`.
     pub async fn start(
         node_config: NodeConfig,
         subscriber: Option<BlockEventSubscriptions>,
         shutdown: CancellationToken,
-    ) -> Result<
-        (
-            ChainGateway,
-            NodeHandle,
-            Option<tokio::sync::mpsc::Receiver<BlockUpdate>>,
-        ),
-        ChainGatewayError,
-    > {
+    ) -> Result<(ChainGateway, NodeHandle, Option<BlockEventStream>), ChainGatewayError> {
         let NodeConfig(indexer_config) = node_config;
         let near_config: NearConfig = indexer_config.load_near_config().map_err(|err| {
             ChainGatewayError::FailureLoadingConfig {
@@ -199,9 +204,31 @@ impl ChainGateway {
         };
         Ok((chain_gateway, node_handle, stream))
     }
+
+    /// Can be removed once <https://github.com/near/nearcore/issues/16004> is resolved.
+    pub async fn ensure_head_follows_tip(&self) {
+        nearcore_workarounds::ensure_head_follows_tip(&self.client).await
+    }
+
+    /// Hash of the genesis block of the chain the node follows.
+    pub async fn genesis_hash(&self) -> Result<CryptoHash, NearClientError> {
+        self.client.genesis_hash().await
+    }
 }
 
-type RunNodeResult = Result<(ChainGateway, Option<Receiver<BlockUpdate>>), ChainGatewayError>;
+#[cfg(any(test, feature = "test-utils"))]
+impl ChainGateway {
+    /// Whether this node has received the `AccountData` that the validator `account_id`
+    /// broadcasts. Until it has, the node drops every transaction it would forward to that
+    /// validator, while still reporting the submission as routed.
+    pub async fn knows_producer(&self, account_id: &AccountId) -> Result<bool, NearClientError> {
+        self.client
+            .knows_producer(&crate::account_id_compat::to_near_internal(account_id))
+            .await
+    }
+}
+
+type RunNodeResult = Result<(ChainGateway, Option<BlockEventStream>), ChainGatewayError>;
 
 fn expected_block_time(near_config: &NearConfig) -> Duration {
     near_config
@@ -253,9 +280,11 @@ fn run_node(
             tracing::info!(
                 "chain-gateway waiting for node to finish syncing before streaming blocks."
             );
-            let synced =
-                await_sync_or_shutdown(chain_gateway.wait_for_full_sync(), shutdown.cancelled())
-                    .await;
+            let synced = await_sync_or_shutdown(
+                chain_gateway.ensure_head_follows_tip(),
+                shutdown.cancelled(),
+            )
+            .await;
             if !synced {
                 tracing::info!("shutdown requested before sync completed; exiting startup.");
                 let _ = ready_sender.send(Err(ChainGatewayError::StartupFailed {
@@ -272,7 +301,7 @@ fn run_node(
             )
             .await
             {
-                Ok(rx) => Some(rx),
+                Ok(stream) => Some(stream),
                 Err(err) => {
                     let _ = ready_sender.send(Err(err));
                     return;

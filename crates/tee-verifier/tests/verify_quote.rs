@@ -4,7 +4,7 @@
 #![expect(non_snake_case)]
 
 use mpc_attestation::attestation::{
-    AcceptedAttestation, Attestation, DstackAttestation, VerifiedAttestation, dev_measurements,
+    AcceptedAttestation, Attestation, DstackAttestation, VerifiedAttestation,
 };
 use mpc_attestation::report_data::{ReportData, ReportDataV1};
 use near_sdk::{test_utils::VMContextBuilder, testing_env};
@@ -16,8 +16,7 @@ use tee_verifier_interface::{
     VerificationResult, VerificationResultWithCollateralDates, VerifiedReport, VerifierError,
 };
 use test_utils::attestation::{
-    VALID_ATTESTATION_TIMESTAMP, account_key, collateral, image_digest, launcher_compose_digest,
-    mock_tcb_info, p2p_tls_key, quote,
+    AttestationFixture, DSTACK_0_5_8, DSTACK_0_6_5, VALID_ATTESTATION_TIMESTAMP, collateral, quote,
 };
 
 fn make_quote_bytes() -> QuoteBytes {
@@ -67,10 +66,10 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
             td_attributes: hex_arr("0000001000000000"),
             xfam: hex_arr("e702060000000000"),
             mr_td: hex_arr(
-                "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+                "2a674327c50218dba880066b349b8d559d749ed68dce33fd651c184a877d084b07a9e583767a7ad5da13ed91deec2b70",
             ),
             mr_config_id: hex_arr(
-                "012911e1f733466216dedb862d6d669e11256ee7a34ce4dbc66c4b807ba7a9c895000000000000000000000000000000",
+                "014d4e66730a5ec377c6a62f6f625357eef218eb13c6d454eb1dbb6126d3f0d11c000000000000000000000000000000",
             ),
             mr_owner: hex_arr(
                 "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -82,16 +81,16 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
                 "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
             ),
             rt_mr1: hex_arr(
-                "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
+                "2f72a4db2f7de90adeabe55607b0c1cf209fc243bc773f5862d1b00d3bb198e835e99d502e90a24005f0d1368dd24f29",
             ),
             rt_mr2: hex_arr(
-                "c812d42bfff1c75382e91a37c867ab117b97eb5e8d6797488928ea38e5fd38b5ed2f87d9613d392507f1c3af94657c93",
+                "3d9910a33a26a769c5146dea31bea0d2924a7746ad09e121dabe709eddd5c647716f4d89279e0e24d8dbb93f9cdb605b",
             ),
             rt_mr3: hex_arr(
-                "86f1808cffc050f3c0c09d29da2bfcec7eba3e8fa52016a7341f28884230f9ca8b56400413d57bce00b578e36790b555",
+                "cf69f48b11123559a95c95995fb69df9a6517da84624939f2cf5083d04edf8e5a7939f230bd63b4f8ac221dc0bddd0cf",
             ),
             report_data: hex_arr(
-                "0001e4faaedae8199148eb0fe1cc9a52ecbb09045014a11342b85ed8bd727a03ceb03ccb16857e2ba693145050f84cb2f7580000000000000000000000000000",
+                "0001fb43a45339ebed05bfa22d423b773a32ed03242d69ee41775183f4848b39effba439103a1215d8c15213def5d029b1c20000000000000000000000000000",
             ),
         }),
         ppid: hex::decode("d208dfb1002346ae1bb4ef2a3c055292").unwrap(),
@@ -105,6 +104,25 @@ fn verify_quote__should_return_verified_td10_report_for_valid_fixture() {
         },
     };
     assert_eq!(result, VerificationResult::Verified(expected_report));
+}
+
+#[rstest]
+fn verify_quote__should_verify_the_fixture_at_its_valid_timestamp(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
+    // Given
+    set_timestamp_context(Duration::from_secs(fixture.valid_timestamp));
+    let contract = TeeVerifier::default();
+
+    // When
+    let result =
+        contract.verify_quote(QuoteBytes(Vec::from(fixture.quote())), fixture.collateral());
+
+    // Then
+    assert!(
+        matches!(result, VerificationResult::Verified(_)),
+        "expected Verified(_), got {result:?}"
+    );
 }
 
 #[test]
@@ -192,27 +210,32 @@ fn verify_quote_with_collateral_dates__should_return_verify_quote_report_and_fix
     );
 }
 
-#[test]
-fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_locally() {
+#[rstest]
+fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_locally(
+    #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
+) {
     // Given
-    set_valid_timestamp_context();
+    set_timestamp_context(Duration::from_secs(fixture.valid_timestamp));
     let contract = TeeVerifier::default();
-    let (quote, collateral) = (quote(), collateral());
-    let report_data = ReportData::V1(ReportDataV1::new(p2p_tls_key(), account_key()));
+    let (quote, collateral) = (fixture.quote(), fixture.collateral());
+    let report_data = ReportData::V1(ReportDataV1::new(
+        fixture.p2p_tls_key(),
+        fixture.account_key(),
+    ));
     let AcceptedAttestation {
         attestation: VerifiedAttestation::Dstack(locally_verified),
         ..
     } = Attestation::Dstack(DstackAttestation::new(
         quote.clone(),
         collateral.clone(),
-        mock_tcb_info(),
+        fixture.tcb_info(),
     ))
     .verify_locally(
         report_data.into(),
-        VALID_ATTESTATION_TIMESTAMP,
-        &[image_digest()],
-        &[launcher_compose_digest()],
-        &[dev_measurements()],
+        fixture.valid_timestamp,
+        &[fixture.image_digest()],
+        &[fixture.launcher_compose_digest()],
+        &[fixture.measurements],
     )
     .expect("the fixture verifies locally")
     else {
@@ -239,11 +262,11 @@ fn verify_quote_with_collateral_dates__should_give_the_same_expiry_as_verify_loc
 fn fixture_collateral_dates() -> CollateralDates {
     CollateralDates {
         earliest_issue_date: 1_526_899_510,
-        latest_issue_date: 1_786_617_938,
-        earliest_expiration_date: 1_789_171_031,
+        latest_issue_date: 1_794_961_869,
+        earliest_expiration_date: 1_797_553_190,
         qe_iden_earliest_issue_date: 1_526_899_510,
-        qe_iden_latest_issue_date: 1_786_579_063,
-        qe_iden_earliest_expiration_date: 1_789_171_063,
+        qe_iden_latest_issue_date: 1_794_961_268,
+        qe_iden_earliest_expiration_date: 1_797_553_268,
     }
 }
 

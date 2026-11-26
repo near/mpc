@@ -125,7 +125,7 @@ impl MpcContract {
         );
 
         let participants = match &self.protocol_state {
-            ProtocolContractState::Running(state) => state.parameters.participants(),
+            ProtocolContractState::Running(state) => state.participants(),
             _ => {
                 return Err(InvalidState::ProtocolStateNotRunning.into());
             }
@@ -179,12 +179,11 @@ mod tests {
         prepay_and_submit_mock_attestation, vote_into_resharing,
     };
     use crate::dto_mapping::IntoInterfaceType;
-    use crate::primitives::domain::AddDomainsVotes;
     use crate::primitives::key_state::{AttemptId, EpochId, KeyForDomain, Keyset};
     use crate::primitives::participants::ParticipantInfo;
     use crate::primitives::test_utils::{
-        bogus_ed25519_near_public_key, bogus_tee_verifier_account_id, gen_account_id,
-        gen_participant, gen_participants,
+        bogus_ed25519_near_public_key, bogus_genesis_hash, bogus_tee_verifier_account_id,
+        gen_account_id, gen_participant, gen_participants,
     };
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
@@ -688,12 +687,8 @@ mod tests {
             new_participants,
             GovernanceThreshold::new(3),
         );
-        contract.protocol_state = ProtocolContractState::Running(RunningContractState::new(
-            domains,
-            keyset,
-            new_params,
-            AddDomainsVotes::default(),
-        ));
+        contract.protocol_state =
+            ProtocolContractState::Running(RunningContractState::new(domains, keyset, new_params));
 
         // When: vote_reshared recomputes the cache, then clean_foreign_chain_data
         // prunes participant[2]'s stale storage entry.
@@ -833,6 +828,7 @@ mod tests {
             (&keyset).into_dto_type(),
             (&parameters).into_dto_type(),
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .unwrap();

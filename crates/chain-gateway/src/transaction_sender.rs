@@ -7,4 +7,4 @@ mod test_utils;
 
 pub use caller::AccountCaller;
 pub use signer::TransactionSigner;
-pub use traits::SubmitFunctionCall;
+pub use traits::{SubmitFunctionCall, SubmittedTxMetadata};

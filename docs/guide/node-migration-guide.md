@@ -328,7 +328,7 @@ Each request to the node is bounded by `--request-timeout-seconds` (default 30).
 
 > **No `http://` in `--mpc-node-address`** — it takes a bare `host:port`. With a scheme, the lookup fails with `Name or service not known`.
 
-The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains`, with `$BACKUP_HOME_DIR/key` as a hard link to the newest one. Both entries point at the same file, and the backup service reads only `key`.
+The encrypted keyshares are now stored in `$BACKUP_HOME_DIR/permanent_keys/epoch_<EPOCH>_with_<NUM_DOMAINS>_domains`, with `$BACKUP_HOME_DIR/key` as a hard link to it. Both entries point at the same file, and the backup service reads only `key`. Storing a newer keyset deletes the older file, since a share of a past epoch still counts towards reconstructing the key.
 
 ### Keeping the Backup Up to Date
 
@@ -351,7 +351,7 @@ Notes:
 - Without `--rpc-url`, the state comes from a NEAR node that `backup-cli` embeds, with [requirements comparable to an MPC node](node-requirements.md). The node expects `config.json`, `genesis.json` and `node_key.json` in `$BACKUP_HOME_DIR`, initialized the way [`deployment/start.sh`](../../deployment/start.sh) does for an MPC node, and nothing is backed up until it has synced. The startup probe below does not apply: a contract state that cannot be read is logged at `error` and the service waits for the next one, and `--poll-interval-seconds` only delays the re-attempt of a failed fetch.
 - The endpoint is probed at startup: if the current keyset cannot be read within `--request-timeout-seconds`, the service exits non-zero instead of running without backups. This includes a contract that predates the `current_keyset` view. When starting at boot, before the network is up, rely on the supervisor's restart policy.
 - The encryption key again comes from `BACKUP_ENCRYPTION_KEY_HEX` (Step 3), never the command line, where `ps` would expose it for the lifetime of the service.
-- Keyshares already backed up are never overwritten, so restarting the service is safe and older epochs' files are kept.
+- Keyshares already backed up are never overwritten, so restarting the service is safe. Backing up a newer keyset deletes the older one.
 - On startup and then every hour, the service fetches the current keyset again even when it is already stored, and compares it with the stored keyshares. A difference is logged at `error` and the stored backup is left as it is. These fetches also keep the node's `mpc_last_backup_served_*` metrics current after a node restart or migration (see [Metrics for node operators](node-operator-metrics.md#backups)).
 - It re-reads the contract every `--poll-interval-seconds` (default 60) and backs up when the keyset changed. A successful backup logs at `info`, a failed fetch at `warn`, and a failed fetch is re-attempted after the same interval. Logs default to `info`; `RUST_LOG` overrides that.
 - `--listen-address <ip:port>` (or `BACKUP_LISTEN_ADDRESS`) serves monitoring endpoints: `/health` answers `OK`, `/status` reports the last backup, or the last check that confirmed it, as JSON, and `/metrics` exposes the Prometheus gauges `backup_cli_last_backup_epoch` and `backup_cli_last_backup_timestamp_seconds`. When unset (the default), nothing is served. After a restart the backup time is unknown, so until the first fetch from the node succeeds `/status` reports `timestamp_seconds: null` and the timestamp gauge is absent, so an alert on that gauge returns no data then rather than firing.
@@ -403,7 +403,7 @@ near contract call-function as-read-only \
   now
 ```
 
-**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs keep repeating `failed to submit attestation`, check `available_attestation_grants` for your account; if it is `0`, prepay a grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage). The rejected `submit_participant_info` transaction (its hash is logged as `sending tx …`) shows `no attestation storage grant available` in an explorer or via `near transaction view-status`. The node retries the submission on its own once a grant exists.
+**Note:** If the new node's attestation was submitted successfully, you should see 2 attestations registered on the contract — one for the old node and one for the new node. If only the old node's entry appears and the new node's logs keep repeating `failed to submit attestation`, check `available_attestation_grants` for your account; if it is `0`, prepay a grant — see [Prepay the New Node's Attestation Storage](#prepay-the-new-nodes-attestation-storage). The rejected `submit_participant_info` transaction (its hash is logged as `sending transaction tx_hash=…`) shows `no attestation storage grant available` in an explorer or via `near transaction view-status`. The node retries the submission on its own once a grant exists.
 
 Output should look like this:
 
@@ -544,7 +544,7 @@ After verifying the migration was successful:
 
    Don't revoke the `backup-cli`'s registered key from Step 2 — that's the backup service registration, reused across migrations.
 
-3. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with `epoch_<...>_with_<...>_domains` files) for a reasonable period (in case you need to migrate again).
+3. **Keep the backup** of keyshares (the contents of `$BACKUP_HOME_DIR`, including the `key` file and the `permanent_keys/` directory with its `epoch_<...>_with_<...>_domains` file) for a reasonable period (in case you need to migrate again).
 
 4. **Securely delete** the old node's data once you're confident the new node is functioning correctly.
 

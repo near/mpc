@@ -5,10 +5,12 @@ pub mod running;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
+mod dto;
+
 use crate::crypto_shared::types::PublicKeyExtended;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::{
-    domain::DomainRegistry,
+    domain::{AddDomainsVotes, DomainRegistry},
     key_state::{AuthenticatedParticipantId, EpochId, KeyEventId, Keyset},
     participants::Participants,
     threshold_votes::GovernanceThresholdParametersVotes,
@@ -136,11 +138,12 @@ impl ProtocolContractState {
     }
 
     pub fn vote_add_domains(
-        &mut self,
+        &self,
         domains: Vec<DomainConfig>,
+        votes: &mut AddDomainsVotes,
     ) -> Result<Option<ProtocolContractState>, Error> {
         match self {
-            ProtocolContractState::Running(state) => state.vote_add_domains(domains),
+            ProtocolContractState::Running(state) => state.vote_add_domains(domains, votes),
             _ => Err(InvalidState::ProtocolStateNotRunning.into()),
         }
         .map(|x| x.map(ProtocolContractState::Initializing))

@@ -1,4 +1,6 @@
 use crate::indexer::participants::ContractState;
+use crate::keyshare::permanent::storage_identifier;
+use crate::keyshare::test_utils::list_permanent_key_files;
 use crate::metrics;
 use crate::p2p::testing::{NodeTestPorts, port_seed};
 use crate::tests::{
@@ -6,6 +8,7 @@ use crate::tests::{
     request_ckd_and_await_response, request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
+use mpc_primitives::EpochId;
 use mpc_primitives::domain::{Curve, DomainId};
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
@@ -375,6 +378,19 @@ async fn test_key_resharing_multistage() {
         .await
         .is_some()
     );
+
+    // The remaining nodes hold only the keyshares of the current epoch.
+    let expected = vec![storage_identifier(EpochId::new(4), 1)];
+    let deadline = tokio::time::Instant::now() + DEFAULT_MAX_PROTOCOL_WAIT_TIME;
+    for node in 2..NUM_PARTICIPANTS {
+        let home_dir = temp_dir.path().join(node.to_string());
+        while list_permanent_key_files(&home_dir) != expected
+            && tokio::time::Instant::now() < deadline
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert_eq!(list_permanent_key_files(&home_dir), expected, "node {node}");
+    }
 }
 
 /// Test that signatures during resharing

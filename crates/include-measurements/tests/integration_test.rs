@@ -14,7 +14,7 @@ fn include_measurements__should_generate_expected_measurements() {
     assert_ne!(measurements.rtmrs.rtmr2, [0u8; 48]);
     assert_ne!(measurements.key_provider_event_digest, [0u8; 48]);
 
-    let expected_mrtd = hex::decode("f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077").unwrap();
+    let expected_mrtd = hex::decode("2a674327c50218dba880066b349b8d559d749ed68dce33fd651c184a877d084b07a9e583767a7ad5da13ed91deec2b70").unwrap();
     let mut expected_mrtd_array = [0u8; 48];
     expected_mrtd_array.copy_from_slice(&expected_mrtd);
     assert_eq!(measurements.rtmrs.mrtd, expected_mrtd_array);

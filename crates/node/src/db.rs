@@ -28,8 +28,6 @@ pub enum DBCol {
     /// triple is stored under the threshold it was generated with so that
     /// signing can draw from a store of matching `t`.
     TripleV2,
-    /// Retired: kept only so that startup deletes the presignatures older versions stored.
-    Presignature,
     SignRequest,
     CKDRequest,
     VerifyForeignTxRequest,
@@ -40,7 +38,6 @@ impl DBCol {
     fn as_str(&self) -> &'static str {
         match self {
             DBCol::TripleV2 => "triple_v2",
-            DBCol::Presignature => "presignature",
             DBCol::SignRequest => "sign_request",
             DBCol::CKDRequest => "ckd_request",
             DBCol::VerifyForeignTxRequest => "verify_foreign_tx_request",
@@ -48,10 +45,9 @@ impl DBCol {
         }
     }
 
-    fn all() -> [DBCol; 6] {
+    fn all() -> [DBCol; 5] {
         [
             DBCol::TripleV2,
-            DBCol::Presignature,
             DBCol::SignRequest,
             DBCol::CKDRequest,
             DBCol::VerifyForeignTxRequest,
@@ -245,7 +241,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let db = SecretDB::new(dir.path(), [1; 16])?;
         let mut update = db.update();
-        update.put(DBCol::Presignature, b"key", b"value");
+        update.put(DBCol::SignRequest, b"key", b"value");
         update.put(DBCol::TripleV2, b"triple1", b"tripledata");
         update.put(
             DBCol::TripleV2,
@@ -254,7 +250,7 @@ mod tests {
         );
         update.put(DBCol::TripleV2, b"triple3", b"");
         update.commit()?;
-        assert_eq!(db.get(DBCol::Presignature, b"key")?.unwrap(), b"value");
+        assert_eq!(db.get(DBCol::SignRequest, b"key")?.unwrap(), b"value");
         assert_eq!(db.get(DBCol::TripleV2, b"triple1")?.unwrap(), b"tripledata");
         assert_eq!(
             db.get(DBCol::TripleV2, b"triple2")?.unwrap(),
