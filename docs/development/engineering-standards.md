@@ -218,6 +218,24 @@ Prefix these functions with `must_` (e.g. `must_load_contract_wasm`,
 `must_get_bls_public_key`) to signal at the call site that they require the
 test to be built and wired correctly.
 
+### Assert on whole values
+
+Compare the whole result of the system under test against the whole expected value with strict equality. A check on part of it, with `.contains()`, `.len()` or one field at a time, still passes when the result also holds something unexpected, so the test misses it and its reader never sees what the result actually is.
+
+```rust
+// Don't
+assert!(stored_epochs.contains(&current_epoch));
+
+// Do
+assert_eq!(stored_epochs, vec![current_epoch]);
+```
+
+The first assertion still passes when keyshares of past epochs are never deleted; the second fails and lists every stored epoch.
+
+Use `.contains()` only when the full value cannot be pinned down, for example when a collection also holds entries the test does not control.
+
+**Scope.** This applies to new and changed assertions. It is not a request to rewrite existing tests in bulk.
+
 ## Measure performance
 It's easy to get stuck in arguments about what's faster or more expensive
 when comparing different approaches. In these scenarios, we should strive
