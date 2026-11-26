@@ -46,8 +46,9 @@ pub mod types {
 
     // Re-export hash types used in DTO fields
     pub use mpc_primitives::hash::{
-        KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash, MrtdHash,
-        NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash, TeeVerifierCodeHash,
+        GenesisHash, KeyProviderEventDigest, LauncherDockerComposeHash, LauncherImageHash,
+        MrtdHash, NodeImageHash, ProposalHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash,
+        TeeVerifierCodeHash,
     };
 
     // Re-export crypto types from near-mpc-crypto-types

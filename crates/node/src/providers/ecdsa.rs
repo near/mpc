@@ -192,9 +192,6 @@ impl SignatureProvider for EcdsaSignatureProvider {
                         .instrument(self.run_triple_generation_follower(channel, start, count))
                         .await?;
                 }
-                EcdsaTaskId::Presignature { .. } | EcdsaTaskId::Signature { .. } => {
-                    anyhow::bail!("Retired stored-presignature task rejected");
-                }
                 EcdsaTaskId::OnlinePresignSignature {
                     id,
                     paired_triple_id,

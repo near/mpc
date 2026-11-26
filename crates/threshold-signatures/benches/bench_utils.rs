@@ -22,7 +22,7 @@ pub use frost_eddsa::*;
 pub use ot_based_ecdsa::*;
 pub use robust_ecdsa::*;
 
-use average::{Estimate, Quantile, Variance};
+use statrs::statistics::{Data, OrderStatistics, Statistics};
 use std::{collections::HashMap, env, sync::LazyLock};
 
 use rand_core::SeedableRng;
@@ -91,21 +91,11 @@ pub fn analyze_received_sizes(
     let max = *sizes.iter().max().expect("Maximum should exist");
     let avg = sizes.iter().sum::<usize>() as f64 / sizes.len() as f64;
 
-    let data = sizes.iter().map(|&x| x as f64).collect::<Vec<f64>>();
+    let mut data = Data::new(sizes.iter().map(|&x| x as f64).collect::<Vec<f64>>());
 
-    // Median (0.5 quantile)
-    let mut quantile = Quantile::new(0.5);
-    // Variance + Std Dev
-    let mut variance_est = Variance::new();
-
-    for &x in &data {
-        variance_est.add(x);
-        quantile.add(x);
-    }
-
-    let median = quantile.quantile();
+    let median = data.median();
     let variance = if sizes.len() > 1 {
-        variance_est.sample_variance()
+        data.iter().variance()
     } else {
         0.0
     };

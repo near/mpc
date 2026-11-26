@@ -68,8 +68,9 @@ Trusted: the NEAR blockchain's consensus, Intel TDX hardware and its attestation
 roots, and, on non-TEE nodes, the operator's own local configuration and secrets
 files. On TEE nodes, everything the host passes through the launcher, including
 the `[mpc_node_config]` table it passes to the node, is attacker input. The
-launcher injects `tee` and `node.indexer.mpc_contract_id` itself and rejects
-host configs that set them; a bypass of that check is in scope.
+launcher injects `tee`, `home_dir`, `node.indexer.mpc_contract_id` and
+`node.indexer.genesis_hash` itself and rejects host configs that set them to
+other values; a bypass of that check is in scope.
 
 ## What to look for
 
@@ -158,12 +159,12 @@ mpc-tests
 ```
 
 It runs `cargo nextest run --profile oss-scanner --cargo-profile=test-release
---all-features` over the workspace. The `oss-scanner` profile in
-`.config/nextest.toml` leaves out the E2E suite and the tests that need
-Internet access. Extra arguments are passed to nextest and narrow the run, for
-example `mpc-tests -E 'package(threshold-signatures)'` or
-`mpc-tests -E 'test(sign)'`. Narrow with `-E`, not `-p`, which recompiles
-dependencies.
+--all-features` over the workspace. The E2E suite, `devnet`, the developer
+CLIs and the `test-parallel-contract` and `test-migration-contract` crates are
+not built. The `oss-scanner` profile in `.config/nextest.toml` leaves out the
+tests that need Internet access. Extra arguments are passed to nextest and
+narrow the run, for example `mpc-tests -E 'package(threshold-signatures)'` or
+`mpc-tests -E 'test(sign)'`. Narrow with `-E`; `-p` has no effect.
 
 Contract sandbox tests in `crates/contract/tests/sandbox` start a local NEAR
 node and are the best place to reproduce contract issues end to end. In-process

@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use crate::event_subscriber::block_events::BlockContext;
-use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::event_subscriber::metrics::{
+    MPC_BLOCKS_INDEXED, MPC_BLOCKS_INDEXED_WITHOUT_PARENT, MPC_BLOCKS_MADE_NON_CANONICAL,
+    MPC_FINALIZED_BLOCKS_INDEXED,
+};
 use near_contract_transport::{BlockCount, BlockHeight};
 
 #[expect(rustdoc::private_intra_doc_links)]
@@ -175,6 +178,7 @@ impl AtomicBlockStatus {
             );
             return;
         }
+        MPC_BLOCKS_MADE_NON_CANONICAL.inc();
         self.0.store(
             BlockStatus::OptimisticButNotCanonical.into(),
             Ordering::Relaxed,
@@ -327,6 +331,9 @@ impl RecentBlocksTracker {
         }
         MPC_BLOCKS_INDEXED.inc();
         let parent = self.hash_to_node.get(&block.prev_hash).cloned();
+        if parent.is_none() && !self.hash_to_node.is_empty() {
+            MPC_BLOCKS_INDEXED_WITHOUT_PARENT.inc();
+        }
         let node = Arc::new(BlockNode {
             hash: block.hash,
             height: block.height,
@@ -566,7 +573,6 @@ impl Debug for RecentBlocksTracker {
 pub mod test_utils {
     use super::super::block_events::BlockContext;
     use super::{BlockCount, BlockStatus, BlockStatusHandle, RecentBlocksTracker};
-    use crate::types::BlockEntropy;
     use near_indexer::near_primitives::hash::hash;
     use near_indexer_primitives::CryptoHash;
     use std::collections::HashSet;
@@ -577,7 +583,6 @@ pub mod test_utils {
     pub struct TestBlock {
         pub(super) hash: CryptoHash,
         height: u64,
-        entropy: BlockEntropy,
         timestamp_nanosec: u64,
         pub parent: Option<Arc<TestBlock>>,
         tester: Arc<TestBlockMaker>,
@@ -637,7 +642,6 @@ pub mod test_utils {
             BlockContext {
                 hash: self.hash,
                 height: self.height.into(),
-                entropy: self.entropy.clone(),
                 timestamp_nanosec: self.timestamp_nanosec,
                 prev_hash: parent_hash,
                 last_final_block: last_final_block_hash,
@@ -667,7 +671,6 @@ pub mod test_utils {
                 .collect::<Vec<_>>();
             let block = Arc::new(TestBlock {
                 hash: hash(&hash_seed),
-                entropy: hash(self.entropy.as_bytes()).into(),
                 timestamp_nanosec: self.timestamp_nanosec + 1000000,
                 height,
                 parent: Some(self.clone()),
@@ -694,11 +697,8 @@ pub mod test_utils {
                 .chain(self.root_blocks.lock().unwrap().len().to_be_bytes().iter())
                 .copied()
                 .collect();
-            let mut entropy_seed = hash_seed.clone();
-            entropy_seed.extend_from_slice(b"entropy");
             let block = Arc::new(TestBlock {
                 hash: hash(&hash_seed),
-                entropy: hash(&entropy_seed).into(),
                 timestamp_nanosec: 42,
                 height,
                 parent: None,

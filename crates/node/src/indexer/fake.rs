@@ -18,7 +18,6 @@ use chain_gateway::event_subscriber::recent_blocks_tracker::test_utils::TestBloc
 use derive_more::From;
 use ed25519_dalek::VerifyingKey;
 use mpc_contract::node_migrations::NodeMigrations;
-use mpc_contract::primitives::domain::AddDomainsVotes;
 use mpc_contract::primitives::{
     domain::DomainRegistry,
     key_state::{EpochId, KeyEventId, Keyset},
@@ -209,7 +208,6 @@ impl FakeMpcContractState {
             DomainRegistry::default(),
             Keyset::new(EpochId::new(0), Vec::new()),
             participants_config_to_threshold_parameters(&participants),
-            AddDomainsVotes::default(),
         ));
     }
 

@@ -235,17 +235,12 @@ impl VerifyForeignTxProvider {
 
     pub async fn process_channel(&self, channel: NetworkTaskChannel) -> anyhow::Result<()> {
         match channel.task_id() {
-            MpcTaskId::VerifyForeignTxTaskId(
-                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
-                    id,
-                    paired_triple_id,
-                },
-            ) => {
-                self.make_verify_foreign_tx_online_presign_follower(channel, id, paired_triple_id)
+            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx {
+                id,
+                paired_triple_id,
+            }) => {
+                self.make_verify_foreign_tx_follower(channel, id, paired_triple_id)
                     .await?;
-            }
-            MpcTaskId::VerifyForeignTxTaskId(VerifyForeignTxTaskId::VerifyForeignTx { .. }) => {
-                anyhow::bail!("Retired stored-presignature task rejected");
             }
             _ => anyhow::bail!(
                 "verify_foreign_tx task handler: received unexpected task id: {:?}",
@@ -346,7 +341,7 @@ mod tests {
 
         // Then
         let published = published_inspection_series();
-        for (chain, _) in config.iter_chains() {
+        for (chain, _) in config.into_iter() {
             for index in 0..2 {
                 let series = (chain.label().to_string(), format!("p{index}"));
                 assert!(published.contains(&series), "{series:?} was not published");

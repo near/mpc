@@ -12,6 +12,7 @@ use crate::{
     },
 };
 use curve25519_dalek::edwards::CompressedEdwardsY;
+use mpc_primitives::hash::GenesisHash;
 use near_account_id::AccountId;
 use near_mpc_contract_interface::types::{
     self as dtos, DomainConfig, DomainId, DomainPurpose, Ed25519PublicKey, Protocol,
@@ -97,6 +98,10 @@ pub fn bogus_ed25519_near_public_key() -> near_sdk::PublicKey {
 
 pub fn bogus_tee_verifier_account_id() -> AccountId {
     "tee-verifier.near".parse().unwrap()
+}
+
+pub fn bogus_genesis_hash() -> GenesisHash {
+    GenesisHash::from([1; 32])
 }
 
 #[test]
