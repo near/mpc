@@ -13,6 +13,7 @@ use crate::sandbox::{
         transactions::CallMpcContract,
     },
 };
+use mpc_contract::primitives::test_utils::bogus_genesis_hash;
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{BlockCount, ProtocolContractState, Update};
 use near_mpc_sdk::update::hash;
@@ -114,6 +115,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
         resolve_verification_tera_gas: 16,
         attestation_storage_fee_millinear: 20,
         launcher_hash_unused_ttl_seconds: 14 * 24 * 60 * 60,
+        migration_genesis_hash: Some(bogus_genesis_hash()),
     };
 
     let update = Update::Config(new_config.clone());

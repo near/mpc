@@ -18,7 +18,7 @@ pub fn assets_dir(home_dir: &Path) -> PathBuf {
     home_dir.join("assets")
 }
 
-/// Directory holding the permanent keyshares, one file per key epoch.
+/// Directory holding the file of the current permanent keyset.
 pub fn permanent_keys_dir(home_dir: &Path) -> PathBuf {
     home_dir.join("permanent_keys")
 }

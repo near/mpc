@@ -81,7 +81,7 @@ You can also use the example `.env` files under `configs/`:
 | Option                | Description                                                               |
 | --------------------- | ------------------------------------------------------------------------- |
 | `--env-file`, `-e`    | Path to a `.env` file with deployment parameters (default: `default.env`) |
-| `--base-path`, `-b`   | Path to the parent directory containing the `vmm` folder. For example, if your Dstack installation is in `/project/meta-dstack/dstack/vmm`, set `--base-path /project/meta-dstack/dstack/`. |
+| `--base-path`, `-b`   | Path to the parent directory containing the `vmm` folder. For example, if your Dstack checkout is `/opt/mpc/dstack` (with `vmm/` inside), set `--base-path /opt/mpc/dstack`. |
 | `--python-exec`, `-p` | Path to the Python executable to use (default: under base path)           |
 | `COMPOSE_TEMPLATE` env | Launcher compose template to render (default: the one the contract derives its allowed hash from) |
 
@@ -99,9 +99,9 @@ You can also use the example `.env` files under `configs/`:
 # Override Python path only
 ./deploy-launcher.sh --python-exec python3
 
-# Override both base path (folder above meta-dstack) and Python path
+# Override both base path (the dstack checkout) and Python path
 ./deploy-launcher.sh \
-  --base-path /home/barak/project \
+  --base-path /opt/mpc/dstack \
   --python-exec python3
 ```
 
@@ -120,9 +120,6 @@ SEALING_KEY_TYPE=SGX
 
 # Port on the host machine to connect to the dstack guest agent
 EXTERNAL_DSTACK_AGENT_PORT=127.0.0.1:9206
-
-# SSH port on the host
-EXTERNAL_SSH_PORT=127.0.0.1:9207
 
 # External MPC ports (host machine).
 # The address part is the host IP qemu binds each forward to.
@@ -145,8 +142,7 @@ INTERNAL_MPC_MAIN_PORT=80
 INTERNAL_MPC_MIGRATION_PORT=8079
 
 # OS image
-# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
-OS_IMAGE=dstack-0.5.8
+OS_IMAGE=dstack-0.6.5
 
 # Launcher and MPC node manifest digests (filled into the launcher compose
 # template at deploy time). These must match digests voted into the contract.

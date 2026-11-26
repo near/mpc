@@ -680,17 +680,19 @@ where
 }
 
 #[cfg(test)]
+#[expect(non_snake_case)]
 mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
     use crate::async_testing::{MaybeReady, run_future_once};
-    use crate::db::DBCol;
+    use crate::db::{DBCol, SecretDB};
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
     use borsh::BorshDeserialize;
     use futures::FutureExt;
     use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
+    use rstest::rstest;
     use serde::{Deserialize, Serialize};
     use std::cmp::Eq;
     use std::default::Default;
@@ -1337,7 +1339,7 @@ mod tests {
             let store = DistributedAssetStorage::<u64>::new(
                 FakeClock::default().clock(),
                 db.clone(),
-                crate::db::DBCol::Presignature,
+                DBCol::TripleV2,
                 domain_id_to_prefix(domain_id),
                 myself,
                 |_, _| true,
@@ -1370,7 +1372,7 @@ mod tests {
             let store = DistributedAssetStorage::<u64>::new(
                 FakeClock::default().clock(),
                 db.clone(),
-                crate::db::DBCol::Presignature,
+                DBCol::TripleV2,
                 domain_id_to_prefix(domain_id),
                 myself,
                 |_, _| true,
@@ -1393,106 +1395,69 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_distributed_assets_storage_cleanup() {
-        let clock = FakeClock::default();
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
-        let all_participants = vec![
-            ParticipantId::from_raw(0),
-            ParticipantId::from_raw(1),
-            ParticipantId::from_raw(2),
-            ParticipantId::from_raw(3),
-        ];
-        let participant_subset_a = vec![
-            ParticipantId::from_raw(0),
-            ParticipantId::from_raw(1),
-            ParticipantId::from_raw(2),
-        ];
-        let participant_subset_b = vec![
-            ParticipantId::from_raw(1),
-            ParticipantId::from_raw(2),
-            ParticipantId::from_raw(3),
-        ];
-        let participant_subset_c = vec![ParticipantId::from_raw(1), ParticipantId::from_raw(2)];
-        let my_participant_id = ParticipantId::from_raw(42);
-        let alive_participants = Arc::new(Mutex::new(all_participants.clone()));
-        let new_store_from_db = |db_col: DBCol,
-                                 domain_id: Option<DomainId>|
-         -> DistributedAssetStorage<ParticipantsWithI32> {
-            DistributedAssetStorage::<ParticipantsWithI32>::new(
-                clock.clock(),
-                db.clone(),
-                db_col,
-                domain_id_to_prefix(domain_id),
-                my_participant_id,
-                |cond, val| val.is_subset_of_active_participants(cond),
-                {
-                    let alive_participants = alive_participants.clone();
-                    Arc::new(move || alive_participants.lock().unwrap().clone())
-                },
-            )
-            .unwrap()
-        };
-        let assert_db_num_owned = |db_col: DBCol, domain_id: Option<DomainId>, expected: usize| {
-            let store = new_store_from_db(db_col, domain_id);
-            assert_eq!(store.num_owned(), expected);
-        };
-        for domain_id in [None, Some(DomainId(0)), Some(DomainId(1))] {
-            for db_col in [crate::db::DBCol::Presignature, crate::db::DBCol::TripleV2] {
-                assert_db_num_owned(db_col, domain_id, 0);
-                {
-                    // populate the database
-                    let all_1 = ParticipantsWithI32(all_participants.clone(), 456);
-                    let subset_a_1 = ParticipantsWithI32(participant_subset_a.clone(), 789);
-                    let subset_b_1 = ParticipantsWithI32(participant_subset_b.clone(), 789);
-                    let subset_c_1 = ParticipantsWithI32(participant_subset_c.clone(), 789);
-                    let store = new_store_from_db(db_col, domain_id);
-                    for p in [all_1, subset_a_1, subset_b_1, subset_c_1] {
-                        let id = store.generate_and_reserve_id();
-                        store.add_owned(id, p);
-                    }
-                }
-                assert_db_num_owned(db_col, domain_id, 4);
-                let mut writer = db.update();
-                clean_db::<ParticipantsWithI32>(
-                    &db,
-                    &mut writer,
-                    db_col,
-                    &all_participants,
-                    my_participant_id,
-                    &domain_id_to_prefix(domain_id),
-                )
-                .unwrap();
-                writer.commit().unwrap();
-                assert_db_num_owned(db_col, domain_id, 4);
-                let mut writer = db.update();
-                clean_db::<ParticipantsWithI32>(
-                    &db,
-                    &mut writer,
-                    db_col,
-                    &participant_subset_a,
-                    my_participant_id,
-                    &domain_id_to_prefix(domain_id),
-                )
-                .unwrap();
-                writer.commit().unwrap();
-                assert_db_num_owned(db_col, domain_id, 2);
+    const MY_PARTICIPANT_ID: ParticipantId = ParticipantId::from_raw(42);
 
-                let mut writer = db.update();
-                clean_db::<ParticipantsWithI32>(
-                    &db,
-                    &mut writer,
-                    db_col,
-                    &participant_subset_b,
-                    my_participant_id,
-                    &domain_id_to_prefix(domain_id),
-                )
-                .unwrap();
-                writer.commit().unwrap();
-                assert_db_num_owned(db_col, domain_id, 1);
+    fn participant_ids(raw: &[u32]) -> Vec<ParticipantId> {
+        raw.iter().copied().map(ParticipantId::from_raw).collect()
+    }
+
+    fn new_cleanup_test_store(
+        db: &Arc<SecretDB>,
+        domain_id: Option<DomainId>,
+    ) -> DistributedAssetStorage<ParticipantsWithI32> {
+        DistributedAssetStorage::<ParticipantsWithI32>::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            DBCol::TripleV2,
+            domain_id_to_prefix(domain_id),
+            MY_PARTICIPANT_ID,
+            |cond, val| val.is_subset_of_active_participants(cond),
+            Arc::new(|| participant_ids(&[0, 1, 2, 3])),
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case::all_participants_active(&[0, 1, 2, 3], 4)]
+    #[case::participant_3_inactive(&[0, 1, 2], 2)]
+    #[case::participant_0_inactive(&[1, 2, 3], 2)]
+    #[case::participants_0_and_3_inactive(&[1, 2], 1)]
+    fn clean_db__should_remove_assets_with_an_inactive_participant_from_the_given_domain(
+        #[case] active_participants: &[u32],
+        #[case] expected_num_owned: usize,
+        #[values(None, Some(DomainId(0)), Some(DomainId(1)))] domain_id: Option<DomainId>,
+    ) {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
+        let other_domain_id = Some(DomainId(2));
+        for domain_id in [domain_id, other_domain_id] {
+            let store = new_cleanup_test_store(&db, domain_id);
+            for participants in [&[0, 1, 2, 3][..], &[0, 1, 2], &[1, 2, 3], &[1, 2]] {
+                let id = store.generate_and_reserve_id();
+                store.add_owned(id, ParticipantsWithI32(participant_ids(participants), 0));
             }
         }
+
+        // When
+        let mut writer = db.update();
+        clean_db::<ParticipantsWithI32>(
+            &db,
+            &mut writer,
+            DBCol::TripleV2,
+            &participant_ids(active_participants),
+            MY_PARTICIPANT_ID,
+            &domain_id_to_prefix(domain_id),
+        )
+        .unwrap();
+        writer.commit().unwrap();
+
+        // Then
+        assert_eq!(
+            new_cleanup_test_store(&db, domain_id).num_owned(),
+            expected_num_owned
+        );
+        assert_eq!(new_cleanup_test_store(&db, other_domain_id).num_owned(), 4);
     }
 
     // The standing condition holds for 2 and 3, the supplied one for 3 and 4:

@@ -164,14 +164,6 @@ async fn test_web_endpoints() {
         ensure_body_contains(
             &client,
             i,
-            &format!("http://{web_addr}/debug/blocks"),
-            &["Recent blocks:"],
-        )
-        .await
-        .expect("debug/blocks endpoint failed");
-        ensure_body_contains(
-            &client,
-            i,
             &format!("http://{web_addr}/debug/signatures"),
             &["Recent signatures:", "id:"],
         )

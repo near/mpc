@@ -6,12 +6,12 @@ use config::StreamerConfig;
 use near_indexer::StreamerMessage;
 
 use crate::{
-    errors::ChainGatewayError, event_subscriber::consts::DEFAULT_NUMBER_OF_TRACKED_BLOCKS,
+    BlockEventStream, errors::ChainGatewayError,
+    event_subscriber::consts::DEFAULT_NUMBER_OF_TRACKED_BLOCKS,
     primitives::FetchLatestFinalBlockInfo,
 };
 
 use super::{
-    block_events::BlockUpdate,
     stats::{IndexerStats, indexer_logger},
     subscriber::BlockEventSubscriptions,
 };
@@ -20,7 +20,7 @@ pub(crate) async fn start(
     block_event_subscriber: BlockEventSubscriptions,
     stream: tokio::sync::mpsc::Receiver<StreamerMessage>,
     info_fetcher: impl FetchLatestFinalBlockInfo,
-) -> Result<tokio::sync::mpsc::Receiver<BlockUpdate>, ChainGatewayError> {
+) -> Result<BlockEventStream, ChainGatewayError> {
     let StreamerConfig {
         buffer_size,
         block_events,
@@ -46,7 +46,10 @@ pub(crate) async fn start(
             tracing::error!(target: "chain gateway", "block event listener stopped: {err}");
         }
     });
-    tokio::spawn(indexer_logger(stats_rx, info_fetcher));
+    tokio::spawn(indexer_logger(stats_rx.clone(), info_fetcher));
 
-    Ok(block_rx)
+    Ok(BlockEventStream {
+        updates: block_rx,
+        progress: stats_rx,
+    })
 }

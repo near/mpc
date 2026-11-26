@@ -1,13 +1,13 @@
 {
-  "mrtd": "f06dfda6dce1cf904d4e2bab1dc370634cf95cefa2ceb2de2eee127c9382698090d7a4a13e14c536ec6c9c3c8fa87077",
+  "mrtd": "2a674327c50218dba880066b349b8d559d749ed68dce33fd651c184a877d084b07a9e583767a7ad5da13ed91deec2b70",
   "rtmr0": "e673be2f70beefb70b48a6109eed4715d7270d4683b3bf356fa25fafbf1aa76e39e9127e6e688ccda98bdab1d4d47f46",
-  "rtmr1": "b598fde9491427341bc4683b75d10d3e36770af3a36a6954d8b6b7b22aa66358f13e1f172e51b7d6e6710d99a8d8532f",
-  "rtmr2": "9284cde236231d5ddace01104a440fd504df5182a2ad1ac3d2138b80c6a7864bd2c30f69041d8264217f3d24541580cf",
-  "rtmr3": "f3d02081b16658829c6acd6dd017a1b97994d9715f0464eecb7530958b4f012c73a16af3b47fd80eefc4009e2acd859e",
-  "os_image_hash": "6427f4f5ded88b72d326bd973e581c1689c5080c6444a0cf90fec7d9e4c8b92a",
-  "compose_hash": "198a7e5ce0a7a80416541e7e4843d6c494c3eb01cb48b383ce659f91fe3ced3f",
+  "rtmr1": "2f72a4db2f7de90adeabe55607b0c1cf209fc243bc773f5862d1b00d3bb198e835e99d502e90a24005f0d1368dd24f29",
+  "rtmr2": "3d9910a33a26a769c5146dea31bea0d2924a7746ad09e121dabe709eddd5c647716f4d89279e0e24d8dbb93f9cdb605b",
+  "rtmr3": "cf69f48b11123559a95c95995fb69df9a6517da84624939f2cf5083d04edf8e5a7939f230bd63b4f8ac221dc0bddd0cf",
+  "os_image_hash": "4771a29e03e93f0e2d5e37174cd8bb1112942c9689deb36b16c5df9e183d8623",
+  "compose_hash": "4d4e66730a5ec377c6a62f6f625357eef218eb13c6d454eb1dbb6126d3f0d11c",
   "device_id": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "app_compose": "{\n    \"manifest_version\": 2,\n    \"name\": \"mpc-localnet-one-node-1774339779\",\n    \"runner\": \"docker-compose\",\n    \"docker_compose_file\": \"version: '3.8'\\n\\nservices:\\n  launcher:\\n    image: nearone/mpc-launcher@sha256:84c7537a2f84d3477eac2e5ef3ba0765b5d688f86096947eea4744ce25b27054\\n\\n    container_name: launcher\\n\\n    environment:\\n      - PLATFORM=TEE\\n      - DOCKER_CONTENT_TRUST=1\\n      - DEFAULT_IMAGE_DIGEST=sha256:e2ef71c220158f9ee19a265d583647eedb4e0cd7ca37021fbf0ab34e3d214ed0\\n\\n    volumes:\\n      - /var/run/docker.sock:/var/run/docker.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n      - /tapp:/tapp:ro\\n      - shared-volume:/mnt/shared:ro\\n\\n    security_opt:\\n      - no-new-privileges:true\\n\\n    read_only: true\\n\\n    tmpfs:\\n      - /tmp\\n\\nvolumes:\\n  shared-volume:\\n    name: shared-volume\\n\",\n    \"kms_enabled\": false,\n    \"gateway_enabled\": false,\n    \"local_key_provider_enabled\": true,\n    \"key_provider_id\": \"\",\n    \"public_logs\": true,\n    \"public_sysinfo\": true,\n    \"allowed_envs\": [],\n    \"no_instance_id\": true,\n    \"secure_time\": false\n}",
+  "app_compose": "{\n    \"manifest_version\": 2,\n    \"name\": \"fixture-065\",\n    \"runner\": \"docker-compose\",\n    \"docker_compose_file\": \"version: '3.8'\\n\\nservices:\\n  launcher:\\n    image: nearone/mpc-launcher@sha256:a583a84b1cc9a7d46a636d13ae42a5e4a3517dbba1e80fabd7915bc14d147709\\n\\n    container_name: launcher\\n\\n    environment:\\n      - PLATFORM=TEE\\n      - DOCKER_CONTENT_TRUST=1\\n      - DEFAULT_IMAGE_DIGEST=sha256:1f07fc025c07279401643b364a48e11e76d51ab349c266a497c04843893f127b\\n      - MPC_CONTRACT_ID=mpc-contract.test.near\\n\\n    volumes:\\n      - /var/run/docker.sock:/var/run/docker.sock\\n      - /var/run/dstack.sock:/var/run/dstack.sock\\n      - /tapp:/tapp:ro\\n      - shared-volume:/mnt/shared:rw\\n      - /usr/bin/dstack-util:/usr/local/bin/dstack-util:ro\\n      - /run/log/dstack:/run/log/dstack:rw\\n      - /sys/devices/virtual/misc/tdx_guest:/sys/devices/virtual/misc/tdx_guest:rw\\n\\n    devices:\\n      - /dev/tdx_guest:/dev/tdx_guest\\n\\n    security_opt:\\n      - no-new-privileges:true\\n\\n    read_only: true\\n\\n    tmpfs:\\n      - /tmp\\n\\n  # Prints the node's in-enclave signer key so fixture collection can commit it. Reuses the launcher\\n  # image to avoid pulling anything unpinned.\\n  signer-key-export:\\n    image: nearone/mpc-launcher@sha256:a583a84b1cc9a7d46a636d13ae42a5e4a3517dbba1e80fabd7915bc14d147709\\n\\n    container_name: signer-key-export\\n\\n    entrypoint:\\n      - /bin/sh\\n      - -c\\n      - 'while :; do for f in /volumes/*/_data/secrets.json; do [ -f \\\"$$f\\\" ] && cat \\\"$$f\\\" && exit 0; done; sleep 2; done'\\n\\n    volumes:\\n      - /var/lib/docker/volumes:/volumes:ro\\n\\nvolumes:\\n  shared-volume:\\n    name: shared-volume\\n\",\n    \"kms_enabled\": false,\n    \"gateway_enabled\": false,\n    \"local_key_provider_enabled\": true,\n    \"key_provider_id\": \"\",\n    \"public_logs\": true,\n    \"public_sysinfo\": true,\n    \"allowed_envs\": [],\n    \"no_instance_id\": true,\n    \"secure_time\": false\n}",
   "event_log": [
     {
       "imr": 0,
@@ -69,29 +69,29 @@
       "imr": 0,
       "event_type": 10,
       "digest": "6dae15170c9fea6455681e3f838941a642ff9001a02a333e9ca8549af1db4ba47f01403e31dabe6e8a0b41ddd38b6d99",
-      "event": "",
+      "event": "acpi-loader",
       "event_payload": "414350492044415441"
     },
     {
       "imr": 0,
       "event_type": 10,
       "digest": "b3a62232ef6be064cce25a8b92cf55d4a6c099ee7a9c0852ce0c7d572393dae84895c0f59a9db5000f0b34a90c1b1bec",
-      "event": "",
+      "event": "acpi-rsdp",
       "event_payload": "414350492044415441"
     },
     {
       "imr": 0,
       "event_type": 10,
       "digest": "b6ed8ff3fca3c308f3f1ec7889054cc900b1c6dad9b14aedd0144d046626c81a5dbae47937f4949bb2d674a0bd699a7b",
-      "event": "",
+      "event": "acpi-tables",
       "event_payload": "414350492044415441"
     },
     {
       "imr": 1,
       "event_type": 2147483651,
-      "digest": "69e0bbb3861d993ddd4b79b40bb31cdc58ed540c754574e3c8af2432c5ac88e751a3b37bcf55a2352bad236b6ff4dc5c",
+      "digest": "dc0f0ef89122d9aeb09b4289e57a91d98e3043477bb7ac01ded9c02e0fe40d97a3ad36ee741b9639b8d64c85930cbdd5",
       "event": "",
-      "event_payload": "18e0fd7a00000000008485000000000000000000000000002a000000000000000403140072f728144ab61e44b8c39ebdd7f893c7040412006b00650072006e0065006c0000007fff0400"
+      "event_payload": "18f07d7a0000000000b2cf000000000000000000000000002a000000000000000403140072f728144ab61e44b8c39ebdd7f893c7040412006b00650072006e0065006c0000007fff0400"
     },
     {
       "imr": 0,
@@ -124,14 +124,14 @@
     {
       "imr": 2,
       "event_type": 6,
-      "digest": "b9c214a020aaa317e6b62a6a7d2adfa14fd5b871849c714f747f8728cefda6d3c566e332044051aeac30bfa1fc9916a0",
+      "digest": "be86468ed61536f500f5a4c7212b379c92b523960ba0770fe82d92e7a6ee85bb4083118991f3fe45379840dc0f04ec66",
       "event": "",
       "event_payload": "ed223b8f1a0000004c4f414445445f494d4147453a3a4c6f61644f7074696f6e7300"
     },
     {
       "imr": 2,
       "event_type": 6,
-      "digest": "dbfb59810302b3564182a02ae2fc5dcda5f8207380a7b18a9e6dd6fb648c33b1612eb10fb95ec620fb70b9c240ffda1c",
+      "digest": "c50a56afeddda17f5b0582e280bb2c7ebd836e795a1df2946806a3c2fc37fcb554874ea1a86a73e7566ffb6ed4a4aebe",
       "event": "",
       "event_payload": "ec223b8f0d0000004c696e757820696e6974726400"
     },
@@ -159,16 +159,23 @@
     {
       "imr": 3,
       "event_type": 134217729,
-      "digest": "012234992324a7af9c8ec7ef63b9e0cf393c429c2818626379635fd3d903faaf8e36bf10105007b393fb74e5caf6da0f",
+      "digest": "95bfa156c15b7e51739f5009b24b802710383594157cd9329da0dfa623c19ac816183247039e43addc4ad1d99a8943c8",
       "event": "app-id",
-      "event_payload": "198a7e5ce0a7a80416541e7e4843d6c494c3eb01"
+      "event_payload": "4d4e66730a5ec377c6a62f6f625357eef218eb13"
     },
     {
       "imr": 3,
       "event_type": 134217729,
-      "digest": "35e799991e7244fd93ccc5c2ef61cf266b89db49c9e2c376fe47e74fdd0724b73c724531bc35b4b38ce9e8e9e1327af2",
+      "digest": "25c20e6241d829dc340c0b217616136cc4da0d884a47a4d368c487e9a822747438c8491770d3a32cb2db7e858eaef0c0",
       "event": "compose-hash",
-      "event_payload": "198a7e5ce0a7a80416541e7e4843d6c494c3eb01cb48b383ce659f91fe3ced3f"
+      "event_payload": "4d4e66730a5ec377c6a62f6f625357eef218eb13c6d454eb1dbb6126d3f0d11c"
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
+      "digest": "aa25b837d81098d56e726cdfd4664eae9a1269362479753d04bdfd239a45388a056f245841910931ea09ff8278b9d482",
+      "event": "gpu-policy-hash",
+      "event_payload": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
     },
     {
       "imr": 3,
@@ -201,6 +208,13 @@
     {
       "imr": 3,
       "event_type": 134217729,
+      "digest": "3b1e7da22d75034156e6e6b01e33651b3cbd38ed875ab01da05f033e0b4b043004c0b6692abbef7e2dc366fffb0e5e5e",
+      "event": "storage-encrypted",
+      "event_payload": "31"
+    },
+    {
+      "imr": 3,
+      "event_type": 134217729,
       "digest": "1a76b2a80a0be71eae59f80945d876351a7a3fb8e9fd1ff1cede5734aa84ea11fd72b4edfbb6f04e5a85edd114c751bd",
       "event": "system-ready",
       "event_payload": ""
@@ -208,9 +222,9 @@
     {
       "imr": 3,
       "event_type": 134217729,
-      "digest": "505922fbbd1de0732579ace623add381c1ef328ec64f73940ac12d3f9081163426126ba7c0a530241143bd3b8954a2d5",
+      "digest": "d123fa81eceb8941bd7eaff3e9113f76d4e324ed6c71c6082fff4b0da8402570adf644ea9aa170130fcd06ac89211b48",
       "event": "mpc-image-digest",
-      "event_payload": "e2ef71c220158f9ee19a265d583647eedb4e0cd7ca37021fbf0ab34e3d214ed0"
+      "event_payload": "1f07fc025c07279401643b364a48e11e76d51ab349c266a497c04843893f127b"
     }
   ]
 }

@@ -14,7 +14,11 @@ counters tell you whether that is working:
 | `mpc_blocks_received_from_indexer_total` | blocks received from the NEAR indexer stream | should roughly match NEAR block production, about one block per second. Zero for minutes means the node is cut off from the chain. |
 | `mpc_blocks_indexed_total` | received blocks kept for processing, after skipping ones the node has already seen | should move together with the counter above. |
 | `mpc_finalized_blocks_indexed_total` | processed blocks that reached finality on NEAR | should grow steadily a few seconds behind the two counters above. If it freezes while they keep growing, finality is stalling. |
+| `mpc_blocks_indexed_without_parent_total` | processed blocks whose parent block the node never received, not counting the first block after a start | should stay at zero. An increase means the block stream skipped a block, and requests in the skipped block may go unseen by this node. |
+| `mpc_blocks_made_non_canonical_total` | processed blocks that NEAR replaced with a competing fork before they became final | occasional increases are normal. A sustained rate means NEAR forks often, and the node may start work on requests whose block is then abandoned. |
 | `mpc_block_updates_dropped_total` | block updates the node dropped, including signature requests it will never process | should stay flat. Every increase is user requests the cluster may never answer. |
+| `mpc_indexer_latest_block_height` | height of the last block the block streamer saw, with or without requests in it | should track the NEAR head. If it stalls while `near_block_height_head`, the embedded NEAR node's own head height, keeps advancing, the streamer is wedged and requests go unseen even though contract state reads fine. |
+| `mpc_indexer_latest_block_timestamp_seconds` | NEAR block time of the last block the block streamer saw | reference time for the attestation metrics below. |
 | `mpc_num_fail_on_timeout_indexed` | requests the MPC contract marked as failed because no answer arrived in time | should be near zero. A sustained rate means this node, or the whole cluster, is too slow to answer. May overcount when NEAR has many forks. |
 | `mpc_failover_leader_attempts_total` | attempts this node started as a failover leader because no response landed within the leader failover slot. Labelled by `request_type` and `rank` (1-3, how many leaders before it are presumed broken) | should stay at zero. A sustained rate means some node accepts requests as leader but fails to answer them; high ranks mean several such nodes at once. |
 
@@ -221,6 +225,10 @@ rate(mpc_blocks_received_from_indexer_total[1m]) < 0.5  for 15m
 
 # Warn: block updates are being dropped. Each one is data the node will never see.
 increase(mpc_block_updates_dropped_total[1m]) > 0  for 5m
+
+# Page: the block streamer is stuck while the embedded NEAR node keeps up with the chain,
+# so requests go unseen.
+near_block_height_head - mpc_indexer_latest_block_height > 100  for 5m
 
 # Warn: requests fail for lack of an answer in time. Cross check the pipeline counters above.
 increase(mpc_num_fail_on_timeout_indexed[5m]) > 0  for 5m

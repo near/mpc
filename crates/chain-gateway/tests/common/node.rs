@@ -1,7 +1,7 @@
 use base64::Engine;
 use chain_gateway::{
-    ChainGateway, NodeConfig, NodeHandle,
-    event_subscriber::{block_events::BlockUpdate, subscriber::BlockEventSubscriptions},
+    BlockEventStream, ChainGateway, NodeConfig, NodeHandle,
+    event_subscriber::subscriber::BlockEventSubscriptions,
 };
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -14,7 +14,7 @@ pub struct LocalNode {
     pub ports: PortsConfig,
     pub chain_gateway: ChainGateway,
     pub node_handle: NodeHandle,
-    pub block_update_receiver: Option<tokio::sync::mpsc::Receiver<BlockUpdate>>,
+    pub block_event_stream: Option<BlockEventStream>,
 }
 
 #[derive(Clone)]
@@ -37,7 +37,7 @@ impl LocalNodeBuilder {
         let node_config =
             NodeConfig::new(self.home_dir.path().to_path_buf()).with_validate_genesis(true);
 
-        let (chain_gateway, node_handle, block_update_receiver) =
+        let (chain_gateway, node_handle, block_event_stream) =
             ChainGateway::start(node_config, streamer_config, shutdown)
                 .await
                 .expect("chain_gateway::start should succeed");
@@ -49,7 +49,7 @@ impl LocalNodeBuilder {
             ports: ports.unwrap(),
             chain_gateway,
             node_handle,
-            block_update_receiver,
+            block_event_stream,
         }
     }
     pub(crate) fn new(node_name: &str, home_dir: TempDir) -> Self {
@@ -150,8 +150,7 @@ impl LocalNodeBuilder {
     /// Set `consensus.min_num_peers` in config.json.
     ///
     /// For multi-node setups, setting this to 1 on the validator ensures it waits
-    /// for at least one peer connection (with full handshake + AccountAnnounce)
-    /// before producing blocks, guaranteeing P2P routing tables are populated.
+    /// for at least one peer connection before producing blocks.
     pub(crate) fn with_consensus_min_peers(self, min_peers: u64) -> Self {
         let mut config = self.config();
         config["consensus"]["min_num_peers"] = serde_json::json!(min_peers);

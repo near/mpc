@@ -7,3 +7,5 @@ pub mod subscriber;
 pub(super) mod streamer;
 
 mod stats;
+
+pub use stats::IndexerStats;

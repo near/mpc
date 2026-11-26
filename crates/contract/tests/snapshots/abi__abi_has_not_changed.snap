@@ -16,6 +16,23 @@ expression: abi
   "body": {
     "functions": [
       {
+        "name": "add_domains_votes",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AuthenticatedParticipantId"
+              },
+              "uniqueItems": true
+            }
+          }
+        }
+      },
+      {
         "name": "allowed_docker_image_hashes",
         "doc": " Returns all allowed code hashes in descending order of their expiry\n date. Note that the expiration depends on the contract configuration\n (c.f. [`dtos::Config::tee_upgrade_deadline_duration_seconds`]).",
         "kind": "view",
@@ -1934,6 +1951,9 @@ expression: abi
               "type_schema": {
                 "declaration": "Update",
                 "definitions": {
+                  "()": {
+                    "Primitive": 0
+                  },
                   "BlockCount": {
                     "Struct": [
                       "u64"
@@ -2016,8 +2036,34 @@ expression: abi
                       [
                         "attestation_storage_fee_millinear",
                         "u64"
+                      ],
+                      [
+                        "migration_genesis_hash",
+                        "Option<GenesisHash>"
                       ]
                     ]
+                  },
+                  "GenesisHash": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "Option<GenesisHash>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "GenesisHash"
+                        ]
+                      ]
+                    }
                   },
                   "Update": {
                     "Enum": {
@@ -2052,6 +2098,16 @@ expression: abi
                       "length_range": {
                         "start": 0,
                         "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 32]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 32,
+                        "end": 32
                       },
                       "elements": "u8"
                     }
@@ -2239,7 +2295,7 @@ expression: abi
       },
       {
         "name": "vote_add_domains",
-        "doc": " Propose adding a new set of domains for the MPC network.\n If a threshold number of votes are reached on the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
+        "doc": " Propose adding a new set of domains for the MPC network.\n Once every participant has voted for the exact same proposal, this will transition\n the contract into the Initializing state to generate keys for the new domains.\n\n The specified list of domains must have increasing and contiguous IDs, and the first ID\n must be the same as the `next_domain_id` returned by state().",
         "kind": "call",
         "params": {
           "serialization_type": "json",
@@ -2575,24 +2631,6 @@ expression: abi
       "title": "String",
       "type": "string",
       "definitions": {
-        "AddDomainsVotes": {
-          "description": "Votes for adding new domains.",
-          "type": "object",
-          "required": [
-            "proposal_by_account"
-          ],
-          "properties": {
-            "proposal_by_account": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "array",
-                "items": {
-                  "$ref": "#/definitions/DomainConfig"
-                }
-              }
-            }
-          }
-        },
         "AllowedMpcDockerImageHash": {
           "type": "object",
           "required": [
@@ -3267,6 +3305,17 @@ expression: abi
               "type": "integer",
               "format": "uint64",
               "minimum": 0.0
+            },
+            "migration_genesis_hash": {
+              "description": "Genesis hash that the contract stores when this config is applied, if it has none.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/GenesisHash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "remove_non_participant_tee_verifier_votes_tera_gas": {
               "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
@@ -4114,6 +4163,7 @@ expression: abi
               "$ref": "#/definitions/EpochId"
             },
             "instance": {
+              "description": "The attempt active at the queried block height, if any.",
               "anyOf": [
                 {
                   "$ref": "#/definitions/KeyEventInstance"
@@ -4872,15 +4922,11 @@ expression: abi
           "description": "State when the contract is ready for signature operations.",
           "type": "object",
           "required": [
-            "add_domains_votes",
             "domains",
             "keyset",
             "parameters"
           ],
           "properties": {
-            "add_domains_votes": {
-              "$ref": "#/definitions/AddDomainsVotes"
-            },
             "domains": {
               "$ref": "#/definitions/DomainRegistry"
             },

@@ -2,8 +2,9 @@ use crate::trait_extensions::convert_to_contract_dto::IntoContractInterfaceType;
 use crate::types::{SignatureRequest, VerifyForeignTxRequest};
 use anyhow::Context;
 use k256::{AffinePoint, Scalar, ecdsa::RecoveryId};
-use near_indexer_primitives::types::Gas;
+use near_contract_transport::NearGas;
 use near_mpc_contract_interface::call_args as contract_args;
+use near_mpc_contract_interface::client::MAX_GAS;
 use near_mpc_contract_interface::method_names::{
     CONCLUDE_NODE_MIGRATION, REGISTER_FOREIGN_CHAINS_CONFIG, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, START_KEYGEN_INSTANCE, START_RESHARE_INSTANCE,
@@ -14,8 +15,6 @@ use serde::Serialize;
 use threshold_signatures::ecdsa::Signature;
 use threshold_signatures::frost_ed25519;
 use threshold_signatures::frost_secp256k1::VerifyingKey;
-
-const MAX_GAS: Gas = Gas::from_teragas(300);
 
 const RECOVERY_ID_FAILED: &str = "failed to compute the recovery id of the ECDSA signature";
 
@@ -85,7 +84,7 @@ impl ChainSendTransactionRequest {
         }
     }
 
-    pub fn gas_required(&self) -> Gas {
+    pub fn gas_required(&self) -> NearGas {
         match self {
             Self::Respond(_)
             | Self::CKDRespond(_)

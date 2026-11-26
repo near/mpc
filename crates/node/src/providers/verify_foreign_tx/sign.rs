@@ -62,7 +62,6 @@ fn build_signature_request(
         receipt_id: request.receipt_id,
         payload: Payload::Ecdsa(payload_bytes),
         tweak: Tweak::new([0u8; 32]),
-        entropy: request.entropy,
         timestamp_nanosec: request.timestamp_nanosec,
         domain: request.domain_id,
     })
@@ -142,7 +141,7 @@ impl VerifyForeignTxProvider {
         )
         .await;
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
-            VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+            VerifyForeignTxTaskId::VerifyForeignTx {
                 id,
                 paired_triple_id,
             },
@@ -160,7 +159,7 @@ impl VerifyForeignTxProvider {
         Ok(((response_payload, signature), public_key))
     }
 
-    pub(super) async fn make_verify_foreign_tx_online_presign_follower(
+    pub(super) async fn make_verify_foreign_tx_follower(
         &self,
         channel: NetworkTaskChannel,
         id: SignatureId,
@@ -763,7 +762,6 @@ mod tests {
             request: bitcoin_request(),
             payload_version: dtos::ForeignTxPayloadVersion::V1,
             expected_payload_hash,
-            entropy: [0u8; 32],
             timestamp_nanosec: 0,
             domain_id: mpc_primitives::domain::DomainId(0),
         }

@@ -20,7 +20,7 @@ See [crates/test-utils/assets/README.md](../../../../crates/test-utils/assets/RE
 
 ```bash
 # dstack base path — the folder containing vmm/src/vmm-cli.py
-export BASE_PATH=/path/to/meta-dstack/dstack
+export BASE_PATH=/path/to/dstack
 
 # External machine IP reachable from the CVM
 export MACHINE_IP=<host-ip>
@@ -38,9 +38,8 @@ export LAUNCHER_MANIFEST_DIGEST=sha256:e28cb0425db06255fe5fc7aadb79534ac63c94c7a
 # dstack VMM port (default: http://127.0.0.1:10000)
 export VMM_RPC=http://127.0.0.1:<port>
 
-# Guest OS image (default: dstack-dev-0.5.8)
-# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
-export OS_IMAGE=dstack-0.5.8
+# Guest OS image (default: dstack-0.6.5)
+export OS_IMAGE=dstack-0.6.5
 
 # Custom NEAR accounts
 export NODE_ACCOUNT=frodo.test.near
@@ -69,12 +68,13 @@ bash localnet/tee/scripts/rust-launcher/single-node.sh
 After collecting `public_data.json`, update test assets:
 
 ```bash
-cp <WORKDIR>/public_data.json crates/test-utils/assets/public_data.json
-cd crates/test-utils/assets && bash ./create-assets.sh public_data.json .
-cp crates/test-utils/assets/tcb_info.json crates/attestation-types/assets/tcb_info.json
+mkdir -p crates/test-utils/assets/dstack-<version>
+cp <WORKDIR>/public_data.json crates/test-utils/assets/dstack-<version>/public_data.json
+(cd crates/test-utils/assets && bash ./create-assets.sh dstack-<version>/public_data.json dstack-<version>)
+cp crates/test-utils/assets/dstack-<version>/tcb_info.json crates/attestation-types/assets/tcb_info.json
 ```
 
-Then update `VALID_ATTESTATION_TIMESTAMP` in `crates/test-utils/src/attestation.rs`.
+Then follow the remaining steps in [the assets README](../../../../crates/test-utils/assets/README.md#steps).
 
 ## Cleanup
 

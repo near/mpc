@@ -21,7 +21,7 @@ use near_sdk::serde::Serialize;
 
 pub(crate) use mpc_primitives::hash::{PROPOSAL_HASH_BYTES, ProposalHash};
 
-pub(crate) trait SerializeProposal<T> {
+pub(crate) trait SerializeProposal<T: ?Sized> {
     type Output;
 
     fn serialize(value: &T) -> Self::Output;
@@ -33,7 +33,7 @@ pub(crate) trait HashProposal<B> {
 
 pub(crate) struct Borsh;
 
-impl<T: BorshSerialize> SerializeProposal<T> for Borsh {
+impl<T: BorshSerialize + ?Sized> SerializeProposal<T> for Borsh {
     type Output = Vec<u8>;
 
     fn serialize(value: &T) -> Vec<u8> {
@@ -43,7 +43,7 @@ impl<T: BorshSerialize> SerializeProposal<T> for Borsh {
 
 pub(crate) struct Json;
 
-impl<T: Serialize> SerializeProposal<T> for Json {
+impl<T: Serialize + ?Sized> SerializeProposal<T> for Json {
     type Output = Vec<u8>;
 
     fn serialize(value: &T) -> Vec<u8> {
@@ -75,7 +75,7 @@ impl HashProposal<[u8; PROPOSAL_HASH_BYTES]> for Identity {
     }
 }
 
-pub(crate) trait ToProposalHash: Sized {
+pub(crate) trait ToProposalHash {
     type Serializer: SerializeProposal<Self>;
     type Hasher: HashProposal<<Self::Serializer as SerializeProposal<Self>>::Output>;
 

@@ -252,7 +252,7 @@ Voting methods are called by governors or operators, not by the TEE Context, and
 2. The placeholders are replaced with the approved launcher and MPC image hashes, the contract's own account id and the genesis hash of its chain respectively.
 3. The filled YAML is SHA256-hashed to produce the [`LauncherDockerComposeHash`][launcher-compose-hash].
 
-When `vote_mpc_node_manifest_digest()` reaches threshold, compose hashes are derived for the new MPC hash against all existing allowed launcher hashes. When `vote_add_launcher_hash()` reaches threshold, compose hashes are derived for the new launcher hash against all existing allowed MPC hashes.
+When `vote_mpc_node_manifest_digest()` reaches threshold, compose hashes are derived for the new MPC hash against all existing allowed launcher hashes. When `vote_add_launcher_hash()` reaches threshold, compose hashes are derived for the new launcher hash against all existing allowed MPC hashes. When a config update gives an MPC contract its missing genesis hash, compose hashes carrying it are derived for all allowed pairs.
 
 Each service has its own launcher compose template.
 
