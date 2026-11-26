@@ -59,7 +59,7 @@ async fn multiplication_sender(
     precomputed_values: MultiplicationSenderRandomPackage,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, k) = batch_random_ot_receiver(
+    let k = batch_random_ot_receiver(
         chan.child(0),
         &precomputed_values.delta,
         &precomputed_values.x,
@@ -68,7 +68,6 @@ async fn multiplication_sender(
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
-    let seed = precomputed_values.seed;
     let mut res0 = Zeroizing::new(
         random_ot_extension_sender(
             chan.child(1),
@@ -76,9 +75,9 @@ async fn multiplication_sender(
                 sid,
                 batch_size: 2 * batch_size,
             },
-            &delta,
+            &precomputed_values.delta,
             &k,
-            seed,
+            &precomputed_values.seed,
         )
         .await?,
     );
@@ -122,8 +121,7 @@ async fn multiplication_receiver(
     precomputed_package: MultiplicationReceiverRandomPackage,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let y = precomputed_package.y;
-    let (k0, k1) = batch_random_ot_sender(chan.child(0), y).await?;
+    let (k0, k1) = batch_random_ot_sender(chan.child(0), &precomputed_package.y).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
@@ -141,10 +139,8 @@ async fn multiplication_receiver(
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let seed0 = precomputed_package.seed0;
-    let task0 = mta_receiver(chan.child(2), res0, *b_i, seed0);
-    let seed1 = precomputed_package.seed1;
-    let task1 = mta_receiver(chan.child(3), res1, *a_i, seed1);
+    let task0 = mta_receiver(chan.child(2), res0, *b_i, &precomputed_package.seed0);
+    let task1 = mta_receiver(chan.child(3), res1, *a_i, &precomputed_package.seed1);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;

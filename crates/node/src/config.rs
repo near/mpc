@@ -14,7 +14,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 pub(crate) mod start;
 
 /// AES key that is zeroized on drop.
-#[derive(Clone, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct AesKey<const N: usize>([u8; N]);
 
 pub type AesKey256 = AesKey<32>;
@@ -41,6 +41,24 @@ impl<const N: usize> AesKey<N> {
 impl<const N: usize> From<[u8; N]> for AesKey<N> {
     fn from(key: [u8; N]) -> Self {
         Self(key)
+    }
+}
+
+// Serializes like `[u8; N]` to keep the on-disk format.
+impl<const N: usize> Serialize for AesKey<N> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.as_slice().serialize(serializer)
+    }
+}
+
+impl<'de, const N: usize> Deserialize<'de> for AesKey<N> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let bytes = Zeroizing::new(Vec::<u8>::deserialize(deserializer)?);
+        bytes
+            .as_slice()
+            .try_into()
+            .map(Self)
+            .map_err(|_| serde::de::Error::custom(format!("AES key must be {N} bytes")))
     }
 }
 
@@ -812,6 +830,32 @@ cores: 4
 
         // Then
         assert_eq!(key.as_bytes(), &[0xAB; 16]);
+    }
+
+    #[test]
+    fn aes_key__should_serialize_like_a_byte_array() {
+        // Given
+        let bytes = [0xAB; 16];
+        let key = AesKey128::from(bytes);
+
+        // When
+        let json = serde_json::to_string(&key).unwrap();
+
+        // Then
+        assert_eq!(json, serde_json::to_string(&bytes).unwrap());
+        assert_eq!(serde_json::from_str::<AesKey128>(&json).unwrap(), key);
+    }
+
+    #[test]
+    fn aes_key__should_reject_deserializing_wrong_length() {
+        // Given
+        let json = serde_json::to_string(&[0xAB_u8; 16]).unwrap();
+
+        // When
+        let result = serde_json::from_str::<AesKey256>(&json);
+
+        // Then
+        assert_matches!(result, Err(_));
     }
 
     #[test]

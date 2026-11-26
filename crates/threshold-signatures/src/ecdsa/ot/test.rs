@@ -1,6 +1,7 @@
 use rand::SeedableRng;
 
-use super::base::co15::{BatchRandomOTOutputReceiver, BatchRandomOTOutputSender};
+use super::base::co15::BatchRandomOTOutputSender;
+use super::bits::{BitVector, SquareBitMatrix};
 
 use crate::test_utils::MockCryptoRng;
 
@@ -11,7 +12,7 @@ use crate::test_utils::run_two_party_protocol;
 
 /// Run the batch random OT protocol between two parties.
 pub fn run_batch_random_ot()
--> Result<(BatchRandomOTOutputSender, BatchRandomOTOutputReceiver), ProtocolError> {
+-> Result<(BatchRandomOTOutputSender, (BitVector, SquareBitMatrix)), ProtocolError> {
     let mut rng = MockCryptoRng::seed_from_u64(42);
     let s = Participant::from(0u32);
     let r = Participant::from(1u32);
@@ -23,12 +24,16 @@ pub fn run_batch_random_ot()
         r,
         &mut make_protocol(comms_s.clone(), {
             let y = super::base::co15::batch_random_ot_sender_helper(&mut rng);
-            super::base::co15::batch_random_ot_sender(comms_s.private_channel(s, r), y)
+            let chan = comms_s.private_channel(s, r);
+            async move { super::base::co15::batch_random_ot_sender(chan, &y).await }
         }),
         &mut make_protocol(comms_r.clone(), {
             let (delta, x) = super::base::co15::batch_random_ot_receiver_random_helper(&mut rng);
             let chan = comms_r.private_channel(r, s);
-            async move { super::base::co15::batch_random_ot_receiver(chan, &delta, &x).await }
+            async move {
+                let k = super::base::co15::batch_random_ot_receiver(chan, &delta, &x).await?;
+                Ok((delta, k))
+            }
         }),
     )
 }

@@ -1,3 +1,4 @@
+use mpc_node::config::AesKey128;
 use mpc_node::keyshare::{
     Keyshare, local::LocalPermanentKeyStorageBackend, permanent::PermanentKeyStorage,
     permanent::PermanentKeyshareData,
@@ -15,8 +16,8 @@ pub struct KeyshareStorageAdapter {
 }
 
 impl KeyshareStorageAdapter {
-    pub async fn new(home_dir: PathBuf, encryption_key: [u8; 16]) -> anyhow::Result<Self> {
-        let backend = LocalPermanentKeyStorageBackend::new(home_dir, encryption_key.into()).await?;
+    pub async fn new(home_dir: PathBuf, encryption_key: AesKey128) -> anyhow::Result<Self> {
+        let backend = LocalPermanentKeyStorageBackend::new(home_dir, encryption_key).await?;
         let storage = PermanentKeyStorage::new(Box::new(backend)).await?;
 
         Ok(Self { storage })
@@ -61,7 +62,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
+        let encryption_key = [42u8; 16].into();
         let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
             .await
             .unwrap();
@@ -82,7 +83,7 @@ mod tests {
     async fn test_store_empty_keyshares_fails() {
         // Given
         let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
+        let encryption_key = [42u8; 16].into();
         let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
             .await
             .unwrap();
@@ -100,7 +101,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
+        let encryption_key = [42u8; 16].into();
         let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
             .await
             .unwrap();
@@ -123,7 +124,7 @@ mod tests {
     async fn test_load_before_store_returns_empty() {
         // Given
         let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
+        let encryption_key = [42u8; 16].into();
         let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
             .await
             .unwrap();
@@ -140,7 +141,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
         let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
+        let encryption_key = [42u8; 16].into();
         let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
             .await
             .unwrap();
