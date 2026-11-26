@@ -63,7 +63,7 @@ $$
 $$
 
 6. Each $P_i$ sets: $R \gets \frac{1}{e} \cdot D$. (Recall that Beaver triple $(k,d,e)$ is computed s.t. $e = k\cdot d$ )
-7. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i + \epsilon \cdot k_i$, which is already threshold shared.
+7. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i + \epsilon \cdot k_i$.
 
 **Round 3:**
 
