@@ -1028,7 +1028,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "attestation"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "attestation",
  "attestation-types",
@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "attestation-cli"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "attestation",
@@ -1074,7 +1074,7 @@ dependencies = [
 
 [[package]]
 name = "attestation-types"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -1271,7 +1271,7 @@ dependencies = [
 
 [[package]]
 name = "backup-cli"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -1837,7 +1837,7 @@ dependencies = [
 
 [[package]]
 name = "chain-gateway"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "base64 0.23.1",
  "chain-gateway",
@@ -1872,7 +1872,7 @@ dependencies = [
 
 [[package]]
 name = "chain-gateway-test-contract"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "near-contract-transport",
@@ -1934,7 +1934,7 @@ dependencies = [
 
 [[package]]
 name = "ckd-example-cli"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "blstrs",
@@ -2157,7 +2157,7 @@ checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "contract-history"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "bs58 0.5.1",
  "reqwest 0.13.5",
@@ -3212,7 +3212,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e-tests"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -3812,7 +3812,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreign-chain-config-tester"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "built",
@@ -3829,7 +3829,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-health-check"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "foreign-chain-inspector",
@@ -3849,7 +3849,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-inspector"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -3879,7 +3879,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-rpc-factory"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "foreign-chain-inspector",
@@ -3894,7 +3894,7 @@ dependencies = [
 
 [[package]]
 name = "foreign-chain-rpc-interfaces"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "base64 0.23.1",
  "derive_more 2.1.1",
@@ -4987,7 +4987,7 @@ dependencies = [
 
 [[package]]
 name = "include-measurements"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "attestation-types",
@@ -5581,7 +5581,7 @@ dependencies = [
 
 [[package]]
 name = "launcher-interface"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "derive_more 2.1.1",
  "insta",
@@ -6019,7 +6019,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-attestation"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "attestation",
  "borsh",
@@ -6039,7 +6039,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-contract"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "attestation-types",
@@ -6089,7 +6089,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-devnet"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "blstrs",
@@ -6126,7 +6126,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -6227,7 +6227,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-node-config"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -6250,7 +6250,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-primitives"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -6266,7 +6266,7 @@ dependencies = [
 
 [[package]]
 name = "mpc-tls"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "ed25519-dalek 2.2.0",
@@ -6414,7 +6414,7 @@ dependencies = [
 
 [[package]]
 name = "near-block-primitives"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -6667,7 +6667,7 @@ dependencies = [
 
 [[package]]
 name = "near-contract-transport"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "near-account-id",
@@ -7928,7 +7928,7 @@ dependencies = [
 
 [[package]]
 name = "node-types"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "mpc-attestation",
  "near-mpc-crypto-types",
@@ -9003,7 +9003,7 @@ dependencies = [
 
 [[package]]
 name = "proposal-generator"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -11199,7 +11199,7 @@ checksum = "adb6935a6f5c20170eeceb1a3835a49e12e19d792f6dd344ccc76a985ca5a6ca"
 
 [[package]]
 name = "tee-authority"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "backon",
@@ -11226,7 +11226,7 @@ dependencies = [
 
 [[package]]
 name = "tee-context"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "chain-gateway",
  "ed25519-dalek 2.2.0",
@@ -11243,7 +11243,7 @@ dependencies = [
 
 [[package]]
 name = "tee-launcher"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "backon",
  "clap",
@@ -11264,7 +11264,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "dcap-qvl",
@@ -11281,7 +11281,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier-conversions"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "dcap-qvl",
@@ -11291,7 +11291,7 @@ dependencies = [
 
 [[package]]
 name = "tee-verifier-interface"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "derive_more 2.1.1",
@@ -11361,7 +11361,7 @@ dependencies = [
 
 [[package]]
 name = "test-migration-contract"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "borsh",
  "near-sdk",
@@ -11369,7 +11369,7 @@ dependencies = [
 
 [[package]]
 name = "test-parallel-contract"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "blstrs",
  "borsh",
@@ -11381,14 +11381,14 @@ dependencies = [
 
 [[package]]
 name = "test-port-allocator"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "rand 0.8.8",
 ]
 
 [[package]]
 name = "test-utils"
-version = "3.19.0"
+version = "3.19.1"
 dependencies = [
  "anyhow",
  "bs58 0.5.1",
