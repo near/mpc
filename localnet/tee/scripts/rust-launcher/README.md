@@ -16,7 +16,10 @@ Scripts for deploying and testing MPC nodes with the launcher on localnet (TDX C
 
 - Local NEAR network running (`mpc-localnet`)
 - dstack VMM running (default: `http://127.0.0.1:10000`)
-- OS image: `dstack-dev-0.5.8` (TODO(#5069): the compose templates on main need dstack 0.6+)
+- OS image: `dstack-0.6.5`, on a `dstack-vmm` 0.6.5 host with `qemu_hotplug_off = false` and
+  `guest:containers` and `guest:logs` in `[cvm.guest_agent_api] anonymous_scopes`, so the scripts can
+  read the CVM's logs (see step 3 of the operator guide's
+  [Dstack Setup](../../../../docs/guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#2-dstack-setup-and-configuration))
 - MPC node image must support TOML config (`start-with-config-file`), e.g. `main-9515e18` or later
 - Tools: `near`, `jq`, `curl`, `envsubst`, `docker`
 
@@ -36,14 +39,15 @@ To regenerate test assets from real TDX attestation, from the repo root on the T
 prerequisites and required variables from [single-node-readme.md](single-node-readme.md) set up.
 
 ```bash
-export BASE_PATH=/path/to/meta-dstack/dstack
+export BASE_PATH=/path/to/dstack
 export WORKDIR=/tmp/mpc-fixture-collection
 
 # Reuse the fixture's current image digests unless changing images: measurements then stay put.
 COMPOSE_TEMPLATE="$PWD/localnet/tee/scripts/rust-launcher/export-signer-key-compose.yaml.template" \
   bash localnet/tee/scripts/rust-launcher/single-node.sh
 
-cp "$WORKDIR/public_data.json" crates/test-utils/assets/public_data.json
+mkdir -p crates/test-utils/assets/dstack-<version>
+cp "$WORKDIR/public_data.json" crates/test-utils/assets/dstack-<version>/public_data.json
 ```
 
 Then follow [the asset regeneration steps](../../../../crates/test-utils/assets/README.md#steps),
@@ -63,5 +67,5 @@ curl -s "http://127.0.0.1:<AGENT_PORT>/logs/signer-key-export?text&bare" \
   | grep -o '"near_signer_key":"[^"]*"'
 ```
 
-Put the value into `crates/test-utils/assets/near_account_secret_key` (one line, `ed25519:<base58>`).
+Put the value into `crates/test-utils/assets/dstack-<version>/near_account_secret_key` (one line, `ed25519:<base58>`).
 Only ever do this for a throwaway localnet node: the key ends up in the repo.

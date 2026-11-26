@@ -151,7 +151,8 @@ pub fn render(transactions: &[SubmittedTransaction]) -> String {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
-    use crate::types::{SubmittedTransactionStatus, SubmittedTxMetadata};
+    use crate::types::SubmittedTransactionStatus;
+    use chain_gateway::transaction_sender::SubmittedTxMetadata;
     use near_account_id::AccountId;
     use near_crypto::Signature;
     use near_indexer_primitives::CryptoHash;
@@ -169,7 +170,7 @@ mod tests {
                 tx_hash,
                 nonce: 7,
                 signature: Signature::empty(near_crypto::KeyType::ED25519),
-                block_height: 42,
+                block_height: 42.into(),
             }),
             signer_account_id: AccountId::from_str("responder.near").unwrap(),
             signer_public_key: Ed25519PublicKey::from([7u8; 32]),

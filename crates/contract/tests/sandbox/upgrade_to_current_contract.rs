@@ -3,7 +3,8 @@
 use crate::sandbox::{
     common::{
         call_contract_key_generation, execute_key_generation_and_add_random_state, gen_account,
-        gen_accounts, init, submit_attestations, vote_and_submit_contract_binary,
+        gen_accounts, init, init_contract, make_threshold_params, submit_attestations,
+        vote_and_submit_contract_binary,
     },
     utils::{
         consts::PARTICIPANT_LEN,
@@ -21,7 +22,7 @@ use crate::sandbox::{
 use mpc_contract::primitives::{
     key_state::EpochId,
     participants::Participants,
-    test_utils::bogus_tee_verifier_account_id,
+    test_utils::{bogus_genesis_hash, bogus_tee_verifier_account_id},
     thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
@@ -56,20 +57,10 @@ async fn init_old_contract(
     worker: &Worker<Sandbox>,
     contract: &SandboxMpcContract,
     number_of_participants: usize,
-) -> anyhow::Result<(Vec<Account>, Participants)> {
+) -> (Vec<Account>, Participants) {
     let (accounts, participants) = gen_accounts(worker, number_of_participants).await;
-
-    let threshold = ((participants.len() as f64) * 0.6).ceil() as u64;
-    let threshold = GovernanceThreshold::new(threshold);
-    let threshold_parameters: near_mpc_contract_interface::types::GovernanceThresholdParameters =
-        GovernanceThresholdParameters::new(participants.clone(), threshold)
-            .unwrap()
-            .into();
-    contract
-        .init(threshold_parameters, bogus_tee_verifier_account_id(), None)
-        .await?
-        .into_result()?;
-    Ok((accounts, participants))
+    init_contract(contract, make_threshold_params(&participants), None).await;
+    (accounts, participants)
 }
 
 async fn healthcheck(contract: &SandboxMpcContract) -> anyhow::Result<bool> {
@@ -129,7 +120,7 @@ async fn back_compatibility_without_state(
 
     let contract = deploy_old(&worker, network).await?;
 
-    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
+    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
 
     assert!(healthcheck(&contract).await?);
 
@@ -267,9 +258,7 @@ async fn propose_upgrade_from_production_to_current_binary(
 ) {
     let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
-        .await
-        .unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
 
     submit_attestations(&contract, &accounts, &participants).await;
     let filler_keys =
@@ -344,9 +333,7 @@ async fn migrate__should_run_within_contract_update_gas_budget(
     const HEADROOM_PERCENT: u64 = 30;
     let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
-        .await
-        .unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
     submit_attestations(&contract, &accounts, &participants).await;
     fill_stored_attestations(&worker, &contract, STORED_ATTESTATION_ENTRIES).await;
     let whitelist = PRODUCTION_WHITELISTED_CHAINS
@@ -376,6 +363,21 @@ async fn migrate__should_run_within_contract_update_gas_budget(
     );
 }
 
+#[tokio::test]
+async fn migrate__should_leave_the_genesis_hash_unset_outside_mainnet_and_testnet() {
+    // Given
+    let worker = test_utils::sandbox::start_sandbox().await.unwrap();
+    let contract = deploy_old(&worker, Network::Mainnet).await.unwrap();
+    init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
+    upgrade_to_new(&contract).await.unwrap();
+
+    // When
+    migrate_and_assert_contract_code(&contract).await.unwrap();
+
+    // Then
+    assert_eq!(contract.genesis_hash().await.unwrap().value, None);
+}
+
 //// Verifies that upgrading the contract preserves state and functionality.
 ///
 /// This test:
@@ -396,9 +398,7 @@ async fn upgrade_preserves_state_and_requests(
 ) {
     let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
-        .await
-        .unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
 
     let attested_account = &accounts[0];
 
@@ -456,7 +456,7 @@ async fn all_participants_get_valid_mock_attestation_for_soft_launch_upgrade() -
     let worker = test_utils::sandbox::start_sandbox().await?;
     let contract = deploy_old(&worker, Network::Testnet).await?;
 
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await?;
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
 
     let initial_participants = get_participants(&contract).await?;
     let participant_set_is_not_empty = !initial_participants.participants.is_empty();
@@ -519,9 +519,7 @@ async fn upgrade_allows_new_request_types(
 
     let worker = test_utils::sandbox::start_sandbox().await.unwrap();
     let contract = deploy_old(&worker, network).await.unwrap();
-    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN)
-        .await
-        .unwrap();
+    let (accounts, participants) = init_old_contract(&worker, &contract, PARTICIPANT_LEN).await;
     let attested_account = &accounts[0];
 
     submit_attestations(&contract, &accounts, &participants).await;
@@ -638,6 +636,7 @@ async fn init_running_rejects_external_callers_pre_initialization() {
             dtos::Keyset::new(EpochId::new(2), vec![]),
             threshold_parameters,
             bogus_tee_verifier_account_id(),
+            bogus_genesis_hash(),
             None,
         )
         .await

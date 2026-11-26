@@ -1,6 +1,6 @@
 use super::permanent::PermanentKeyStorageBackend;
 use crate::db;
-use crate::durable_fs::{rename_durably, sync_parent_dir};
+use crate::durable_fs::{rename_durably, sync_dir, sync_parent_dir};
 use crate::home_paths::{permanent_key_link, permanent_keys_dir};
 use aes_gcm::{Aes128Gcm, KeyInit};
 use anyhow::Context;
@@ -44,8 +44,8 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()> {
         let cipher = Aes128Gcm::new(&self.encryption_key.into());
         let encrypted = db::encrypt(&cipher, data);
-        // Write the new permanent keyshare to a separate file, and then create a link to it.
-        // That way, we don't lose any keys if we somehow mess up.
+        // Write the new permanent keyshare to a separate file, and then point `key` at it, so
+        // that `key` always holds either the old or the new keyshare.
         let keyfile_for_epoch = self.permanent_key_dir.join(identifier);
         let mut file = tokio::fs::File::create_new(&keyfile_for_epoch)
             .await
@@ -75,6 +75,27 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
         .context("key link task failed")??;
         Ok(())
     }
+
+    /// `key` is a hard link, so it keeps its data even if its file here is removed.
+    async fn delete_all_except(&self, identifier: &str) -> anyhow::Result<()> {
+        let permanent_key_dir = self.permanent_key_dir.clone();
+        let identifier = identifier.to_owned();
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            for entry in std::fs::read_dir(&permanent_key_dir)
+                .context("Failed to list the permanent keys directory")?
+            {
+                let entry = entry.context("Failed to list the permanent keys directory")?;
+                if entry.file_name() != identifier.as_str() {
+                    let path = entry.path();
+                    std::fs::remove_file(&path)
+                        .with_context(|| format!("Failed to remove {path:?}"))?;
+                }
+            }
+            sync_dir(&permanent_key_dir).context("Failed to sync the permanent keys directory")
+        })
+        .await
+        .context("keyshare deletion task failed")?
+    }
 }
 
 #[cfg(test)]
@@ -82,6 +103,8 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
 mod tests {
     use crate::keyshare::local::LocalPermanentKeyStorageBackend;
     use crate::keyshare::permanent::PermanentKeyStorageBackend;
+    use crate::keyshare::test_utils::list_permanent_key_files;
+    use rstest::rstest;
 
     #[tokio::test]
     async fn test_local_keyshare_storage_backend() {
@@ -115,5 +138,29 @@ mod tests {
         // Then
         assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
         assert!(!std::fs::exists(dir.path().join("key.tmp")).unwrap());
+    }
+
+    #[rstest]
+    #[case::the_latest("id2", &["id2"])]
+    #[case::an_unknown_one("id3", &[])]
+    #[tokio::test]
+    async fn delete_all_except__should_keep_only_the_given_file_and_the_latest_data(
+        #[case] identifier: &str,
+        #[case] expected_files: &[&str],
+    ) {
+        // Given
+        let dir = tempfile::tempdir().unwrap();
+        let storage = LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16])
+            .await
+            .unwrap();
+        storage.store(b"123", "id1").await.unwrap();
+        storage.store(b"456", "id2").await.unwrap();
+
+        // When
+        storage.delete_all_except(identifier).await.unwrap();
+
+        // Then
+        assert_eq!(list_permanent_key_files(dir.path()), expected_files);
+        assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
     }
 }

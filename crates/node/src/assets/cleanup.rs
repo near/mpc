@@ -18,8 +18,7 @@ pub struct EpochData {
 // If the epoch id changed, then all triples are deleted.
 // If the epoch id did not change, then the node will discard all owned triples involving any
 // nodes that changed their TLS key.
-// Presignatures, which signing no longer uses, are always deleted.
-pub fn delete_stale_triples_and_presignatures(
+pub fn delete_stale_triples(
     db: &Arc<SecretDB>,
     current_epoch_data: EpochData,
     my_participant_id: primitives::ParticipantId,
@@ -35,8 +34,6 @@ pub fn delete_stale_triples_and_presignatures(
     // process dies before the commit, none of the deletes or the marker are
     // persisted, and the next startup re-runs the full cleanup unchanged.
     let mut update_writer = db.update();
-    // TODO(#4999): remove this step and `DBCol::Presignature` once every node has run this release.
-    update_writer.delete_all(DBCol::Presignature)?;
     match asset_cleanup {
         AssetCleanup::Keep => {}
         AssetCleanup::DeleteAll => {
@@ -119,7 +116,7 @@ fn cleanup_behavior(
 #[cfg(test)]
 mod tests {
     use crate::assets::cleanup::EpochData;
-    use crate::assets::cleanup::{delete_stale_triples_and_presignatures, get_epoch_data};
+    use crate::assets::cleanup::{delete_stale_triples, get_epoch_data};
     use crate::assets::test_utils;
     use crate::assets::test_utils::{
         TestContext, get_participant_ids, make_triple, random_verifying_key, triple_v2_key,
@@ -172,7 +169,7 @@ mod tests {
         ctx.assert_owned(2);
 
         // no changes in participant set and epoch should lead to no changes in assets
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &ctx.db,
             start_data.clone(),
             my_participant_id,
@@ -189,7 +186,7 @@ mod tests {
             .last_mut()
             .unwrap()
             .p2p_public_key = random_verifying_key();
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &ctx.db,
             start_data.clone(),
             my_participant_id,
@@ -202,7 +199,7 @@ mod tests {
         // change epoch id
         let mut end_data = start_data.clone();
         end_data.epoch_id = end_data.epoch_id.next();
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &ctx.db,
             end_data.clone(),
             my_participant_id,
@@ -214,51 +211,13 @@ mod tests {
         assert_epoch_data_in_db_matches(&ctx, &end_data);
     }
 
-    #[test]
-    #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_delete_every_presignature() {
-        // Given
-        let (start_data, my_participant_id, reconstruction_threshold) =
-            test_utils::gen_four_participants();
-        let all_participants = get_participant_ids(start_data.clone());
-        let ctx = TestContext::new(
-            my_participant_id,
-            Arc::new(Mutex::new(all_participants.clone())),
-        );
-        ctx.populate(&all_participants);
-
-        // Any keys will do
-        let presignature_keys: [&[u8]; 3] = [b"a", b"b", b"c"];
-
-        let mut writer = ctx.db.update();
-        for key in &presignature_keys {
-            writer.put(DBCol::Presignature, key, b"stored presignature");
-        }
-        writer.commit().unwrap();
-
-        // When
-        delete_stale_triples_and_presignatures(
-            &ctx.db,
-            start_data,
-            my_participant_id,
-            BTreeSet::from([reconstruction_threshold]),
-        )
-        .unwrap();
-
-        // Then
-        for key in &presignature_keys {
-            assert!(ctx.db.get(DBCol::Presignature, key).unwrap().is_none());
-        }
-        ctx.assert_owned(1);
-    }
-
     /// End-to-end check that a triple written via [`TripleStorage::add_owned`]
     /// (into [`DBCol::TripleV2`] under `[t]`) is removed when the participant set
     /// changes. The other cleanup tests populate [`TripleV2`] via a local helper;
     /// this one exercises the realistic post-`add_owned` state.
     #[test]
     #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_clean_stale_triple_in_v2_column() {
+    fn delete_stale_triples__should_clean_stale_triple_in_v2_column() {
         // Given a node has written a stale triple via TripleStorage.
         let (mut start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
@@ -281,7 +240,7 @@ mod tests {
 
         // Seed the persisted epoch_data so the next call enters the
         // `KeepOnly` branch (same epoch_id, persistent set shrinks).
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &db,
             start_data.clone(),
             my_participant_id,
@@ -299,7 +258,7 @@ mod tests {
             .unwrap()
             .p2p_public_key = random_verifying_key();
 
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &db,
             start_data.clone(),
             my_participant_id,
@@ -315,7 +274,7 @@ mod tests {
     /// all in the persistent set must survive the cleanup.
     #[test]
     #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_keep_active_triple() {
+    fn delete_stale_triples__should_keep_active_triple() {
         let (mut start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
@@ -342,7 +301,7 @@ mod tests {
 
         // Seed epoch_data, then run cleanup with one participant's TLS rotated
         // (the one our triple does not depend on).
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &db,
             start_data.clone(),
             my_participant_id,
@@ -355,7 +314,7 @@ mod tests {
             .last_mut()
             .unwrap()
             .p2p_public_key = random_verifying_key();
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &db,
             start_data.clone(),
             my_participant_id,
@@ -371,7 +330,7 @@ mod tests {
     /// owns.
     #[test]
     #[expect(non_snake_case)]
-    fn delete_stale_triples_and_presignatures__should_keep_peer_owned_triple() {
+    fn delete_stale_triples__should_keep_peer_owned_triple() {
         let (mut start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
@@ -395,7 +354,7 @@ mod tests {
         triple_store.add_unowned(peer_id, make_triple(&all_participants));
         let v2_key = triple_v2_key(reconstruction_threshold, peer_id);
 
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &db,
             start_data.clone(),
             my_participant_id,
@@ -408,7 +367,7 @@ mod tests {
             .last_mut()
             .unwrap()
             .p2p_public_key = random_verifying_key();
-        delete_stale_triples_and_presignatures(
+        delete_stale_triples(
             &db,
             start_data.clone(),
             my_participant_id,

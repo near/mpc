@@ -212,7 +212,6 @@ impl DebugRequest {
 
 #[derive(Clone)]
 pub enum DebugRequestKind {
-    RecentBlocks,
     RecentSignatures,
     RecentCKDs,
     RecentVerifyForeignTxs,
@@ -234,10 +233,6 @@ async fn debug_request_from_node(
         return Err(anyhow::anyhow!("Node dropped the debug request").into());
     };
     Ok(response)
-}
-
-async fn debug_blocks(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
-    debug_request_from_node(state, DebugRequestKind::RecentBlocks).await
 }
 
 async fn debug_signatures(state: State<WebServerState>) -> Result<String, AnyhowErrorWrapper> {
@@ -335,7 +330,6 @@ pub async fn start_web_server(
     let router = axum::Router::new()
         .route("/metrics", axum::routing::get(metrics))
         .route("/debug/tasks", axum::routing::get(debug_tasks))
-        .route("/debug/blocks", axum::routing::get(debug_blocks))
         .route("/debug/signatures", axum::routing::get(debug_signatures))
         .route("/debug/ckds", axum::routing::get(debug_ckds))
         .route("/debug/contract", axum::routing::get(contract_state))
@@ -451,6 +445,7 @@ mod tests {
                 concurrency: 1.try_into().unwrap(),
                 finality: Finality::Final,
                 mpc_contract_id: "mpc.test.near".parse().unwrap(),
+                genesis_hash: None,
                 port_override: None,
                 wipe_near_data_token: 0,
                 sync_mode: SyncMode::Latest,

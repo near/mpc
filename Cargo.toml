@@ -90,7 +90,6 @@ threshold-signatures = { path = "crates/threshold-signatures" }
 aes-gcm = "0.11.0"
 anyhow = "1.0.102"
 async-trait = "0.1.89"
-average = "0.17"
 axum = "0.8.9"
 backon = { version = "1.6.0", features = ["tokio-sleep"] }
 backtrace = "0.3"
@@ -156,7 +155,7 @@ httpmock = "0.9.0"
 humantime = "2.3.0"
 hyper = { version = "1.10.1", features = ["client", "server", "http1"] }
 hyper-util = { version = "0.1.20", features = ["tokio"] }
-inferno = "0.12"
+inferno = { version = "0.12", default-features = false }
 insta = { version = "1.46.3", features = ["json", "redactions"] }
 itertools = "0.15.0"
 # Must stay on the `tikv-jemalloc-sys` version that nearcore's rocksdb pulls in
@@ -190,10 +189,7 @@ near-token = "0.3.4"
 near-workspaces = { version = "0.24.0" }
 num_enum = { version = "0.7.6", features = ["complex-expressions"] }
 pairing = { version = "0.23.0" }
-pprof = { version = "0.15.0", features = [
-    "cpp",
-    "flamegraph",
-], default-features = false }
+pprof = { version = "0.15.0", features = ["cpp"], default-features = false }
 # Same `tikv-jemalloc-sys` constraint as `jemalloc_pprof`.
 pprof_util = "0.8"
 proc-macro2 = "1.0"
@@ -222,6 +218,7 @@ sha2 = "0.10.9"
 sha3 = "0.10.8"
 signature = "2.2.0"
 socket2 = "0.6.3"
+statrs = { version = "0.19.1", default-features = false }
 subtle = "2.6.1"
 sui-rpc = "0.4.0"
 sui-sdk-types = "0.4.0"
@@ -261,16 +258,16 @@ zeroize = { version = "1.8.2", features = ["zeroize_derive"] }
 zstd = "0.14.0"
 
 # NEAR CORE DEPENDENCIES:
-near-async = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-client = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-crypto = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-indexer = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-o11y = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-store = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-near-time = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
-nearcore = { git = "https://github.com/near/nearcore", tag = "2.14.1" }
+near-async = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-client = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-config-utils = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-crypto = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-indexer = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-indexer-primitives = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-o11y = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-store = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+near-time = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
+nearcore = { git = "https://github.com/near/nearcore", tag = "2.15.0-rc.1" }
 
 ## Outdated dependencies we cannot upgrade ##
 # This version needs to be exactly the same as in `near_sdk::schemars`
