@@ -17,7 +17,7 @@ use crate::ecdsa::ot::{
 };
 
 use elliptic_curve::ops::Reduce;
-use zeroize::ZeroizeOnDrop;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::crypto::constants::NEAR_RANDOM_OT_EXTENSION_HASH_CTX;
 
@@ -58,11 +58,16 @@ pub struct RandomOtExtensionParams<'sid> {
 /// The result that the sender gets.
 pub type RandomOTExtensionSenderOut = Vec<(Scalar, Scalar)>;
 
+#[derive(Zeroize)]
+struct ReceiverOutEntry {
+    // Always 0 or 1. Stored as a byte because `Choice` is not `Zeroize`.
+    choice: u8,
+    value: Scalar,
+}
+
 /// The result that the receiver gets.
-///
-/// Choices are stored as bytes because `Choice` is not `Zeroize`.
 #[derive(ZeroizeOnDrop)]
-pub struct RandomOTExtensionReceiverOut(Vec<(u8, Scalar)>);
+pub struct RandomOTExtensionReceiverOut(Vec<ReceiverOutEntry>);
 
 impl_secret_debug!(RandomOTExtensionReceiverOut);
 
@@ -81,7 +86,9 @@ impl RandomOTExtensionReceiverOut {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (Choice, &Scalar)> {
-        self.0.iter().map(|(b_i, v_i)| (Choice::from(*b_i), v_i))
+        self.0
+            .iter()
+            .map(|entry| (Choice::from(entry.choice), &entry.value))
     }
 }
 
@@ -89,7 +96,10 @@ impl FromIterator<(Choice, Scalar)> for RandomOTExtensionReceiverOut {
     fn from_iter<I: IntoIterator<Item = (Choice, Scalar)>>(iter: I) -> Self {
         Self(
             iter.into_iter()
-                .map(|(b_i, v_i)| (b_i.unwrap_u8(), v_i))
+                .map(|(b_i, value)| ReceiverOutEntry {
+                    choice: b_i.unwrap_u8(),
+                    value,
+                })
                 .collect(),
         )
     }
@@ -255,7 +265,10 @@ pub async fn random_ot_extension_receiver(
     // Step 15
     let mut out = Vec::with_capacity(params.batch_size);
     for (i, (b_i, t_i)) in b.bits().zip(t.rows()).take(params.batch_size).enumerate() {
-        out.push((b_i.unwrap_u8(), hash_to_scalar(i, t_i)));
+        out.push(ReceiverOutEntry {
+            choice: b_i.unwrap_u8(),
+            value: hash_to_scalar(i, t_i),
+        });
 
         // Hashing is cheap; yielding every iteration would be all overhead.
         if (i + 1).is_multiple_of(YIELD_EVERY) {
