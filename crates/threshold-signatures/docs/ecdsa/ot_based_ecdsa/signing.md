@@ -3,9 +3,11 @@ signers consume two triples and run three rounds over one channel.
 
 *Note: Due to the complexity of signing with multiplicative triples, this protocol shifts from the signing formulae stated in [Preliminaries](../preliminaries.md) and computes* $R$ *as in* $R\gets \frac{1}{k}\cdot G$ *and* $s$ *as in* $s \gets k \cdot (H(m) + rx)$*. These formulae do not require changes to be done on the verifier's end*
 
-### Note: the threshold $t = \mathsf{MaxMalicious} + 1$
+### Note: We denote $\mathcal{P}_0$ the set of participants that generated the triples and the threshold $t = \mathsf{MaxMalicious} + 1$
 
-A set of parties $\mathcal{P}_1 \subseteq \mathcal{P}_0$
+# Signing
+
+In this protocol, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}_0$
 of size $N_1 \geq t$ wishes to generate an ECDSA signature.
 
 The inputs to this protocol are:
@@ -19,15 +21,6 @@ resp. associated to the (master) Beaver triples $(a, b, c)$ and $(k, d, e)$
 6) The message hash $h= H(m)$
 
 *Note: neither* $d_i$ *nor* $C$ *are actually used in the algorithm.*
-
-**Requirement:** each triple must be an unmodified output of [triple generation](./triples.md),
-used at most once: in one role of one run of this protocol, aborted runs included.
-Generation guarantees that triples are independent; the caller must guarantee that they are not
-reused. Otherwise the secret key $x$ can be extracted by solving a system of two linear equations,
-and no party can detect this. Triple shares must also not outlive their epoch, see
-[Proactive Security](../../proactive-security.md).
-
-# Nonce generation
 
 **Round 1:**
 
@@ -58,10 +51,9 @@ $$
 $$
 
 2. $\star$ Each $P_i$ sends $\alpha_i$ and $\beta_i$ to every party.
-
-3. $\bullet$ Each $P_i$ waits to receive $\alpha_j$ and $\beta_j$ from from every party $P_j$.
+3. $\bullet$ Each $P_i$ waits to receive $\alpha_j$ and $\beta_j$ from every party $P_j$.
 4. Each $P_i$ sets $\alpha \gets \sum_j \alpha_j$ and $\beta \gets \sum_j \beta_j$.
-5. $\blacktriangle$ Each $P_i$ asserts that:
+5. $\blacktriangle$ Each $P_i$ *asserts* that:
 
 $$
 \begin{aligned}
@@ -71,21 +63,7 @@ $$
 $$
 
 6. Each $P_i$ sets: $R \gets \frac{1}{e} \cdot D$. (Recall that Beaver triple $(k,d,e)$ is computed s.t. $e = k\cdot d$ )
-7. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i$, which is already threshold shared.
-
-After round 2, each $P_i$ holds $R$ and its shares $k_i$ of $k$ and $\sigma_i$ of $k \cdot x$,
-which stay local to the run.
-
-# Key derivation
-
-Each $P_i$ sets $\sigma_i \gets \sigma_i + \epsilon \cdot k_i$, so that the signature verifies under
-the derived public key $X + \epsilon \cdot G$.
-
-Nothing binds $R$ to $h$ or $\epsilon$: $R$ is determined by $\mathsf{triple}_0$ alone and is known
-to every party once round 1 completes. The requirement above forbids reusing $\mathsf{triple}_0$:
-two runs sharing $R$ with different $h$ or $\epsilon$ reveal the private key.
-
-# Signing
+7. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i + \epsilon \cdot k_i$.
 
 **Round 3:**
 
@@ -94,16 +72,31 @@ two runs sharing $R$ with different $h$ or $\epsilon$ reveal the private key.
 3. Each $P_i$ sets $s_i \gets h \cdot k_i + R_\mathsf{x} \cdot \sigma_i$ where $R_\mathsf{x}$ is the x coordinate of $R$
 4. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
 
-
 **Round 3 (Coordinator):**
 
 5. $\bullet$ The coordinator waits to receive $s_j$ from every party.
 6. The coordinator sums the received elements $s \gets \sum_j s_j$.
 7. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
-8. $\blacktriangle$ The coordinator asserts that $(R, s)$ is a valid ECDSA signature for $h$ under
-the derived public key $X + \epsilon \cdot G$.
+8. $\blacktriangle$ The coordinator *asserts* that $(R, s)$ is a valid ECDSA signature for $h$ under the derived public key $X + \epsilon \cdot G$.
 
 **Output:** the signature $(R, s)$, known only to the coordinator.
 
----
+*Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
+
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).
+
+# Security considerations
+
+Before using this protocol, enforce the following constraints:
+
+1. **Never reuse a triple.** Each triple must be an unmodified output of
+   [triple generation](./triples.md), used at most once: in one role of one run of this protocol,
+   aborted runs included. Generation guarantees that triples are independent; the caller must
+   guarantee that they are not reused. Otherwise the secret key $x$ can be extracted by solving
+   a system of two linear equations, and no party can detect this. Triple shares must also not
+   outlive their epoch, see [Proactive Security](../../proactive-security.md).
+
+2. **Never sign twice under the same $R$.** Nothing binds $R$ to $h$ or $\epsilon$: $R$ is
+   determined by the triple $(k, d, e)$ alone. It is known to every party once round 1 completes.
+   Two runs sharing $R$ with different $h$ or $\epsilon$ reveal the private key.
+   Constraint 1 forbids this.

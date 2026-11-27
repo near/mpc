@@ -1,11 +1,12 @@
 use elliptic_curve::scalar::IsHigh;
 use subtle::ConditionallySelectable;
+use zeroize::Zeroizing;
 
-use crate::ecdsa::ot_based_ecdsa::nonce_generation::{
-    NonceGenerationOutput, SignArguments, nonce_generation_rounds, validate_sign_arguments,
-};
+use crate::ReconstructionThreshold;
+use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
 use crate::ecdsa::{
-    AffinePoint, Scalar, Secp256K1Sha256, Signature, SignatureOption, Tweak, x_coordinate,
+    AffinePoint, KeygenOutput, ProjectivePoint, Scalar, Secp256K1Sha256, Signature,
+    SignatureOption, Tweak, x_coordinate,
 };
 use crate::errors::{InitializationError, ProtocolError};
 use crate::participants::{Participant, ParticipantList};
@@ -15,19 +16,34 @@ use crate::protocol::{
     internal::{Comms, SharedChannel, make_protocol},
 };
 
-/// Maximum incoming buffer entries for the coordinator: the two waitpoints before signing
-/// plus the signature-share waitpoint.
+/// Maximum incoming buffer entries for the coordinator: the round 1 and round 2 broadcast
+/// waitpoints plus the signature-share waitpoint.
 pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 3;
-/// Maximum incoming buffer entries for non-coordinator participants: the two waitpoints
-/// before signing.
+/// Maximum incoming buffer entries for non-coordinator participants: the round 1 and round 2
+/// broadcast waitpoints.
 #[cfg(test)]
 pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 2;
 
-/// Nonce generation and signing as a single protocol, consuming two triples directly.
+/// The arguments needed to create a signature.
 ///
-/// The output of nonce generation never leaves this computation and is never stored; the
-/// key-derivation `tweak` is applied locally between the nonce generation rounds and the signing
-/// round. Only the coordinator obtains the signature.
+/// Each triple must be an unmodified triple generation output, used at most once.
+#[derive(Debug, Clone)]
+pub struct SignArguments {
+    /// The first triple's public information, and our share.
+    pub triple0: (TripleShare, TriplePub),
+    /// Ditto, for the second triple.
+    pub triple1: (TripleShare, TriplePub),
+    /// The output of key generation, i.e. our share of the secret key, and the public key package.
+    /// This is of type `KeygenOutput<Secp256K1Sha256>` from Frost implementation
+    pub keygen_out: KeygenOutput,
+    /// The desired threshold for the signature, which must match the original threshold
+    pub threshold: ReconstructionThreshold,
+}
+
+/// The signing protocol, consuming two triples directly.
+///
+/// The nonce never leaves this computation and is never stored; the key-derivation `tweak` is
+/// applied locally in round 2. Only the coordinator obtains the signature.
 ///
 /// # Safety contract
 ///
@@ -47,14 +63,7 @@ pub fn sign(
     tweak: Tweak,
     msg_hash: Scalar,
 ) -> Result<impl Protocol<Output = SignatureOption> + use<>, InitializationError> {
-    let participants = validate_sign_arguments(participants, me, &args)?;
-
-    if !participants.contains(coordinator) {
-        return Err(InitializationError::MissingParticipant {
-            role: "coordinator",
-            participant: coordinator,
-        });
-    }
+    let participants = validate_sign_arguments(participants, coordinator, me, &args)?;
 
     let ctx = Comms::with_buffer_capacity(OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
     let fut = do_sign(
@@ -69,6 +78,58 @@ pub fn sign(
     Ok(make_protocol(ctx, fut))
 }
 
+/// Checks the participant set against `args` and returns it as a [`ParticipantList`].
+fn validate_sign_arguments(
+    participants: &[Participant],
+    coordinator: Participant,
+    me: Participant,
+    args: &SignArguments,
+) -> Result<ParticipantList, InitializationError> {
+    if participants.len() < 2 {
+        return Err(InitializationError::NotEnoughParticipants {
+            participants: participants.len(),
+        });
+    }
+    // Spec 1.1
+    if args.threshold.value() > participants.len() {
+        return Err(InitializationError::ThresholdTooLarge {
+            threshold: args.threshold.value(),
+            max: participants.len(),
+        });
+    }
+
+    // NOTE: We omit the check that the new participant set was present for
+    // the triple generation, because presumably they need to have been present
+    // in order to have shares.
+
+    // Also check that we have enough participants to reconstruct shares.
+    if args.threshold != args.triple0.1.threshold || args.threshold != args.triple1.1.threshold {
+        return Err(InitializationError::BadParameters(
+            "New threshold must match the threshold of both triples".to_string(),
+        ));
+    }
+
+    let participants =
+        ParticipantList::new(participants).ok_or(InitializationError::DuplicateParticipants)?;
+
+    if !participants.contains(me) {
+        return Err(InitializationError::MissingParticipant {
+            role: "self",
+            participant: me,
+        });
+    }
+
+    if !participants.contains(coordinator) {
+        return Err(InitializationError::MissingParticipant {
+            role: "coordinator",
+            participant: coordinator,
+        });
+    }
+
+    Ok(participants)
+}
+
+#[allow(clippy::too_many_lines)]
 async fn do_sign(
     mut chan: SharedChannel,
     participants: ParticipantList,
@@ -78,81 +139,144 @@ async fn do_sign(
     tweak: Tweak,
     msg_hash: Scalar,
 ) -> Result<SignatureOption, ProtocolError> {
-    let derived_public_key = tweak
-        .derive_verifying_key(&args.keygen_out.public_key)
-        .to_element()
-        .to_affine();
+    // Round 1
+    // Extracting triples private variables (ai, bi, ci)
+    let a_i = args.triple1.0.a;
+    let b_i = args.triple1.0.b;
+    let c_i = args.triple1.0.c;
 
-    let nonce_package = nonce_generation_rounds(&mut chan, &participants, me, args)
-        .await?
-        .with_tweak(&tweak);
+    // Extracting triples public variables (A, B, _)
+    // notice C is not used
+    let big_a: ProjectivePoint = args.triple1.1.big_a.into();
+    let big_b: ProjectivePoint = args.triple1.1.big_b.into();
+
+    // Extracting triples private variables (ki, _, ei)
+    // notice di is not used
+    let k_i = args.triple0.0.a;
+    let e_i = args.triple0.0.c;
+
+    // Extracting triples public variables (K, D, E)
+    let big_k: ProjectivePoint = args.triple0.1.big_a.into();
+    let big_d = args.triple0.1.big_b;
+    let big_e = args.triple0.1.big_c;
+
+    // linearize ki ei ai bi ci xi
+    // Spec 1.1
+    let lambda_me = participants.lagrange::<Secp256K1Sha256>(me)?;
+
+    let k_prime_i = Zeroizing::new(lambda_me * k_i);
+    let e_i: Scalar = lambda_me * e_i;
+
+    let a_prime_i = lambda_me * a_i;
+    let b_prime_i = lambda_me * b_i;
+
+    let big_x: ProjectivePoint = args.keygen_out.public_key.to_element();
+    let private_share = args.keygen_out.private_share.to_scalar();
+    let x_prime_i = lambda_me * private_share;
+
+    // Send ei
+    // Spec 1.2
+    let wait0 = chan.next_waitpoint();
+    chan.send_many(wait0, &e_i)?;
+
+    // Receive ej and compute e = SUM_j ej
+    // Spec 1.3
+    let mut e = e_i;
+
+    for (_, e_j) in recv_from_others::<Scalar>(&chan, wait0, &participants, me).await? {
+        if e_j.is_zero().into() {
+            return Err(ProtocolError::AssertionFailed(
+                "Received zero share of kd, indicating a triple wasn't available.".to_string(),
+            ));
+        }
+
+        // Spec 1.4
+        e += e_j;
+    }
+
+    // E =?= e*G
+    // Spec 1.5
+    if big_e != (ProjectivePoint::GENERATOR * e).to_affine() {
+        return Err(ProtocolError::AssertionFailed(
+            "received incorrect shares of kd".to_string(),
+        ));
+    }
+
+    // Round 2
+    // alphai = ki' + ai'
+    // Spec 2.1
+    let alpha_i: Scalar = *k_prime_i + a_prime_i;
+    // betai = xi' + bi'
+    let beta_i: Scalar = x_prime_i + b_prime_i;
+
+    // Send alphai and betai
+    // Spec 2.2
+    let wait1 = chan.next_waitpoint();
+    chan.send_many(wait1, &(alpha_i, beta_i))?;
+
+    // Receive and compute alpha = SUM_j alphaj
+    // Receive and compute beta = SUM_j betaj
+    // Spec 2.3
+    let mut alpha = alpha_i;
+    let mut beta = beta_i;
+
+    for (_, (alpha_j, beta_j)) in
+        recv_from_others::<(Scalar, Scalar)>(&chan, wait1, &participants, me).await?
+    {
+        // Spec 2.4
+        alpha += alpha_j;
+        beta += beta_j;
+    }
+
+    // alpha*G =?= K + A
+    // beta*G =?= X + B
+    // Spec 2.5
+    if (ProjectivePoint::GENERATOR * alpha != big_k + big_a)
+        || (ProjectivePoint::GENERATOR * beta != big_x + big_b)
+    {
+        return Err(ProtocolError::AssertionFailed(
+            "received incorrect shares of additive triple phase.".to_string(),
+        ));
+    }
+
+    // Compute R = 1/e * D
+    // Spec 2.6
+    let e_inv: Option<Scalar> = e.invert().into();
+    let e_inv =
+        e_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
+    let big_r: AffinePoint = (big_d * e_inv).into();
+
+    // The tweak multiplies the unlinearized ki.
+    // Spec 2.7
+    let sigma_i = Zeroizing::new(alpha * private_share - (beta * a_i - c_i) + tweak.value() * k_i);
     chan.yield_point().await;
 
-    sign_round(
-        &mut chan,
-        &participants,
-        coordinator,
-        me,
-        derived_public_key,
-        &nonce_package,
-        msg_hash,
-    )
-    .await
-}
+    // Round 3
+    // Linearize ki
+    // Spec 3.1
+    let k_i = k_prime_i;
 
-async fn sign_round(
-    chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    coordinator: Participant,
-    me: Participant,
-    public_key: AffinePoint,
-    nonce_package: &NonceGenerationOutput,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    if me == coordinator {
-        do_sign_coordinator(chan, participants, me, public_key, nonce_package, msg_hash).await
-    } else {
-        do_sign_participant(chan, participants, coordinator, me, nonce_package, msg_hash)
+    // Linearize sigmai
+    // Spec 3.2
+    let sigma_i = Zeroizing::new(lambda_me * *sigma_i);
+
+    // Compute si = h * ki + Rx * sigmai
+    // Spec 3.3
+    let r = x_coordinate(&big_r);
+    let s_i = msg_hash * *k_i + r * *sigma_i;
+
+    let wait2 = chan.next_waitpoint();
+    if me != coordinator {
+        // Send si
+        // Spec 3.4
+        chan.send_private(wait2, coordinator, &s_i)?;
+        return Ok(None);
     }
-}
 
-/// Performs signing from any participant's perspective (except the coordinator)
-fn do_sign_participant(
-    chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    coordinator: Participant,
-    me: Participant,
-    nonce_package: &NonceGenerationOutput,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    // Round 3
-    let s_i = compute_signature_share(participants, me, nonce_package, msg_hash)?;
-    // Send si
-    // Spec 3.4
-    let wait0 = chan.next_waitpoint();
-    chan.send_private(wait0, coordinator, &s_i)?;
-
-    Ok(None)
-}
-
-/// Performs signing from only the coordinator's perspective
-async fn do_sign_coordinator(
-    chan: &mut SharedChannel,
-    participants: &ParticipantList,
-    me: Participant,
-    public_key: AffinePoint,
-    nonce_package: &NonceGenerationOutput,
-    msg_hash: Scalar,
-) -> Result<SignatureOption, ProtocolError> {
-    // Round 3
-    let s_i = compute_signature_share(participants, me, nonce_package, msg_hash)?;
-    // Spec 3.4 is non-existent for a coordinator
-
-    let wait0 = chan.next_waitpoint();
     // Receive sj
     // Spec 3.5
     let mut s = s_i;
-    for (_, s_j) in recv_from_others::<Scalar>(chan, wait0, participants, me).await? {
+    for (_, s_j) in recv_from_others::<Scalar>(&chan, wait2, &participants, me).await? {
         // Spec 3.6
         s += s_j;
     }
@@ -161,12 +285,13 @@ async fn do_sign_coordinator(
     // Spec 3.7
     s.conditional_assign(&(-s), s.is_high());
 
-    let sig = Signature {
-        big_r: nonce_package.big_r,
-        s,
-    };
+    let sig = Signature { big_r, s };
 
     // Spec 3.8
+    let public_key = tweak
+        .derive_verifying_key(&args.keygen_out.public_key)
+        .to_element()
+        .to_affine();
     if !sig.verify(&public_key, &msg_hash) {
         return Err(ProtocolError::AssertionFailed(
             "signature failed to verify".to_string(),
@@ -176,42 +301,16 @@ async fn do_sign_coordinator(
     Ok(Some(sig))
 }
 
-/// A common computation done by both the coordinator and the other participants
-fn compute_signature_share(
-    participants: &ParticipantList,
-    me: Participant,
-    nonce_package: &NonceGenerationOutput,
-    msg_hash: Scalar,
-) -> Result<Scalar, ProtocolError> {
-    // Round 3
-    // Linearize ki
-    // Spec 3.1
-    let lambda = participants.lagrange::<Secp256K1Sha256>(me)?;
-    let k_i = lambda * nonce_package.k;
-
-    // Linearize sigmai
-    // Spec 3.2
-    let sigma_i = lambda * nonce_package.sigma;
-
-    // Compute si = h * ki + Rx * sigmai
-    // Spec 3.3
-    let r = x_coordinate(&nonce_package.big_r);
-    Ok(msg_hash * k_i + r * sigma_i)
-}
-
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
     use super::*;
     use crate::crypto::hash::test::scalar_hash_secp256k1;
-    use crate::ecdsa::ot_based_ecdsa::triples::{TriplePub, TripleShare};
-    use crate::ecdsa::{KeygenOutput, Polynomial};
     use crate::test_utils::{
         GenProtocol, MockCryptoRng, assert_buffer_capacity, check_one_coordinator_output,
         deal_triple, expected_buffer_by_role, generate_participants, run_keygen, run_protocol,
-        run_sign,
     };
-    use k256::{ProjectivePoint, PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
+    use k256::{PublicKey, ecdsa::VerifyingKey, ecdsa::signature::Verifier};
     use rand_core::SeedableRng;
     use rstest::rstest;
     use std::{assert_matches, collections::HashMap};
@@ -459,84 +558,5 @@ mod test {
                 OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
             ),
         );
-    }
-
-    fn simulate_nonce_packages(
-        participants: &[Participant],
-        threshold: usize,
-        rng: &mut MockCryptoRng,
-    ) -> (ProjectivePoint, Vec<(Participant, NonceGenerationOutput)>) {
-        let degree = threshold - 1;
-        let f = Polynomial::generate_polynomial(None, degree, rng).unwrap();
-        let x = f.eval_at_zero().unwrap().0;
-        let public_key = ProjectivePoint::GENERATOR * x;
-        let g = Polynomial::generate_polynomial(None, degree, rng).unwrap();
-        let k = g.eval_at_zero().unwrap().0;
-        let big_r = (ProjectivePoint::GENERATOR * k.invert().unwrap()).to_affine();
-        let sigma = k * x;
-        let h = Polynomial::generate_polynomial(Some(sigma), degree, rng).unwrap();
-        let nonce_packages = participants
-            .iter()
-            .map(|p| {
-                (
-                    *p,
-                    NonceGenerationOutput {
-                        big_r,
-                        k: g.eval_at_participant(*p).unwrap().0,
-                        sigma: h.eval_at_participant(*p).unwrap().0,
-                    },
-                )
-            })
-            .collect();
-        (public_key, nonce_packages)
-    }
-
-    #[test]
-    fn sign_round__should_produce_signature_verifiable_under_public_key() {
-        // Given
-        let mut rng = MockCryptoRng::seed_from_u64(42);
-        let threshold: usize = 2;
-        let msg = b"Hello? Is it me you're looking for?";
-        let participants = generate_participants(2);
-        let (public_key, nonce_packages) =
-            simulate_nonce_packages(&participants, threshold, &mut rng);
-        let coordinator = participants[0];
-
-        // When
-        let result = run_sign::<Secp256K1Sha256, _, _, _>(
-            nonce_packages,
-            coordinator,
-            public_key,
-            scalar_hash_secp256k1(msg),
-            |participants, coordinator, me, public_key, nonce_package, msg_hash| {
-                let participants = ParticipantList::new(participants)
-                    .ok_or(InitializationError::DuplicateParticipants)?;
-                let ctx =
-                    Comms::with_buffer_capacity(OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES);
-                let mut chan = ctx.shared_channel();
-                let fut = async move {
-                    sign_round(
-                        &mut chan,
-                        &participants,
-                        coordinator,
-                        me,
-                        public_key.to_affine(),
-                        &nonce_package,
-                        msg_hash,
-                    )
-                    .await
-                };
-                Ok(Box::new(make_protocol(ctx, fut))
-                    as Box<dyn Protocol<Output = SignatureOption>>)
-            },
-        )
-        .unwrap();
-
-        // Then
-        let signature = check_one_coordinator_output(result, coordinator).unwrap();
-        let signature = to_k256_signature(&signature);
-        VerifyingKey::from(&PublicKey::from_affine(public_key.to_affine()).unwrap())
-            .verify(msg, &signature)
-            .unwrap();
     }
 }
