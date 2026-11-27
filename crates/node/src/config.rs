@@ -9,12 +9,13 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
+use subtle::ConstantTimeEq;
 use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 pub(crate) mod start;
 
 /// AES key that is zeroized on drop.
-#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ZeroizeOnDrop)]
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
 #[serde(
     transparent,
     bound(
@@ -31,7 +32,7 @@ impl<const N: usize> AesKey<N> {
     pub fn from_hex(hex_key: &str) -> anyhow::Result<Self> {
         let mut key = Self([0; N]);
         hex::decode_to_slice(hex_key, &mut key.0)
-            .with_context(|| format!("Encryption key must be {} hex characters", N * 2))?;
+            .with_context(|| format!("Encryption key must be {N} hex-encoded bytes"))?;
         Ok(key)
     }
 
@@ -45,6 +46,15 @@ impl<const N: usize> From<[u8; N]> for AesKey<N> {
         Self(key)
     }
 }
+
+// Constant-time, so comparing keys does not leak through timing.
+impl<const N: usize> PartialEq for AesKey<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_slice().ct_eq(other.0.as_slice()).into()
+    }
+}
+
+impl<const N: usize> Eq for AesKey<N> {}
 
 impl<const N: usize> std::fmt::Debug for AesKey<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -788,6 +798,16 @@ cores: 4
         assert!(!dir.path().join("config.yaml.tmp").exists());
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
+    }
+
+    #[test]
+    fn aes_gcm_ciphers__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<aes_gcm::Aes128Gcm>();
+        assert_zeroize_on_drop::<aes_gcm::Aes256Gcm>();
     }
 
     #[test]
