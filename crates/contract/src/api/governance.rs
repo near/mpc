@@ -809,11 +809,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::nothing_changes(2, 2, None, false)]
-    #[case::governance_threshold_changes(2, 3, None, true)]
-    #[case::reconstruction_threshold_changes(3, 3, Some(3), true)]
-    fn vote_reshared__should_clear_pending_parameter_votes_only_when_a_threshold_changes(
+    #[case::nothing_changes(2, 3, 2, None, false)]
+    #[case::a_participant_leaves(2, 2, 2, None, true)]
+    #[case::governance_threshold_changes(2, 3, 3, None, true)]
+    #[case::reconstruction_threshold_changes(3, 3, 3, Some(3), true)]
+    fn vote_reshared__should_keep_pending_parameter_votes_only_after_a_pure_refresh(
         #[case] governance_threshold: u64,
+        #[case] new_participant_count: usize,
         #[case] new_governance_threshold: u64,
         #[case] new_reconstruction_threshold: Option<u64>,
         #[case] expect_votes_cleared: bool,
@@ -826,7 +828,7 @@ mod tests {
         );
         let proposal = ProposedGovernanceThresholdParameters::new(
             GovernanceThresholdParameters::new(
-                participants.clone(),
+                participants.subset(0..new_participant_count),
                 GovernanceThreshold::new(new_governance_threshold),
             )
             .unwrap(),
@@ -856,7 +858,7 @@ mod tests {
         };
         attested_context(&contract, &participants, &leader);
         contract.start_reshare_instance(key_event_id).unwrap();
-        for (account_id, _, _) in participants.participants() {
+        for (account_id, _, _) in proposal.participants().participants() {
             attested_context(&contract, &participants, account_id);
             contract.vote_reshared(key_event_id).unwrap();
         }

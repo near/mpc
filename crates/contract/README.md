@@ -211,7 +211,7 @@ A change is accepted by the contract once at least `threshold` (the current thre
 
 ### Refreshing the keys
 
-A key refresh reshares every key onto the unchanged participant set and thresholds, so that keyshares of earlier epochs stop being useful (see [proactive security](../threshold-signatures/docs/proactive-security.md)). Once `key_refresh_period_seconds` (30 days by default) have passed since the last completed resharing, any single participant can start one with `trigger_key_refresh`; no vote is needed. From there on it is an ordinary resharing, which the nodes complete and participants can cancel with `vote_cancel_resharing`. `last_reshared_timestamp_seconds` returns when the last resharing completed.
+A key refresh reshares every key onto the unchanged participant set and thresholds, so that keyshares of earlier epochs stop being useful (see [proactive security](../threshold-signatures/docs/proactive-security.md)). Once `key_refresh_period_seconds` (30 days by default) have passed since the last completed resharing, any single participant can start one with `trigger_key_refresh`; no vote is needed. From there on it is an ordinary resharing, which the nodes complete and participants can cancel with `vote_cancel_resharing`, except that pending `vote_new_parameters` votes survive it. `last_reshared_timestamp_seconds` returns when the last resharing completed.
 
 ### Adding a Key
 
