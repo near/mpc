@@ -75,30 +75,32 @@ pub async fn batch_random_ot_sender(
         async move {
             let wait0 = chan.next_waitpoint();
             let ser_big_x_i: CoefficientCommitment = chan.recv(wait0).await?;
-
-            let y_big_x_i = ser_big_x_i.value() * y;
-
-            let big_k0 = hash(
-                i,
-                &ser_big_x_i,
-                &ser_big_y,
-                &CoefficientCommitment::new(y_big_x_i),
-            )?;
-            let big_k1 = hash(
-                i,
-                &ser_big_x_i,
-                &ser_big_y,
-                &CoefficientCommitment::new(y_big_x_i - big_z),
-            )?;
-
-            Ok::<_, ProtocolError>((big_k0, big_k1))
+            Ok::<_, ProtocolError>(ser_big_x_i)
         }
     });
-    let out: Zeroizing<Vec<(BitVector, BitVector)>> =
-        Zeroizing::new(futures::future::try_join_all(tasks).await?);
+    let big_x = futures::future::try_join_all(tasks).await?;
 
-    let big_k0: BitMatrix = out.iter().map(|r| r.0).collect();
-    let big_k1: BitMatrix = out.iter().map(|r| r.1).collect();
+    // `try_join_all` grows its output by reallocating. The keys are derived here instead.
+    let mut big_k0 = Zeroizing::new(Vec::with_capacity(SECURITY_PARAMETER));
+    let mut big_k1 = Zeroizing::new(Vec::with_capacity(SECURITY_PARAMETER));
+    for (i, ser_big_x_i) in big_x.iter().enumerate() {
+        let y_big_x_i = ser_big_x_i.value() * y;
+        big_k0.push(hash(
+            i,
+            ser_big_x_i,
+            &ser_big_y,
+            &CoefficientCommitment::new(y_big_x_i),
+        )?);
+        big_k1.push(hash(
+            i,
+            ser_big_x_i,
+            &ser_big_y,
+            &CoefficientCommitment::new(y_big_x_i - big_z),
+        )?);
+    }
+
+    let big_k0: BitMatrix = big_k0.iter().copied().collect();
+    let big_k1: BitMatrix = big_k1.iter().copied().collect();
 
     let big_k0 = big_k0
         .try_into()

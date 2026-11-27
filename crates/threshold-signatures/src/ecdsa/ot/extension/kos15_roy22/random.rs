@@ -10,7 +10,7 @@ use crate::{
 
 use crate::crypto::constants::SECURITY_PARAMETER;
 use crate::ecdsa::ot::{
-    bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
+    bits::{BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
     extension::kos15_roy22::correlated::{
         CorrelatedOtParams, correlated_ot_receiver, correlated_ot_sender,
     },
@@ -216,10 +216,7 @@ pub async fn random_ot_extension_receiver(
     let adjusted_size = adjust_size(params.batch_size);
 
     // Step 1
-    let x: BitMatrix = b
-        .bits()
-        .map(|b_i| BitVector::conditional_select(&BitVector::zero(), &BitVector::zero().not(), b_i))
-        .collect();
+    let x = b.expand_rows();
 
     // Step 2
     let t = correlated_ot_receiver(

@@ -7,7 +7,7 @@ use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
 };
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
-use zeroize::{DefaultIsZeroes, ZeroizeOnDrop};
+use zeroize::{DefaultIsZeroes, ZeroizeOnDrop, Zeroizing};
 
 pub const SEC_PARAM_64: usize = SECURITY_PARAMETER.div_ceil(64);
 pub const SEC_PARAM_8: usize = SECURITY_PARAMETER.div_ceil(8);
@@ -313,6 +313,7 @@ impl SquareBitMatrix {
         let row8 = rows.div_ceil(8);
         hasher.update(b"row");
 
+        let mut expanded = Zeroizing::new(vec![0u8; row8]);
         for (j, row) in self.matrix.0.iter().enumerate() {
             // We need to clone to make each row use the same prefix.
             let mut hasher_row = hasher.clone();
@@ -321,7 +322,6 @@ impl SquareBitMatrix {
             }
             let mut reader = hasher_row.finalize_xof();
             // Expand the row
-            let mut expanded = vec![0u8; row8];
             reader.read(&mut expanded);
 
             // Now, write into the correct column
@@ -365,6 +365,19 @@ impl ChoiceVector {
     /// Iterate over the bits in this vector.
     pub fn bits(&self) -> impl Iterator<Item = Choice> + '_ {
         self.0.iter().flat_map(BitVector::bits)
+    }
+
+    /// Expands each choice bit into a row of all zeros or all ones.
+    pub fn expand_rows(&self) -> BitMatrix {
+        let mut rows = Vec::with_capacity(self.0.len().saturating_mul(SECURITY_PARAMETER));
+        for b_i in self.bits() {
+            rows.push(BitVector::conditional_select(
+                &BitVector::zero(),
+                &BitVector::zero().not(),
+                b_i,
+            ));
+        }
+        BitMatrix(rows)
     }
 
     /// Iterate over bitvector chunks from this vector.
