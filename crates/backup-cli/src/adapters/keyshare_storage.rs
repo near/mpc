@@ -52,19 +52,23 @@ impl KeyShareRepository for KeyshareStorageAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpc_node::keyshare::test_utils::generate_dummy_keyshare;
+    use mpc_node::keyshare::{generate_key_storage_config, test_utils::generate_dummy_keyshare};
     use rand::SeedableRng;
-    use tempfile::tempdir;
+    use tempfile::TempDir;
+
+    async fn new_storage() -> (KeyshareStorageAdapter, TempDir) {
+        let (config, temp_dir) = generate_key_storage_config();
+        let storage = KeyshareStorageAdapter::new(config.home_dir, config.local_encryption_key)
+            .await
+            .unwrap();
+        (storage, temp_dir)
+    }
 
     #[tokio::test]
     async fn test_store_and_load_keyshares() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
-        let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
-        let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
-            .await
-            .unwrap();
+        let (storage, _temp_dir) = new_storage().await;
         let keyshares = vec![
             generate_dummy_keyshare(1, 0, 1, &mut rng),
             generate_dummy_keyshare(1, 1, 1, &mut rng),
@@ -81,11 +85,7 @@ mod tests {
     #[tokio::test]
     async fn test_store_empty_keyshares_fails() {
         // Given
-        let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
-        let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
-            .await
-            .unwrap();
+        let (storage, _temp_dir) = new_storage().await;
 
         // When
         let result = storage.store_keyshares(&[]).await;
@@ -99,11 +99,7 @@ mod tests {
     async fn test_store_inconsistent_epochs_fails() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
-        let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
-        let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
-            .await
-            .unwrap();
+        let (storage, _temp_dir) = new_storage().await;
         let keyshares = vec![
             generate_dummy_keyshare(1, 0, 1, &mut rng),
             generate_dummy_keyshare(2, 1, 1, &mut rng), // Different epoch!
@@ -122,11 +118,7 @@ mod tests {
     #[tokio::test]
     async fn test_load_before_store_returns_empty() {
         // Given
-        let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
-        let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
-            .await
-            .unwrap();
+        let (storage, _temp_dir) = new_storage().await;
 
         // When
         let loaded = storage.load_keyshares().await.unwrap();
@@ -139,11 +131,7 @@ mod tests {
     async fn test_cannot_downgrade_epoch() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         // Given
-        let temp_dir = tempdir().unwrap();
-        let encryption_key = [42u8; 16];
-        let storage = KeyshareStorageAdapter::new(temp_dir.path().to_path_buf(), encryption_key)
-            .await
-            .unwrap();
+        let (storage, _temp_dir) = new_storage().await;
         let keyshares1 = vec![generate_dummy_keyshare(2, 0, 1, &mut rng)];
         storage.store_keyshares(&keyshares1).await.unwrap();
 

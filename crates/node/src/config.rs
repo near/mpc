@@ -15,6 +15,9 @@ pub(crate) mod start;
 pub type AesKey256 = [u8; 32];
 pub type AesKey128 = [u8; 16];
 
+#[cfg(any(test, feature = "test-utils"))]
+pub const TEST_LOCAL_STORAGE_AES_KEY: AesKey128 = [1; 16];
+
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
 #[derive(Debug, Clone)]

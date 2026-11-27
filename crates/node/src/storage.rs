@@ -218,15 +218,14 @@ mod tests {
 
     use crate::types::CKDRequest;
     use crate::{
-        db::SecretDB,
+        db::new_test_db,
         storage::{CKDRequestStorage, SignRequestStorage},
         types::SignatureRequest,
     };
 
     #[tokio::test]
     async fn test_sig_request_storage() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let storage = SignRequestStorage::new(db).unwrap();
 
         let req1 = SignatureRequest {
@@ -266,8 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ckd_request_storage() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let storage = CKDRequestStorage::new(db).unwrap();
 
         let req1 = CKDRequest {

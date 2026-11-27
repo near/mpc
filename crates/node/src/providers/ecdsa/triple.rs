@@ -364,13 +364,13 @@ pub fn validate_paired_triple_request(
 mod tests {
     use super::{
         ManyTripleGenerationComputation, PairedTriple, ReconstructionThreshold, TripleBatchSize,
-        TripleStorage, caitsith_triple_thresholds, validate_paired_triple_request,
+        caitsith_triple_thresholds, validate_paired_triple_request,
     };
-    use crate::assets::test_utils::{make_triple, triple_v2_key};
-    use crate::db::{DBCol, SecretDB};
+    use crate::assets::test_utils::{make_triple, new_triple_store, triple_v2_key};
+    use crate::db::{DBCol, new_test_db};
     use crate::metrics;
     use crate::network::computation::MpcLeaderCentricComputation;
-    use crate::network::testing::{new_test_client, run_test_clients};
+    use crate::network::testing::run_test_clients;
     use crate::network::wire_format::{EcdsaTaskId, MpcTaskId};
     use crate::network::{MeshNetworkClient, NetworkTaskChannel};
     use crate::primitives::{ParticipantId, UniqueId};
@@ -586,22 +586,6 @@ mod tests {
             .collect())
     }
 
-    fn new_triple_store(
-        db: Arc<SecretDB>,
-        my_participant_id: ParticipantId,
-        reconstruction_threshold: ReconstructionThreshold,
-        participants: Vec<ParticipantId>,
-    ) -> TripleStorage {
-        let client = new_test_client(participants, my_participant_id);
-        TripleStorage::new(
-            near_time::FakeClock::default().clock(),
-            db,
-            client,
-            reconstruction_threshold,
-        )
-        .unwrap()
-    }
-
     /// Snapshot test pinning the on-disk DB key layout for the triple store.
     ///
     /// The exact byte layout is load-bearing: any drift in how
@@ -627,22 +611,11 @@ mod tests {
     #[expect(non_snake_case)]
     fn triple_storage__should_isolate_per_t_stores() {
         // Given two per-`t` stores backed by the same DB.
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let me = ParticipantId::from_raw(42);
         let participants = vec![me];
-        let store_a = new_triple_store(
-            db.clone(),
-            me,
-            ReconstructionThreshold::new(3),
-            participants.clone(),
-        );
-        let store_b = new_triple_store(
-            db.clone(),
-            me,
-            ReconstructionThreshold::new(7),
-            participants.clone(),
-        );
+        let store_a = new_triple_store(&db, me, ReconstructionThreshold::new(3), &participants);
+        let store_b = new_triple_store(&db, me, ReconstructionThreshold::new(7), &participants);
 
         let id_a = store_a.generate_and_reserve_id();
         store_a.add_owned(id_a, make_triple(&participants));
@@ -662,12 +635,11 @@ mod tests {
     #[expect(non_snake_case)]
     fn triple_storage_add_owned__should_write_to_triple_v2_column() {
         // Given a TripleStorage for `t = 3`.
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let me = ParticipantId::from_raw(42);
         let participants = vec![me];
         let t = ReconstructionThreshold::new(3);
-        let store = new_triple_store(db.clone(), me, t, participants.clone());
+        let store = new_triple_store(&db, me, t, &participants);
         let id = store.generate_and_reserve_id();
 
         // When adding an owned triple.
@@ -685,12 +657,11 @@ mod tests {
     #[expect(non_snake_case)]
     fn triple_storage_take_owned__should_delete_from_triple_v2_column() {
         // Given a triple present in the per-`t` TripleV2 column.
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let me = ParticipantId::from_raw(42);
         let participants = vec![me];
         let t = ReconstructionThreshold::new(3);
-        let store = new_triple_store(db.clone(), me, t, participants.clone());
+        let store = new_triple_store(&db, me, t, &participants);
         let id = store.generate_and_reserve_id();
         store.add_owned(id, make_triple(&participants));
 

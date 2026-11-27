@@ -685,7 +685,7 @@ mod tests {
     use super::{ColdQueue, DistributedAssetStorage, DoubleQueue, UniqueId};
     use crate::assets::clean_db;
     use crate::async_testing::{MaybeReady, run_future_once};
-    use crate::db::{DBCol, SecretDB};
+    use crate::db::{DBCol, SecretDB, new_test_db};
     use crate::primitives::ParticipantId;
     use crate::providers::HasParticipants;
     use borsh::BorshDeserialize;
@@ -693,7 +693,7 @@ mod tests {
     use mpc_primitives::domain::DomainId;
     use near_time::FakeClock;
     use rstest::rstest;
-    use serde::{Deserialize, Serialize};
+    use serde::{Deserialize, Serialize, de::DeserializeOwned};
     use std::cmp::Eq;
     use std::default::Default;
     use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
@@ -924,8 +924,7 @@ mod tests {
     #[test]
     fn test_distributed_assets_storage() {
         let clock = FakeClock::default();
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let all_participants = vec![
             ParticipantId::from_raw(0),
             ParticipantId::from_raw(1),
@@ -1076,18 +1075,8 @@ mod tests {
 
     #[test]
     fn test_distributed_store_add_take_owned() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = DistributedAssetStorage::<u32>::new(
-            FakeClock::default().clock(),
-            db,
-            crate::db::DBCol::TripleV2,
-            Vec::new(),
-            ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
-        )
-        .unwrap();
+        let (db, _dir) = new_test_db();
+        let store = new_test_store::<u32>(&db, None);
         assert_eq!(store.num_owned(), 0);
 
         // Put in two assets, then dequeue them.
@@ -1123,18 +1112,8 @@ mod tests {
 
     #[test]
     fn test_distributed_store_add_owned_different_order() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = DistributedAssetStorage::<u32>::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            crate::db::DBCol::TripleV2,
-            Vec::new(),
-            ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
-        )
-        .unwrap();
+        let (db, _dir) = new_test_db();
+        let store = new_test_store::<u32>(&db, None);
 
         // Adding assets in a different order from when the IDs are generated
         // is fine. They are dequeued in the order that they are queued.
@@ -1175,34 +1154,15 @@ mod tests {
         // be based on the key. It doesn't have to be this way, but we test it
         // here just to clarify the current behavior.
         drop(store);
-        let store = DistributedAssetStorage::<u32>::new(
-            FakeClock::default().clock(),
-            db,
-            crate::db::DBCol::TripleV2,
-            Vec::new(),
-            ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
-        )
-        .unwrap();
+        let store = new_test_store::<u32>(&db, None);
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id5, 5));
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id6, 6));
     }
 
     #[test]
     fn test_distribtued_store_add_take_unowned() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let store = DistributedAssetStorage::<u32>::new(
-            FakeClock::default().clock(),
-            db,
-            crate::db::DBCol::TripleV2,
-            Vec::new(),
-            ParticipantId::from_raw(42),
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
-        )
-        .unwrap();
+        let (db, _dir) = new_test_db();
+        let store = new_test_store::<u32>(&db, None);
 
         let other = ParticipantId::from_raw(43);
         let id1 = UniqueId::new(other, 1, 0);
@@ -1231,19 +1191,8 @@ mod tests {
 
     #[test]
     fn test_distributed_store_persistence() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let myself = ParticipantId::from_raw(42);
-        let store = DistributedAssetStorage::<u32>::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            crate::db::DBCol::TripleV2,
-            Vec::new(),
-            myself,
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
-        )
-        .unwrap();
+        let (db, _dir) = new_test_db();
+        let store = new_test_store::<u32>(&db, None);
 
         let id1 = store.generate_and_reserve_id_range(4);
         store.add_owned(id1, 1);
@@ -1258,16 +1207,7 @@ mod tests {
         store.add_unowned(UniqueId::new(other, 4, 0), 8);
 
         drop(store);
-        let store = DistributedAssetStorage::<u32>::new(
-            FakeClock::default().clock(),
-            db,
-            crate::db::DBCol::TripleV2,
-            Vec::new(),
-            myself,
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
-        )
-        .unwrap();
+        let store = new_test_store::<u32>(&db, None);
         assert_eq!(store.num_owned(), 4);
         assert_eq!(store.take_owned().now_or_never().unwrap(), (id1, 1));
         assert_eq!(
@@ -1288,16 +1228,14 @@ mod tests {
 
     #[test]
     fn test_maybe_discard_unowned_persistence() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let myself = ParticipantId::from_raw(42);
+        let (db, _dir) = new_test_db();
 
         let store = DistributedAssetStorage::<u32>::new(
             FakeClock::default().clock(),
             db.clone(),
             crate::db::DBCol::TripleV2,
             Vec::new(),
-            myself,
+            MY_PARTICIPANT_ID,
             |_, x| *x != 1,
             Arc::new(Vec::new),
         )
@@ -1313,42 +1251,21 @@ mod tests {
         store.maybe_discard_owned(1).now_or_never().unwrap();
 
         drop(store);
-        let store = DistributedAssetStorage::<u32>::new(
-            FakeClock::default().clock(),
-            db,
-            crate::db::DBCol::TripleV2,
-            Vec::new(),
-            myself,
-            |_, _| true,
-            Arc::new(std::vec::Vec::new),
-        )
-        .unwrap();
+        let store = new_test_store::<u32>(&db, None);
 
         assert_eq!(store.num_owned(), 0);
     }
 
     #[test]
     fn test_multiple_domains() {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let myself = ParticipantId::from_raw(42);
+        let (db, _dir) = new_test_db();
         let other = ParticipantId::from_raw(43);
 
         for i in 0..4 {
-            let domain_id = Some(DomainId(i));
-            let store = DistributedAssetStorage::<u64>::new(
-                FakeClock::default().clock(),
-                db.clone(),
-                DBCol::TripleV2,
-                domain_id_to_prefix(domain_id),
-                myself,
-                |_, _| true,
-                Arc::new(std::vec::Vec::new),
-            )
-            .unwrap();
+            let store = new_test_store::<u64>(&db, Some(DomainId(i)));
 
             for j in 0..10 {
-                store.add_owned(UniqueId::new(myself, j, 0), 10000 + i * 100 + j);
+                store.add_owned(UniqueId::new(MY_PARTICIPANT_ID, j, 0), 10000 + i * 100 + j);
                 store.add_unowned(UniqueId::new(other, j, 0), 20000 + i * 100 + j);
             }
             for j in 0..10 {
@@ -1362,23 +1279,16 @@ mod tests {
                 );
             }
             for j in 0..10 {
-                store.add_owned(UniqueId::new(myself, 100 + j, 0), 30000 + i * 100 + j);
+                store.add_owned(
+                    UniqueId::new(MY_PARTICIPANT_ID, 100 + j, 0),
+                    30000 + i * 100 + j,
+                );
                 store.add_unowned(UniqueId::new(other, 100 + j, 0), 40000 + i * 100 + j);
             }
         }
 
         for i in 0..4 {
-            let domain_id = Some(DomainId(i));
-            let store = DistributedAssetStorage::<u64>::new(
-                FakeClock::default().clock(),
-                db.clone(),
-                DBCol::TripleV2,
-                domain_id_to_prefix(domain_id),
-                myself,
-                |_, _| true,
-                Arc::new(std::vec::Vec::new),
-            )
-            .unwrap();
+            let store = new_test_store::<u64>(&db, Some(DomainId(i)));
 
             for j in 0..10 {
                 assert_eq!(
@@ -1399,6 +1309,25 @@ mod tests {
 
     fn participant_ids(raw: &[u32]) -> Vec<ParticipantId> {
         raw.iter().copied().map(ParticipantId::from_raw).collect()
+    }
+
+    fn new_test_store<T>(
+        db: &Arc<SecretDB>,
+        domain_id: Option<DomainId>,
+    ) -> DistributedAssetStorage<T>
+    where
+        T: Serialize + DeserializeOwned + Send + 'static,
+    {
+        DistributedAssetStorage::new(
+            FakeClock::default().clock(),
+            db.clone(),
+            DBCol::TripleV2,
+            domain_id_to_prefix(domain_id),
+            MY_PARTICIPANT_ID,
+            |_, _| true,
+            Arc::new(Vec::new),
+        )
+        .unwrap()
     }
 
     fn new_cleanup_test_store(
@@ -1428,8 +1357,7 @@ mod tests {
         #[values(None, Some(DomainId(0)), Some(DomainId(1)))] domain_id: Option<DomainId>,
     ) {
         // Given
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let other_domain_id = Some(DomainId(2));
         for domain_id in [domain_id, other_domain_id] {
             let store = new_cleanup_test_store(&db, domain_id);
@@ -1633,8 +1561,7 @@ mod tests {
     #[expect(non_snake_case)]
     async fn distributed_store_take_owned_matching__should_delete_taken_asset_from_disk() {
         // Given
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let condition: fn(&Vec<ParticipantId>, &u32) -> bool =
             |eligible, val| eligible.contains(&ParticipantId::from_raw(*val));
         let alive = || vec![ParticipantId::from_raw(123), ParticipantId::from_raw(456)];
