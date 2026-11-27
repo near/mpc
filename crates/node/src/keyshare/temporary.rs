@@ -1,4 +1,4 @@
-use super::Keyshare;
+use super::{Keyshare, to_json_zeroizing};
 use crate::db::{decrypt, encrypt};
 use crate::durable_fs::sync_parent_dir;
 use aes_gcm::{Aes128Gcm, KeyInit};
@@ -6,6 +6,7 @@ use anyhow::Context;
 use mpc_primitives::{EpochId, KeyEventId};
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
+use zeroize::Zeroizing;
 
 /// Stores keyshares that we generated (from keygen or resharing) but which have not yet been
 /// definitively included in a Running state by the contract. Each locally successful keygen
@@ -77,7 +78,7 @@ impl TemporaryKeyStorage {
 
         let data = tokio::fs::read(&path).await?;
         let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
-        let decrypted = decrypt(&cipher, &data)?;
+        let decrypted = Zeroizing::new(decrypt(&cipher, &data)?);
         let keyshare: Keyshare = serde_json::from_slice(&decrypted)?;
         if keyshare.key_id != key_id {
             anyhow::bail!(
@@ -141,7 +142,7 @@ impl PendingKeyshareStorageHandle {
             "Keyshare has unexpected key ID {:?}",
             keyshare.key_id
         );
-        let data = serde_json::to_vec(&keyshare)?;
+        let data = to_json_zeroizing(&keyshare)?;
         let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
         let encrypted = encrypt(&cipher, &data);
 

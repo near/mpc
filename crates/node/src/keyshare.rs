@@ -3,6 +3,7 @@ pub mod permanent;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
+mod secret_json;
 mod temporary;
 
 use anyhow::Context;
@@ -12,6 +13,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use permanent::{PermanentKeyStorage, PermanentKeyshareData};
+pub(crate) use secret_json::to_json_zeroizing;
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
