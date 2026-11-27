@@ -488,7 +488,7 @@ impl KeyStorageConfig {
 pub fn generate_key_storage_config() -> (KeyStorageConfig, tempfile::TempDir) {
     let tempdir = tempfile::tempdir().unwrap();
     let home_dir = tempdir.path().to_path_buf();
-    let local_encryption_key = [3; 16].into();
+    let local_encryption_key = test_utils::test_local_encryption_key();
     (
         KeyStorageConfig {
             home_dir,

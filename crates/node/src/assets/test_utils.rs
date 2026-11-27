@@ -110,7 +110,7 @@ impl TestContext {
         alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
     ) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
+        let db = crate::db::SecretDB::new_for_test(dir.path());
         Self {
             db,
             clock: FakeClock::default(),

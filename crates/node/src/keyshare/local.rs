@@ -102,19 +102,14 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::keyshare::local::LocalPermanentKeyStorageBackend;
     use crate::keyshare::permanent::PermanentKeyStorageBackend;
-    use crate::keyshare::test_utils::list_permanent_key_files;
+    use crate::keyshare::test_utils::{list_permanent_key_files, open_test_permanent_backend};
     use rstest::rstest;
 
     #[tokio::test]
     async fn test_local_keyshare_storage_backend() {
         let dir = tempfile::tempdir().unwrap();
-        let encryption_key = [1; 16].into();
-        let storage =
-            LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), encryption_key)
-                .await
-                .unwrap();
+        let storage = open_test_permanent_backend(dir.path()).await;
         assert!(storage.load().await.unwrap().is_none());
         storage.store(b"123", "id1").await.unwrap();
         assert_eq!(storage.load().await.unwrap().unwrap(), b"123");
@@ -127,10 +122,7 @@ mod tests {
     async fn store__should_replace_key_link_even_with_stale_temp_link() {
         // Given
         let dir = tempfile::tempdir().unwrap();
-        let storage =
-            LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16].into())
-                .await
-                .unwrap();
+        let storage = open_test_permanent_backend(dir.path()).await;
         storage.store(b"123", "id1").await.unwrap();
         std::fs::write(dir.path().join("key.tmp"), b"stale").unwrap();
 
@@ -152,10 +144,7 @@ mod tests {
     ) {
         // Given
         let dir = tempfile::tempdir().unwrap();
-        let storage =
-            LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16].into())
-                .await
-                .unwrap();
+        let storage = open_test_permanent_backend(dir.path()).await;
         storage.store(b"123", "id1").await.unwrap();
         storage.store(b"456", "id2").await.unwrap();
 

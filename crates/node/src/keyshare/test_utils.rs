@@ -1,5 +1,7 @@
+use super::local::LocalPermanentKeyStorageBackend;
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
+use crate::config::AesKey128;
 use crate::home_paths::permanent_keys_dir;
 use mpc_primitives::{EpochId, KeyEventId, domain::DomainId};
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
@@ -11,6 +13,18 @@ use threshold_signatures::test_utils::{generate_participants_with_random_ids, ru
 
 const NUM_PARTICIPANTS: usize = 2;
 const RECONSTRUCTION_THRESHOLD: usize = 2;
+
+/// Local storage key shared by tests.
+pub fn test_local_encryption_key() -> AesKey128 {
+    [1; 16].into()
+}
+
+/// Opens the local permanent keyshare backend in `home_dir` with the test key.
+pub async fn open_test_permanent_backend(home_dir: &Path) -> LocalPermanentKeyStorageBackend {
+    LocalPermanentKeyStorageBackend::new(home_dir.to_path_buf(), test_local_encryption_key())
+        .await
+        .unwrap()
+}
 
 /// Sorted names of the files in the permanent keys directory of `home_dir`.
 pub fn list_permanent_key_files(home_dir: &Path) -> Vec<String> {

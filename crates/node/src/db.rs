@@ -85,6 +85,15 @@ pub fn decrypt(cipher: &Aes128Gcm, ciphertext: &[u8]) -> anyhow::Result<Vec<u8>>
     Ok(data)
 }
 
+#[cfg(test)]
+impl SecretDB {
+    /// Opens the database at `path` with the shared test key.
+    pub fn new_for_test(path: &Path) -> Arc<Self> {
+        let key = crate::keyshare::test_utils::test_local_encryption_key();
+        Self::new(path, &key).unwrap()
+    }
+}
+
 impl SecretDB {
     pub fn new(path: &Path, encryption_key: &AesKey128) -> anyhow::Result<Arc<Self>> {
         let cipher = AesGcm::new(encryption_key.as_bytes().into());
@@ -240,7 +249,7 @@ mod tests {
     #[test]
     fn test_db() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
-        let db = SecretDB::new(dir.path(), &[1; 16].into())?;
+        let db = SecretDB::new_for_test(dir.path());
         let mut update = db.update();
         update.put(DBCol::SignRequest, b"key", b"value");
         update.put(DBCol::TripleV2, b"triple1", b"tripledata");
