@@ -17,12 +17,11 @@ impl PersistentSecrets {
     pub fn generate(rng: &mut impl CryptoRngCore) -> Self {
         let p2p_private_key = SigningKey::generate(rng);
         let near_signer_key = SigningKey::generate(rng);
-        let mut local_storage_aes_key = [0u8; 16];
-        rng.fill_bytes(&mut local_storage_aes_key);
+        let local_storage_aes_key = AesKey128::generate(rng);
         Self {
             p2p_private_key,
             near_signer_key,
-            local_storage_aes_key: local_storage_aes_key.into(),
+            local_storage_aes_key,
         }
     }
 }

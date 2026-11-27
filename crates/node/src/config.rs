@@ -6,7 +6,7 @@ use mpc_node_config::ConfigFile;
 use anyhow::Context;
 use ed25519_dalek::{SigningKey, VerifyingKey};
 use near_account_id::AccountId;
-use rand::RngCore;
+use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
 use subtle::ConstantTimeEq;
@@ -29,6 +29,12 @@ pub type AesKey256 = AesKey<32>;
 pub type AesKey128 = AesKey<16>;
 
 impl<const N: usize> AesKey<N> {
+    pub fn generate(rng: &mut (impl RngCore + CryptoRng)) -> Self {
+        let mut key = Self([0; N]);
+        rng.fill_bytes(&mut key.0);
+        key
+    }
+
     pub fn from_hex(hex_key: &str) -> anyhow::Result<Self> {
         let mut key = Self([0; N]);
         hex::decode_to_slice(hex_key, &mut key.0)
@@ -234,8 +240,7 @@ pub fn generate_and_write_backup_encryption_key_to_disk(
     home_dir: &Path,
 ) -> anyhow::Result<AesKey256> {
     tracing::info!("generating encryption key");
-    let mut key = AesKey([0u8; 32]);
-    rand::thread_rng().fill_bytes(&mut key.0);
+    let key = AesKey256::generate(&mut rand::thread_rng());
     let key_path = backup_encryption_key_file(home_dir);
     let key_hex = Zeroizing::new(hex::encode(key.as_bytes()));
     write_secret_file(&key_path, key_hex.as_bytes())?;
@@ -820,6 +825,20 @@ cores: 4
 
         // Then
         assert_eq!(debug, "AesKey(<redacted>)");
+    }
+
+    #[test]
+    fn aes_key_generate__should_fill_key_from_rng() {
+        // Given
+        let seed = [7u8; 32];
+        let mut expected = [0u8; 16];
+        rand::rngs::StdRng::from_seed(seed).fill_bytes(&mut expected);
+
+        // When
+        let key = AesKey128::generate(&mut rand::rngs::StdRng::from_seed(seed));
+
+        // Then
+        assert_eq!(key.as_bytes(), &expected);
     }
 
     #[test]
