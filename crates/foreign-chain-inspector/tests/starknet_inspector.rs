@@ -104,16 +104,20 @@ async fn extract__should_return_block_hash_when_finality_is_sufficient(
     assert_matches!(&extracted_values[0], StarknetExtractedValue::BlockHash(_));
 }
 
+#[rstest]
+#[case::l2_receipt_for_an_l1_request(
+    StarknetFinalityStatus::AcceptedOnL2,
+    StarknetFinality::AcceptedOnL1
+)]
+#[case::received_receipt(StarknetFinalityStatus::Received, StarknetFinality::AcceptedOnL2)]
 #[tokio::test]
-async fn extract__should_return_not_finalized_when_finality_is_insufficient() {
+async fn extract__should_return_not_finalized_when_finality_is_insufficient(
+    #[case] receipt_finality: StarknetFinalityStatus,
+    #[case] requested_finality: StarknetFinality,
+) {
     // given
     let tx_id = StarknetTransactionHash::from([1; 32]);
-
-    // Requested L1 but actual is only L2
-    let receipt = mock_receipt(
-        StarknetFinalityStatus::AcceptedOnL2,
-        StarknetExecutionStatus::Succeeded,
-    );
+    let receipt = mock_receipt(receipt_finality, StarknetExecutionStatus::Succeeded);
     let mock_client = mock_client_from_fixed_response(receipt);
     let inspector = StarknetInspector::new(mock_client);
 
@@ -121,7 +125,7 @@ async fn extract__should_return_not_finalized_when_finality_is_insufficient() {
     let response = inspector
         .extract(
             tx_id,
-            StarknetFinality::AcceptedOnL1,
+            requested_finality,
             vec![StarknetExtractor::BlockHash],
         )
         .await;
@@ -130,40 +134,32 @@ async fn extract__should_return_not_finalized_when_finality_is_insufficient() {
     assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
 }
 
+#[rstest]
+#[case::reverted_execution(
+    StarknetFinalityStatus::AcceptedOnL2,
+    StarknetExecutionStatus::Reverted,
+    StarknetFinality::AcceptedOnL2,
+    StarknetExtractor::BlockHash,
+    Verdict::TransactionFailed
+)]
+#[case::absent_log_index(
+    StarknetFinalityStatus::AcceptedOnL1,
+    StarknetExecutionStatus::Succeeded,
+    StarknetFinality::AcceptedOnL1,
+    StarknetExtractor::Log { log_index: 5 },
+    Verdict::LogIndexOutOfBounds
+)]
 #[tokio::test]
-async fn extract__should_return_not_finalized_for_received_finality() {
-    // given
-    let tx_id = StarknetTransactionHash::from([7; 32]);
-
-    let receipt = mock_receipt(
-        StarknetFinalityStatus::Received,
-        StarknetExecutionStatus::Succeeded,
-    );
-    let mock_client = mock_client_from_fixed_response(receipt);
-    let inspector = StarknetInspector::new(mock_client);
-
-    // when
-    let response = inspector
-        .extract(
-            tx_id,
-            StarknetFinality::AcceptedOnL2,
-            vec![StarknetExtractor::BlockHash],
-        )
-        .await;
-
-    // then
-    assert_matches!(response, Err(ForeignChainInspectionError::NotFinalized));
-}
-
-#[tokio::test]
-async fn extract__should_return_transaction_failed_when_execution_is_reverted() {
+async fn extract__should_return_the_expected_verdict(
+    #[case] receipt_finality: StarknetFinalityStatus,
+    #[case] execution_status: StarknetExecutionStatus,
+    #[case] requested_finality: StarknetFinality,
+    #[case] extractor: StarknetExtractor,
+    #[case] expected: Verdict<StarknetExtractedValue>,
+) {
     // given
     let tx_id = StarknetTransactionHash::from([2; 32]);
-
-    let receipt = mock_receipt(
-        StarknetFinalityStatus::AcceptedOnL2,
-        StarknetExecutionStatus::Reverted,
-    );
+    let receipt = mock_receipt(receipt_finality, execution_status);
     let canonical_block = canonical_block_for(&receipt);
     let mock_client = SequentialResponseMockClientBuilder::new()
         .with_response(&receipt)
@@ -173,15 +169,11 @@ async fn extract__should_return_transaction_failed_when_execution_is_reverted() 
 
     // when
     let response = inspector
-        .extract(
-            tx_id,
-            StarknetFinality::AcceptedOnL2,
-            vec![StarknetExtractor::BlockHash],
-        )
+        .extract(tx_id, requested_finality, vec![extractor])
         .await;
 
     // then
-    assert_matches!(response, Ok(Verdict::TransactionFailed));
+    assert_eq!(response.unwrap(), expected);
 }
 
 #[tokio::test]
@@ -266,35 +258,6 @@ async fn extract__should_classify_rpc_client_errors() {
         response,
         Err(ForeignChainInspectionError::RpcRequestFailed(_))
     );
-}
-
-#[tokio::test]
-async fn extract__should_return_the_out_of_bounds_verdict_for_an_absent_log_index() {
-    // given
-    let tx_id = StarknetTransactionHash::from([1; 32]);
-
-    let receipt = mock_receipt(
-        StarknetFinalityStatus::AcceptedOnL1,
-        StarknetExecutionStatus::Succeeded,
-    );
-    let canonical_block = canonical_block_for(&receipt);
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(&receipt)
-        .with_response(&canonical_block)
-        .build();
-    let inspector = StarknetInspector::new(mock_client);
-
-    // when
-    let response = inspector
-        .extract(
-            tx_id,
-            StarknetFinality::AcceptedOnL1,
-            vec![StarknetExtractor::Log { log_index: 5 }],
-        )
-        .await;
-
-    // then
-    assert_matches!(response, Ok(Verdict::LogIndexOutOfBounds));
 }
 
 #[tokio::test]
@@ -439,22 +402,33 @@ async fn extract__should_return_block_hash_via_http_rpc_client() {
     );
 }
 
+#[rstest]
+// The canonical block lookup answers with a block below the receipt's height, the provider's own
+// fault rather than a statement about the chain.
+#[case::canonical_lookup_answering_a_different_height(|receipt: &GetTransactionReceiptResponse| {
+    serde_json::json!(GetBlockWithTxHashesResponse {
+        block_hash: receipt.block_hash,
+        block_number: receipt.block_number - 1,
+    })
+})]
+// starknet_getBlockWithTxHashes returns a payload that fails to deserialize as
+// GetBlockWithTxHashesResponse.
+#[case::unparseable_canonical_block(
+    |_: &GetTransactionReceiptResponse| serde_json::json!({ "unexpected": "shape" })
+)]
 #[tokio::test]
-async fn extract__should_reject_a_canonical_lookup_answering_a_different_height() {
-    // given: the canonical block lookup answers with a block below the receipt's height, the
-    // provider's own fault rather than a statement about the chain.
+async fn extract__should_reject_a_malformed_canonical_block_response(
+    #[case] canonical_response: fn(&GetTransactionReceiptResponse) -> serde_json::Value,
+) {
+    // given
     let tx_id = StarknetTransactionHash::from([1; 32]);
     let receipt = mock_receipt(
         StarknetFinalityStatus::AcceptedOnL1,
         StarknetExecutionStatus::Succeeded,
     );
-    let canonical_block = GetBlockWithTxHashesResponse {
-        block_hash: receipt.block_hash,
-        block_number: receipt.block_number - 1,
-    };
     let mock_client = SequentialResponseMockClientBuilder::new()
         .with_response(&receipt)
-        .with_response(&canonical_block)
+        .with_response(canonical_response(&receipt))
         .build();
     let inspector = StarknetInspector::new(mock_client);
 
@@ -521,39 +495,6 @@ async fn extract__should_return_non_canonical_block_when_receipt_block_hash_diff
         }) if observed_block_number == block_number
             && receipt_hash == foreign_chain_inspector::HexBytes(receipt_hash_bytes.to_vec())
             && canonical_hash == foreign_chain_inspector::HexBytes(canonical_hash_bytes.to_vec())
-    );
-}
-
-#[tokio::test]
-async fn extract__should_propagate_get_block_with_tx_hashes_rpc_error() {
-    // given: starknet_getTransactionReceipt succeeds; starknet_getBlockWithTxHashes returns
-    // a payload that fails to deserialize as GetBlockWithTxHashesResponse.
-    let tx_id = StarknetTransactionHash::from([1; 32]);
-
-    let receipt = mock_receipt(
-        StarknetFinalityStatus::AcceptedOnL1,
-        StarknetExecutionStatus::Succeeded,
-    );
-
-    let mock_client = SequentialResponseMockClientBuilder::new()
-        .with_response(receipt)
-        .with_response(serde_json::json!({ "unexpected": "shape" }))
-        .build();
-    let inspector = StarknetInspector::new(mock_client);
-
-    // when
-    let response = inspector
-        .extract(
-            tx_id,
-            StarknetFinality::AcceptedOnL1,
-            vec![StarknetExtractor::BlockHash],
-        )
-        .await;
-
-    // then
-    assert_matches!(
-        response,
-        Err(ForeignChainInspectionError::MalformedRpcResponse(_))
     );
 }
 

@@ -346,14 +346,20 @@ mod tests {
         ensure_digest_matches(&digest, &encoded).unwrap();
     }
 
-    #[test]
-    fn ensure_digest_matches__should_reject_different_digest() {
-        // Given
-        let encoded_other = bs58::encode([0xcd; 32]).into_string();
+    #[rstest]
+    #[case::different_digest(bs58::encode([0xcd; 32]).into_string())]
+    // `Digest::from_base58` zero-pads 31 bytes into a valid 32-byte digest, which then simply
+    // differs from the requested one.
+    #[case::shorter_digest(bs58::encode([0xab; 31]).into_string())]
+    fn ensure_digest_matches__should_reject_a_differing_digest_as_inconsistent(
+        #[case] encoded: String,
+    ) {
+        // When
+        let result = ensure_digest_matches(&[0xab; 32], &encoded);
 
-        // When / Then
+        // Then
         assert_matches!(
-            ensure_digest_matches(&[0xab; 32], &encoded_other),
+            result,
             Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
         );
     }
@@ -380,19 +386,6 @@ mod tests {
         assert_matches!(
             ensure_digest_matches(&[0xab; 32], &oversized),
             Err(ForeignChainInspectionError::MalformedRpcResponse(_))
-        );
-    }
-
-    #[test]
-    fn ensure_digest_matches__should_reject_shorter_digest_as_inconsistent() {
-        // Given — a base58 string that decodes to 31 bytes; `Digest::from_base58` zero-pads it
-        // into a valid 32-byte digest, which then simply differs from the requested one.
-        let short = bs58::encode([0xab; 31]).into_string();
-
-        // When / Then
-        assert_matches!(
-            ensure_digest_matches(&[0xab; 32], &short),
-            Err(ForeignChainInspectionError::InconsistentRpcResponse { .. })
         );
     }
 

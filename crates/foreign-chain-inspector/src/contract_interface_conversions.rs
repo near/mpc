@@ -592,7 +592,34 @@ mod tests {
     use crate::starknet::StarknetBlockHash;
     use foreign_chain_rpc_interfaces::evm::Log;
     use near_mpc_contract_interface::types::{AptosAddress, AptosEvent, SuiAddress, SuiEvent};
-    use std::assert_matches;
+    use std::{assert_matches, fmt::Debug};
+
+    fn assert_roundtrip<I, C>(inspector: I) -> C
+    where
+        I: Clone + Debug + PartialEq + TryFrom<C>,
+        C: Clone + TryFrom<I>,
+        <I as TryFrom<C>>::Error: Debug,
+        <C as TryFrom<I>>::Error: Debug,
+    {
+        let contract = C::try_from(inspector.clone()).unwrap();
+        let back = I::try_from(contract.clone()).unwrap();
+        assert_eq!(inspector, back);
+        contract
+    }
+
+    fn empty_log() -> Log {
+        Log {
+            removed: false,
+            log_index: ethereum_types::U64::from(0),
+            transaction_index: ethereum_types::U64::from(0),
+            transaction_hash: ethereum_types::H256([0xaa; 32]),
+            block_hash: ethereum_types::H256([0xbb; 32]),
+            block_number: ethereum_types::U64::from(42),
+            address: ethereum_types::H160([0xcc; 20]),
+            data: String::new(),
+            topics: vec![],
+        }
+    }
 
     #[test]
     fn block_confirmations_roundtrip() {
@@ -636,45 +663,33 @@ mod tests {
 
     #[test]
     fn bitcoin_extractor_roundtrip() {
-        let inspector = BitcoinExtractor::BlockHash;
-        let contract = dtos::BitcoinExtractor::from(inspector.clone());
-        let back = BitcoinExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::BitcoinExtractor>(BitcoinExtractor::BlockHash);
     }
 
     #[test]
     fn bitcoin_extracted_value_roundtrip() {
-        let hash = BitcoinBlockHash::from([0xab; 32]);
-        let inspector = BitcoinExtractedValue::BlockHash(hash);
-        let contract = dtos::BitcoinExtractedValue::from(inspector.clone());
-        let back = BitcoinExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::BitcoinExtractedValue>(BitcoinExtractedValue::BlockHash(
+            BitcoinBlockHash::from([0xab; 32]),
+        ));
     }
 
     #[test]
     fn abstract_extractor_block_hash_roundtrip() {
-        let inspector = AbstractExtractor::BlockHash;
-        let contract = dtos::EvmExtractor::from(inspector.clone());
-        let back = AbstractExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::EvmExtractor>(AbstractExtractor::BlockHash);
     }
 
     #[test]
     fn abstract_extractor_log_roundtrip() {
-        let inspector = AbstractExtractor::Log { log_index: 5 };
-        let contract = dtos::EvmExtractor::from(inspector.clone());
+        let contract =
+            assert_roundtrip::<_, dtos::EvmExtractor>(AbstractExtractor::Log { log_index: 5 });
         assert_matches!(contract, dtos::EvmExtractor::Log { log_index: 5 });
-        let back = AbstractExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
     }
 
     #[test]
     fn abstract_extracted_value_block_hash_roundtrip() {
-        let hash = AbstractBlockHash::from([0xef; 32]);
-        let inspector = AbstractExtractedValue::BlockHash(hash);
-        let contract = dtos::EvmExtractedValue::from(inspector.clone());
-        let back = AbstractExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::EvmExtractedValue>(AbstractExtractedValue::BlockHash(
+            AbstractBlockHash::from([0xef; 32]),
+        ));
     }
 
     #[test]
@@ -699,68 +714,36 @@ mod tests {
 
     #[test]
     fn abstract_extracted_value_log_roundtrip() {
-        let log = Log {
-            removed: false,
-            log_index: ethereum_types::U64::from(0),
-            transaction_index: ethereum_types::U64::from(0),
-            transaction_hash: ethereum_types::H256([0xaa; 32]),
-            block_hash: ethereum_types::H256([0xbb; 32]),
-            block_number: ethereum_types::U64::from(42),
-            address: ethereum_types::H160([0xcc; 20]),
-            data: String::new(),
-            topics: vec![],
-        };
-        let inspector = AbstractExtractedValue::Log(log);
-        let contract = dtos::EvmExtractedValue::from(inspector.clone());
+        let contract = assert_roundtrip::<_, dtos::EvmExtractedValue>(AbstractExtractedValue::Log(
+            empty_log(),
+        ));
         assert_matches!(contract, dtos::EvmExtractedValue::Log(_));
-        let back = AbstractExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
     }
 
     #[test]
     fn bnb_extractor_block_hash_roundtrip() {
-        let inspector = BnbExtractor::BlockHash;
-        let contract = dtos::EvmExtractor::from(inspector.clone());
-        let back = BnbExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::EvmExtractor>(BnbExtractor::BlockHash);
     }
 
     #[test]
     fn bnb_extractor_log_roundtrip() {
-        let inspector = BnbExtractor::Log { log_index: 5 };
-        let contract = dtos::EvmExtractor::from(inspector.clone());
+        let contract =
+            assert_roundtrip::<_, dtos::EvmExtractor>(BnbExtractor::Log { log_index: 5 });
         assert_matches!(contract, dtos::EvmExtractor::Log { log_index: 5 });
-        let back = BnbExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
     }
 
     #[test]
     fn bnb_extracted_value_block_hash_roundtrip() {
-        let hash = BnbBlockHash::from([0xef; 32]);
-        let inspector = BnbExtractedValue::BlockHash(hash);
-        let contract = dtos::EvmExtractedValue::from(inspector.clone());
-        let back = BnbExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::EvmExtractedValue>(BnbExtractedValue::BlockHash(
+            BnbBlockHash::from([0xef; 32]),
+        ));
     }
 
     #[test]
     fn bnb_extracted_value_log_roundtrip() {
-        let log = Log {
-            removed: false,
-            log_index: ethereum_types::U64::from(0),
-            transaction_index: ethereum_types::U64::from(0),
-            transaction_hash: ethereum_types::H256([0xaa; 32]),
-            block_hash: ethereum_types::H256([0xbb; 32]),
-            block_number: ethereum_types::U64::from(42),
-            address: ethereum_types::H160([0xcc; 20]),
-            data: String::new(),
-            topics: vec![],
-        };
-        let inspector = BnbExtractedValue::Log(log);
-        let contract = dtos::EvmExtractedValue::from(inspector.clone());
+        let contract =
+            assert_roundtrip::<_, dtos::EvmExtractedValue>(BnbExtractedValue::Log(empty_log()));
         assert_matches!(contract, dtos::EvmExtractedValue::Log(_));
-        let back = BnbExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
     }
 
     #[test]
@@ -785,19 +768,14 @@ mod tests {
 
     #[test]
     fn starknet_extractor_roundtrip() {
-        let inspector = StarknetExtractor::BlockHash;
-        let contract = dtos::StarknetExtractor::try_from(inspector.clone()).unwrap();
-        let back = StarknetExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::StarknetExtractor>(StarknetExtractor::BlockHash);
     }
 
     #[test]
     fn starknet_extracted_value_roundtrip() {
-        let hash = StarknetBlockHash::from([0xab; 32]);
-        let inspector = StarknetExtractedValue::BlockHash(hash);
-        let contract = dtos::StarknetExtractedValue::from(inspector.clone());
-        let back = StarknetExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::StarknetExtractedValue>(StarknetExtractedValue::BlockHash(
+            StarknetBlockHash::from([0xab; 32]),
+        ));
     }
 
     #[test]
@@ -814,11 +792,9 @@ mod tests {
 
     #[test]
     fn aptos_extractor_roundtrip() {
-        let inspector = AptosExtractor::Event { event_index: 3 };
-        let contract = dtos::AptosExtractor::try_from(inspector.clone()).unwrap();
+        let contract =
+            assert_roundtrip::<_, dtos::AptosExtractor>(AptosExtractor::Event { event_index: 3 });
         assert_matches!(contract, dtos::AptosExtractor::Event { event_index: 3 });
-        let back = AptosExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
     }
 
     #[test]
@@ -829,9 +805,7 @@ mod tests {
             type_tag: "0x1::bridge::Transfer".to_string(),
             data: "{\"amount\":\"42\"}".to_string(),
         });
-        let contract = dtos::AptosExtractedValue::from(inspector.clone());
-        let back = AptosExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::AptosExtractedValue>(inspector);
     }
 
     #[test]
@@ -848,11 +822,9 @@ mod tests {
 
     #[test]
     fn sui_extractor_roundtrip() {
-        let inspector = SuiExtractor::Event { event_index: 3 };
-        let contract = dtos::SuiExtractor::try_from(inspector.clone()).unwrap();
+        let contract =
+            assert_roundtrip::<_, dtos::SuiExtractor>(SuiExtractor::Event { event_index: 3 });
         assert_matches!(contract, dtos::SuiExtractor::Event { event_index: 3 });
-        let back = SuiExtractor::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
     }
 
     #[test]
@@ -864,9 +836,7 @@ mod tests {
             type_tag: format!("0x{}::omni_bridge::InitTransfer", "01".repeat(32)),
             bcs: vec![0xde, 0xad, 0xbe, 0xef],
         });
-        let contract = dtos::SuiExtractedValue::from(inspector.clone());
-        let back = SuiExtractedValue::try_from(contract).unwrap();
-        assert_eq!(inspector, back);
+        assert_roundtrip::<_, dtos::SuiExtractedValue>(inspector);
     }
 
     #[test]
@@ -892,9 +862,7 @@ mod tests {
             },
         ];
         for inspector in extractors {
-            let contract = dtos::SvmExtractor::try_from(inspector.clone()).unwrap();
-            let back = SvmExtractor::try_from(contract).unwrap();
-            assert_eq!(inspector, back);
+            assert_roundtrip::<_, dtos::SvmExtractor>(inspector);
         }
     }
 
@@ -912,9 +880,7 @@ mod tests {
             }),
         ];
         for inspector in values {
-            let contract = dtos::SvmExtractedValue::from(inspector.clone());
-            let back = SvmExtractedValue::try_from(contract).unwrap();
-            assert_eq!(inspector, back);
+            assert_roundtrip::<_, dtos::SvmExtractedValue>(inspector);
         }
     }
 }
