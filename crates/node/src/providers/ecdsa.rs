@@ -29,6 +29,7 @@ use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::ecdsa::{KeygenOutput, Secp256K1Sha256, Signature};
 use threshold_signatures::frost_secp256k1::VerifyingKey;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
+use zeroize::Zeroizing;
 
 pub struct EcdsaSignatureProvider {
     config: Arc<ConfigFile>,
@@ -161,7 +162,7 @@ impl SignatureProvider for EcdsaSignatureProvider {
     async fn run_key_resharing_client(
         new_reconstruction_threshold: TSReconstructionThreshold,
         old_reconstruction_threshold: TSReconstructionThreshold,
-        my_share: Option<SigningShare>,
+        my_share: Option<Zeroizing<SigningShare>>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,

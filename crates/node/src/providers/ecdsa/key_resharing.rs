@@ -15,7 +15,7 @@ impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_resharing_client_internal(
         new_reconstruction_threshold: ReconstructionThreshold,
         old_reconstruction_threshold: ReconstructionThreshold,
-        my_share: Option<SigningShare>,
+        my_share: Option<Zeroizing<SigningShare>>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
@@ -24,7 +24,7 @@ impl EcdsaSignatureProvider {
             reconstruction_threshold: new_reconstruction_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
             old_reconstruction_threshold,
-            my_share: my_share.map(Zeroizing::new),
+            my_share,
             public_key,
         }
         .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))

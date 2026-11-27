@@ -630,7 +630,7 @@ pub async fn do_reshare<C: Ciphersuite>(
                 .map(|lambda| Zeroizing::new(SigningShare::new(lambda * x_i.to_scalar())))
         })
         .transpose()?
-        .unwrap_or_default();
+        .unwrap_or_else(|| Zeroizing::new(SigningShare::new(<C::Group as Group>::Field::zero())));
 
     let old_reshare_package = Some((old_public_key, old_participants));
     let keygen_output = do_keyshare::<C>(
