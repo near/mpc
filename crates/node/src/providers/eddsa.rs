@@ -24,6 +24,7 @@ use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 use threshold_signatures::frost::eddsa::{Ed25519Sha512, KeygenOutput};
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Signature, VerifyingKey};
+use zeroize::Zeroizing;
 
 #[derive(Clone)]
 pub struct EddsaSignatureProvider {
@@ -88,7 +89,7 @@ impl SignatureProvider for EddsaSignatureProvider {
     async fn run_key_resharing_client(
         new_reconstruction_threshold: TSReconstructionThreshold,
         old_reconstruction_threshold: TSReconstructionThreshold,
-        key_share: Option<SigningShare>,
+        key_share: Option<Zeroizing<SigningShare>>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
