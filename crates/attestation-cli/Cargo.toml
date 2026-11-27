@@ -32,7 +32,6 @@ url = { workspace = true }
 built = { workspace = true }
 
 [dev-dependencies]
-near-mpc-crypto-types = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }
 test-utils = { workspace = true }

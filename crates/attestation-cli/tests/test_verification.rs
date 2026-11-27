@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use attestation_cli::cli::{Source, VerifyArgs};
 use attestation_cli::verify;
 use mpc_attestation::attestation::{Attestation, VerificationError};
-use near_mpc_crypto_types::Ed25519PublicKey;
 use node_types::http_server::StaticWebData;
 use rstest::rstest;
 use test_utils::attestation::{
@@ -13,8 +12,8 @@ use test_utils::attestation::{
 
 fn make_static_web_data(fixture: &AttestationFixture) -> StaticWebData {
     StaticWebData {
-        near_signer_public_key: Ed25519PublicKey(fixture.account_key()),
-        near_p2p_public_key: Ed25519PublicKey(fixture.p2p_tls_key()),
+        near_signer_public_key: fixture.account_key(),
+        near_p2p_public_key: fixture.p2p_tls_key(),
         tee_participant_info: Some(fixture.dstack_attestation()),
     }
 }
@@ -123,8 +122,8 @@ fn verification_fails_with_wrong_compose_file(
 #[test]
 fn run_verification_rejects_none_attestation() {
     let static_data = StaticWebData {
-        near_signer_public_key: Ed25519PublicKey(account_key()),
-        near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
+        near_signer_public_key: account_key(),
+        near_p2p_public_key: p2p_tls_key(),
         tee_participant_info: None,
     };
 
@@ -150,8 +149,8 @@ fn run_verification_rejects_none_attestation() {
 #[test]
 fn run_verification_rejects_mock_attestation() {
     let static_data = StaticWebData {
-        near_signer_public_key: Ed25519PublicKey(account_key()),
-        near_p2p_public_key: Ed25519PublicKey(p2p_tls_key()),
+        near_signer_public_key: account_key(),
+        near_p2p_public_key: p2p_tls_key(),
         tee_participant_info: Some(Attestation::Mock(
             mpc_attestation::attestation::MockAttestation::Valid,
         )),

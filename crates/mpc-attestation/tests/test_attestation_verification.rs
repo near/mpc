@@ -20,8 +20,8 @@ fn valid_mock_attestation_succeeds_verification() {
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
 
     let timestamp_s = 0u64;
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let tls_key = p2p_tls_key().0;
+    let account_key = account_key().0;
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     // A `Valid` mock is accepted as an expiring `WithConstraints` mock so the
@@ -45,8 +45,8 @@ fn invalid_mock_attestation_fails_verification() {
     let valid_attestation = Attestation::Mock(MockAttestation::Invalid);
 
     let timestamp_s = 0u64;
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let tls_key = p2p_tls_key().0;
+    let account_key = account_key().0;
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
 
     assert_matches!(
@@ -61,8 +61,8 @@ fn validated_dstack_attestation_can_be_reverified(
 ) {
     // given
     let attestation = fixture.dstack_attestation();
-    let tls_key = fixture.p2p_tls_key();
-    let account_key = fixture.account_key();
+    let tls_key = fixture.p2p_tls_key().0;
+    let account_key = fixture.account_key().0;
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
     let timestamp_s = fixture.valid_timestamp;
     let allowed_mpc_hashes = [fixture.image_digest()];
@@ -97,8 +97,8 @@ fn validated_dstack_attestation_fails_reverification_when_expired(
 ) {
     // given
     let attestation = fixture.dstack_attestation();
-    let tls_key = fixture.p2p_tls_key();
-    let account_key = fixture.account_key();
+    let tls_key = fixture.p2p_tls_key().0;
+    let account_key = fixture.account_key().0;
     let report_data = ReportData::V1(ReportDataV1::new(tls_key, account_key));
     let timestamp_s = fixture.valid_timestamp;
     let allowed_mpc_hashes = [fixture.image_digest()];
@@ -133,8 +133,8 @@ fn validated_dstack_attestation_fails_reverification_when_expired(
 #[test]
 fn validated_mock_attestation_passes_reverification() {
     let valid_attestation = Attestation::Mock(MockAttestation::Valid);
-    let tls_key = p2p_tls_key();
-    let account_key = account_key();
+    let tls_key = p2p_tls_key().0;
+    let account_key = account_key().0;
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
 
     let validated = valid_attestation
@@ -151,8 +151,8 @@ fn validated_dstack_attestation_fails_reverification_with_rotated_hashes(
     #[values(&DSTACK_0_5_8, &DSTACK_0_6_5)] fixture: &AttestationFixture,
 ) {
     let attestation = fixture.dstack_attestation();
-    let tls_key = fixture.p2p_tls_key();
-    let account_key = fixture.account_key();
+    let tls_key = fixture.p2p_tls_key().0;
+    let account_key = fixture.account_key().0;
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let creation_time = fixture.valid_timestamp;
 
@@ -194,8 +194,8 @@ fn validated_dstack_attestation_fails_reverification_with_removed_measurements(
 ) {
     // given
     let attestation = fixture.dstack_attestation();
-    let tls_key = fixture.p2p_tls_key();
-    let account_key = fixture.account_key();
+    let tls_key = fixture.p2p_tls_key().0;
+    let account_key = fixture.account_key().0;
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let creation_time = fixture.valid_timestamp;
     let allowed_mpc_hashes = [fixture.image_digest()];
@@ -240,8 +240,8 @@ fn validated_dstack_attestation_fails_reverification_with_empty_measurements(
 ) {
     // given
     let attestation = fixture.dstack_attestation();
-    let tls_key = fixture.p2p_tls_key();
-    let account_key = fixture.account_key();
+    let tls_key = fixture.p2p_tls_key().0;
+    let account_key = fixture.account_key().0;
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let creation_time = fixture.valid_timestamp;
     let allowed_mpc_hashes = [fixture.image_digest()];
@@ -276,8 +276,8 @@ fn validated_dstack_attestation_passes_reverification_with_superset_measurements
 ) {
     // given
     let attestation = fixture.dstack_attestation();
-    let tls_key = fixture.p2p_tls_key();
-    let account_key = fixture.account_key();
+    let tls_key = fixture.p2p_tls_key().0;
+    let account_key = fixture.account_key().0;
     let report_data: ReportData = ReportDataV1::new(tls_key, account_key).into();
     let creation_time = fixture.valid_timestamp;
     let allowed_mpc_hashes = [fixture.image_digest()];

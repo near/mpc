@@ -169,7 +169,7 @@ async fn submit_dstack(submitter: &Account, contract: &SandboxMpcContract) -> Ex
         submitter,
         contract,
         &mock_dto_dstack_attestation(),
-        &p2p_tls_key().into(),
+        &p2p_tls_key(),
     )
     .await
     .unwrap()
@@ -195,7 +195,7 @@ async fn submit_dstack_verified(
 async fn stored_fixture_attestation(
     contract: &SandboxMpcContract,
 ) -> Option<dtos::StoredAttestation> {
-    get_participant_attestation(contract, &p2p_tls_key().into())
+    get_participant_attestation(contract, &p2p_tls_key())
         .await
         .unwrap()
 }
@@ -313,14 +313,9 @@ async fn submit_participant_info__should_store_nothing_on_verifier_rejection() {
     dstack.quote = dtos::HexVec(vec![0u8; 16]);
 
     // When
-    let result = submit_participant_info(
-        submitter,
-        &setup.contract,
-        &attestation,
-        &p2p_tls_key().into(),
-    )
-    .await
-    .unwrap();
+    let result = submit_participant_info(submitter, &setup.contract, &attestation, &p2p_tls_key())
+        .await
+        .unwrap();
 
     // Then
     assert_submission_failed_cleanly(
@@ -559,7 +554,7 @@ async fn submit_participant_info__should_reject_verified_quote_when_tls_key_owne
         tee_accounts
             .iter()
             .any(|node| node.account_id.as_str() == owner.id().as_str()
-                && node.tls_public_key == p2p_tls_key().into()),
+                && node.tls_public_key == p2p_tls_key()),
         "the fixture TLS key must still belong to the owner, got: {tee_accounts:?}"
     );
     assert_only_gas_spent(&attacker, balance_before, &result).await;
@@ -631,7 +626,7 @@ async fn submit_participant_info__should_resume_requests_within_the_resolve_veri
         .insert(
             submitter.id().clone(),
             ParticipantInfo {
-                tls_public_key: p2p_tls_key().into(),
+                tls_public_key: p2p_tls_key(),
                 ..gen_participant_info()
             },
         )

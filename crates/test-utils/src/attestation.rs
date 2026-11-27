@@ -7,7 +7,7 @@ use mpc_attestation::{
     quote::QuoteBytes,
 };
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
-use near_mpc_contract_interface::types::{HexVec, MockAttestation};
+use near_mpc_contract_interface::types::{Ed25519PublicKey, HexVec, MockAttestation};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tee_verifier_interface::{Collateral, CollateralDates, VerifiedReport};
@@ -140,11 +140,11 @@ impl AttestationFixture {
         QuoteBytes::from(bytes)
     }
 
-    pub fn p2p_tls_key(&self) -> [u8; 32] {
+    pub fn p2p_tls_key(&self) -> Ed25519PublicKey {
         parse_key(self.p2p_public_key)
     }
 
-    pub fn account_key(&self) -> [u8; 32] {
+    pub fn account_key(&self) -> Ed25519PublicKey {
         parse_key(self.account_public_key)
     }
 
@@ -210,11 +210,8 @@ impl AttestationFixture {
     }
 }
 
-fn parse_key(key_file: &str) -> [u8; 32] {
-    *key_file
-        .parse::<near_mpc_contract_interface::types::Ed25519PublicKey>()
-        .expect("File contains a valid public key")
-        .as_bytes()
+fn parse_key(key_file: &str) -> Ed25519PublicKey {
+    key_file.parse().expect("File contains a valid public key")
 }
 
 pub const TEST_TCB_INFO_STRING: &str = LATEST.tcb_info;
@@ -251,11 +248,11 @@ pub fn quote() -> QuoteBytes {
     LATEST.quote()
 }
 
-pub fn p2p_tls_key() -> [u8; 32] {
+pub fn p2p_tls_key() -> Ed25519PublicKey {
     LATEST.p2p_tls_key()
 }
 
-pub fn account_key() -> [u8; 32] {
+pub fn account_key() -> Ed25519PublicKey {
     LATEST.account_key()
 }
 
@@ -385,7 +382,7 @@ mod tests {
         let derived = ed25519_dalek::SigningKey::from_bytes(&seed).verifying_key();
 
         // Then
-        assert_eq!(derived.to_bytes(), fixture.account_key());
-        assert_eq!(decoded[32..], fixture.account_key());
+        assert_eq!(derived.to_bytes(), fixture.account_key().0);
+        assert_eq!(decoded[32..], fixture.account_key().0);
     }
 }
