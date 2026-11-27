@@ -121,6 +121,11 @@ See `docs/development/engineering-standards.md` for the full rationale and addit
 ### Test Duplication
 Keep test code small without weakening coverage, assertions or readability. When tests run the same steps on different inputs or expected outcomes, write one `rstest` test with named cases (`#[case::scenario(...)]`, or `#[values(...)]` for cross-products) instead of near-identical copies. Reuse existing test helpers and fixtures before adding new ones, and extract setup or assertions that several tests repeat. Keep tests separate when their steps differ: a case argument that switches control flow inside the test body means the cases belong in separate tests.
 
+### Test Assertions
+Compare the whole result against the whole expected value with one strict equality check (`assert_eq!(actual, expected)`), not parts of it with `.contains()`, `.len()` or one assert per field. A partial check still passes when the result holds something unexpected, such as an extra entry in a collection; a whole-value comparison fails and its message shows both values. Use `.contains()` only when the full value cannot be pinned down, e.g. a collection that also holds entries the test does not control. This applies to new and changed assertions, not a bulk rewrite of existing tests.
+
+See `docs/development/engineering-standards.md` §Assert on whole values for a `Don't` / `Do` example.
+
 ### Arithmetic in Tests
 Do not suggest using `checked_add`, `checked_mul`, `checked_sub`, `saturating_add`, or similar checked/saturating arithmetic in test code — this includes `#[cfg(test)]` modules, integration test crates, and e2e test crates. Raw arithmetic operators (`+`, `-`, `*`, `/`) are fine in tests — overflow will cause a panic, which is the desired behavior in tests.
 
