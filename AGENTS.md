@@ -156,6 +156,15 @@ Aim for less than 500 lines per hand-written source file, and never go past 1,00
 ### Current Rust Features
 Where they make the code simpler, prefer the newest language features and std APIs of the toolchain pinned in `rust-toolchain.toml` over older idioms or third-party crates, e.g. `Duration::from_hours(1)` over `Duration::from_secs(3600)`, or a let chain over nested `if let`s.
 
+### Secrets in Memory
+Secret material must be wiped from memory when it is dropped. This covers private keys, key shares, symmetric keys and nonces, and their serialized, hex-encoded or decrypted forms.
+
+- Derive `ZeroizeOnDrop` on types that own secrets. Do not write a manual `Drop` impl for this.
+- Wrap temporary secret buffers in `zeroize::Zeroizing`.
+- Give a secret that is passed between functions a dedicated non-`Copy` type whose `Debug` output is redacted.
+- A `Copy` secret is duplicated on every by-value pass and the copies are not wiped. Wrap it where it is created or read, then pass the wrapper or a reference.
+- A growing `Vec` or `String` leaves unwiped copies behind when it reallocates. Size a secret buffer up front.
+
 ### Code Comments
 Default to writing no comments. Add one only in case one of the following applies:
 - the *why* is non-obvious: an invariant, a constraint, a surprising behavior;
