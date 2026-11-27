@@ -1,14 +1,26 @@
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
+use crate::home_paths::permanent_keys_dir;
 use mpc_primitives::{EpochId, KeyEventId, domain::DomainId};
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use rand::{CryptoRng, RngCore, SeedableRng};
+use std::path::Path;
 use threshold_signatures::ecdsa::KeygenOutput;
 use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
 use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
 
 const NUM_PARTICIPANTS: usize = 2;
 const RECONSTRUCTION_THRESHOLD: usize = 2;
+
+/// Sorted names of the files in the permanent keys directory of `home_dir`.
+pub fn list_permanent_key_files(home_dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = std::fs::read_dir(permanent_keys_dir(home_dir))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
+}
 
 pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId {
     KeyEventId::new(

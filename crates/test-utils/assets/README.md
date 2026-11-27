@@ -21,7 +21,7 @@ curl http://<MPC_NODE_IP>:<MPC_NODE_PORT>/public_data -o public_data.json
 
 See [single-node-readme.md](../../../localnet/tee/scripts/rust-launcher/single-node-readme.md)
 for an automation script that will launch a TEE MPC node, collect the attestation, and save the public data to a temp directory (path printed by the script).
-Capture on the release (non-dev) image: set `OS_IMAGE=dstack-<version>`, since the script defaults to a dev image.
+Capture on the release image (`OS_IMAGE=dstack-<version>`).
 
 
 ## Steps
@@ -83,10 +83,8 @@ All files will be written into the specified output directory.
    fixture's `tcb_info.json`. It is the attestation CLI's default and the measurement set operators
    vote in with `vote_add_os_measurement`. It covers `mrtd`, `rtmr0`-`rtmr2` and the key-provider
    event, none of which the compose files affect; `rtmr0` depends on the CVM's vCPU and memory
-   configuration.
-
-   TODO(#5069): it still holds the 0.5.8 release set; switch it to 0.6.5 together with the
-   operator docs.
+   configuration. While nodes still run the previous OS image, keep its set as
+   `tcb_info_dstack_<version>.json` in `production_measurements()`, so the CLI accepts both.
 
 8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
    contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test

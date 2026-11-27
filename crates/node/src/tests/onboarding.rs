@@ -54,7 +54,7 @@ impl MigrationTestNodeInfo {
             migration_service_addr: config.config.migration_web_ui,
             p2p_public_key,
             near_signer_key,
-            backup_service_key: config.secrets.backup_encryption_key,
+            backup_service_key: config.secrets.backup_encryption_key.clone(),
         }
     }
 }

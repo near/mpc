@@ -74,8 +74,6 @@ fn is_heavy_generation_task(task_id: &MpcTaskId) -> bool {
             EcdsaTaskId::ManyTriples { .. } => true,
             EcdsaTaskId::KeyGeneration { .. }
             | EcdsaTaskId::KeyResharing { .. }
-            | EcdsaTaskId::Presignature { .. }
-            | EcdsaTaskId::Signature { .. }
             | EcdsaTaskId::OnlinePresignSignature { .. } => false,
         },
         MpcTaskId::RobustEcdsaTaskId(id) => match id {
@@ -352,10 +350,6 @@ impl MpcClient {
                 debug_request = debug_receiver.recv() => {
                     if let Ok(debug_request) = debug_request {
                         match debug_request.kind {
-                            DebugRequestKind::RecentBlocks => {
-                                let debug_output = format!("{:?}", recent_blocks);
-                                debug_request.respond(debug_output);
-                            }
                             DebugRequestKind::RecentSignatures => {
                                 let debug_output = format!("{:?}", pending_signatures);
                                 debug_request.respond(debug_output);
@@ -764,24 +758,6 @@ mod tests {
                 .into(),
                 false,
             ),
-            // ECDSA: retired stored-presignature tasks are only rejected.
-            (
-                EcdsaTaskId::Presignature {
-                    id: uid(),
-                    domain_id: DomainId(0),
-                    paired_triple_id: uid(),
-                }
-                .into(),
-                false,
-            ),
-            (
-                EcdsaTaskId::Signature {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }
-                .into(),
-                false,
-            ),
             (
                 RobustEcdsaTaskId::Signature {
                     id: CryptoHash::default(),
@@ -820,14 +796,6 @@ mod tests {
             ),
             (
                 VerifyForeignTxTaskId::VerifyForeignTx {
-                    id: CryptoHash::default(),
-                    presignature_id: uid(),
-                }
-                .into(),
-                false,
-            ),
-            (
-                VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
                     id: CryptoHash::default(),
                     paired_triple_id: uid(),
                 }

@@ -1,9 +1,9 @@
-pub mod compat;
 pub mod local;
 pub mod permanent;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 
+mod secret_json;
 mod temporary;
 
 use anyhow::Context;
@@ -13,6 +13,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use permanent::{PermanentKeyStorage, PermanentKeyshareData};
+pub(crate) use secret_json::to_json_zeroizing;
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
@@ -87,13 +88,14 @@ impl Keyshare {
 ///
 /// Whenever the contract transitions into the Running state (which certifies the exact key to
 /// use for each domain), the keyshares are promoted from temporary key storage to permanent key
-/// storage. This is done by calling `load_keyset` when handling the Running state.
+/// storage. This is done by calling [`Self::update_permanent_keyshares`] when handling the
+/// Running state.
 ///
 /// A subtle detail is that we may miss the Running state if it quickly transitions into
 /// another state (Initializing or Resharing). For the initializing state we do not actually need
 /// the existing keyshares, but for the resharing state we do. And that's not a problem:
-/// in the resharing state we also need to call `load_keyset`, and that will promote the keys into
-/// permanent storage if needed.
+/// in the resharing state we also need to call [`Self::update_permanent_keyshares`], and that
+/// will promote the keys into permanent storage if needed.
 pub struct KeyshareStorage {
     temporary: TemporaryKeyStorage,
     permanent: PermanentKeyStorage,
@@ -264,7 +266,8 @@ impl KeyshareStorage {
     /// The returned keys are in increasing order of DomainId.
     ///
     /// Since this is only expected to be called when we already know which attempt to use, this
-    /// function also deletes keyshares in temporary storage that are below the keyset's epoch ID.
+    /// function also deletes keyshares in temporary storage that are below the keyset's epoch ID,
+    /// and the permanent keysets that the stored one replaced.
     /// (We could also delete attempts in the same epoch ID but this is not necessary from a
     /// security perspective, since the same epoch ID corresponds to the same set of participants
     /// and the threshold value.)
@@ -276,7 +279,14 @@ impl KeyshareStorage {
             ._load_keyshares_from_permanent_or_temporary(keyset)
             .await?
         {
-            LoadedKeyset::Permanent(keyshares) => Ok(keyshares),
+            LoadedKeyset::Permanent(keyshares) => {
+                // Storing deletes the replaced keysets, but earlier versions kept them all, and a
+                // failed deletion leaves some behind.
+                if let Err(err) = self.permanent.delete_replaced().await {
+                    tracing::error!(?err, "failed to delete the replaced permanent keyshares");
+                }
+                Ok(keyshares)
+            }
             LoadedKeyset::PermanentAndTemporary(keyshares) => {
                 self._store_new_permanent_keyset_data_delete_temporary(
                     keyset.epoch_id,
@@ -500,12 +510,16 @@ pub async fn generate_key_storage() -> (KeyshareStorage, tempfile::TempDir) {
     clippy::cloned_ref_to_slice_refs,
     reason = "tests build single-element keyshare slices; clarity beats `slice::from_ref` here."
 )]
+#[expect(non_snake_case)]
 pub mod tests {
     use mpc_primitives::domain::DomainId;
     use mpc_primitives::{AttemptId, EpochId, KeyEventId};
     use rand::SeedableRng as _;
 
-    use super::{KeyshareStorage, generate_key_storage};
+    use super::{KeyshareStorage, generate_key_storage, generate_key_storage_config};
+    use crate::keyshare::local::LocalPermanentKeyStorageBackend;
+    use crate::keyshare::permanent::{PermanentKeyStorageBackend, storage_identifier};
+    use crate::keyshare::test_utils::list_permanent_key_files;
     use crate::keyshare::{
         Keyshare,
         test_utils::{KeysetBuilder, generate_dummy_keyshare, generate_dummy_keyshares},
@@ -1266,5 +1280,41 @@ pub mod tests {
             .await
             .unwrap();
         assert_eq!(loaded, vec![key_1, key_2]);
+    }
+
+    #[tokio::test]
+    async fn update_permanent_keyshares__should_delete_keysets_left_by_earlier_versions() {
+        // Given
+        let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
+        let (storage_config, _tempdir) = generate_key_storage_config();
+        let backend = LocalPermanentKeyStorageBackend::new(
+            storage_config.home_dir.clone(),
+            storage_config.local_encryption_key,
+        )
+        .await
+        .unwrap();
+        let older = KeysetBuilder::new_populated(0, 1, &mut rng);
+        let latest = KeysetBuilder::new_populated(1, 1, &mut rng);
+        for keyset in [&older, &latest] {
+            let data = keyset.permanent_key_data();
+            let identifier = storage_identifier(data.epoch_id(), data.keyshares().len());
+            backend
+                .store(&serde_json::to_vec(&data).unwrap(), &identifier)
+                .await
+                .unwrap();
+        }
+        let mut storage = storage_config.create().await.unwrap();
+
+        // When
+        storage
+            .update_permanent_keyshares(&latest.keyset())
+            .await
+            .unwrap();
+
+        // Then
+        assert_eq!(
+            list_permanent_key_files(&storage_config.home_dir),
+            vec![storage_identifier(EpochId::new(1), 1)]
+        );
     }
 }

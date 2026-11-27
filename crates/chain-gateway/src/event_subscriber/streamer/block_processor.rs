@@ -17,6 +17,8 @@ use crate::{
         metrics::{
             MPC_BLOCK_UPDATES_DROPPED, MPC_BLOCKS_RECEIVED_FROM_INDEXER,
             MPC_INDEXER_LATEST_BLOCK_HEIGHT, MPC_INDEXER_LATEST_BLOCK_TIMESTAMP_SECONDS,
+            MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES,
+            MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS,
         },
         recent_blocks_tracker::{AddBlockResult, RecentBlocksTracker},
         stats::IndexerStats,
@@ -101,6 +103,7 @@ fn match_block_events(
     let mut processed_events = vec![];
     for shard in streamer_message.shards {
         for outcome in &shard.receipt_execution_outcomes {
+            MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
             // TODO(#2639): This matches the current behavior in the mpc-node.
             // But we should investigate if receiver_id and executor_id are always a
             // match. If so, we can simplify and gain a minor performance improvement.
@@ -195,6 +198,7 @@ impl BlockEvents {
                     "skipping executor event: predecessor is not a valid account ID for this \
                      workspace's `near-account-id`",
                 );
+                MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS.inc();
                 return;
             }
         };

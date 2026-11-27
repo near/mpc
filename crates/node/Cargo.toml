@@ -45,10 +45,8 @@ mpc-primitives = { workspace = true }
 mpc-tls = { workspace = true }
 near-account-id = { workspace = true }
 near-async = { workspace = true }
-near-client = { workspace = true }
 near-config-utils = { workspace = true }
 near-contract-transport = { workspace = true, features = ["traits"] }
-near-crypto = { workspace = true }
 near-indexer = { workspace = true }
 near-indexer-primitives = { workspace = true }
 near-mpc-bounded-collections = { workspace = true }
@@ -61,7 +59,6 @@ near-mpc-contract-interface = { workspace = true, features = [
     "near",
 ] }
 near-mpc-crypto-types = { workspace = true }
-near-o11y = { workspace = true }
 near-sdk = { workspace = true, features = ["non-contract-usage"] }
 near-store = { workspace = true }
 near-time = { workspace = true }
@@ -78,6 +75,7 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 sha3 = { workspace = true }
 socket2 = { workspace = true }
+subtle = { workspace = true }
 tee-authority = { workspace = true }
 tempfile = { workspace = true }
 test-port-allocator = { workspace = true, optional = true }
@@ -95,6 +93,7 @@ tower = { workspace = true, features = ["limit"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+zeroize = { workspace = true }
 
 # jemalloc heap profiling is only supported on Linux.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -112,7 +111,6 @@ pprof = { workspace = true, features = ["frame-pointer"] }
 built = { workspace = true }
 
 [dev-dependencies]
-average = { workspace = true }
 blstrs = { workspace = true }
 chain-gateway = { workspace = true, features = ["test-utils"] }
 elliptic-curve = { workspace = true }
@@ -122,8 +120,10 @@ itertools = { workspace = true }
 mockall = { workspace = true }
 mpc-contract = { workspace = true, features = ["test-utils"] }
 near-contract-transport = { workspace = true, features = ["test-utils"] }
+near-crypto = { workspace = true }
 rstest = { workspace = true }
 serial_test = { workspace = true }
+statrs = { workspace = true }
 tempfile = { workspace = true }
 test-log = { workspace = true }
 test-port-allocator = { workspace = true }

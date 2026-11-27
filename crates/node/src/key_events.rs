@@ -31,6 +31,7 @@ use threshold_signatures::{
 use tokio::sync::{RwLock, mpsc, watch};
 use tokio::time::timeout;
 use tracing::{error, info};
+use zeroize::Zeroizing;
 
 /// The key generation computation (same for both leader and follower) for a single key generation
 /// attempt:
@@ -257,7 +258,7 @@ async fn resharing_computation_inner(
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
-                    KeyshareData::Secp256k1(data) => Ok(data.private_share),
+                    KeyshareData::Secp256k1(data) => Ok(Zeroizing::new(data.private_share)),
                     _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
                 })
                 .transpose()?;
@@ -280,7 +281,7 @@ async fn resharing_computation_inner(
             let public_key = frost_secp256k1::VerifyingKey::new(pk.to_projective());
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
-                    KeyshareData::Secp256k1(data) => Ok(data.private_share),
+                    KeyshareData::Secp256k1(data) => Ok(Zeroizing::new(data.private_share)),
                     _ => Err(anyhow::anyhow!("Expected ecdsa keyshare!")),
                 })
                 .transpose()?;
@@ -302,7 +303,7 @@ async fn resharing_computation_inner(
             let public_key = frost_ed25519::VerifyingKey::deserialize(inner_public_key.as_ref())?;
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
-                    KeyshareData::Ed25519(data) => Ok(data.private_share),
+                    KeyshareData::Ed25519(data) => Ok(Zeroizing::new(data.private_share)),
                     _ => Err(anyhow::anyhow!("Expected eddsa keyshare!")),
                 })
                 .transpose()?;
@@ -321,7 +322,7 @@ async fn resharing_computation_inner(
             let public_key = ckd::VerifyingKey::new(ckd::ElementG2::try_from(&inner_public_key)?);
             let my_share = existing_keyshare
                 .map(|keyshare| match keyshare.data {
-                    KeyshareData::Bls12381(data) => Ok(data.private_share),
+                    KeyshareData::Bls12381(data) => Ok(Zeroizing::new(data.private_share)),
                     _ => Err(anyhow::anyhow!("Expected ckd keyshare!")),
                 })
                 .transpose()?;

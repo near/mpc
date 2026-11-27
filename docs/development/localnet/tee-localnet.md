@@ -273,7 +273,7 @@ Therefore, node attestation submissions will fail.
 **Sample Error Log (Expected Before Voting):**
 
 ```
-mpc_node::indexer::tx_sender: sending tx 381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
+chain_gateway::transaction_sender::traits: sending transaction tx_hash=381yxJCV5ByYo27oD8fX3BsGwnFpfGSzNCgDpfQtwWoy
 ..
 ..
 ERROR mpc_node::tee::remote_attestation: failed to submit attestation cause=attestation submission was not executed
@@ -350,10 +350,10 @@ near contract call-function as-transaction mpc-contract.test.near vote_add_launc
 
 ### Vote for OS Measurements
 
-The allowed OS measurements start empty too, and the contract rejects every Dstack attestation until one set is voted in. Both nodes vote for the measurement set of the OS image, found in `crates/mpc-attestation/assets/tcb_info.json`:
+The allowed OS measurements start empty too, and the contract rejects every Dstack attestation until one set is voted in. Both nodes vote for the measurement set of the OS image the CVMs run: `crates/mpc-attestation/assets/tcb_info.json` for dstack 0.6.5, or `crates/mpc-attestation/assets/tcb_info_dstack_0.5.8.json` for dstack 0.5.8:
 
 ```bash
-TCB_FILE=crates/mpc-attestation/assets/tcb_info.json
+TCB_FILE=crates/mpc-attestation/assets/tcb_info.json  # dstack 0.5.8: tcb_info_dstack_0.5.8.json
 MRTD=$(jq -r '.mrtd' $TCB_FILE)
 RTMR0=$(jq -r '.rtmr0' $TCB_FILE)
 RTMR1=$(jq -r '.rtmr1' $TCB_FILE)

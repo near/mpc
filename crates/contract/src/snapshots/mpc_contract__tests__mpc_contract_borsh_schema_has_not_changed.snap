@@ -214,6 +214,10 @@ BorshSchemaContainer {
                         "attestation_storage_fee_millinear",
                         "u64",
                     ),
+                    (
+                        "migration_genesis_hash",
+                        "Option<GenesisHash>",
+                    ),
                 ],
             ),
         },

@@ -10,7 +10,6 @@ use crate::primitives::{
 use crate::protocol_version::NetworkProtocolVersion;
 use crate::types::{CKDId, SignatureId, VerifyForeignTxId};
 use borsh::{BorshDeserialize, BorshSerialize};
-use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::KeyEventId;
 use std::fmt::Debug;
 
@@ -107,21 +106,7 @@ pub enum EcdsaTaskId {
         start: UniqueId,
         count: u32,
     } = 2,
-    /// Retired with the stored presignatures, and only decoded: a peer that predates the
-    /// retirement still sends it, and a [`Packet`] that fails to decode closes the whole
-    /// connection rather than failing just this computation.
-    // TODO(#4999): remove once every node runs a release without stored presignatures.
-    Presignature {
-        id: UniqueId,
-        domain_id: DomainId,
-        paired_triple_id: UniqueId,
-    } = 3,
-    /// Retired and only decoded, as [`Self::Presignature`].
-    // TODO(#4999): remove once every node runs a release without stored presignatures.
-    Signature {
-        id: SignatureId,
-        presignature_id: UniqueId,
-    } = 4,
+    // Discriminants 3 and 4 are retired and must not be reused.
     OnlinePresignSignature {
         id: SignatureId,
         paired_triple_id: UniqueId,
@@ -183,14 +168,8 @@ impl From<RobustEcdsaTaskId> for MpcTaskId {
 #[borsh(use_discriminant = true)]
 #[repr(u8)]
 pub enum VerifyForeignTxTaskId {
-    /// Retired and only decoded, as [`EcdsaTaskId::Presignature`].
-    // TODO(#4999): remove once every node runs a release without stored presignatures.
+    // Discriminant 0 is retired and must not be reused.
     VerifyForeignTx {
-        id: VerifyForeignTxId,
-        presignature_id: UniqueId,
-    } = 0,
-    // TODO(#4793): rename back to `VerifyForeignTx` once the stored-presignature variant is gone.
-    VerifyForeignTxOnlinePresign {
         id: VerifyForeignTxId,
         paired_triple_id: UniqueId,
     } = 1,
@@ -218,6 +197,7 @@ mod tests {
     use mpc_primitives::{AttemptId, EpochId};
     use near_indexer_primitives::CryptoHash;
     use near_mpc_contract_interface::types::KeyEventId;
+    use rstest::rstest;
     use std::collections::BTreeMap;
     use std::fmt::Debug;
 
@@ -296,17 +276,6 @@ mod tests {
                     count: 64,
                 }
                 .into(),
-                EcdsaTaskId::Presignature {
-                    id: uid(1),
-                    domain_id: DomainId(2),
-                    paired_triple_id: uid(3),
-                }
-                .into(),
-                EcdsaTaskId::Signature {
-                    id: hash(1),
-                    presignature_id: uid(2),
-                }
-                .into(),
                 EcdsaTaskId::OnlinePresignSignature {
                     id: hash(1),
                     paired_triple_id: uid(2),
@@ -341,10 +310,6 @@ mod tests {
                 RobustEcdsaTaskId::Signature { id: hash(1) }.into(),
                 MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTx {
                     id: hash(1),
-                    presignature_id: uid(2),
-                }),
-                MpcTaskId::from(VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
-                    id: hash(1),
                     paired_triple_id: uid(2),
                 }),
             ]),
@@ -352,6 +317,21 @@ mod tests {
         .join("\n\n");
 
         insta::assert_snapshot!(table);
+    }
+
+    #[rstest]
+    #[case::ecdsa_presignature([0, 3])]
+    #[case::ecdsa_signature([0, 4])]
+    #[case::verify_foreign_tx_with_presignature([4, 0])]
+    fn mpc_task_id__should_not_decode_retired_discriminant(#[case] retired_prefix: [u8; 2]) {
+        // When
+        let error = borsh::from_slice::<MpcTaskId>(&retired_prefix).unwrap_err();
+
+        // Then
+        assert_eq!(
+            error.to_string(),
+            format!("Unexpected variant tag: {}", retired_prefix[1])
+        );
     }
 
     #[test]

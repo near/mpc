@@ -330,7 +330,7 @@ mod tests {
             WebServerState {
                 import_keyshares_sender,
                 keyshare_storage: Arc::new(RwLock::new(keyshare_storage)),
-                backup_encryption_key: BACKUP_ENCRYPTION_KEY,
+                backup_encryption_key: BACKUP_ENCRYPTION_KEY.into(),
                 onboarded: watch::channel(false).1,
             },
             import_keyshares_receiver,
@@ -339,7 +339,7 @@ mod tests {
     }
 
     fn encrypted_body(keyshares: &[Keyshare]) -> String {
-        serialize_and_encrypt_keyshares(keyshares, &BACKUP_ENCRYPTION_KEY)
+        serialize_and_encrypt_keyshares(keyshares, &BACKUP_ENCRYPTION_KEY.into())
             .expect("keyshares should be serializable")
     }
 
