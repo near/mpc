@@ -1,3 +1,4 @@
+use super::SecretJson;
 use super::permanent::PermanentKeyStorageBackend;
 use crate::db;
 use crate::durable_fs::{rename_durably, sync_dir, sync_parent_dir};
@@ -28,7 +29,7 @@ impl LocalPermanentKeyStorageBackend {
 
 #[async_trait::async_trait]
 impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
-    async fn load(&self) -> anyhow::Result<Option<Vec<u8>>> {
+    async fn load(&self) -> anyhow::Result<Option<SecretJson>> {
         let keyfile = permanent_key_link(&self.home_dir);
         if !keyfile.exists() {
             return Ok(None);
@@ -38,7 +39,7 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
             .context("Failed to read key file")?;
         let cipher = Aes128Gcm::new(&self.encryption_key.into());
         let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt key file")?;
-        Ok(Some(decrypted))
+        Ok(Some(decrypted.into()))
     }
 
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()> {
@@ -116,9 +117,9 @@ mod tests {
                 .unwrap();
         assert!(storage.load().await.unwrap().is_none());
         storage.store(b"123", "id1").await.unwrap();
-        assert_eq!(storage.load().await.unwrap().unwrap(), b"123");
+        assert_eq!(storage.load().await.unwrap().unwrap().as_bytes(), b"123");
         storage.store(b"456", "id2").await.unwrap();
-        assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
+        assert_eq!(storage.load().await.unwrap().unwrap().as_bytes(), b"456");
         assert!(std::fs::exists(dir.path().join("permanent_keys/id1")).unwrap());
     }
 
@@ -136,7 +137,7 @@ mod tests {
         storage.store(b"456", "id2").await.unwrap();
 
         // Then
-        assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
+        assert_eq!(storage.load().await.unwrap().unwrap().as_bytes(), b"456");
         assert!(!std::fs::exists(dir.path().join("key.tmp")).unwrap());
     }
 
@@ -161,6 +162,6 @@ mod tests {
 
         // Then
         assert_eq!(list_permanent_key_files(dir.path()), expected_files);
-        assert_eq!(storage.load().await.unwrap().unwrap(), b"456");
+        assert_eq!(storage.load().await.unwrap().unwrap().as_bytes(), b"456");
     }
 }

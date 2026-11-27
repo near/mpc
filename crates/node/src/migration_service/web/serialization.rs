@@ -1,8 +1,7 @@
 use base64::Engine;
-use zeroize::Zeroizing;
 
 use crate::config::AesKey256;
-use crate::keyshare::{Keyshare, to_json_zeroizing};
+use crate::keyshare::{Keyshare, SecretJson};
 use crate::migration_service::web::encryption::decrypt_bytes;
 use crate::migration_service::web::encryption::encrypt_bytes;
 
@@ -10,12 +9,12 @@ pub fn serialize_and_encrypt_keyshares(
     keyshares: &[Keyshare],
     backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<String> {
-    let keyshares_json = to_json_zeroizing(keyshares).inspect_err(|err| {
+    let keyshares_json = SecretJson::serialize(keyshares).inspect_err(|err| {
         let msg = err.to_string();
         tracing::error!(msg);
     })?;
 
-    let nonce_and_cipher_bytes = encrypt_bytes(backup_encryption_key, &keyshares_json)
+    let nonce_and_cipher_bytes = encrypt_bytes(backup_encryption_key, keyshares_json.as_bytes())
         .inspect_err(|err| {
             tracing::error!("encryption error: {err}");
         })?;
@@ -29,7 +28,7 @@ pub fn decrypt_and_deserialize_keyshares(
 ) -> anyhow::Result<Vec<Keyshare>> {
     let nonce_and_cipher_bytes =
         base64::engine::general_purpose::STANDARD.decode(base64_ciphertext)?;
-    let serde_keyshares_bytes = Zeroizing::new(
+    let keyshares_json = SecretJson::from(
         decrypt_bytes(backup_encryption_key, nonce_and_cipher_bytes.as_slice()).inspect_err(
             |err| {
                 tracing::error!("decryption error: {err}");
@@ -37,7 +36,8 @@ pub fn decrypt_and_deserialize_keyshares(
         )?,
     );
 
-    let res = serde_json::from_slice::<Vec<Keyshare>>(&serde_keyshares_bytes)
+    let res = keyshares_json
+        .deserialize::<Vec<Keyshare>>()
         .inspect_err(|err| tracing::error!("deserialization error: {err}"))?;
     Ok(res)
 }

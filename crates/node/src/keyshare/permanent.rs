@@ -1,10 +1,9 @@
-use super::{Keyshare, to_json_zeroizing};
+use super::{Keyshare, SecretJson};
 use anyhow::Context;
 use mpc_primitives::{EpochId, domain::DomainId};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use zeroize::Zeroizing;
 
 /// The single object we persist to permanent key storage.
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
@@ -106,7 +105,7 @@ pub(crate) fn storage_identifier(epoch_id: EpochId, num_domains: usize) -> Strin
 #[async_trait::async_trait]
 pub trait PermanentKeyStorageBackend: Send + Sync {
     /// Loads the latest stored data; or None if no data was ever stored.
-    async fn load(&self) -> anyhow::Result<Option<Vec<u8>>>;
+    async fn load(&self) -> anyhow::Result<Option<SecretJson>>;
     /// Stores the data, making it the latest. The local backend writes the data to a file named
     /// after `identifier` and then points the main file at it.
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()>;
@@ -137,8 +136,8 @@ impl PermanentKeyStorage {
     }
 
     pub async fn load(&self) -> anyhow::Result<Option<PermanentKeyshareData>> {
-        let data = self.backend.load().await?.map(Zeroizing::new);
-        Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
+        let data = self.backend.load().await?;
+        Ok(data.map(|data| data.deserialize()).transpose()?)
     }
 
     /// Deletes the keysets that the stored keyset replaced. Deletes nothing when no keyset is
@@ -237,7 +236,10 @@ impl PermanentKeyStorage {
         }
         let identifier = keyshare_data.storage_identifier();
         self.backend
-            .store(&to_json_zeroizing(keyshare_data)?, &identifier)
+            .store(
+                SecretJson::serialize(keyshare_data)?.as_bytes(),
+                &identifier,
+            )
             .await?;
         // The new keyset is stored either way, so a failed deletion does not fail the store.
         if let Err(err) = self.backend.delete_all_except(&identifier).await {

@@ -13,7 +13,7 @@ use near_mpc_contract_interface::types::{
 };
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
 use permanent::{PermanentKeyStorage, PermanentKeyshareData};
-pub(crate) use secret_json::to_json_zeroizing;
+pub use secret_json::SecretJson;
 use serde::{Deserialize, Serialize};
 use temporary::{PendingKeyshareStorageHandle, TemporaryKeyStorage};
 
