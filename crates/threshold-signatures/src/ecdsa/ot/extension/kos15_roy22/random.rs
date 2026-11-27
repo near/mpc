@@ -30,12 +30,13 @@ fn hash_to_scalar(i: usize, v: &BitVector) -> Scalar {
 
     hasher.update(NEAR_RANDOM_OT_EXTENSION_HASH_CTX);
     hasher.update(i64.to_le_bytes());
-    hasher.update(v.bytes());
-    let seed = hasher.finalize().into();
+    let v_bytes = Zeroizing::new(v.bytes());
+    hasher.update(v_bytes.as_slice());
+    let seed = Zeroizing::new(<[u8; 32]>::from(hasher.finalize()));
 
-    let mut data = [0u8; 64];
-    TranscriptRng::new(&seed).fill_bytes(&mut data);
-    <Scalar as Reduce<U512>>::reduce_bytes(&data.into())
+    let mut data = Zeroizing::new([0u8; 64]);
+    TranscriptRng::new(&seed).fill_bytes(data.as_mut_slice());
+    <Scalar as Reduce<U512>>::reduce_bytes(&(*data).into())
 }
 
 fn adjust_size(size: usize) -> usize {
@@ -56,7 +57,21 @@ pub struct RandomOtExtensionParams<'sid> {
 }
 
 /// The result that the sender gets.
-pub type RandomOTExtensionSenderOut = Zeroizing<Vec<(Scalar, Scalar)>>;
+#[derive(ZeroizeOnDrop)]
+pub struct RandomOTExtensionSenderOut(Vec<(Scalar, Scalar)>);
+
+impl_secret_debug!(RandomOTExtensionSenderOut);
+
+impl RandomOTExtensionSenderOut {
+    #[must_use]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        Self(self.0.split_off(at))
+    }
+
+    pub fn as_slice(&self) -> &[(Scalar, Scalar)] {
+        &self.0
+    }
+}
 
 /// The result that the receiver gets.
 #[derive(ZeroizeOnDrop)]
@@ -180,12 +195,12 @@ pub async fn random_ot_extension_sender(
     }
 
     // Step 14
-    let mut out = Zeroizing::new(Vec::with_capacity(params.batch_size));
+    let mut out = RandomOTExtensionSenderOut(Vec::with_capacity(params.batch_size));
 
     for (i, q_i) in q.rows().take(params.batch_size).enumerate() {
         let v0_i = hash_to_scalar(i, q_i);
         let v1_i = hash_to_scalar(i, &q_i.xor(delta));
-        out.push((v0_i, v1_i));
+        out.0.push((v0_i, v1_i));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
         if (i + 1).is_multiple_of(YIELD_EVERY) {
@@ -359,9 +374,9 @@ mod test {
             &mut rng,
         )
         .unwrap();
-        assert_eq!(sender_out.len(), batch_size);
+        assert_eq!(sender_out.as_slice().len(), batch_size);
         assert_eq!(receiver_out.len(), batch_size);
-        for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {
+        for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.as_slice().iter().zip(receiver_out.iter()) {
             assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, b_i));
         }
     }

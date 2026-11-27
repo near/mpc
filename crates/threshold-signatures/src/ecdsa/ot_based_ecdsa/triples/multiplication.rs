@@ -25,7 +25,7 @@ use futures::Future;
 use rand_core::CryptoRngCore;
 use std::pin::Pin;
 use std::sync::Arc;
-use zeroize::{ZeroizeOnDrop, Zeroizing};
+use zeroize::ZeroizeOnDrop;
 
 use super::mta::{mta_receiver, mta_sender};
 use std::collections::VecDeque;
@@ -79,11 +79,21 @@ async fn multiplication_sender(
         &precomputed_values.seed,
     )
     .await?;
-    let res1 = Zeroizing::new(res0.split_off(batch_size));
+    let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let task0 = mta_sender(chan.child(2), &res0, *a_i, &precomputed_values.delta0);
-    let task1 = mta_sender(chan.child(3), &res1, *b_i, &precomputed_values.delta1);
+    let task0 = mta_sender(
+        chan.child(2),
+        res0.as_slice(),
+        *a_i,
+        &precomputed_values.delta0,
+    );
+    let task1 = mta_sender(
+        chan.child(3),
+        res1.as_slice(),
+        *b_i,
+        &precomputed_values.delta1,
+    );
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;

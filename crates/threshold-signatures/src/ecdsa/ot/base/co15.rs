@@ -35,15 +35,17 @@ fn hash(
             .serialize()
             .map_err(|_| ProtocolError::PointSerialization)?,
     );
-    hasher.update(
-        &p.serialize()
+    let p_bytes = Zeroizing::new(
+        p.serialize()
             .map_err(|_| ProtocolError::PointSerialization)?,
     );
+    hasher.update(p_bytes.as_slice());
 
-    let bytes: [u8; 32] = hasher.finalize().into();
-    let bytes: [u8; SEC_PARAM_8] = bytes[0..SEC_PARAM_8]
-        .try_into()
-        .expect("the hash output is 256 bits, so it is possible to take the first 128 bits out");
+    let digest = Zeroizing::new(<[u8; 32]>::from(hasher.finalize()));
+    let bytes: Zeroizing<[u8; SEC_PARAM_8]> =
+        Zeroizing::new(digest[0..SEC_PARAM_8].try_into().expect(
+            "the hash output is 256 bits, so it is possible to take the first 128 bits out",
+        ));
 
     Ok(BitVector::from_bytes(&bytes))
 }
