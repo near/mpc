@@ -2,7 +2,7 @@ use base64::Engine;
 use zeroize::Zeroizing;
 
 use crate::config::AesKey256;
-use crate::keyshare::Keyshare;
+use crate::keyshare::{Keyshare, to_json_zeroizing};
 use crate::migration_service::web::encryption::decrypt_bytes;
 use crate::migration_service::web::encryption::encrypt_bytes;
 
@@ -10,12 +10,12 @@ pub fn serialize_and_encrypt_keyshares(
     keyshares: &[Keyshare],
     backup_encryption_key: &AesKey256,
 ) -> anyhow::Result<String> {
-    let keyshares_json = Zeroizing::new(serde_json::to_string(&keyshares).inspect_err(|err| {
+    let keyshares_json = to_json_zeroizing(keyshares).inspect_err(|err| {
         let msg = err.to_string();
         tracing::error!(msg);
-    })?);
+    })?;
 
-    let nonce_and_cipher_bytes = encrypt_bytes(backup_encryption_key, keyshares_json.as_bytes())
+    let nonce_and_cipher_bytes = encrypt_bytes(backup_encryption_key, &keyshares_json)
         .inspect_err(|err| {
             tracing::error!("encryption error: {err}");
         })?;

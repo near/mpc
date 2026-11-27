@@ -1,4 +1,4 @@
-use super::Keyshare;
+use super::{Keyshare, to_json_zeroizing};
 use anyhow::Context;
 use mpc_primitives::{EpochId, domain::DomainId};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
@@ -237,10 +237,7 @@ impl PermanentKeyStorage {
         }
         let identifier = keyshare_data.storage_identifier();
         self.backend
-            .store(
-                &Zeroizing::new(serde_json::to_vec(keyshare_data)?),
-                &identifier,
-            )
+            .store(&to_json_zeroizing(keyshare_data)?, &identifier)
             .await?;
         // The new keyset is stored either way, so a failed deletion does not fail the store.
         if let Err(err) = self.backend.delete_all_except(&identifier).await {

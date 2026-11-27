@@ -1,4 +1,4 @@
-use super::Keyshare;
+use super::{Keyshare, to_json_zeroizing};
 use crate::db::{decrypt, encrypt};
 use crate::durable_fs::sync_parent_dir;
 use aes_gcm::{Aes128Gcm, KeyInit};
@@ -142,7 +142,7 @@ impl PendingKeyshareStorageHandle {
             "Keyshare has unexpected key ID {:?}",
             keyshare.key_id
         );
-        let data = Zeroizing::new(serde_json::to_vec(&keyshare)?);
+        let data = to_json_zeroizing(&keyshare)?;
         let cipher = Aes128Gcm::new(&self.local_encryption_key.into());
         let encrypted = encrypt(&cipher, &data);
 
