@@ -3,9 +3,7 @@
 
 use crate::crypto_shared::types::PublicKeyExtendedConversionError;
 use crate::errors::{Error, InvalidParameters, InvalidState};
-use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::primitives::time::Timestamp;
-use crate::state::ProtocolContractState;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, env, log, near};
@@ -89,10 +87,7 @@ impl MpcContract {
         Self::assert_caller_is_signer();
         log!("trigger_key_refresh: signer={}", env::signer_account_id());
 
-        let ProtocolContractState::Running(running_state) = &self.protocol_state else {
-            return Err(InvalidState::ProtocolStateNotRunning.into());
-        };
-        AuthenticatedAccountId::new(running_state.participants())?;
+        let new_state = self.protocol_state.key_refresh()?;
 
         let due_at = self
             .last_reshared_at
@@ -105,12 +100,9 @@ impl MpcContract {
             .into());
         }
 
-        let resharing_state = running_state
-            .key_refresh()
-            .ok_or(InvalidState::NoKeysToRefresh)?;
-        self.reverify_participants(resharing_state.previous_running_state.participants())?;
+        self.reverify_participants(new_state.active_participants())?;
 
-        self.protocol_state = ProtocolContractState::Resharing(resharing_state);
+        self.protocol_state = new_state;
         Ok(())
     }
 

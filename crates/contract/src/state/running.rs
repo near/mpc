@@ -1,7 +1,7 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error, InvalidParameters};
+use crate::errors::{DomainError, Error, InvalidParameters, InvalidState};
 use crate::primitives::participants::{IdentifiesParticipant, ParticipantInfo, Participants};
 use crate::primitives::{
     domain::{
@@ -96,10 +96,12 @@ impl RunningContractState {
         Ok(resharing)
     }
 
-    /// Returns the state that reshares every key onto the current participants and thresholds,
-    /// or [`None`] if there are no keys.
-    pub fn key_refresh(&self) -> Option<ResharingContractState> {
+    /// Returns the state that reshares every key onto the current participants and thresholds.
+    /// Fails if the signer is not a participant or there are no keys.
+    pub fn key_refresh(&self) -> Result<ResharingContractState, Error> {
+        AuthenticatedAccountId::new(self.parameters.participants())?;
         self.resharing_onto(self.parameters.clone(), BTreeMap::new())
+            .ok_or_else(|| InvalidState::NoKeysToRefresh.into())
     }
 
     fn resharing_onto(
