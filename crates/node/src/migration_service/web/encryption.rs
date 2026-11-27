@@ -36,14 +36,11 @@ pub(crate) fn decrypt_bytes(key: &AesKey256, nonce_and_cipher: &[u8]) -> anyhow:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::RngCore;
 
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
         // Generate a random 256-bit key
-        let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        let key = AesKey256::from(key);
+        let key: AesKey256 = rand::random::<[u8; 32]>().into();
         let plaintext = b"Near intents is cool";
         let encrypted = encrypt_bytes(&key, plaintext).expect("encryption should succeed");
         assert!(encrypted.len() > NONCE_LEN);
@@ -53,9 +50,7 @@ mod tests {
 
     #[test]
     fn test_decrypt_fails_on_tampered_data() {
-        let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        let key = AesKey256::from(key);
+        let key: AesKey256 = rand::random::<[u8; 32]>().into();
         let plaintext = b"Near intents is still cool";
         let mut encrypted = encrypt_bytes(&key, plaintext).expect("encryption should succeed");
         // Flip one byte in the ciphertext
@@ -70,9 +65,7 @@ mod tests {
 
     #[test]
     fn test_decrypt_fails_on_truncated_input() {
-        let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        let key = AesKey256::from(key);
+        let key: AesKey256 = rand::random::<[u8; 32]>().into();
 
         // Input shorter than NONCE_LEN must fail
         let short = vec![0u8; NONCE_LEN - 1];
@@ -84,14 +77,10 @@ mod tests {
 
     #[test]
     fn test_decrypt_fails_on_wrong_key() {
-        let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        let key = AesKey256::from(key);
+        let key: AesKey256 = rand::random::<[u8; 32]>().into();
         let plaintext = b"this should fail";
         let encrypted = encrypt_bytes(&key, plaintext).expect("encryption should succeed");
-        let mut key = [0u8; 32];
-        rand::thread_rng().fill_bytes(&mut key);
-        let key = AesKey256::from(key);
+        let key: AesKey256 = rand::random::<[u8; 32]>().into();
         // Decryption should fail because of wrong key
         assert!(
             decrypt_bytes(&key, &encrypted).is_err(),

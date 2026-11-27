@@ -6146,6 +6146,7 @@ dependencies = [
  "sha3 0.10.9",
  "socket2",
  "statrs",
+ "subtle",
  "tee-authority",
  "tempfile",
  "test-log",
