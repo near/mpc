@@ -1,7 +1,7 @@
 # Reproducible Builds
 
 This project supports reproducible builds for the node and launcher Docker
-images, and for the on-chain MPC contract WASM. Reproducible builds ensure that
+images, and for the on-chain MPC contract and TEE verifier WASMs. Reproducible builds ensure that
 the same source code always produces identical binaries, which is important for
 security and verification purposes.
 
@@ -153,6 +153,19 @@ released artifact; its output is not byte-identical to the cargo-near build:
 ```bash
 nix build .#mpc-contract
 sha256sum result/mpc_contract.wasm
+```
+
+## tee-verifier
+
+The TEE verifier WASM is built the same way as the contract's cargo-near build, from
+the NEP-330 metadata in `crates/tee-verifier/Cargo.toml`, and CI publishes it as a
+release artifact. To verify it, build on the release tag and compare the SHA-256
+against the value listed under "TEE verifier contract" in the GitHub release notes
+(see [`deploy-tee-verifier.md`](../development/deploy-tee-verifier.md)):
+
+```bash
+cargo near build reproducible-wasm --manifest-path crates/tee-verifier/Cargo.toml
+sha256sum target/near/tee_verifier/tee_verifier.wasm
 ```
 
 ## Appendix: Building the Nix images on macOS

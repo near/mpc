@@ -11,8 +11,10 @@ The NEAR MPC project ships two artifacts together as one release bundle:
 - **Chain Signatures contract** — distributed as a reproducibly-built WASM
   attached to the GitHub release.
 
-The TEE verifier contract is not part of the release today. If a release needs a new
-verifier (for example, for a security fix), deploy and vote it in separately, per
+The release also attaches the reproducibly-built TEE verifier WASM and its hash.
+The verifier is not upgraded with the bundle; whether to rotate it is a team
+decision per release. If a release needs a new verifier (for example, for a
+security fix), deploy and vote it in separately, per
 [`deploy-tee-verifier.md`](docs/development/deploy-tee-verifier.md), before upgrading
 the contract.
 
@@ -23,10 +25,10 @@ promotes already-built artifacts to a versioned release. The workflow:
 2. Retags the Docker images that were built for the branch HEAD
    (`nearone/mpc-{node,launcher}:<branch>-<short-sha>`) to the
    release version (`:X.Y.Z`).
-3. Downloads the reproducibly-built contract WASM from the matching
-   [Build Contract](.github/workflows/build_contract.yml) run.
+3. Downloads the reproducibly-built contract and TEE verifier WASMs from the
+   matching [Build Contract](.github/workflows/build_contract.yml) run.
 4. Creates a draft GitHub release with the changelog, image digests, and
-   contract archive.
+   contract and verifier archives.
 5. Creates and pushes the `X.Y.Z` git tag at the released commit.
 
 The git tag is the **receipt** of a successful release, not its trigger.
@@ -102,8 +104,8 @@ The three workflows the release needs fire on every push to `main` and
 - [Build Contract](.github/workflows/build_contract.yml)
 
 The image workflows push `nearone/mpc-{node,launcher}:<branch>-<short-sha>`.
-The contract workflow uploads the reproducible WASM as a GitHub Actions
-artifact named `contract`.
+The contract workflow uploads the reproducible WASMs as GitHub Actions
+artifacts named `contract` and `tee-verifier`.
 
 The Release workflow only uses images tagged for the branch it is dispatched
 on, so wait for the runs on `release/vX.Y`:
@@ -112,8 +114,8 @@ on, so wait for the runs on `release/vX.Y`:
 - **Major/minor**: they fire when the admin pushes the new release branch.
   The `main` builds from the prep PR merge are not used.
 
-The contract artifact is looked up by commit SHA, so either run's artifact
-works. Wait for all three to finish successfully. The Release workflow refuses
+The contract and verifier artifacts are looked up by commit SHA, so either run's
+artifacts work. Wait for all three to finish successfully. The Release workflow refuses
 to run if any artifact is missing.
 
 <!-- TODO(#4562): update once the Release workflow promotes the Nix-built images -->
@@ -137,6 +139,10 @@ exactly what the source produces:
   the CI `contract` artifact (builds from committed git state, so commit first):
   ```sh
   cargo near build reproducible-wasm --manifest-path crates/contract/Cargo.toml
+  ```
+- **TEE verifier WASM** — same, against the CI `tee-verifier` artifact:
+  ```sh
+  cargo near build reproducible-wasm --manifest-path crates/tee-verifier/Cargo.toml
   ```
 - **Docker images** — compare the digests in the draft release to the ones
   produced locally (with no flags the script builds and prints digests for both
@@ -166,8 +172,8 @@ exists on origin, if a GitHub release (draft or published) for the
 version already exists, or if any source artifact for the branch HEAD
 is missing.
 
-> **Note:** GitHub Actions artifacts expire after 90 days. The contract
-> WASM must still be available at release time — make releases within
+> **Note:** GitHub Actions artifacts expire after 90 days. The contract and
+> verifier WASMs must still be available at release time — make releases within
 > ~90 days of the corresponding merge commit, or re-run the
 > [Build Contract](.github/workflows/build_contract.yml) workflow
 > manually before triggering the release.
@@ -177,13 +183,19 @@ is missing.
 When the workflow finishes, a draft release named `MPC 3.11.0` appears on
 the [releases page](https://github.com/near/mpc/releases). The draft
 includes the changelog section, Docker image manifest digests, and the
-contract `.tar.gz`. **The git tag does not yet exist** — it is created
+contract and verifier `.tar.gz` files. **The git tag does not yet exist** — it is created
 by GitHub when the draft is published.
 
 Review the draft, rename it to `3.11.0`, add a one-sentence summary at the
 top of the notes (what the release is for, which networks it targets, and
-whether it needs a contract upgrade or launcher vote), and click "Publish
+whether it needs a contract upgrade, launcher vote or verifier rotation), and click "Publish
 release."
+
+The verifier hash differs between releases even when its code doesn't, because the
+WASM embeds the release version and commit. To see whether the verifier changed
+since the deployed one, compare its source and dependencies between the two release
+tags (for example, `git diff <deployed-tag> <new-tag> -- crates/tee-verifier*`, and
+the `dcap-qvl` version or its dependencies in `Cargo.lock`).
 
 Publishing creates the `3.11.0` git tag at the released commit.
 
