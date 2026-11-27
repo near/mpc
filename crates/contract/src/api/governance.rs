@@ -2,6 +2,7 @@
 
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters};
+use crate::primitives::participants::Participants;
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::TeeValidationResult;
@@ -43,40 +44,22 @@ impl MpcContract {
             proposal,
         );
 
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        self.reverify_participants(proposal.participants())?;
 
-        let validation_result = self
-            .tee_state
-            .reverify_participants(proposal.participants(), tee_upgrade_deadline_duration);
-
-        match validation_result {
-            TeeValidationResult::Full => {
-                if let Some(new_state) = self.protocol_state.vote_new_parameters(
-                    prospective_epoch_id,
-                    &proposal,
-                    &mut self.parameters_votes,
-                )? {
-                    self.protocol_state = new_state;
-                }
-                // Without domains the proposal applies directly; drop votes of dropped participants.
-                if let ProtocolContractState::Running(state) = &self.protocol_state {
-                    let participants = state.parameters.participants();
-                    self.add_domains_votes
-                        .retain_votes(|p| participants.is_participant(p));
-                }
-                Ok(())
-            }
-            TeeValidationResult::Partial {
-                participants_with_invalid_attestation,
-            } => Err(InvalidParameters::InvalidTeeRemoteAttestation {
-                reason: format!(
-                    "The following participants have invalid TEE status: {:?}",
-                    participants_with_invalid_attestation
-                ),
-            }
-            .into()),
+        if let Some(new_state) = self.protocol_state.vote_new_parameters(
+            prospective_epoch_id,
+            &proposal,
+            &mut self.parameters_votes,
+        )? {
+            self.protocol_state = new_state;
         }
+        // Without domains the proposal applies directly; drop votes of dropped participants.
+        if let ProtocolContractState::Running(state) = &self.protocol_state {
+            let participants = state.parameters.participants();
+            self.add_domains_votes
+                .retain_votes(|p| participants.is_participant(p));
+        }
+        Ok(())
     }
 
     /// Propose adding a new set of domains for the MPC network.
@@ -117,6 +100,31 @@ impl MpcContract {
 impl MpcContract {
     pub(crate) fn threshold(&self) -> Result<GovernanceThreshold, Error> {
         self.protocol_state.threshold()
+    }
+
+    /// Fails unless every one of `participants` runs a node with a valid attestation.
+    pub(crate) fn reverify_participants(
+        &mut self,
+        participants: &Participants,
+    ) -> Result<(), Error> {
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        match self
+            .tee_state
+            .reverify_participants(participants, tee_upgrade_deadline_duration)
+        {
+            TeeValidationResult::Full => Ok(()),
+            TeeValidationResult::Partial {
+                participants_with_invalid_attestation,
+            } => Err(InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: format!(
+                    "The following participants have invalid TEE status: {:?}",
+                    participants_with_invalid_attestation
+                ),
+            }
+            .into()),
+        }
     }
 }
 
@@ -800,10 +808,36 @@ mod tests {
         assert!(!contract.parameters_votes.is_empty());
     }
 
-    #[test]
-    fn vote_reshared__should_clear_pending_parameter_votes_on_transition() {
+    #[rstest]
+    #[case::nothing_changes(2, 3, 2, None, false)]
+    #[case::a_participant_leaves(2, 2, 2, None, true)]
+    #[case::governance_threshold_changes(2, 3, 3, None, true)]
+    #[case::reconstruction_threshold_changes(3, 3, 3, Some(3), true)]
+    fn vote_reshared__should_keep_pending_parameter_votes_only_after_a_pure_refresh(
+        #[case] governance_threshold: u64,
+        #[case] new_participant_count: usize,
+        #[case] new_governance_threshold: u64,
+        #[case] new_reconstruction_threshold: Option<u64>,
+        #[case] expect_votes_cleared: bool,
+    ) {
         // Given: a Resharing contract holding a pending re-proposal vote
-        let (mut contract, participants, domain_id, proposal) = resharing_contract_with_domain();
+        let (mut contract, participants, _, domain_id) = setup_running_contract_with_domain(
+            3,
+            GovernanceThreshold::new(governance_threshold),
+            ReconstructionThreshold::new(2),
+        );
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            GovernanceThresholdParameters::new(
+                participants.subset(0..new_participant_count),
+                GovernanceThreshold::new(new_governance_threshold),
+            )
+            .unwrap(),
+            new_reconstruction_threshold
+                .map(|threshold| (domain_id, ReconstructionThreshold::new(threshold)))
+                .into_iter()
+                .collect(),
+        );
+        vote_into_resharing(&mut contract, &proposal);
         let voter = authenticate_account_as(&participants.participants()[0].0, &participants);
         contract.parameters_votes.vote(
             &proposal,
@@ -824,14 +858,14 @@ mod tests {
         };
         attested_context(&contract, &participants, &leader);
         contract.start_reshare_instance(key_event_id).unwrap();
-        for (account_id, _, _) in participants.participants() {
+        for (account_id, _, _) in proposal.participants().participants() {
             attested_context(&contract, &participants, account_id);
             contract.vote_reshared(key_event_id).unwrap();
         }
 
         // Then
         assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
-        assert!(contract.parameters_votes.is_empty());
+        assert_eq!(contract.parameters_votes.is_empty(), expect_votes_cleared);
     }
 
     #[test]

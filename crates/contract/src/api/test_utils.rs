@@ -14,6 +14,7 @@ use crate::primitives::test_utils::{
 use crate::primitives::thresholds::{
     GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
 };
+use crate::primitives::time::Timestamp;
 use crate::state::ProtocolContractState;
 use crate::state::test_utils::{
     gen_initializing_state, gen_resharing_state, gen_running_state, threshold_voters,
@@ -442,6 +443,7 @@ impl MpcContract {
             parameters_votes: Default::default(),
             genesis_hash: Some(bogus_genesis_hash()),
             add_domains_votes: Default::default(),
+            last_reshared_at: Timestamp::now(),
         }
     }
 }

@@ -184,6 +184,10 @@ pub enum InvalidState {
     ParticipantIndexOutOfRange,
     #[error("Not a participant: {account_id}")]
     NotParticipant { account_id: AccountId },
+    #[error("Key refresh is not due before Unix time {due_at_seconds}s.")]
+    KeyRefreshNotDue { due_at_seconds: u64 },
+    #[error("There are no keys to refresh.")]
+    NoKeysToRefresh,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]

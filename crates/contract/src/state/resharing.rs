@@ -18,7 +18,8 @@ use near_sdk::near;
 /// Similar to key generation, we reshare the key of one domain at a time; when we finish resharing
 /// for one domain, we move on to the next or transition to the Running state.
 ///
-/// This state is reached by calling vote_new_parameters from the Running state.
+/// This state is reached by calling vote_new_parameters or trigger_key_refresh from the
+/// Running state.
 ///
 /// This state keeps the previous running state because:
 ///  - The previous running state's GovernanceThresholdParameters are needed in order to facilitate the

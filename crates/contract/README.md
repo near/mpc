@@ -209,6 +209,10 @@ A change is accepted by the contract once at least `threshold` (the current thre
 }
 ```
 
+### Refreshing the keys
+
+A key refresh reshares every key onto the unchanged participant set and thresholds, so that keyshares of earlier epochs stop being useful (see [proactive security](../threshold-signatures/docs/proactive-security.md)). Once `key_refresh_period_seconds` (30 days by default) have passed since the last completed resharing, any single participant can start one with `trigger_key_refresh`; no vote is needed. From there on it is an ordinary resharing, which the nodes complete and participants can cancel with `vote_cancel_resharing`, except that pending `vote_new_parameters` votes survive it. `last_reshared_timestamp_seconds` returns when the last resharing completed.
+
 ### Adding a Key
 
 To generate a new threshold signature key, all participants must vote for it to be added via `vote_add_domains`. Only votes from existing participants will be accepted.
@@ -260,6 +264,7 @@ stateDiagram-v2
     NotInitialized --> Running : init
     Running --> Initializing : vote_add_domains
     Running --> Resharing : vote_new_parameters
+    Running --> Resharing : trigger_key_refresh
     Initializing --> Running : vote_pk
     Initializing --> Running : vote_cancel_keygen
     Resharing --> Running : vote_reshared
@@ -313,6 +318,7 @@ These functions require the caller to be a participant or candidate.
 | `respond_verify_foreign_tx(request: VerifyForeignTransactionRequest, response: VerifyForeignTransactionResponse)` | Processes a response to a foreign-chain transaction verification request, ensuring proper state cleanup.                                                                                              | `Result<(), Error>`       | 10Tgas          | ~6Tgas             |
 | `vote_add_domains(domains: Vec<DomainConfig>)`                                      | Votes to add new domains (new keys) to the MPC network; newly proposed domain IDs must start from next_domain_id and be contiguous, and each domain must specify a `reconstruction_threshold` with `2 <= t <= n`.                       | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_new_parameters(prospective_epoch_id: EpochId, proposal: ThresholdParameters)` | Votes to change the set of participants as well as the new threshold for the network. (Prospective epoch ID must be 1 plus current.) Requires threshold votes from current participants.                                                | `Result<(), Error>`       | TBD             | TBD                |
+| `trigger_key_refresh()` | For Running state only. Starts a key refresh, a resharing onto the current participants and thresholds. Callable by any single participant once `key_refresh_period_seconds` have passed since the last completed resharing. | `Result<(), Error>` | TBD | TBD |
 | `vote_mpc_node_manifest_digest(mpc_node_manifest_digest: NodeImageHash)`            | Votes to add new whitelisted TEE Docker image code hashes.                                                                                                                                                                              | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_add_launcher_hash(launcher_hash: LauncherImageHash)`                          | Votes to add a launcher image hash to the allowed set. Requires threshold votes.                                                                                                                                                        | `Result<(), Error>`       | TBD             | TBD                |
 | `vote_remove_launcher_hash(launcher_hash: LauncherImageHash)`                       | Votes to remove a launcher image hash. Requires ALL participants to vote.                                                                                                                                                               | `Result<(), Error>`       | TBD             | TBD                |
@@ -340,6 +346,7 @@ These functions require the caller to be a participant or candidate.
 | `get_pending_ckd_request(request: &CKDRequest)`                            | Retrieves pending confidential key derivation requests.                                                                                                                                                                                  | `Option<YieldIndex>`     | TBD             | TBD                |
 | `config()`                                                                 | Returns the contract configuration.                                                                                                                                                                                                      | `&ConfigV1`              | TBD             | TBD                |
 | `genesis_hash()`                                                           | Returns the genesis hash of the chain the contract runs on, or `null` if it has none set.                                                                                                                                                | `Option<GenesisHash>`    | TBD             | TBD                |
+| `last_reshared_timestamp_seconds()` | Returns the Unix time, in seconds, at which a resharing last completed, or at which the contract was initialized if none has. | `u64` | TBD | TBD |
 | `version()`                                                                | Returns the contract version.                                                                                                                                                                                                            | `String`                 | TBD             | TBD                |
 | `update_config(config: ConfigV1)`                                          | Updates the contract configuration for `V1`.                                                                                                                                                                                             | `()`                     | TBD             | TBD                |
 | `allowed_docker_image_hashes()`                                            | Returns all currently allowed MPC Docker image hashes with their eviction expiry, newest first.                                                                                                   | `Vec<AllowedMpcDockerImageHash>` | TBD            | TBD                |

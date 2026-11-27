@@ -31,8 +31,8 @@ pub use crate::pending_requests::MAX_PENDING_REQUEST_FAN_OUT;
 
 use crate::{
     foreign_chains_metadata::ForeignChainsMetadata, primitives::domain::AddDomainsVotes,
-    primitives::threshold_votes::GovernanceThresholdParametersVotes, tee::tee_state::TeeState,
-    tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
+    primitives::threshold_votes::GovernanceThresholdParametersVotes, primitives::time::Timestamp,
+    tee::tee_state::TeeState, tee::verifier_votes::TeeVerifierVotes, update::ContractUpdateVotes,
 };
 use config::Config;
 use mpc_primitives::hash::GenesisHash;
@@ -79,6 +79,8 @@ pub struct MpcContract {
     genesis_hash: Option<GenesisHash>,
     /// Pending votes to add domains; storage-backed, so kept outside [`ProtocolContractState`].
     add_domains_votes: AddDomainsVotes,
+    /// When a resharing last completed, or when the contract was initialized if none has.
+    last_reshared_at: Timestamp,
 }
 
 impl Default for MpcContract {

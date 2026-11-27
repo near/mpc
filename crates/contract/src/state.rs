@@ -137,6 +137,14 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Resharing))
     }
 
+    pub fn key_refresh(&self) -> Result<ProtocolContractState, Error> {
+        match self {
+            ProtocolContractState::Running(state) => state.key_refresh(),
+            _ => Err(InvalidState::ProtocolStateNotRunning.into()),
+        }
+        .map(ProtocolContractState::Resharing)
+    }
+
     pub fn vote_add_domains(
         &self,
         domains: Vec<DomainConfig>,

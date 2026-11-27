@@ -1,7 +1,7 @@
 use super::initializing::InitializingContractState;
 use super::key_event::KeyEvent;
 use super::resharing::ResharingContractState;
-use crate::errors::{DomainError, Error, InvalidParameters};
+use crate::errors::{DomainError, Error, InvalidParameters, InvalidState};
 use crate::primitives::participants::{IdentifiesParticipant, ParticipantInfo, Participants};
 use crate::primitives::{
     domain::{
@@ -13,9 +13,9 @@ use crate::primitives::{
     thresholds::{GovernanceThresholdParameters, ProposedGovernanceThresholdParameters},
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::DomainConfig;
+use near_mpc_contract_interface::types::{DomainConfig, DomainId, ReconstructionThreshold};
 use near_sdk::near;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// In this state, the contract is ready to process signature requests.
 ///
@@ -25,6 +25,8 @@ use std::collections::BTreeSet;
 ///  - vote_new_parameters, upon governance threshold agreement, transitions into the
 ///    Resharing state to reshare keys for new participants and also change the
 ///    threshold if desired.
+///  - trigger_key_refresh, once a key refresh is due, transitions into the Resharing
+///    state to reshare keys for the same participants and thresholds.
 #[near(serializers=[borsh])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunningContractState {
@@ -76,7 +78,11 @@ impl RunningContractState {
         if !self.process_new_parameters_proposal(proposal, votes)? {
             return Ok(None);
         }
-        let Some(first_domain) = self.domains.get_domain_by_index(0) else {
+        let resharing = self.resharing_onto(
+            proposal.parameters().clone(),
+            proposal.per_domain_thresholds().clone(),
+        );
+        if resharing.is_none() {
             // New parameters were proposed, but we have no keys, so directly
             // transition into Running state but bump the EpochId. With no
             // domains the per-domain threshold updates have nothing to apply to
@@ -86,9 +92,24 @@ impl RunningContractState {
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
                 proposal.parameters().clone(),
             );
-            return Ok(None);
-        };
-        Ok(Some(ResharingContractState {
+        }
+        Ok(resharing)
+    }
+
+    /// Returns the state that reshares every key onto the current participants and thresholds.
+    pub fn key_refresh(&self) -> Result<ResharingContractState, Error> {
+        AuthenticatedAccountId::new(self.parameters.participants())?;
+        self.resharing_onto(self.parameters.clone(), BTreeMap::new())
+            .ok_or_else(|| InvalidState::NoKeysToRefresh.into())
+    }
+
+    fn resharing_onto(
+        &self,
+        parameters: GovernanceThresholdParameters,
+        per_domain_thresholds: BTreeMap<DomainId, ReconstructionThreshold>,
+    ) -> Option<ResharingContractState> {
+        let first_domain = self.domains.get_domain_by_index(0)?;
+        Some(ResharingContractState {
             previous_running_state: RunningContractState::new(
                 self.domains.clone(),
                 self.keyset.clone(),
@@ -98,11 +119,11 @@ impl RunningContractState {
             resharing_key: KeyEvent::new(
                 self.prospective_epoch_id(),
                 first_domain.clone(),
-                proposal.parameters().clone(),
+                parameters,
             ),
             cancellation_requests: BTreeSet::new(),
-            per_domain_thresholds: proposal.per_domain_thresholds().clone(),
-        }))
+            per_domain_thresholds,
+        })
     }
 
     pub fn participants(&self) -> &Participants {

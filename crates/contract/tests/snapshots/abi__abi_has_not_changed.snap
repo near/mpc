@@ -627,6 +627,19 @@ expression: abi
         }
       },
       {
+        "name": "last_reshared_timestamp_seconds",
+        "doc": " Unix time, in seconds, at which a resharing last completed, or at which the contract was\n initialized if none has.",
+        "kind": "view",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0.0
+          }
+        }
+      },
+      {
         "name": "launcher_hash_votes",
         "doc": " Returns pending launcher hash votes, may include former participants' votes",
         "kind": "view",
@@ -2038,6 +2051,10 @@ expression: abi
                         "u64"
                       ],
                       [
+                        "key_refresh_period_seconds",
+                        "u64"
+                      ],
+                      [
                         "migration_genesis_hash",
                         "Option<GenesisHash>"
                       ]
@@ -2185,6 +2202,17 @@ expression: abi
               },
               "uniqueItems": true
             }
+          }
+        }
+      },
+      {
+        "name": "trigger_key_refresh",
+        "doc": " Starts a key refresh: a resharing onto the current participants and thresholds.\n\n Any single participant can call this once\n [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) have passed since\n the last completed resharing. Pending [`Self::vote_new_parameters`] votes are kept.",
+        "kind": "call",
+        "result": {
+          "serialization_type": "json",
+          "type_schema": {
+            "type": "null"
           }
         }
       },
@@ -3300,6 +3328,13 @@ expression: abi
                 }
               ]
             },
+            "key_refresh_period_seconds": {
+              "description": "Time after the last completed resharing from which a participant can trigger a key refresh.",
+              "default": 2592000,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
             "launcher_hash_unused_ttl_seconds": {
               "description": "How long a launcher hash that no current participant uses stays allowed after its last vote or the last `verify_tee` that saw it in use. Removal happens only in `verify_tee`, so it can lag this TTL; a hash in use is never removed automatically.",
               "type": "integer",
@@ -4002,6 +4037,15 @@ expression: abi
                   "type": "null"
                 }
               ]
+            },
+            "key_refresh_period_seconds": {
+              "description": "See [`Config::key_refresh_period_seconds`].",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0.0
             },
             "launcher_hash_unused_ttl_seconds": {
               "description": "TTL for launcher hashes no current participant uses; see [`Config::launcher_hash_unused_ttl_seconds`].",

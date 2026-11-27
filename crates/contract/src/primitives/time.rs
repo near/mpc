@@ -47,6 +47,12 @@ impl Timestamp {
         })
     }
 
+    pub(crate) fn saturating_add(self, duration: Duration) -> Self {
+        Self {
+            duration_since_unix_epoch: self.duration_since_unix_epoch.saturating_add(duration),
+        }
+    }
+
     pub(crate) fn as_secs(self) -> u64 {
         self.duration_since_unix_epoch.as_secs()
     }

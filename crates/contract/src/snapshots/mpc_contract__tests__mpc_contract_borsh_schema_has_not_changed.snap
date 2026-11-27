@@ -215,6 +215,10 @@ BorshSchemaContainer {
                         "u64",
                     ),
                     (
+                        "key_refresh_period_seconds",
+                        "u64",
+                    ),
+                    (
                         "migration_genesis_hash",
                         "Option<GenesisHash>",
                     ),
@@ -623,6 +627,10 @@ BorshSchemaContainer {
                     (
                         "add_domains_votes",
                         "AddDomainsVotes",
+                    ),
+                    (
+                        "last_reshared_at",
+                        "Timestamp",
                     ),
                 ],
             ),

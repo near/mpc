@@ -30,6 +30,7 @@ use crate::{
         },
         threshold_votes::GovernanceThresholdParametersVotes,
         thresholds::GovernanceThresholdParameters,
+        time::Timestamp,
     },
     state::{
         ProtocolContractState, initializing::InitializingContractState, key_event::KeyEvent,
@@ -131,6 +132,8 @@ impl From<MpcContract> for crate::MpcContract {
             parameters_votes: old.parameters_votes,
             genesis_hash: genesis_hash_of(&env::chain_id()),
             add_domains_votes: AddDomainsVotes::default(),
+            // The `3.19.0` contract does not store when it last reshared.
+            last_reshared_at: Timestamp::now(),
         }
     }
 }
@@ -189,6 +192,7 @@ impl From<OldConfig> for Config {
             resolve_verification_tera_gas: old.resolve_verification_tera_gas,
             launcher_hash_unused_ttl_seconds: old.launcher_hash_unused_ttl_seconds,
             attestation_storage_fee_millinear: old.attestation_storage_fee_millinear,
+            key_refresh_period_seconds: Config::default().key_refresh_period_seconds,
             migration_genesis_hash: None,
         }
     }
@@ -269,14 +273,46 @@ mod tests {
     }
 
     #[test]
+    fn from__should_set_last_reshared_at_to_the_migration_time() {
+        // Given
+        let migrated_at_seconds = 1_000_000;
+        let running = gen_running_state(1);
+        let old = old_contract(OldProtocolContractState::Running(OldRunningContractState {
+            domains: running.domains,
+            keyset: running.keyset,
+            parameters: running.parameters,
+            add_domains_votes: OldAddDomainsVotes {
+                proposal_by_account: BTreeMap::new(),
+            },
+            previously_cancelled_resharing_epoch_id: None,
+        }));
+        testing_env!(
+            VMContextBuilder::new()
+                .block_timestamp(migrated_at_seconds * 1_000_000_000)
+                .build()
+        );
+
+        // When
+        let migrated: crate::MpcContract = old.into();
+
+        // Then
+        assert_eq!(
+            migrated.last_reshared_timestamp_seconds(),
+            migrated_at_seconds
+        );
+    }
+
+    #[test]
     fn config_from__should_keep_every_3_19_0_value() {
         // Given
         let config = Config {
+            key_refresh_period_seconds: Config::default().key_refresh_period_seconds,
             migration_genesis_hash: None,
             ..Config::from(dummy_config(1))
         };
         let bytes = borsh::to_vec(&config).unwrap();
-        let (_migration_genesis_hash, old_layout) = bytes.split_last().unwrap();
+        let fields_added_since = size_of::<u64>() + size_of::<u8>();
+        let old_layout = &bytes[..bytes.len() - fields_added_since];
         let old_config = OldConfig::try_from_slice(old_layout).unwrap();
 
         // When

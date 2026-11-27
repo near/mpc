@@ -24,6 +24,7 @@ async fn contract_configuration_can_be_set_on_initialization() {
         verifier_tera_gas: Some(15),
         resolve_verification_tera_gas: Some(16),
         launcher_hash_unused_ttl_seconds: Some(14 * 24 * 60 * 60),
+        key_refresh_period_seconds: Some(17),
     };
 
     let SandboxTestSetup {
