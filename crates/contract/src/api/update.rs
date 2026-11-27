@@ -7,6 +7,7 @@ use crate::dto_mapping::IntoInterfaceType;
 use crate::errors::{Error, InvalidParameters, InvalidState};
 use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::primitives::proposal_hash::{ProposalHash, ToProposalHash};
+use crate::tee::launcher_compose::LauncherCompose;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::deposits::SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTONEAR;
 use near_mpc_contract_interface::method_names;
@@ -160,7 +161,7 @@ impl MpcContract {
         {
             self.genesis_hash = Some(genesis_hash);
             self.tee_state.add_compose_hashes(
-                &genesis_hash,
+                LauncherCompose::mpc_node(Some(genesis_hash)),
                 Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
             );
         }
@@ -181,7 +182,6 @@ mod tests {
     };
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::Environment;
-    use crate::tee::proposal::get_docker_compose_hash;
     use mpc_primitives::hash::GenesisHash;
     use near_sdk::mock::MockAction;
     use near_sdk::test_utils::get_created_receipts;
@@ -612,9 +612,10 @@ mod tests {
         let forever = Duration::MAX;
         let mut contract = MpcContract::new_from_protocol_state(running_state());
         contract.genesis_hash = genesis_hash;
+        let compose = LauncherCompose::mpc_node(genesis_hash);
         let tee_state = &mut contract.tee_state;
-        tee_state.whitelist_tee_proposal(image, genesis_hash.as_ref(), forever);
-        tee_state.add_launcher_image(launcher, genesis_hash.as_ref(), forever, forever);
+        tee_state.whitelist_tee_proposal(image, compose, forever);
+        tee_state.add_launcher_image(launcher, compose, forever, forever);
         let config = dtos::Config {
             migration_genesis_hash,
             ..contract.config()
@@ -625,14 +626,11 @@ mod tests {
 
         // Then
         let expected = genesis_hash.or(migration_genesis_hash);
-        let compose_hash = |hash| get_docker_compose_hash(&launcher, &image, hash);
+        let compose_hash = |hash| LauncherCompose::mpc_node(hash).hash(&launcher, &image);
         assert_eq!(contract.genesis_hash, expected);
         assert_eq!(
             BTreeSet::from_iter(contract.allowed_launcher_compose_hashes()),
-            BTreeSet::from([
-                compose_hash(genesis_hash.as_ref()),
-                compose_hash(expected.as_ref())
-            ]),
+            BTreeSet::from([compose_hash(genesis_hash), compose_hash(expected)]),
         );
     }
 }

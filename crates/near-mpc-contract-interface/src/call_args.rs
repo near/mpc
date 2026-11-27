@@ -68,12 +68,12 @@ pub struct VoteMpcNodeManifestDigestArgs {
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteAddLauncherHashArgs {
+pub struct VoteLauncherHashArgs {
     pub launcher_hash: LauncherImageHash,
 }
 
 #[derive(Serialize, Debug, derive_more::Constructor)]
-pub struct VoteAddOsMeasurementArgs {
+pub struct VoteOsMeasurementArgs {
     pub measurement: ExpectedMeasurements,
 }
 

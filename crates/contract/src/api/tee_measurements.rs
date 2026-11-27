@@ -6,6 +6,7 @@ use crate::dto_mapping::IntoInterfaceType as _;
 use crate::errors::{Error, InvalidState};
 use crate::primitives::key_state::AuthenticatedAccountId;
 use crate::state::ProtocolContractState;
+use crate::tee::launcher_compose::LauncherCompose;
 use crate::{MpcContract, MpcContractExt};
 use near_mpc_contract_interface::types as dtos;
 use near_sdk::{env, log, near};
@@ -42,7 +43,7 @@ impl MpcContract {
         if self.threshold()?.is_met_by(votes) {
             self.tee_state.whitelist_tee_proposal(
                 mpc_node_manifest_digest,
-                self.genesis_hash.as_ref(),
+                LauncherCompose::mpc_node(self.genesis_hash),
                 tee_upgrade_deadline_duration,
             );
         }
@@ -63,33 +64,7 @@ impl MpcContract {
             env::signer_account_id(),
             launcher_hash,
         );
-        self.voter_or_panic();
-
-        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
-
-        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
-        let action = dtos::LauncherVoteAction::Add(launcher_hash);
-        let votes = self
-            .tee_state
-            .vote_launcher(action, voter)
-            .count_participants(threshold_parameters.participants());
-        log!("total launcher votes for action: {}", votes);
-
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
-        let launcher_unused_ttl = Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds);
-
-        if self.threshold()?.is_met_by(votes) {
-            let outcome = self.tee_state.add_launcher_image(
-                launcher_hash,
-                self.genesis_hash.as_ref(),
-                tee_upgrade_deadline_duration,
-                launcher_unused_ttl,
-            );
-            log!("launcher hash {:?}: {:?}", outcome, launcher_hash);
-        }
-
-        Ok(())
+        self.vote_launcher(dtos::LauncherVoteAction::Add(launcher_hash))
     }
 
     /// Vote to remove a launcher image hash from the allowed set. Requires ALL participants
@@ -104,26 +79,7 @@ impl MpcContract {
             env::signer_account_id(),
             launcher_hash,
         );
-        self.voter_or_panic();
-
-        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
-
-        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
-        let action = dtos::LauncherVoteAction::Remove(launcher_hash);
-        let votes = self
-            .tee_state
-            .vote_launcher(action, voter)
-            .count_participants(threshold_parameters.participants());
-        log!("total launcher votes for action: {}", votes);
-
-        // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().count();
-        if votes >= total_participants {
-            let removed = self.tee_state.remove_launcher_image(&launcher_hash);
-            log!("launcher hash remove result: {}", removed);
-        }
-
-        Ok(())
+        self.vote_launcher(dtos::LauncherVoteAction::Remove(launcher_hash))
     }
 
     /// Vote to add a new OS measurement set to the allowed list. Requires threshold votes.
@@ -137,24 +93,7 @@ impl MpcContract {
             env::signer_account_id(),
             measurement,
         );
-        self.voter_or_panic();
-
-        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
-
-        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
-        let action = dtos::MeasurementVoteAction::Add(measurement.clone());
-        let votes = self
-            .tee_state
-            .vote_measurement(action, voter)
-            .count_participants(threshold_parameters.participants());
-        log!("total measurement votes for action: {}", votes);
-
-        if self.threshold()?.is_met_by(votes) {
-            let added = self.tee_state.add_measurement(measurement);
-            log!("OS measurement add result: {}", added);
-        }
-
-        Ok(())
+        self.vote_measurement(dtos::MeasurementVoteAction::Add(measurement))
     }
 
     /// Vote to remove an OS measurement set from the allowed list. Requires ALL participants
@@ -169,26 +108,7 @@ impl MpcContract {
             env::signer_account_id(),
             measurement,
         );
-        self.voter_or_panic();
-
-        let threshold_parameters = self.protocol_state.threshold_parameters_or_panic();
-
-        let voter = AuthenticatedAccountId::new(threshold_parameters.participants())?;
-        let action = dtos::MeasurementVoteAction::Remove(measurement.clone());
-        let votes = self
-            .tee_state
-            .vote_measurement(action, voter)
-            .count_participants(threshold_parameters.participants());
-        log!("total measurement votes for action: {}", votes);
-
-        // Removal requires ALL participants to vote
-        let total_participants = threshold_parameters.participants().count();
-        if votes >= total_participants {
-            let removed = self.tee_state.remove_measurement(&measurement);
-            log!("OS measurement remove result: {}", removed);
-        }
-
-        Ok(())
+        self.vote_measurement(dtos::MeasurementVoteAction::Remove(measurement))
     }
 
     /// Returns pending OS measurement votes, may include former participants' votes
@@ -254,17 +174,81 @@ impl MpcContract {
     }
 }
 
+impl MpcContract {
+    fn vote_launcher(&mut self, action: dtos::LauncherVoteAction) -> Result<(), Error> {
+        self.voter_or_panic();
+        let parameters = self.protocol_state.threshold_parameters_or_panic();
+
+        let voter = AuthenticatedAccountId::new(parameters.participants())?;
+        let votes = self
+            .tee_state
+            .vote_launcher(&action, voter)
+            .count_participants(parameters.participants());
+        log!("total launcher votes for action: {}", votes);
+
+        match action {
+            dtos::LauncherVoteAction::Add(launcher_hash) => {
+                if parameters.threshold().is_met_by(votes) {
+                    let outcome = self.tee_state.add_launcher_image(
+                        launcher_hash,
+                        LauncherCompose::mpc_node(self.genesis_hash),
+                        Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+                        Duration::from_secs(self.config.launcher_hash_unused_ttl_seconds),
+                    );
+                    log!("launcher hash {:?}: {:?}", outcome, launcher_hash);
+                }
+            }
+            dtos::LauncherVoteAction::Remove(launcher_hash) => {
+                if votes >= parameters.participants().count() {
+                    let removed = self.tee_state.remove_launcher_image(&launcher_hash);
+                    log!("launcher hash remove result: {}", removed);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn vote_measurement(&mut self, action: dtos::MeasurementVoteAction) -> Result<(), Error> {
+        self.voter_or_panic();
+        let parameters = self.protocol_state.threshold_parameters_or_panic();
+
+        let voter = AuthenticatedAccountId::new(parameters.participants())?;
+        let votes = self
+            .tee_state
+            .vote_measurement(&action, voter)
+            .count_participants(parameters.participants());
+        log!("total measurement votes for action: {}", votes);
+
+        match action {
+            dtos::MeasurementVoteAction::Add(measurement) => {
+                if parameters.threshold().is_met_by(votes) {
+                    let added = self.tee_state.add_measurement(measurement);
+                    log!("OS measurement add result: {}", added);
+                }
+            }
+            dtos::MeasurementVoteAction::Remove(measurement) => {
+                if votes >= parameters.participants().count() {
+                    let removed = self.tee_state.remove_measurement(&measurement);
+                    log!("OS measurement remove result: {}", removed);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use super::{Duration, MpcContract, ProtocolContractState};
+    use super::{Duration, LauncherCompose, MpcContract, ProtocolContractState};
     use crate::api::test_utils::{NUM_DOMAINS, NUM_GENERATED_DOMAINS, setup_tee_test_contract};
     use crate::primitives::proposal_hash::ToProposalHash;
     use crate::state::test_utils::{
         gen_initializing_state, gen_resharing_state, gen_running_state,
     };
-    use crate::tee::proposal::get_docker_compose_hash;
     use mpc_primitives::hash::{KeyProviderEventDigest, MrtdHash, Rtmr0Hash, Rtmr1Hash, Rtmr2Hash};
     use near_mpc_contract_interface::types as dtos;
     use near_sdk::test_utils::VMContextBuilder;
@@ -846,7 +830,7 @@ mod tests {
 
         let compose_hashes = contract.allowed_launcher_compose_hashes();
         let compose_hash = |launcher, mpc_hash| {
-            get_docker_compose_hash(launcher, mpc_hash, contract.genesis_hash.as_ref())
+            LauncherCompose::mpc_node(contract.genesis_hash).hash(launcher, mpc_hash)
         };
         assert!(compose_hashes.contains(&compose_hash(&l1, &m1)));
         assert!(compose_hashes.contains(&compose_hash(&l1, &m2)));

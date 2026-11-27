@@ -6,6 +6,7 @@
 use crate::MpcContract;
 use crate::dto_mapping::IntoInterfaceType as _;
 use crate::primitives::test_utils::{gen_account_id, gen_seed};
+use crate::tee::launcher_compose::LauncherCompose;
 use crate::tee::tee_state::TeeState;
 use mpc_attestation::attestation::ExpectedMeasurements;
 use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash, NodeImageHash};
@@ -118,16 +119,17 @@ pub fn set_block_secs(secs: u64) {
     set_block_timestamp(secs * NANOS_PER_SECOND);
 }
 
+pub(crate) const MPC_NODE_COMPOSE: LauncherCompose = LauncherCompose::mpc_node(None);
+
 /// Fills the allowlists a Dstack submission is checked against: MPC image,
 /// launcher image, expected measurements, and optionally one compose hash.
 ///
 /// The compose hash is injected directly because it is the one value no vote can
-/// authorize: [`get_docker_compose_hash`](crate::tee::proposal::get_docker_compose_hash)
-/// derives the accepted hashes from the voted launcher and MPC images through a
-/// compiled-in template, and the fixture's CVM ran a modified compose carrying a
-/// key-export service (the only way to get the signer key out of the CVM, which the
-/// quote's `report_data` binds and tests must sign with). Pass [`None`] to exercise
-/// the rejection path.
+/// authorize: [`LauncherCompose::hash`] derives the accepted hashes from the voted
+/// launcher and MPC images through a compiled-in template, and the fixture's CVM
+/// ran a modified compose carrying a key-export service (the only way to get the
+/// signer key out of the CVM, which the quote's `report_data` binds and tests must
+/// sign with). Pass [`None`] to exercise the rejection path.
 pub fn whitelist_dstack_measurements(
     tee_state: &mut TeeState,
     image: NodeImageHash,
@@ -135,8 +137,8 @@ pub fn whitelist_dstack_measurements(
     measurements: ExpectedMeasurements,
     compose_hash: Option<LauncherDockerComposeHash>,
 ) {
-    tee_state.whitelist_tee_proposal(image, None, Duration::MAX);
-    tee_state.add_launcher_image(launcher, None, Duration::MAX, Duration::MAX);
+    tee_state.whitelist_tee_proposal(image, MPC_NODE_COMPOSE, Duration::MAX);
+    tee_state.add_launcher_image(launcher, MPC_NODE_COMPOSE, Duration::MAX, Duration::MAX);
     tee_state.add_measurement(measurements.into_dto_type());
     if let Some(compose_hash) = compose_hash {
         tee_state
@@ -172,7 +174,17 @@ pub(crate) fn allow_launcher(
 ) {
     tee_state
         .allowed_launcher_images
-        .add_or_refresh(launcher, &[mpc_hash], None, ttl);
+        .add_or_refresh(launcher, &[mpc_hash], MPC_NODE_COMPOSE, ttl);
+}
+
+#[cfg(test)]
+pub(crate) fn dummy_code_hash(val: u8) -> NodeImageHash {
+    NodeImageHash::from([val; 32])
+}
+
+#[cfg(test)]
+pub(crate) fn dummy_launcher_hash(val: u8) -> LauncherImageHash {
+    LauncherImageHash::from([val; 32])
 }
 
 #[cfg(test)]

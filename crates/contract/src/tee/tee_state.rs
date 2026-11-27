@@ -10,6 +10,7 @@ use crate::{
         votes::{VoterSet, Votes},
     },
     storage_keys::StorageKey,
+    tee::launcher_compose::LauncherCompose,
     tee::measurements::AllowedMeasurements,
     tee::proposal::{
         AllowedLauncherImageInsertion, AllowedLauncherImages, NodeImageHash,
@@ -22,7 +23,7 @@ use mpc_attestation::{
     attestation::{self, AcceptedAttestation, DstackVerify, MockAttestation, VerifiedAttestation},
     report_data::{ReportData, ReportDataV1},
 };
-use mpc_primitives::hash::{GenesisHash, LauncherDockerComposeHash, LauncherImageHash};
+use mpc_primitives::hash::{LauncherDockerComposeHash, LauncherImageHash};
 use near_mpc_contract_interface::types::{
     self as dtos, AccountId, Ed25519PublicKey, ExpectedMeasurements, LauncherVoteAction,
     MeasurementVoteAction,
@@ -277,21 +278,21 @@ impl TeeState {
     pub fn whitelist_tee_proposal(
         &mut self,
         tee_proposal: NodeImageHash,
-        genesis_hash: Option<&GenesisHash>,
+        compose: LauncherCompose,
         tee_upgrade_deadline_duration: Duration,
     ) {
         self.votes.clear();
         // Add compose hashes for the new MPC image across all allowed launcher images
         self.allowed_launcher_images
-            .add_mpc_image_compose_hashes(&tee_proposal, genesis_hash);
+            .add_mpc_image_compose_hashes(&tee_proposal, compose);
         self.allowed_docker_image_hashes
             .insert(tee_proposal, tee_upgrade_deadline_duration);
     }
 
-    pub fn add_compose_hashes(&mut self, genesis_hash: &GenesisHash, upgrade_deadline: Duration) {
+    pub fn add_compose_hashes(&mut self, compose: LauncherCompose, upgrade_deadline: Duration) {
         for mpc_image_hash in self.get_allowed_mpc_docker_image_hashes(upgrade_deadline) {
             self.allowed_launcher_images
-                .add_mpc_image_compose_hashes(&mpc_image_hash, Some(genesis_hash));
+                .add_mpc_image_compose_hashes(&mpc_image_hash, compose);
         }
     }
 
@@ -299,21 +300,18 @@ impl TeeState {
         self.allowed_launcher_images.all_compose_hashes()
     }
 
-    /// Removes the launchers no participant in `current_participants` uses once their TTL has
-    /// passed, after restamping the ones they do use. Pass the running participants: a launcher
-    /// used only by a participant missing here can be removed, which invalidates that
-    /// participant's attestation.
-    pub(crate) fn remove_unused_launchers(
+    /// Removes the launchers no node in use attests with once their TTL has passed, after
+    /// restamping the ones they do use. Each node in use is an account with its TLS public key,
+    /// such as [`Participants::tls_keys`] of the running participants: a launcher used only by a
+    /// node missing here can be removed, which invalidates that node's attestation.
+    pub(crate) fn remove_unused_launchers<'a>(
         &mut self,
-        current_participants: &Participants,
+        nodes_in_use: impl IntoIterator<Item = (&'a AccountId, &'a Ed25519PublicKey)>,
         ttl: Duration,
     ) {
-        let in_use: Vec<LauncherDockerComposeHash> = current_participants
-            .participants()
-            .iter()
-            .filter_map(|(account_id, _, participant_info)| {
-                self.node_of(account_id, &participant_info.tls_public_key)
-            })
+        let in_use: Vec<LauncherDockerComposeHash> = nodes_in_use
+            .into_iter()
+            .filter_map(|(account_id, tls_public_key)| self.node_of(account_id, tls_public_key))
             .filter_map(|node| node.attestation.launcher_compose_hash())
             .collect();
         self.allowed_launcher_images.remove_unused(&in_use, ttl);
@@ -322,7 +320,7 @@ impl TeeState {
     /// Casts a vote for adding or removing a launcher image hash.
     pub fn vote_launcher(
         &mut self,
-        action: LauncherVoteAction,
+        action: &LauncherVoteAction,
         voter: AuthenticatedAccountId,
     ) -> &VoterSet<AuthenticatedAccountId> {
         self.launcher_votes.vote(voter, action.to_proposal_hash())
@@ -333,7 +331,7 @@ impl TeeState {
     pub fn add_launcher_image(
         &mut self,
         launcher_hash: LauncherImageHash,
-        genesis_hash: Option<&GenesisHash>,
+        compose: LauncherCompose,
         tee_upgrade_deadline_duration: Duration,
         ttl: Duration,
     ) -> AllowedLauncherImageInsertion {
@@ -341,12 +339,8 @@ impl TeeState {
         let mpc_image_hashes = self
             .allowed_docker_image_hashes
             .get_image_hashes(tee_upgrade_deadline_duration);
-        self.allowed_launcher_images.add_or_refresh(
-            launcher_hash,
-            &mpc_image_hashes,
-            genesis_hash,
-            ttl,
-        )
+        self.allowed_launcher_images
+            .add_or_refresh(launcher_hash, &mpc_image_hashes, compose, ttl)
     }
 
     /// Removes a launcher image from the allowed set. Clears launcher votes.
@@ -363,7 +357,7 @@ impl TeeState {
     /// Casts a vote for adding or removing an OS measurement.
     pub fn vote_measurement(
         &mut self,
-        action: MeasurementVoteAction,
+        action: &MeasurementVoteAction,
         voter: AuthenticatedAccountId,
     ) -> &VoterSet<AuthenticatedAccountId> {
         self.measurement_votes
@@ -527,12 +521,9 @@ mod tests {
         authenticate_account_as, bogus_ed25519_public_key, create_node, gen_account_id,
         gen_participant, gen_participants, node_for,
     };
-    use crate::tee::{
-        proposal::get_docker_compose_hash,
-        test_utils::{
-            allow_launcher, dstack_fixture_node, set_block_secs, set_block_timestamp,
-            whitelist_dstack_measurements,
-        },
+    use crate::tee::test_utils::{
+        MPC_NODE_COMPOSE, allow_launcher, dstack_fixture_node, set_block_secs, set_block_timestamp,
+        whitelist_dstack_measurements,
     };
     use mpc_attestation::attestation::MockAttestation;
     use mpc_primitives::hash::{
@@ -797,7 +788,7 @@ mod tests {
     fn launcher_mock(launcher: &LauncherImageHash, mpc_hash: &NodeImageHash) -> MockAttestation {
         MockAttestation::WithConstraints {
             mpc_docker_image_hash: None,
-            launcher_docker_compose_hash: Some(get_docker_compose_hash(launcher, mpc_hash, None)),
+            launcher_docker_compose_hash: Some(MPC_NODE_COMPOSE.hash(launcher, mpc_hash)),
             expiry_timestamp_seconds: Some(VERY_FAR_IN_FUTURE_SECS),
             expected_measurements: None,
         }
@@ -824,7 +815,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![adopted]);
@@ -861,7 +852,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), used);
@@ -892,7 +883,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
@@ -910,7 +901,7 @@ mod tests {
 
         // When
         set_block_secs(after_retention(NEWEST_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // Then
         assert_eq!(tee_state.get_allowed_launcher_hashes(), vec![newest]);
@@ -1232,7 +1223,7 @@ mod tests {
         // P0 votes for a launcher hash and an OS measurement
         let voter = authenticate_account_as(&account_ids[0], &all_participants);
         let launcher_action = LauncherVoteAction::Add(LauncherImageHash::from([0xBB; 32]));
-        tee_state.vote_launcher(launcher_action, voter.clone());
+        tee_state.vote_launcher(&launcher_action, voter.clone());
         let measurement_action = MeasurementVoteAction::Add(ExpectedMeasurements {
             mrtd: MrtdHash::from([0xCC; 48]),
             rtmr0: Rtmr0Hash::from([0xCC; 48]),
@@ -1240,7 +1231,7 @@ mod tests {
             rtmr2: Rtmr2Hash::from([0xCC; 48]),
             key_provider_event_digest: KeyProviderEventDigest::from([0xCC; 48]),
         });
-        tee_state.vote_measurement(measurement_action, voter);
+        tee_state.vote_measurement(&measurement_action, voter);
 
         assert_eq!(tee_state.launcher_votes.all().len(), 1);
         assert_eq!(tee_state.measurement_votes.all().len(), 1);
@@ -1268,7 +1259,7 @@ mod tests {
         set_block_secs(NEWEST_LAUNCHER_ADDED_AT_SECS);
         allow_launcher(&mut tee_state, newest, mpc_hash, LAUNCHER_TTL);
         set_block_secs(after_retention(OLD_LAUNCHER_ADDED_AT_SECS));
-        tee_state.remove_unused_launchers(&participants, LAUNCHER_TTL);
+        tee_state.remove_unused_launchers(participants.tls_keys(), LAUNCHER_TTL);
 
         // When
         let result = submit_mock(&mut tee_state, &node, launcher_mock(&removed, &mpc_hash));
