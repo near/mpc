@@ -262,6 +262,8 @@ impl CKDRequestTest {
     }
 }
 
+pub type CKDResponseArgs = CKDRespondArgs;
+
 pub async fn submit_signature_response(
     response: &SignatureRespondArgs,
     contract: &SandboxMpcContract,
