@@ -3,8 +3,9 @@ DDH dual-mode cryptosystem of [[PVW08]](https://eprint.iacr.org/2007/348), in
 *messy mode*. It is a base OT meant to seed an OT extension.
 
 $\mathbb{G}$ is a group of prime order $q$, written additively.
-$\mathsf{HashToCurve}$ is a hash to $\mathbb{G}$ whose outputs have unknown
-discrete logarithms.
+$\mathsf{HashToCurve}$ is the `hash_to_curve` function of
+[RFC 9380](https://datatracker.ietf.org/doc/rfc9380/): a hash to $\mathbb{G}$
+whose outputs have unknown discrete logarithms.
 $\mathsf{DST}$ is a domain separation tag that only this protocol uses.
 A receiver $\mathcal{R}$ and a sender $\mathcal{S}$ wish to run $\ell$ oblivious
 transfers.
@@ -46,11 +47,11 @@ P_ i \gets r_ i \cdot G_ {b_ i} \qquad
 Q_ i \gets r_ i \cdot H_ {b_ i}
 $$
 
-1.3 $\star$ send $(P_ i, Q_ i)_ {i \in [\ell]}$ to $\mathcal{S}$.
+1.3 $\star$ send $(P_ i, Q_ i)_ {i \in [\ell]}$.
 
 **Round 1 (Sender):**
 
-1.4 $\bullet$ wait to receive $(P_ i, Q_ i)_ {i \in [\ell]}$ from $\mathcal{R}$.
+1.4 $\bullet$ wait to receive $(P_ i, Q_ i)_ {i \in [\ell]}$.
 
 1.5 $\blacktriangle$ *assert* that $\forall i \in [\ell],\quad P_ i \neq Identity$ and $Q_ i \neq Identity$.
 
@@ -63,11 +64,11 @@ $$
 
 1.7 For $i \in [\ell]$ and $b \in \\\{0, 1\\\}$, compute $W_ {i, b} \gets V_ {i, b} + M_ {i, b}$.
 
-1.8 $\star$ send $(U_ {i, 0}, W_ {i, 0}, U_ {i, 1}, W_ {i, 1})_ {i \in [\ell]}$ to $\mathcal{R}$.
+1.8 $\star$ send $(U_ {i, 0}, W_ {i, 0}, U_ {i, 1}, W_ {i, 1})_ {i \in [\ell]}$.
 
 **Round 2 (Receiver):**
 
-2.1 $\bullet$ wait to receive $(U_ {i, 0}, W_ {i, 0}, U_ {i, 1}, W_ {i, 1})_ {i \in [\ell]}$ from $\mathcal{S}$.
+2.1 $\bullet$ wait to receive $(U_ {i, 0}, W_ {i, 0}, U_ {i, 1}, W_ {i, 1})_ {i \in [\ell]}$.
 
 2.2 For $i \in [\ell]$, compute $M_ {i, b_ i} \gets W_ {i, b_ i} - r_ i \cdot U_ {i, b_ i}$.
 
@@ -89,9 +90,10 @@ The other mode of PVW08 is decryption mode, where $x_ 0 = x_ 1$.
 It hides the choice bits statistically and the messages only under DDH.
 Hashing cannot produce such a string, so it would need a trusted setup.
 
-**Hashed common reference string.** A party who knew $x_ 0, x_ 1$ could cheat:
-the receiver by setting $x_ 0 = x_ 1$ to learn both messages, the sender by
-recovering the choice bits.
+**Hashed common reference string.** Whoever generates the string could keep a
+trapdoor.
+A receiver's trapdoor decrypts both messages.
+A sender's trapdoor reveals the choice bits.
 Hashing gives four points of unknown discrete logarithms, with no extra round
 and no trusted setup.
 The string is then in messy mode, except with probability $1/q$.
