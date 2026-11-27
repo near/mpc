@@ -1,18 +1,19 @@
 use serde::{Serialize, de::DeserializeOwned};
 use std::io;
-use zeroize::Zeroizing;
+use zeroize::ZeroizeOnDrop;
 
 /// Plaintext JSON of a secret, wiped on drop.
-pub struct SecretJson(Zeroizing<Vec<u8>>);
+#[derive(ZeroizeOnDrop)]
+pub struct SecretJson(Vec<u8>);
 
 impl SecretJson {
     /// Serializes into a buffer that is sized up front and never reallocates.
     pub(crate) fn serialize<T: Serialize + ?Sized>(value: &T) -> serde_json::Result<Self> {
         let mut counter = ByteCounter(0);
         serde_json::to_writer(&mut counter, value)?;
-        let mut json = Zeroizing::new(Vec::with_capacity(counter.0));
-        serde_json::to_writer(&mut *json, value)?;
-        Ok(Self(json))
+        let mut json = Self(Vec::with_capacity(counter.0));
+        serde_json::to_writer(&mut json.0, value)?;
+        Ok(json)
     }
 
     pub(crate) fn deserialize<T: DeserializeOwned>(&self) -> serde_json::Result<T> {
@@ -26,7 +27,7 @@ impl SecretJson {
 
 impl From<Vec<u8>> for SecretJson {
     fn from(plaintext: Vec<u8>) -> Self {
-        Self(Zeroizing::new(plaintext))
+        Self(plaintext)
     }
 }
 
@@ -63,7 +64,7 @@ mod tests {
         let json = SecretJson::serialize(keyset.keyshares()).unwrap();
 
         // Then
-        assert_eq!(*json.0, serde_json::to_vec(keyset.keyshares()).unwrap());
+        assert_eq!(json.0, serde_json::to_vec(keyset.keyshares()).unwrap());
         assert_eq!(json.0.capacity(), json.0.len());
     }
 }
