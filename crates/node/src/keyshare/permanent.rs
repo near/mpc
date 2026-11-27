@@ -4,6 +4,7 @@ use mpc_primitives::{EpochId, domain::DomainId};
 use near_mpc_bounded_collections::NonEmptyBTreeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use zeroize::Zeroizing;
 
 /// The single object we persist to permanent key storage.
 /// Corresponds to a Keyset in the contract side (i.e. one keyshare per domain).
@@ -136,7 +137,7 @@ impl PermanentKeyStorage {
     }
 
     pub async fn load(&self) -> anyhow::Result<Option<PermanentKeyshareData>> {
-        let data = self.backend.load().await?;
+        let data = self.backend.load().await?.map(Zeroizing::new);
         Ok(data.map(|data| serde_json::from_slice(&data)).transpose()?)
     }
 
@@ -236,7 +237,10 @@ impl PermanentKeyStorage {
         }
         let identifier = keyshare_data.storage_identifier();
         self.backend
-            .store(&serde_json::to_vec(keyshare_data)?, &identifier)
+            .store(
+                &Zeroizing::new(serde_json::to_vec(keyshare_data)?),
+                &identifier,
+            )
             .await?;
         // The new keyset is stored either way, so a failed deletion does not fail the store.
         if let Err(err) = self.backend.delete_all_except(&identifier).await {
