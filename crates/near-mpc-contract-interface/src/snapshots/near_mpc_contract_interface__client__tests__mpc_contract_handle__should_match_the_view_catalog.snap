@@ -59,6 +59,10 @@ method:   genesis_hash
 args:     {}
 
 contract: mpc.near
+method:   last_reshared_timestamp_seconds
+args:     {}
+
+contract: mpc.near
 method:   get_tee_accounts
 args:     {}
 

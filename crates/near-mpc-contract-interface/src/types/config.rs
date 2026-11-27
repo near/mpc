@@ -63,6 +63,8 @@ pub struct InitConfig {
     pub launcher_hash_unused_ttl_seconds: Option<u64>,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: Option<u64>,
+    /// See [`Config::key_refresh_period_seconds`].
+    pub key_refresh_period_seconds: Option<u64>,
 }
 
 /// Configuration parameters of the contract.
@@ -125,8 +127,20 @@ pub struct Config {
     pub launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: u64,
+    /// Time after the last completed resharing from which any participant can start a key
+    /// refresh with `trigger_key_refresh`. A contract that predates key refresh does not
+    /// report it and reads as [`DEFAULT_KEY_REFRESH_PERIOD_SECONDS`].
+    #[serde(default = "default_key_refresh_period_seconds")]
+    pub key_refresh_period_seconds: u64,
     /// Genesis hash that the contract stores when this config is applied, if it has none.
     pub migration_genesis_hash: Option<GenesisHash>,
+}
+
+/// Default for [`Config::key_refresh_period_seconds`].
+pub const DEFAULT_KEY_REFRESH_PERIOD_SECONDS: u64 = 30 * 24 * 60 * 60;
+
+fn default_key_refresh_period_seconds() -> u64 {
+    DEFAULT_KEY_REFRESH_PERIOD_SECONDS
 }
 
 #[cfg(test)]
@@ -156,11 +170,52 @@ mod tests {
             resolve_verification_tera_gas: Some(60),
             attestation_storage_fee_millinear: Some(20),
             launcher_hash_unused_ttl_seconds: Some(1_209_600),
+            key_refresh_period_seconds: Some(2_592_000),
         };
         let json = serde_json::to_string(&original_config).unwrap();
         let serialized_and_deserialized_config: InitConfig = serde_json::from_str(&json).unwrap();
 
         assert_eq!(original_config, serialized_and_deserialized_config);
+    }
+
+    #[test]
+    #[expect(non_snake_case)]
+    fn config__should_deserialize_without_key_refresh_period() {
+        // Given
+        let config = Config {
+            key_event_timeout_blocks: BlockCount::from(1),
+            tee_upgrade_deadline_duration_seconds: 2,
+            apply_contract_update_tera_gas: 3,
+            sign_call_gas_attachment_requirement_tera_gas: 4,
+            ckd_call_gas_attachment_requirement_tera_gas: 5,
+            return_signature_and_clean_state_on_success_call_tera_gas: 6,
+            return_ck_and_clean_state_on_success_call_tera_gas: 7,
+            fail_on_timeout_tera_gas: 8,
+            fail_attestation_submission_tera_gas: 9,
+            clean_tee_status_tera_gas: 10,
+            clean_invalid_attestations_tera_gas: 11,
+            cleanup_orphaned_node_migrations_tera_gas: 12,
+            remove_non_participant_update_votes_tera_gas: 13,
+            clean_foreign_chain_data_tera_gas: 14,
+            remove_non_participant_tee_verifier_votes_tera_gas: 15,
+            verifier_tera_gas: 16,
+            resolve_verification_tera_gas: 17,
+            launcher_hash_unused_ttl_seconds: 18,
+            attestation_storage_fee_millinear: 19,
+            key_refresh_period_seconds: DEFAULT_KEY_REFRESH_PERIOD_SECONDS,
+            migration_genesis_hash: None,
+        };
+        let mut json = serde_json::to_value(&config).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .remove("key_refresh_period_seconds")
+            .unwrap();
+
+        // When
+        let deserialized: Config = serde_json::from_value(json).unwrap();
+
+        // Then
+        assert_eq!(deserialized, config);
     }
 
     #[test]
@@ -214,6 +269,7 @@ mod tests {
             resolve_verification_tera_gas: None,
             attestation_storage_fee_millinear: None,
             launcher_hash_unused_ttl_seconds: None,
+            key_refresh_period_seconds: None,
         };
 
         assert_eq!(default_config, config_with_all_values_as_none);

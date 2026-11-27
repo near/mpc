@@ -33,14 +33,14 @@ use crate::method_names::{
     CLEAN_TEE_STATUS, CONFIG, CONTRACT_UPDATE_VOTES, CURRENT_KEYSET, DERIVED_PUBLIC_KEY,
     GENESIS_HASH, GET_ATTESTATION, GET_AVAILABLE_FOREIGN_CHAINS, GET_FOREIGN_CHAINS_CONFIGS,
     GET_PENDING_CKD_REQUEST, GET_PENDING_REQUEST, GET_PENDING_VERIFY_FOREIGN_TX_REQUEST,
-    GET_TEE_ACCOUNTS, INIT, INIT_RUNNING, LAUNCHER_HASH_VOTES, MIGRATE, MIGRATION_INFO,
-    MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES, PARAMETERS_VOTES,
-    PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
+    GET_TEE_ACCOUNTS, INIT, INIT_RUNNING, LAST_RESHARED_TIMESTAMP_SECONDS, LAUNCHER_HASH_VOTES,
+    MIGRATE, MIGRATION_INFO, MPC_NODE_MANIFEST_DIGEST_VOTES, OS_MEASUREMENT_VOTES,
+    PARAMETERS_VOTES, PREPAY_ATTESTATION_STORAGE, PUBLIC_KEY, REGISTER_BACKUP_SERVICE,
     REGISTER_FOREIGN_CHAINS_CONFIG, REMOVE_CONTRACT_UPDATE_VOTE,
     REMOVE_NON_PARTICIPANT_CONTRACT_UPDATE_VOTES, REQUEST_APP_PRIVATE_KEY, RESPOND, RESPOND_CKD,
     RESPOND_VERIFY_FOREIGN_TX, SIGN, START_KEYGEN_INSTANCE, START_NODE_MIGRATION,
     START_RESHARE_INSTANCE, STATE, SUBMIT_CONTRACT_UPDATE, SUBMIT_PARTICIPANT_INFO,
-    TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, UPDATE_PARTICIPANT_URL,
+    TEE_VERIFIER_ACCOUNT_ID, TEE_VERIFIER_VOTES, TRIGGER_KEY_REFRESH, UPDATE_PARTICIPANT_URL,
     VERIFY_FOREIGN_TRANSACTION, VERIFY_TEE, VERSION, VOTE_ADD_DOMAINS, VOTE_ADD_LAUNCHER_HASH,
     VOTE_ADD_OS_MEASUREMENT, VOTE_CANCEL_KEYGEN, VOTE_CANCEL_RESHARING, VOTE_CONTRACT_UPDATE,
     VOTE_MPC_NODE_MANIFEST_DIGEST, VOTE_NEW_PARAMETERS, VOTE_PK, VOTE_RESHARED,
@@ -78,6 +78,8 @@ pub const VOTE_ADD_DOMAINS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_NEW_PARAMETERS_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_CANCEL_KEYGEN_GAS: NearGas = NearGas::from_tgas(5);
 pub const VOTE_CANCEL_RESHARING_GAS: NearGas = NearGas::from_tgas(5);
+// TODO(#166): not benchmarked.
+pub const TRIGGER_KEY_REFRESH_GAS: NearGas = NearGas::from_tgas(22);
 pub const VOTE_TEE_VERIFIER_CHANGE_GAS: NearGas = NearGas::from_tgas(22);
 // TODO(#166): not benchmarked, carried over from the callers.
 pub const PREPAY_ATTESTATION_STORAGE_GAS: NearGas = NearGas::from_tgas(30);
@@ -398,6 +400,15 @@ impl<C: CallContract> MpcContractHandle<C> {
         .await
     }
 
+    pub async fn trigger_key_refresh(&self) -> Result<C::Output, MpcContractHandleError<C::Error>> {
+        self.call(FunctionCallArgs::no_deposit(
+            TRIGGER_KEY_REFRESH,
+            b"{}".to_vec(),
+            TRIGGER_KEY_REFRESH_GAS,
+        ))
+        .await
+    }
+
     pub async fn vote_mpc_node_manifest_digest(
         &self,
         mpc_node_manifest_digest: NodeImageHash,
@@ -674,6 +685,10 @@ impl<C: ViewContract + Clone> MpcContractHandle<C> {
 
     pub fn genesis_hash(&self) -> ViewCall<C, Option<GenesisHash>> {
         self.view(ViewArgs::no_args(GENESIS_HASH))
+    }
+
+    pub fn last_reshared_timestamp_seconds(&self) -> ViewCall<C, u64> {
+        self.view(ViewArgs::no_args(LAST_RESHARED_TIMESTAMP_SECONDS))
     }
 
     pub fn get_tee_accounts(&self) -> ViewCall<C, Vec<NodeInfo>> {
@@ -1059,6 +1074,7 @@ mod tests {
         handle.vote_reshared(key_event_id).await.unwrap();
         handle.vote_cancel_keygen(DomainId(7)).await.unwrap();
         handle.vote_cancel_resharing().await.unwrap();
+        handle.trigger_key_refresh().await.unwrap();
         handle
             .vote_add_launcher_hash(LauncherImageHash::from([7u8; 32]))
             .await
@@ -1175,6 +1191,7 @@ mod tests {
         let _ = handle.current_keyset().await;
         let _ = handle.config().await;
         let _ = handle.genesis_hash().await;
+        let _ = handle.last_reshared_timestamp_seconds().await;
         let _ = handle.get_tee_accounts().await;
         let _ = handle.migration_info().await;
         let _ = handle.get_available_foreign_chains().await;

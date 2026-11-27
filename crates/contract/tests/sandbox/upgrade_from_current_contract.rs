@@ -115,6 +115,7 @@ async fn submit_contract_update__should_apply_an_approved_config() {
         resolve_verification_tera_gas: 16,
         attestation_storage_fee_millinear: 20,
         launcher_hash_unused_ttl_seconds: 14 * 24 * 60 * 60,
+        key_refresh_period_seconds: 17,
         migration_genesis_hash: Some(bogus_genesis_hash()),
     };
 

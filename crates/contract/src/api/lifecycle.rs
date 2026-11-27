@@ -16,6 +16,7 @@ use crate::primitives::domain::{
 use crate::primitives::key_state::{EpochId, Keyset};
 use crate::primitives::threshold_votes::GovernanceThresholdParametersVotes;
 use crate::primitives::thresholds::GovernanceThresholdParameters;
+use crate::primitives::time::Timestamp;
 use crate::state::ProtocolContractState;
 use crate::state::running::RunningContractState;
 use crate::storage_keys::StorageKey;
@@ -81,6 +82,7 @@ impl MpcContract {
             parameters_votes: GovernanceThresholdParametersVotes::default(),
             genesis_hash: Some(genesis_hash),
             add_domains_votes: AddDomainsVotes::default(),
+            last_reshared_at: Timestamp::now(),
         })
     }
 
@@ -160,6 +162,7 @@ impl MpcContract {
             parameters_votes: GovernanceThresholdParametersVotes::default(),
             genesis_hash: Some(genesis_hash),
             add_domains_votes: AddDomainsVotes::default(),
+            last_reshared_at: Timestamp::now(),
         })
     }
 
@@ -200,6 +203,13 @@ impl MpcContract {
 
     pub fn genesis_hash(&self) -> Option<GenesisHash> {
         self.genesis_hash
+    }
+
+    /// Unix time, in seconds, at which a resharing last completed, or at which the contract was
+    /// initialized if none has. A key refresh is due
+    /// [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) later.
+    pub fn last_reshared_timestamp_seconds(&self) -> u64 {
+        self.last_reshared_at.as_secs()
     }
 
     // contract version

@@ -41,6 +41,7 @@ pub const INIT_RUNNING: &str = "init_running";
 pub const MIGRATE: &str = "migrate";
 pub const START_KEYGEN_INSTANCE: &str = "start_keygen_instance";
 pub const START_RESHARE_INSTANCE: &str = "start_reshare_instance";
+pub const TRIGGER_KEY_REFRESH: &str = "trigger_key_refresh";
 pub const SUBMIT_CONTRACT_UPDATE: &str = "submit_contract_update";
 pub const FAIL_ON_TIMEOUT: &str = "fail_on_timeout";
 
@@ -68,6 +69,7 @@ pub const STATE: &str = "state";
 pub const CURRENT_KEYSET: &str = "current_keyset";
 pub const CONFIG: &str = "config";
 pub const GENESIS_HASH: &str = "genesis_hash";
+pub const LAST_RESHARED_TIMESTAMP_SECONDS: &str = "last_reshared_timestamp_seconds";
 pub const PUBLIC_KEY: &str = "public_key";
 pub const DERIVED_PUBLIC_KEY: &str = "derived_public_key";
 pub const VERSION: &str = "version";

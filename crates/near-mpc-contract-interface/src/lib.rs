@@ -14,7 +14,7 @@ pub mod types {
         StoredAttestation, TcbInfo, VerifiedAttestation, VerifiedDstackAttestation,
         VerifiedMeasurements,
     };
-    pub use config::{Config, InitConfig};
+    pub use config::{Config, DEFAULT_KEY_REFRESH_PERIOD_SECONDS, InitConfig};
     pub use foreign_chain::*;
     pub use participants::{
         MAX_PARTICIPANT_URL_BYTES, ParticipantId, ParticipantInfo, ParticipantUrl, Participants,

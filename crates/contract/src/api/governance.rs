@@ -2,6 +2,7 @@
 
 use crate::dto_mapping::{IntoInterfaceType, TryIntoContractType};
 use crate::errors::{Error, InvalidParameters};
+use crate::primitives::participants::Participants;
 use crate::primitives::thresholds::{GovernanceThreshold, ProposedGovernanceThresholdParameters};
 use crate::state::ProtocolContractState;
 use crate::tee::tee_state::TeeValidationResult;
@@ -43,40 +44,22 @@ impl MpcContract {
             proposal,
         );
 
-        let tee_upgrade_deadline_duration =
-            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+        self.reverify_participants(proposal.participants())?;
 
-        let validation_result = self
-            .tee_state
-            .reverify_participants(proposal.participants(), tee_upgrade_deadline_duration);
-
-        match validation_result {
-            TeeValidationResult::Full => {
-                if let Some(new_state) = self.protocol_state.vote_new_parameters(
-                    prospective_epoch_id,
-                    &proposal,
-                    &mut self.parameters_votes,
-                )? {
-                    self.protocol_state = new_state;
-                }
-                // Without domains the proposal applies directly; drop votes of dropped participants.
-                if let ProtocolContractState::Running(state) = &self.protocol_state {
-                    let participants = state.parameters.participants();
-                    self.add_domains_votes
-                        .retain_votes(|p| participants.is_participant(p));
-                }
-                Ok(())
-            }
-            TeeValidationResult::Partial {
-                participants_with_invalid_attestation,
-            } => Err(InvalidParameters::InvalidTeeRemoteAttestation {
-                reason: format!(
-                    "The following participants have invalid TEE status: {:?}",
-                    participants_with_invalid_attestation
-                ),
-            }
-            .into()),
+        if let Some(new_state) = self.protocol_state.vote_new_parameters(
+            prospective_epoch_id,
+            &proposal,
+            &mut self.parameters_votes,
+        )? {
+            self.protocol_state = new_state;
         }
+        // Without domains the proposal applies directly; drop votes of dropped participants.
+        if let ProtocolContractState::Running(state) = &self.protocol_state {
+            let participants = state.parameters.participants();
+            self.add_domains_votes
+                .retain_votes(|p| participants.is_participant(p));
+        }
+        Ok(())
     }
 
     /// Propose adding a new set of domains for the MPC network.
@@ -117,6 +100,31 @@ impl MpcContract {
 impl MpcContract {
     pub(crate) fn threshold(&self) -> Result<GovernanceThreshold, Error> {
         self.protocol_state.threshold()
+    }
+
+    /// Fails unless every one of `participants` runs a node with a valid attestation.
+    pub(crate) fn reverify_participants(
+        &mut self,
+        participants: &Participants,
+    ) -> Result<(), Error> {
+        let tee_upgrade_deadline_duration =
+            Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds);
+
+        match self
+            .tee_state
+            .reverify_participants(participants, tee_upgrade_deadline_duration)
+        {
+            TeeValidationResult::Full => Ok(()),
+            TeeValidationResult::Partial {
+                participants_with_invalid_attestation,
+            } => Err(InvalidParameters::InvalidTeeRemoteAttestation {
+                reason: format!(
+                    "The following participants have invalid TEE status: {:?}",
+                    participants_with_invalid_attestation
+                ),
+            }
+            .into()),
+        }
     }
 }
 

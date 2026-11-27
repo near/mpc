@@ -470,6 +470,7 @@ impl IntoInterfaceType<dtos::Config> for &Config {
             resolve_verification_tera_gas: self.resolve_verification_tera_gas,
             launcher_hash_unused_ttl_seconds: self.launcher_hash_unused_ttl_seconds,
             attestation_storage_fee_millinear: self.attestation_storage_fee_millinear,
+            key_refresh_period_seconds: self.key_refresh_period_seconds,
             migration_genesis_hash: self.migration_genesis_hash,
         }
     }
@@ -536,6 +537,9 @@ impl From<near_mpc_contract_interface::types::InitConfig> for Config {
         if let Some(v) = config_ext.launcher_hash_unused_ttl_seconds {
             config.launcher_hash_unused_ttl_seconds = v;
         }
+        if let Some(v) = config_ext.key_refresh_period_seconds {
+            config.key_refresh_period_seconds = v;
+        }
 
         config
     }
@@ -570,6 +574,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
             attestation_storage_fee_millinear: value.attestation_storage_fee_millinear,
             launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
+            key_refresh_period_seconds: value.key_refresh_period_seconds,
             migration_genesis_hash: value.migration_genesis_hash,
         }
     }
@@ -604,6 +609,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
             attestation_storage_fee_millinear: value.attestation_storage_fee_millinear,
             launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
+            key_refresh_period_seconds: value.key_refresh_period_seconds,
             migration_genesis_hash: value.migration_genesis_hash,
         }
     }
