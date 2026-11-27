@@ -27,7 +27,7 @@ pub use participants::ParticipantList;
 pub use crypto::polynomials::{
     batch_compute_lagrange_coefficients, batch_invert, compute_lagrange_coefficient,
 };
-use zeroize::ZeroizeOnDrop;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use crate::dkg::{assert_key_invariants, assert_reshare_keys_invariants, do_keygen, do_reshare};
 use crate::errors::InitializationError;
@@ -130,7 +130,7 @@ where
 pub fn reshare<C, OT, NT, R>(
     old_participants: &[Participant],
     old_threshold: OT,
-    old_signing_key: Option<SigningShare<C>>,
+    old_signing_key: Option<Zeroizing<SigningShare<C>>>,
     old_public_key: VerifyingKey<C>,
     new_participants: &[Participant],
     new_threshold: NT,
@@ -149,7 +149,7 @@ where
         new_participants,
         me,
         threshold,
-        old_signing_key,
+        old_signing_key.as_deref(),
         old_threshold,
         old_participants,
     )?;
@@ -168,7 +168,7 @@ where
 
 /// Performs the refresh protocol
 pub fn refresh<C, T, R>(
-    old_signing_key: Option<SigningShare<C>>,
+    old_signing_key: Option<Zeroizing<SigningShare<C>>>,
     old_public_key: VerifyingKey<C>,
     old_participants: &[Participant],
     old_threshold: T,
@@ -193,7 +193,7 @@ where
         old_participants,
         me,
         threshold,
-        old_signing_key,
+        old_signing_key.as_deref(),
         threshold,
         old_participants,
     )?;
