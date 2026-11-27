@@ -52,6 +52,10 @@ When an incident is underway we expect you to be ready to collaborate on actions
 - Submitting votes or other information to the smart contract.
 - Sharing logs for debugging.
 
+### Inspecting allowed image hashes
+
+The node's `/debug/contract` page displays its cached allowed MPC image hashes and their expiry timestamps. Compare this view with the contract when investigating stale state. Before the first successful contract poll, the cache is empty; an empty list can also mean the contract allowlist is empty. The page cannot distinguish these cases.
+
 ## Upgrades
 Upgrades are a regular part of operating a node — expect a new MPC release roughly every one to two weeks, and note that every NEAR protocol upgrade requires a matching MPC upgrade. For each release we typically roll out node upgrades first, then contract upgrades, coordinating both on Slack. We'd like you to independently verify the code before acting, so you can confirm the expected version is what's actually being run.
 

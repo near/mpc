@@ -14,8 +14,8 @@ use mpc_node_config::{
     TripleConfig, foreign_chains::RpcPreset,
 };
 use near_account_id::AccountId;
-use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_mpc_contract_interface::types::ProtocolContractState;
+use near_mpc_contract_interface::types::{AllowedMpcDockerImageHash, Ed25519PublicKey};
 use node_types::http_server::StaticWebData;
 use prometheus::{Encoder, TextEncoder, default_registry};
 use recent_transactions::SharedRecentTransactions;
@@ -67,6 +67,7 @@ struct WebServerState {
     /// Receiver for contract state
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    allowed_image_hashes: Arc<OnceLock<watch::Receiver<Vec<AllowedMpcDockerImageHash>>>>,
     static_web_data: StaticWebData,
     node_config: NodeConfigResponse,
     nearcore_config: serde_json::Value,
@@ -254,7 +255,31 @@ async fn contract_state(state: State<WebServerState>) -> String {
         // Clone to avoid holding a lock
         .clone();
 
-    near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state)
+    let mut output = near_mpc_contract_interface::types::protocol_state_to_string(&protocol_state);
+    output.push_str(&format_allowed_image_hashes(&state.allowed_image_hashes));
+    output
+}
+
+fn format_allowed_image_hashes(
+    receiver: &OnceLock<watch::Receiver<Vec<AllowedMpcDockerImageHash>>>,
+) -> String {
+    let Some(receiver) = receiver.get() else {
+        return "\nAllowed MPC image hashes: not available yet\n".to_string();
+    };
+    let hashes = receiver.borrow();
+    let mut output = "\nAllowed MPC image hashes (cached):\n".to_string();
+    if hashes.is_empty() {
+        output.push_str("  (empty)\n");
+    }
+    for hash in hashes.iter() {
+        output.push_str(&format!(
+            "  {} (expiry timestamp seconds: {})\n",
+            hash.image_hash,
+            hash.expiry_timestamp_seconds
+                .map_or_else(|| "unknown".to_string(), |expiry| expiry.to_string())
+        ));
+    }
+    output
 }
 
 async fn debug_recent_transactions(State(state): State<WebServerState>) -> String {
@@ -321,6 +346,7 @@ pub async fn start_web_server(
     static_web_data: StaticWebData,
     protocol_state_receiver: watch::Receiver<ProtocolContractState>,
     migration_state_receiver: watch::Receiver<(u64, ContractMigrationInfo)>,
+    allowed_image_hashes: Arc<OnceLock<watch::Receiver<Vec<AllowedMpcDockerImageHash>>>>,
     config: ConfigFile,
     nearcore_config: serde_json::Value,
     recent_transactions: SharedRecentTransactions,
@@ -351,6 +377,7 @@ pub async fn start_web_server(
             debug_request_sender,
             protocol_state_receiver,
             migration_state_receiver,
+            allowed_image_hashes,
             static_web_data,
             node_config: NodeConfigResponse::from(config),
             nearcore_config,
@@ -386,6 +413,30 @@ mod tests {
     use std::net::Ipv4Addr;
     use std::num::NonZeroU64;
     use std::str::FromStr;
+
+    #[test]
+    fn format_allowed_image_hashes__should_show_current_cached_value() {
+        // Given
+        let receiver = OnceLock::new();
+        assert!(format_allowed_image_hashes(&receiver).contains("not available yet"));
+        let (sender, watched) = watch::channel(vec![]);
+        receiver.set(watched).unwrap();
+        assert!(format_allowed_image_hashes(&receiver).contains("(empty)"));
+        let hash = AllowedMpcDockerImageHash {
+            image_hash: [0xab; 32].into(),
+            expiry_timestamp_seconds: Some(123),
+        };
+
+        // When
+        sender.send(vec![hash]).unwrap();
+        let output = format_allowed_image_hashes(&receiver);
+
+        // Then
+        assert!(output.contains(&"ab".repeat(32)));
+        assert!(output.contains("expiry timestamp seconds: 123"));
+        sender.send(vec![]).unwrap();
+        assert!(format_allowed_image_hashes(&receiver).contains("(empty)"));
+    }
 
     const PROVIDER_ALCHEMY: &str = "alchemy";
     const PROVIDER_ANKR: &str = "ankr";

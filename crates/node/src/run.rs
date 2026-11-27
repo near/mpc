@@ -197,6 +197,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     let recent_transactions = SharedRecentTransactions::default();
     spawn_recent_transactions_drain(recent_tx_receiver, recent_transactions.clone());
 
+    let allowed_image_hashes = Arc::new(OnceLock::new());
     let web_server = root_runtime
         .block_on(start_web_server(
             root_task_handle.clone(),
@@ -205,6 +206,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             static_web_data(&secrets, attestation),
             protocol_state_receiver,
             migration_state_receiver,
+            allowed_image_hashes.clone(),
             config.node.clone(),
             read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
@@ -242,6 +244,8 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
         RecentTransactionsLogger::new(recent_tx_sender),
         indexer_shutdown_token.clone(),
     );
+
+    let _ = allowed_image_hashes.set(indexer_api.allowed_docker_images_receiver.clone());
 
     let cancellation_token = CancellationToken::new();
 
