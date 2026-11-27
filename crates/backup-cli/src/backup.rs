@@ -157,7 +157,7 @@ async fn open_node_client_and_storage(
         args.mpc_node_address.clone(),
         verifying_key_from_str(&args.mpc_node_p2p_key),
         secrets.p2p_private_key,
-        mpc_node::config::hex_to_binary_key(&args.backup_encryption_key_hex)
+        mpc_node::config::AesKey256::from_hex(&args.backup_encryption_key_hex)
             .expect("require valid hex key"),
         Duration::from_secs(args.request_timeout_seconds),
     );
