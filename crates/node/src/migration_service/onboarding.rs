@@ -343,7 +343,7 @@ mod tests {
     use crate::{
         config::tests::gen_participant,
         indexer::participants::ContractState,
-        keyshare::{generate_key_storage_config, test_utils::KeysetBuilder},
+        keyshare::{generate_key_storage, test_utils::KeysetBuilder},
         migration_service::{
             onboarding::{
                 IMPORT_CANCELLED_MSG, IMPORT_FAILURE_MSG, IMPORT_SUCCESS_MSG,
@@ -380,7 +380,7 @@ mod tests {
             .await
             .expect("Timed out waiting for log message");
         };
-        let (config, _temp_dir) = generate_key_storage_config();
+        let (storage, _temp_dir) = generate_key_storage().await;
         let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let cancel_import = CancellationToken::new();
         let (keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
@@ -392,7 +392,7 @@ mod tests {
         // sanity check
         assert_ne!(wrong_builder.keyset(), contract_keyset);
 
-        let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
+        let keyshare_storage = Arc::new(RwLock::new(storage));
 
         let res = tokio::spawn(async move {
             wait_for_log(START_IMPORT_LOOP_MSG.into()).await;
@@ -424,16 +424,15 @@ mod tests {
     #[traced_test]
     async fn test_wait_for_and_import_keyshares_cancel() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let (config, _temp_dir) = generate_key_storage_config();
+        let (storage, _temp_dir) = generate_key_storage().await;
         let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let cancel_import = CancellationToken::new();
         let (_keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
         let contract_keyset = builder.keyset();
         cancel_import.cancel();
-        let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
         wait_for_and_import_keyshares(
             &contract_keyset,
-            keyshare_storage,
+            Arc::new(RwLock::new(storage)),
             keyshare_receiver,
             cancel_import,
         )
@@ -447,7 +446,7 @@ mod tests {
     #[tokio::test]
     async fn test_wait_for_and_import_keyshares_drop_sender() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let (config, _temp_dir) = generate_key_storage_config();
+        let (storage, _temp_dir) = generate_key_storage().await;
         let builder = KeysetBuilder::new_populated(EPOCH_ID, NUM_KEYS, &mut rng);
         let cancel_import = CancellationToken::new();
         let keyshare_receiver = {
@@ -455,10 +454,9 @@ mod tests {
             keyshare_receiver
         };
         let contract_keyset = builder.keyset();
-        let keyshare_storage = Arc::new(RwLock::new(config.create().await.unwrap()));
         let res = wait_for_and_import_keyshares(
             &contract_keyset,
-            keyshare_storage,
+            Arc::new(RwLock::new(storage)),
             keyshare_receiver,
             cancel_import,
         )

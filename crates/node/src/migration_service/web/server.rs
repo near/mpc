@@ -285,7 +285,7 @@ fn error_response(status: StatusCode, msg: impl Into<Bytes>) -> Response<Full<By
 #[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
-    use crate::keyshare::{Keyshare, generate_key_storage_config, test_utils::KeysetBuilder};
+    use crate::keyshare::{Keyshare, generate_key_storage, test_utils::KeysetBuilder};
     use crate::metrics;
     use crate::migration_service::{
         types::MigrationInfo,
@@ -321,11 +321,7 @@ mod tests {
         tempfile::TempDir,
     ) {
         let (import_keyshares_sender, import_keyshares_receiver) = watch::channel(vec![]);
-        let (config, tempdir) = generate_key_storage_config();
-        let keyshare_storage = config
-            .create()
-            .await
-            .expect("keyshare storage should be creatable in a temp dir");
+        let (keyshare_storage, tempdir) = generate_key_storage().await;
         (
             WebServerState {
                 import_keyshares_sender,

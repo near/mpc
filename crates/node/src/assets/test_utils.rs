@@ -1,10 +1,11 @@
 use crate::assets::DistributedAssetStorage;
 use crate::assets::cleanup::EpochData;
 use crate::config::ParticipantsConfig;
-use crate::db::SecretDB;
+use crate::db::{SecretDB, new_test_db};
 use crate::indexer::participants::convert_participant_infos;
+use crate::network::testing::new_test_client;
 use crate::providers::HasParticipants;
-use crate::providers::ecdsa::triple::PairedTriple;
+use crate::providers::ecdsa::triple::{PairedTriple, TripleStorage};
 use crate::{
     db::DBCol,
     primitives::{ParticipantId, UniqueId},
@@ -73,6 +74,7 @@ pub fn get_participant_ids(epoch_data: EpochData) -> Vec<ParticipantId> {
 
 pub struct TestContext {
     pub db: Arc<SecretDB>,
+    _db_dir: tempfile::TempDir,
     pub clock: FakeClock,
     pub my_participant_id: ParticipantId,
     pub alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
@@ -109,10 +111,10 @@ impl TestContext {
         my_participant_id: ParticipantId,
         alive_participants: Arc<Mutex<Vec<ParticipantId>>>,
     ) -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let db = crate::db::SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _db_dir) = new_test_db();
         Self {
             db,
+            _db_dir,
             clock: FakeClock::default(),
             my_participant_id,
             alive_participants,
@@ -154,4 +156,19 @@ impl TestContext {
         let store = self.new_store::<PairedTriple>(DBCol::TripleV2, self.triple_prefix());
         assert_eq!(store.num_owned(), expected);
     }
+}
+
+pub fn new_triple_store(
+    db: &Arc<SecretDB>,
+    my_participant_id: ParticipantId,
+    reconstruction_threshold: ReconstructionThreshold,
+    participants: &[ParticipantId],
+) -> TripleStorage {
+    TripleStorage::new(
+        FakeClock::default().clock(),
+        db.clone(),
+        new_test_client(participants.to_vec(), my_participant_id),
+        reconstruction_threshold,
+    )
+    .unwrap()
 }

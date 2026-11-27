@@ -211,9 +211,17 @@ impl SecretDBUpdate {
 }
 
 #[cfg(test)]
+pub fn new_test_db() -> (Arc<SecretDB>, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let db = SecretDB::new(dir.path(), crate::config::TEST_LOCAL_STORAGE_AES_KEY).unwrap();
+    (db, dir)
+}
+
+#[cfg(test)]
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use crate::config::TEST_LOCAL_STORAGE_AES_KEY;
     use std::assert_matches;
 
     #[test]
@@ -238,8 +246,7 @@ mod tests {
 
     #[test]
     fn test_db() -> anyhow::Result<()> {
-        let dir = tempfile::tempdir()?;
-        let db = SecretDB::new(dir.path(), [1; 16])?;
+        let (db, _dir) = new_test_db();
         let mut update = db.update();
         update.put(DBCol::SignRequest, b"key", b"value");
         update.put(DBCol::TripleV2, b"triple1", b"tripledata");
@@ -293,7 +300,6 @@ mod tests {
     fn secret_db__should_be_able_to_open_db_with_unknown_column_families() {
         // Given
         let dir = tempfile::tempdir().expect("tempdir should be created");
-        let key = [1; 16];
         {
             let mut options = rocksdb::Options::default();
             options.create_if_missing(true);
@@ -303,7 +309,7 @@ mod tests {
         }
 
         // When
-        let result = SecretDB::new(dir.path(), key);
+        let result = SecretDB::new(dir.path(), TEST_LOCAL_STORAGE_AES_KEY);
 
         // Then
         assert_matches!(result, Ok(_));

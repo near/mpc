@@ -119,14 +119,12 @@ mod tests {
     use crate::assets::cleanup::{delete_stale_triples, get_epoch_data};
     use crate::assets::test_utils;
     use crate::assets::test_utils::{
-        TestContext, get_participant_ids, make_triple, random_verifying_key, triple_v2_key,
+        TestContext, get_participant_ids, make_triple, new_triple_store, random_verifying_key,
+        triple_v2_key,
     };
     use crate::db::EPOCH_ID_KEY;
-    use crate::db::{DBCol, SecretDB};
-    use crate::network::testing::new_test_client;
+    use crate::db::{DBCol, new_test_db};
     use crate::primitives::UniqueId;
-    use crate::providers::ecdsa::triple::TripleStorage;
-    use near_time::FakeClock;
     use std::collections::BTreeSet;
     use std::sync::{Arc, Mutex};
 
@@ -139,8 +137,7 @@ mod tests {
     #[expect(non_snake_case)]
     fn get_epoch_data__should_bail_on_legacy_8_byte_entry() {
         // Given a DB whose EpochData entry is the legacy raw 8-byte epoch id.
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let (db, _dir) = new_test_db();
         let mut writer = db.update();
         writer.put(DBCol::EpochData, EPOCH_ID_KEY, &7u64.to_be_bytes());
         writer.commit().unwrap();
@@ -222,16 +219,13 @@ mod tests {
         let (mut start_data, my_participant_id, reconstruction_threshold) =
             test_utils::gen_four_participants();
         let all_participants = get_participant_ids(start_data.clone());
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let client = new_test_client(all_participants.clone(), my_participant_id);
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            client,
+        let (db, _dir) = new_test_db();
+        let triple_store = new_triple_store(
+            &db,
+            my_participant_id,
             reconstruction_threshold,
-        )
-        .unwrap();
+            &all_participants,
+        );
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&all_participants));
         let v2_key = triple_v2_key(reconstruction_threshold, id);
@@ -285,16 +279,13 @@ mod tests {
             .take(all_participants.len() - 1)
             .copied()
             .collect();
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let client = new_test_client(all_participants.clone(), my_participant_id);
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            client,
+        let (db, _dir) = new_test_db();
+        let triple_store = new_triple_store(
+            &db,
+            my_participant_id,
             reconstruction_threshold,
-        )
-        .unwrap();
+            &all_participants,
+        );
         let id = triple_store.generate_and_reserve_id();
         triple_store.add_owned(id, make_triple(&active_subset));
         let v2_key = triple_v2_key(reconstruction_threshold, id);
@@ -338,16 +329,13 @@ mod tests {
             .iter()
             .find(|p| **p != my_participant_id)
             .unwrap();
-        let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
-        let client = new_test_client(all_participants.clone(), my_participant_id);
-        let triple_store = TripleStorage::new(
-            FakeClock::default().clock(),
-            db.clone(),
-            client,
+        let (db, _dir) = new_test_db();
+        let triple_store = new_triple_store(
+            &db,
+            my_participant_id,
             reconstruction_threshold,
-        )
-        .unwrap();
+            &all_participants,
+        );
         // Even an outright-stale peer-owned triple stays put — the peer cleans
         // its own.
         let peer_id = UniqueId::new(peer, 100, 0);

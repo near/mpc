@@ -487,12 +487,10 @@ impl KeyStorageConfig {
 #[cfg(any(test, feature = "test-utils"))]
 pub fn generate_key_storage_config() -> (KeyStorageConfig, tempfile::TempDir) {
     let tempdir = tempfile::tempdir().unwrap();
-    let home_dir = tempdir.path().to_path_buf();
-    let local_encryption_key = [3; 16];
     (
         KeyStorageConfig {
-            home_dir,
-            local_encryption_key,
+            home_dir: tempdir.path().to_path_buf(),
+            local_encryption_key: crate::config::TEST_LOCAL_STORAGE_AES_KEY,
         },
         tempdir,
     )
@@ -517,9 +515,8 @@ pub mod tests {
     use rand::SeedableRng as _;
 
     use super::{KeyshareStorage, generate_key_storage, generate_key_storage_config};
-    use crate::keyshare::local::LocalPermanentKeyStorageBackend;
     use crate::keyshare::permanent::{PermanentKeyStorageBackend, storage_identifier};
-    use crate::keyshare::test_utils::list_permanent_key_files;
+    use crate::keyshare::test_utils::{list_permanent_key_files, new_local_backend};
     use crate::keyshare::{
         Keyshare,
         test_utils::{KeysetBuilder, generate_dummy_keyshare, generate_dummy_keyshares},
@@ -1287,12 +1284,7 @@ pub mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let (storage_config, _tempdir) = generate_key_storage_config();
-        let backend = LocalPermanentKeyStorageBackend::new(
-            storage_config.home_dir.clone(),
-            storage_config.local_encryption_key,
-        )
-        .await
-        .unwrap();
+        let backend = new_local_backend(&storage_config.home_dir).await;
         let older = KeysetBuilder::new_populated(0, 1, &mut rng);
         let latest = KeysetBuilder::new_populated(1, 1, &mut rng);
         for keyset in [&older, &latest] {

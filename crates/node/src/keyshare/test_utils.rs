@@ -1,5 +1,7 @@
+use super::local::LocalPermanentKeyStorageBackend;
 use super::permanent::PermanentKeyshareData;
 use super::{Keyshare, KeyshareData};
+use crate::config::TEST_LOCAL_STORAGE_AES_KEY;
 use crate::home_paths::permanent_keys_dir;
 use mpc_primitives::{EpochId, KeyEventId, domain::DomainId};
 use near_mpc_crypto_types::{KeyForDomain, Keyset};
@@ -20,6 +22,12 @@ pub fn list_permanent_key_files(home_dir: &Path) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+pub async fn new_local_backend(home_dir: &Path) -> LocalPermanentKeyStorageBackend {
+    LocalPermanentKeyStorageBackend::new(home_dir.to_path_buf(), TEST_LOCAL_STORAGE_AES_KEY)
+        .await
+        .unwrap()
 }
 
 pub fn make_key_id(epoch_id: u64, domain_id: u64, attempt_id: u64) -> KeyEventId {
