@@ -51,7 +51,7 @@ This will regenerate the following files:
 - `tcb_info.json`
 - `launcher_image_compose.yaml`
 - `mpc_image_digest.txt`
-- `collateral.json`, empty when new; step 8 fills it in
+- `collateral.json`, empty when new; step 7 fills it in
 
 All files will be written into the specified output directory.
 
@@ -74,19 +74,15 @@ All files will be written into the specified output directory.
    cargo nextest run -p test-utils account_secret_key
    ```
 
-6. Update `crates/attestation-types/assets/tcb_info.json` — copy the newly generated `tcb_info.json`
-   there as well, since unit tests in the `attestation-types` crate use it for deserialization tests.
-   This is optional — the tests only verify parsing, not measurement values — but keeping it
-   in sync avoids confusion.
+6. Move the new `tcb_info.json` to `crates/mpc-attestation/assets/tcb_info.json`, and point the new
+   fixture's `tcb_info`, `tcb_info_path` and `measurements` at it. That one file is the fixture's
+   measurements, the attestation CLI's default, and the set operators vote in with
+   `vote_add_os_measurement`, so capture on a release CVM with the production vCPU, memory and
+   `qemu_hotplug_off` settings (`rtmr0` depends on them). While nodes still run the previous OS
+   image, first rename its file to `tcb_info_dstack_<version>.json`, keep it in
+   `production_measurements()`, and point the previous fixture at it.
 
-7. When the OS image changed, replace `crates/mpc-attestation/assets/tcb_info.json` with the new
-   fixture's `tcb_info.json`. It is the attestation CLI's default and the measurement set operators
-   vote in with `vote_add_os_measurement`. It covers `mrtd`, `rtmr0`-`rtmr2` and the key-provider
-   event, none of which the compose files affect; `rtmr0` depends on the CVM's vCPU and memory
-   configuration. While nodes still run the previous OS image, keep its set as
-   `tcb_info_dstack_<version>.json` in `production_measurements()`, so the CLI accepts both.
-
-8. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
+7. Regenerate the derived fixtures — `collateral.json` (the captured collateral, hex-encoded for the
    contract DTO) and the verifier's borsh arguments — then refresh the report values the verifier test
    hardcodes (`mr_config_id`, `rt_mr3`, `report_data` change with every new node):
 

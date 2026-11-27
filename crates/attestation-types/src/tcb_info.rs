@@ -242,7 +242,7 @@ mod tests {
     #[test]
     fn TcbInfo__should_deserialize_from_real_test_data() {
         // Given
-        const TCB_INFO_JSON: &str = include_str!("../assets/tcb_info.json");
+        const TCB_INFO_JSON: &str = include_str!("../../mpc-attestation/assets/tcb_info.json");
 
         // When
         let tcb_info: TcbInfo = serde_json::from_str(TCB_INFO_JSON).unwrap();
@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn TcbInfo__should_succeed_tryfrom_DstackTcbInfo() {
         // Given
-        const TCB_INFO_JSON: &str = include_str!("../assets/tcb_info.json");
+        const TCB_INFO_JSON: &str = include_str!("../../mpc-attestation/assets/tcb_info.json");
         let dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_JSON).unwrap();
 
         // When
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn TcbInfo__should_fail_tryfrom_DstackTcbInfo() {
         // Given
-        const TCB_INFO_JSON: &str = include_str!("../assets/tcb_info.json");
+        const TCB_INFO_JSON: &str = include_str!("../../mpc-attestation/assets/tcb_info.json");
         let mut dstack_tcb_info: DstackTcbInfo = serde_json::from_str(TCB_INFO_JSON).unwrap();
         // One extra char should make the conversion fail
         dstack_tcb_info.mrtd += "a";

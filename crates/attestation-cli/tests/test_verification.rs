@@ -49,7 +49,7 @@ fn full_verification_succeeds_with_valid_attestation(
     let args = make_args(
         &compose_path,
         fixture.mpc_image_digest_hex,
-        Some(fixture.asset_path("tcb_info.json")),
+        Some(fixture.tcb_info_path().to_path_buf()),
     );
 
     let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);
@@ -81,7 +81,7 @@ fn verification_fails_with_wrong_image_hash(
     let args = make_args(
         &compose_path,
         wrong_hash,
-        Some(fixture.asset_path("tcb_info.json")),
+        Some(fixture.tcb_info_path().to_path_buf()),
     );
 
     let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);
@@ -107,7 +107,7 @@ fn verification_fails_with_wrong_compose_file(
     let args = make_args(
         &compose_path,
         fixture.mpc_image_digest_hex,
-        Some(fixture.asset_path("tcb_info.json")),
+        Some(fixture.tcb_info_path().to_path_buf()),
     );
 
     let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);

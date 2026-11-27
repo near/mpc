@@ -16,6 +16,8 @@ use tee_verifier_interface::{Collateral, CollateralDates, VerifiedReport};
 /// `create-assets.sh` derives from it. See `assets/README.md`.
 pub struct AttestationFixture {
     tcb_info: &'static str,
+    /// Absolute path of the fixture's `tcb_info.json`.
+    tcb_info_path: &'static str,
     /// The captured collateral with its byte fields hex-encoded, the shape the contract DTO reads.
     collateral: &'static str,
     public_data: &'static str,
@@ -37,14 +39,18 @@ pub struct AttestationFixture {
 
 /// Taken on a `dstack-0.6.5` (release) CVM running the `main-a70db1b` launcher and node images.
 pub const DSTACK_0_6_5: AttestationFixture = AttestationFixture {
-    tcb_info: include_str!("../assets/dstack-0.6.5/tcb_info.json"),
+    tcb_info: include_str!("../../mpc-attestation/assets/tcb_info.json"),
+    tcb_info_path: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../mpc-attestation/assets/tcb_info.json"
+    ),
     collateral: include_str!("../assets/dstack-0.6.5/collateral.json"),
     public_data: include_str!("../assets/dstack-0.6.5/public_data.json"),
     app_compose: include_str!("../assets/dstack-0.6.5/app_compose.json"),
     mpc_image_digest_hex: include_str!("../assets/dstack-0.6.5/mpc_image_digest.txt"),
     launcher_compose: include_str!("../assets/dstack-0.6.5/launcher_image_compose.yaml"),
     dir: concat!(env!("CARGO_MANIFEST_DIR"), "/assets/dstack-0.6.5"),
-    measurements: include_measurements!("assets/dstack-0.6.5/tcb_info.json"),
+    measurements: include_measurements!("../mpc-attestation/assets/tcb_info.json"),
     valid_timestamp: 1_795_046_400,
     quote: include_str!("../assets/dstack-0.6.5/quote.json"),
     p2p_public_key: include_str!("../assets/dstack-0.6.5/near_p2p_public_key.pub"),
@@ -56,6 +62,10 @@ pub const DSTACK_0_6_5: AttestationFixture = AttestationFixture {
 // TODO(#5237): remove once mainnet nodes run dstack 0.6.
 pub const DSTACK_0_5_8: AttestationFixture = AttestationFixture {
     tcb_info: include_str!("../assets/dstack-0.5.8/tcb_info.json"),
+    tcb_info_path: concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/assets/dstack-0.5.8/tcb_info.json"
+    ),
     collateral: include_str!("../assets/dstack-0.5.8/collateral.json"),
     public_data: include_str!("../assets/dstack-0.5.8/public_data.json"),
     app_compose: include_str!("../assets/dstack-0.5.8/app_compose.json"),
@@ -76,6 +86,10 @@ pub const LATEST: &AttestationFixture = &DSTACK_0_6_5;
 impl AttestationFixture {
     pub fn asset_path(&self, file: &str) -> std::path::PathBuf {
         std::path::Path::new(self.dir).join(file)
+    }
+
+    pub fn tcb_info_path(&self) -> &'static std::path::Path {
+        std::path::Path::new(self.tcb_info_path)
     }
 
     pub fn launcher_compose_digest(&self) -> LauncherDockerComposeHash {
