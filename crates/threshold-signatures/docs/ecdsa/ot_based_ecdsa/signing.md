@@ -1,16 +1,17 @@
-This document specifies the signing protocol, `sign`. Once the message is known, the
-signers consume two triples and run three rounds over one channel.
+This document specifies the signing protocol. Once the message is known, the signers consume two
+triples and generate a signature over one channel. The protocol comes in two schemes: a three-round
+scheme, `sign`, and a two-round scheme, `sign_two_rounds`.
 
 *Note: Due to the complexity of signing with multiplicative triples, this protocol shifts from the signing formulae stated in [Preliminaries](../preliminaries.md) and computes* $R$ *as in* $R\gets \frac{1}{k}\cdot G$ *and* $s$ *as in* $s \gets k \cdot (H(m) + rx)$*. These formulae do not require changes to be done on the verifier's end*
 
 ### Note: We denote $\mathcal{P}_0$ the set of participants that generated the triples and the threshold $t = \mathsf{MaxMalicious} + 1$
 
-# Signing
+# Three-round signing
 
-In this protocol, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}_0$
+In this scheme, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}_0$
 of size $N_1 \geq t$ wishes to generate an ECDSA signature.
 
-The inputs to this protocol are:
+The inputs to this scheme are:
 
 1) The secret key share $x_i$.
 2) The public key $X$ corresponding to the master secret key $x$
@@ -83,20 +84,100 @@ $$
 
 *Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
 
+# Two-round signing
+
+In this scheme, a set of parties $\mathcal{P}_1 \subseteq \mathcal{P}_0$
+of size $N_1 \geq t$ wishes to generate an ECDSA signature.
+
+The inputs to this scheme are the same as in [Three-round signing](#three-round-signing).
+
+*Note: the key derivation is not a separate step. The tweak* $\epsilon$ *only adds* $\epsilon \cdot k_i$ *to* $\sigma_i$ *in Round 1.*
+
+**Round 1:**
+
+1. Each $P_i$ linearizes their shares, setting:
+
+$$
+\begin{aligned}
+(k'_i, \_, e_i) &\gets \lambda(\mathcal{P}_1)_i \cdot (k_i, \_ , e_i)\cr
+(a'_i, b'_i, c'_i) &\gets \lambda(\mathcal{P}_1)_i \cdot (a_i, b_i, c_i)\cr
+x'_i &\gets \lambda(\mathcal{P}_1)_i \cdot x_i\cr
+\end{aligned}
+$$
+
+2. Each $P_i$ sets:
+
+$$
+\begin{aligned}
+&\alpha_i \gets k'_i + a'_i\cr
+&\beta_i \gets x'_i + b'_i\cr
+\end{aligned}
+$$
+
+3. $\star$ Each $P_i$ sends $e_i$, $\alpha_i$ and $\beta_i$ to every party.
+4. $\bullet$ Each $P_i$ waits to receive $e_j$, $\alpha_j$ and $\beta_j$ from each $P_j$.
+5. Each $P_i$ sets $e \gets \sum_j e_j$, $\alpha \gets \sum_j \alpha_j$ and $\beta \gets \sum_j \beta_j$.
+6. $\blacktriangle$ Each $P_i$ *asserts* that:
+
+$$
+\begin{aligned}
+e \cdot G &= E\cr
+\alpha \cdot G &= K + A\quad \text{(in fact $\alpha = \sum_j \alpha_j =  \sum_j (k'_i + a'_i) = k + a$)}\cr
+\beta \cdot G &= X + B \quad \text{(in fact $\beta = \sum_j \beta_j =  \sum_j (x'_i + b'_i) = x + b$)}
+\end{aligned}
+$$
+
+7. Each $P_i$ sets: $R \gets \frac{1}{e} \cdot D$. (Recall that Beaver triple $(k,d,e)$ is computed s.t. $e = k\cdot d$ )
+8. Each $P_i$ sets $\sigma_i \gets \alpha \cdot x_i - \beta \cdot a_i + c_i + \epsilon \cdot k_i$.
+
+**Round 2:**
+
+1. Each $P_i$ linearizes their share of $k$, setting $k_i \gets \lambda(\mathcal{P}_1)_i \cdot k_i$.
+2. Each $P_i$ linearizes their share of $\sigma$, setting $\sigma_i \gets \lambda(\mathcal{P}_1)_i \cdot \sigma_i$.
+3. Each $P_i$ sets $s_i \gets h \cdot k_i + R_\mathsf{x} \cdot \sigma_i$ where $R_\mathsf{x}$ is the x coordinate of $R$
+4. $\star$ Each $P_i$ sends $s_i$ **only to the coordinator**.
+
+**Round 2 (Coordinator):**
+
+5. $\bullet$ The coordinator waits to receive $s_j$ from every party.
+6. The coordinator sums the received elements $s \gets \sum_j s_j$.
+7. Perform the low-S normalization, i.e. $s \gets -s$ if $s\in\\{\frac{q}{2}..~q-1\\}$
+8. $\blacktriangle$ The coordinator *asserts* that $(R, s)$ is a valid ECDSA signature for $h$ under the derived public key $X + \epsilon \cdot G$.
+
+**Output:** the signature $(R, s)$, known only to the coordinator.
+
+*Note that such message-signature pair is only accepted by a verifier that uses a derived public key, i.e.,* $X + \epsilon\cdot G$.
+
 >  [click to see the Notation reference](../../network-layer.md#documentation-notation).
+
+# Differences between the two schemes
+
+The two-round scheme merges rounds 1 and 2 of the three-round scheme into a single round.
+This is possible because $\alpha_i$ and $\beta_i$ depend only on the inputs of $P_i$, and not on
+any message of round 1.
+
+The values sent and the checks performed are the same in both schemes, and both produce the same
+signature from the same inputs. The schemes differ in two ways:
+
+1. **Communication:** the two-round scheme saves one round of network latency per signature.
+2. **Abort point:** in the three-round scheme, a party that fails the check on $e$ aborts before
+sending $\alpha_i$ and $\beta_i$. In the two-round scheme, $\alpha_i$ and $\beta_i$ are already sent
+when the check on $e$ is performed.
+
+The two schemes are not wire-compatible: all parties of a run must use the same one.
 
 # Security considerations
 
-Before using this protocol, enforce the following constraints:
+Before using either scheme, enforce the following constraints:
 
 1. **Never reuse a triple.** Each triple must be an unmodified output of
-   [triple generation](./triples.md), used at most once: in one role of one run of this protocol,
+   [triple generation](./triples.md), used at most once: in one role of one run of one scheme,
    aborted runs included. Generation guarantees that triples are independent; the caller must
    guarantee that they are not reused. Otherwise the secret key $x$ can be extracted by solving
    a system of two linear equations, and no party can detect this. Triple shares must also not
    outlive their epoch, see [Proactive Security](../../proactive-security.md).
 
 2. **Never sign twice under the same $R$.** Nothing binds $R$ to $h$ or $\epsilon$: $R$ is
-   determined by the triple $(k, d, e)$ alone. It is known to every party once round 1 completes.
-   Two runs sharing $R$ with different $h$ or $\epsilon$ reveal the private key.
+   determined by the triple $(k, d, e)$ alone. It is known to every party once round 1 completes,
+   in both schemes. Two runs sharing $R$ with different $h$ or $\epsilon$ reveal the private key.
    Constraint 1 forbids this.

@@ -23,6 +23,12 @@ pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 3;
 /// broadcast waitpoints.
 #[cfg(test)]
 pub(crate) const OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 2;
+/// Maximum incoming buffer entries for the coordinator of [`sign_two_rounds`]: the round 1
+/// broadcast waitpoint plus the signature-share waitpoint.
+pub(crate) const OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_COORDINATOR_ENTRIES: usize = 2;
+/// Maximum incoming buffer entries for non-coordinator participants of [`sign_two_rounds`].
+#[cfg(test)]
+pub(crate) const OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_PARTICIPANT_ENTRIES: usize = 1;
 
 /// The arguments needed to create a signature.
 ///
@@ -301,6 +307,193 @@ async fn do_sign(
     Ok(Some(sig))
 }
 
+/// [`sign`] with rounds 1 and 2 merged into one, for two rounds in total.
+///
+/// Not wire-compatible with [`sign`]: every participant of a run must call the same one.
+/// The safety contract of [`sign`] applies.
+pub fn sign_two_rounds(
+    participants: &[Participant],
+    coordinator: Participant,
+    me: Participant,
+    args: SignArguments,
+    tweak: Tweak,
+    msg_hash: Scalar,
+) -> Result<impl Protocol<Output = SignatureOption> + use<>, InitializationError> {
+    let participants = validate_sign_arguments(participants, coordinator, me, &args)?;
+
+    let ctx =
+        Comms::with_buffer_capacity(OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_COORDINATOR_ENTRIES);
+    let fut = do_sign_two_rounds(
+        ctx.shared_channel(),
+        participants,
+        coordinator,
+        me,
+        args,
+        tweak,
+        msg_hash,
+    );
+    Ok(make_protocol(ctx, fut))
+}
+
+#[allow(clippy::too_many_lines)]
+async fn do_sign_two_rounds(
+    mut chan: SharedChannel,
+    participants: ParticipantList,
+    coordinator: Participant,
+    me: Participant,
+    args: SignArguments,
+    tweak: Tweak,
+    msg_hash: Scalar,
+) -> Result<SignatureOption, ProtocolError> {
+    // Round 1
+    // Extracting triples private variables (ai, bi, ci)
+    let a_i = args.triple1.0.a;
+    let b_i = args.triple1.0.b;
+    let c_i = args.triple1.0.c;
+
+    // Extracting triples public variables (A, B, _)
+    // notice C is not used
+    let big_a: ProjectivePoint = args.triple1.1.big_a.into();
+    let big_b: ProjectivePoint = args.triple1.1.big_b.into();
+
+    // Extracting triples private variables (ki, _, ei)
+    // notice di is not used
+    let k_i = args.triple0.0.a;
+    let e_i = args.triple0.0.c;
+
+    // Extracting triples public variables (K, D, E)
+    let big_k: ProjectivePoint = args.triple0.1.big_a.into();
+    let big_d = args.triple0.1.big_b;
+    let big_e = args.triple0.1.big_c;
+
+    // linearize ki ei ai bi ci xi
+    // Spec 1.1
+    let lambda_me = participants.lagrange::<Secp256K1Sha256>(me)?;
+
+    let k_prime_i = Zeroizing::new(lambda_me * k_i);
+    let e_i: Scalar = lambda_me * e_i;
+
+    let a_prime_i = lambda_me * a_i;
+    let b_prime_i = lambda_me * b_i;
+
+    let big_x: ProjectivePoint = args.keygen_out.public_key.to_element();
+    let private_share = args.keygen_out.private_share.to_scalar();
+    let x_prime_i = lambda_me * private_share;
+
+    // alphai = ki' + ai'
+    // Spec 1.2
+    let alpha_i: Scalar = *k_prime_i + a_prime_i;
+    // betai = xi' + bi'
+    let beta_i: Scalar = x_prime_i + b_prime_i;
+
+    // Send ei, alphai and betai
+    // Spec 1.3
+    let wait0 = chan.next_waitpoint();
+    chan.send_many(wait0, &(e_i, alpha_i, beta_i))?;
+
+    // Receive and compute e = SUM_j ej
+    // Receive and compute alpha = SUM_j alphaj
+    // Receive and compute beta = SUM_j betaj
+    // Spec 1.4
+    let mut e = e_i;
+    let mut alpha = alpha_i;
+    let mut beta = beta_i;
+
+    for (_, (e_j, alpha_j, beta_j)) in
+        recv_from_others::<(Scalar, Scalar, Scalar)>(&chan, wait0, &participants, me).await?
+    {
+        if e_j.is_zero().into() {
+            return Err(ProtocolError::AssertionFailed(
+                "Received zero share of kd, indicating a triple wasn't available.".to_string(),
+            ));
+        }
+
+        // Spec 1.5
+        e += e_j;
+        alpha += alpha_j;
+        beta += beta_j;
+    }
+
+    // E =?= e*G
+    // Spec 1.6
+    if big_e != (ProjectivePoint::GENERATOR * e).to_affine() {
+        return Err(ProtocolError::AssertionFailed(
+            "received incorrect shares of kd".to_string(),
+        ));
+    }
+
+    // alpha*G =?= K + A
+    // beta*G =?= X + B
+    if (ProjectivePoint::GENERATOR * alpha != big_k + big_a)
+        || (ProjectivePoint::GENERATOR * beta != big_x + big_b)
+    {
+        return Err(ProtocolError::AssertionFailed(
+            "received incorrect shares of additive triple phase.".to_string(),
+        ));
+    }
+
+    // Compute R = 1/e * D
+    // Spec 1.7
+    let e_inv: Option<Scalar> = e.invert().into();
+    let e_inv =
+        e_inv.ok_or_else(|| ProtocolError::AssertionFailed("failed to invert kd".to_string()))?;
+    let big_r: AffinePoint = (big_d * e_inv).into();
+
+    // The tweak multiplies the unlinearized ki.
+    // Spec 1.8
+    let sigma_i = Zeroizing::new(alpha * private_share - (beta * a_i - c_i) + tweak.value() * k_i);
+    chan.yield_point().await;
+
+    // Round 2
+    // Linearize ki
+    // Spec 2.1
+    let k_i = k_prime_i;
+
+    // Linearize sigmai
+    // Spec 2.2
+    let sigma_i = Zeroizing::new(lambda_me * *sigma_i);
+
+    // Compute si = h * ki + Rx * sigmai
+    // Spec 2.3
+    let r = x_coordinate(&big_r);
+    let s_i = msg_hash * *k_i + r * *sigma_i;
+
+    let wait1 = chan.next_waitpoint();
+    if me != coordinator {
+        // Send si
+        // Spec 2.4
+        chan.send_private(wait1, coordinator, &s_i)?;
+        return Ok(None);
+    }
+
+    // Receive sj
+    // Spec 2.5
+    let mut s = s_i;
+    for (_, s_j) in recv_from_others::<Scalar>(&chan, wait1, &participants, me).await? {
+        // Spec 2.6
+        s += s_j;
+    }
+
+    // Normalize s
+    // Spec 2.7
+    s.conditional_assign(&(-s), s.is_high());
+
+    let sig = Signature { big_r, s };
+
+    // Spec 2.8
+    let public_key = tweak
+        .derive_verifying_key(&args.keygen_out.public_key)
+        .to_element()
+        .to_affine();
+    if !sig.verify(&public_key, &msg_hash) {
+        return Err(ProtocolError::AssertionFailed(
+            "signature failed to verify".to_string(),
+        ));
+    }
+
+    Ok(Some(sig))
+}
+
 #[cfg(test)]
 #[allow(non_snake_case)]
 mod test {
@@ -370,6 +563,28 @@ mod test {
         }
 
         fn run_sign(&self, coordinator: Participant) -> Vec<(Participant, SignatureOption)> {
+            self.run_with(coordinator, sign)
+        }
+
+        fn run_sign_two_rounds(
+            &self,
+            coordinator: Participant,
+        ) -> Vec<(Participant, SignatureOption)> {
+            self.run_with(coordinator, sign_two_rounds)
+        }
+
+        fn run_with<P: Protocol<Output = SignatureOption> + 'static>(
+            &self,
+            coordinator: Participant,
+            sign: impl Fn(
+                &[Participant],
+                Participant,
+                Participant,
+                SignArguments,
+                Tweak,
+                Scalar,
+            ) -> Result<P, InitializationError>,
+        ) -> Vec<(Participant, SignatureOption)> {
             let mut protocols: GenProtocol<SignatureOption> =
                 Vec::with_capacity(self.participants.len());
             for (i, p) in self.participants.iter().enumerate() {
@@ -556,6 +771,69 @@ mod test {
                 coordinator,
                 OT_ECDSA_SIGN_MAX_INCOMING_COORDINATOR_ENTRIES,
                 OT_ECDSA_SIGN_MAX_INCOMING_PARTICIPANT_ENTRIES,
+            ),
+        );
+    }
+
+    #[rstest]
+    #[case(2, 2)]
+    #[case(3, 3)]
+    #[case(5, 3)]
+    fn sign_two_rounds__should_produce_the_same_signature_as_sign(
+        #[case] num_participants: usize,
+        #[case] threshold: usize,
+    ) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let setup = Setup::new(num_participants, threshold, &mut rng);
+        let coordinator = setup.participants[0];
+        let expected =
+            check_one_coordinator_output(setup.run_sign(coordinator), coordinator).unwrap();
+
+        // When
+        let result = setup.run_sign_two_rounds(coordinator);
+
+        // Then
+        let signature = check_one_coordinator_output(result, coordinator).unwrap();
+        assert_eq!((signature.big_r, signature.s), (expected.big_r, expected.s));
+        setup
+            .derived_verifying_key()
+            .verify(MSG, &to_k256_signature(&signature))
+            .unwrap();
+    }
+
+    #[rstest]
+    #[case(3, 2)]
+    #[case(5, 3)]
+    fn sign_two_rounds__should_bound_message_buffer_by_role(
+        #[case] num_participants: usize,
+        #[case] threshold: usize,
+    ) {
+        // Given
+        let mut rng = MockCryptoRng::seed_from_u64(42);
+        let setup = Setup::new(num_participants, threshold, &mut rng);
+        let coordinator = setup.participants[0];
+        let args = setup.args_by_participant();
+
+        // When + Then
+        assert_buffer_capacity(
+            &setup.participants,
+            &mut rng,
+            |comms, p_list, p, _rng_p| {
+                do_sign_two_rounds(
+                    comms.shared_channel(),
+                    p_list,
+                    coordinator,
+                    p,
+                    args[&p].clone(),
+                    setup.tweak,
+                    setup.msg_hash,
+                )
+            },
+            expected_buffer_by_role(
+                coordinator,
+                OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_COORDINATOR_ENTRIES,
+                OT_ECDSA_SIGN_TWO_ROUNDS_MAX_INCOMING_PARTICIPANT_ENTRIES,
             ),
         );
     }
