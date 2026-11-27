@@ -10,7 +10,8 @@ use crate::sandbox::common::{
     starknet_extracted_values, starknet_request, sui_extracted_values, sui_request,
     svm_extracted_values, ton_request,
 };
-use crate::sandbox::utils::transactions::CallMpcContract;
+use crate::sandbox::utils::{sign_utils::verify_timeout, transactions::CallMpcContract};
+use mpc_contract::errors;
 use near_mpc_contract_interface::types::{
     self as dtos, ExtractedValue, ForeignChainRpcRequest, ForeignTxPayloadVersion,
     VerifyForeignTransactionRequest, VerifyForeignTransactionResponse,
@@ -394,4 +395,301 @@ async fn verify_foreign_transaction__should_timeout_without_response(
         execution.is_failure(),
         "request should time out without a response"
     );
+}
+
+#[tokio::test]
+async fn verify_foreign_transaction_responding_to_a__should_leave_b_pending() {
+    // Given
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
+    let foreign_tx_key = setup.foreign_tx_key();
+    make_foreign_chain_available(
+        bitcoin_request().chain(),
+        &setup.contract,
+        &setup.mpc_signer_accounts,
+    )
+    .await;
+
+    let alice = setup.worker.dev_create_account().await.unwrap();
+    let bob = setup.worker.dev_create_account().await.unwrap();
+    let alice_balance = alice.view_account().await.unwrap().balance;
+    let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
+    let request_a = bitcoin_request();
+    let request_b = match bitcoin_request() {
+        ForeignChainRpcRequest::Bitcoin(mut request) => {
+            request.tx_id = dtos::BitcoinTxId([0xde; 32]);
+            ForeignChainRpcRequest::Bitcoin(request)
+        }
+        _ => unreachable!(),
+    };
+
+    let args = |request| dtos::VerifyForeignTransactionRequestArgs {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request,
+    };
+    let status_a = alice
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(args(request_a.clone()))
+        .await
+        .unwrap();
+    let _status_b = bob
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(args(request_b.clone()))
+        .await
+        .unwrap();
+
+    let verify_request_a = VerifyForeignTransactionRequest {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request: request_a.clone(),
+    };
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request_a).await;
+    let verify_request_b = VerifyForeignTransactionRequest {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request: request_b.clone(),
+    };
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request_b).await;
+
+    // When
+    let (payload, response) = sign_foreign_tx_response(
+        &request_a,
+        bitcoin_extracted_values(),
+        foreign_tx_key.as_secp256k1(),
+    );
+    let result = setup.mpc_signer_accounts[0]
+        .call_mpc(setup.contract.id())
+        .respond_verify_foreign_tx(verify_request_a.clone(), response)
+        .await
+        .unwrap()
+        .into_result();
+    result.unwrap();
+
+    // Then
+    let returned: VerifyForeignTransactionResponse = status_a
+        .await
+        .unwrap()
+        .into_result()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(returned.payload_hash, payload.compute_msg_hash().unwrap());
+
+    let pending_a: Option<dtos::YieldIndex> = setup
+        .contract
+        .get_pending_verify_foreign_tx_request(verify_request_a.clone())
+        .await
+        .unwrap()
+        .value;
+    assert!(pending_a.is_none());
+    let pending_b: Option<dtos::YieldIndex> = setup
+        .contract
+        .get_pending_verify_foreign_tx_request(verify_request_b.clone())
+        .await
+        .unwrap()
+        .value;
+    assert!(pending_b.is_some());
+
+    let alice_new_balance = alice.view_account().await.unwrap().balance;
+    assert!(alice_balance >= alice_new_balance);
+    assert!(alice_balance.as_millinear() - alice_new_balance.as_millinear() < 10);
+}
+
+#[tokio::test]
+async fn verify_foreign_transaction_responding_twice_to_a__should_be_rejected() {
+    // Given
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
+    let foreign_tx_key = setup.foreign_tx_key();
+    make_foreign_chain_available(
+        bitcoin_request().chain(),
+        &setup.contract,
+        &setup.mpc_signer_accounts,
+    )
+    .await;
+
+    let alice = setup.worker.dev_create_account().await.unwrap();
+    let bob = setup.worker.dev_create_account().await.unwrap();
+    let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
+    let request_a = bitcoin_request();
+    let request_b = match bitcoin_request() {
+        ForeignChainRpcRequest::Bitcoin(mut request) => {
+            request.tx_id = dtos::BitcoinTxId([0xde; 32]);
+            ForeignChainRpcRequest::Bitcoin(request)
+        }
+        _ => unreachable!(),
+    };
+
+    let args = |request| dtos::VerifyForeignTransactionRequestArgs {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request,
+    };
+    let _status_a = alice
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(args(request_a.clone()))
+        .await
+        .unwrap();
+    let _status_b = bob
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(args(request_b.clone()))
+        .await
+        .unwrap();
+
+    let verify_request_a = VerifyForeignTransactionRequest {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request: request_a.clone(),
+    };
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request_a).await;
+    let verify_request_b = VerifyForeignTransactionRequest {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request: request_b.clone(),
+    };
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request_b).await;
+    let (_, response) = sign_foreign_tx_response(
+        &request_a,
+        bitcoin_extracted_values(),
+        foreign_tx_key.as_secp256k1(),
+    );
+    let result = setup.mpc_signer_accounts[0]
+        .call_mpc(setup.contract.id())
+        .respond_verify_foreign_tx(verify_request_a.clone(), response)
+        .await
+        .unwrap()
+        .into_result();
+    result.unwrap();
+
+    // When
+    let (_, late_response) = sign_foreign_tx_response(
+        &request_a,
+        bitcoin_extracted_values(),
+        foreign_tx_key.as_secp256k1(),
+    );
+    let late_result = setup.mpc_signer_accounts[0]
+        .call_mpc(setup.contract.id())
+        .respond_verify_foreign_tx(verify_request_a.clone(), late_response)
+        .await
+        .unwrap()
+        .into_result();
+
+    // Then
+    assert!(
+        late_result
+            .unwrap_err()
+            .to_string()
+            .contains(&errors::InvalidParameters::RequestNotFound.to_string()),
+        "a completed request must not resolve twice"
+    );
+}
+
+#[tokio::test]
+async fn verify_foreign_transaction_timing_out_b__should_clear_its_pending_entry() {
+    // Given
+    let setup = SandboxTestSetup::builder()
+        .with_foreign_tx_domain()
+        .build()
+        .await;
+    let foreign_tx_key = setup.foreign_tx_key();
+    make_foreign_chain_available(
+        bitcoin_request().chain(),
+        &setup.contract,
+        &setup.mpc_signer_accounts,
+    )
+    .await;
+
+    let alice = setup.worker.dev_create_account().await.unwrap();
+    let bob = setup.worker.dev_create_account().await.unwrap();
+    let alice_balance = alice.view_account().await.unwrap().balance;
+    let bob_balance = bob.view_account().await.unwrap().balance;
+    let domain_id = dtos::DomainId(foreign_tx_key.domain_id().0);
+    let request_a = bitcoin_request();
+    let request_b = match bitcoin_request() {
+        ForeignChainRpcRequest::Bitcoin(mut request) => {
+            request.tx_id = dtos::BitcoinTxId([0xde; 32]);
+            ForeignChainRpcRequest::Bitcoin(request)
+        }
+        _ => unreachable!(),
+    };
+
+    let args = |request| dtos::VerifyForeignTransactionRequestArgs {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request,
+    };
+    let _status_a = alice
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(args(request_a.clone()))
+        .await
+        .unwrap();
+    let status_b = bob
+        .call_mpc_async(setup.contract.id())
+        .verify_foreign_transaction(args(request_b.clone()))
+        .await
+        .unwrap();
+
+    let verify_request_a = VerifyForeignTransactionRequest {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request: request_a.clone(),
+    };
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request_a).await;
+    let verify_request_b = VerifyForeignTransactionRequest {
+        domain_id,
+        payload_version: ForeignTxPayloadVersion::V1,
+        expected_payload_hash: None,
+        request: request_b.clone(),
+    };
+    await_pending_foreign_tx_request_observed_on_contract(&setup.contract, &verify_request_b).await;
+    let (_, response) = sign_foreign_tx_response(
+        &request_a,
+        bitcoin_extracted_values(),
+        foreign_tx_key.as_secp256k1(),
+    );
+    let result = setup.mpc_signer_accounts[0]
+        .call_mpc(setup.contract.id())
+        .respond_verify_foreign_tx(verify_request_a.clone(), response)
+        .await
+        .unwrap()
+        .into_result();
+    result.unwrap();
+
+    // When
+    setup
+        .worker
+        .fast_forward(SIGNATURE_TIMEOUT_BLOCKS)
+        .await
+        .unwrap();
+
+    // Then
+    verify_timeout(status_b).await.unwrap();
+
+    let pending_b: Option<dtos::YieldIndex> = setup
+        .contract
+        .get_pending_verify_foreign_tx_request(verify_request_b.clone())
+        .await
+        .unwrap()
+        .value;
+    assert!(pending_b.is_none());
+
+    let alice_new_balance = alice.view_account().await.unwrap().balance;
+    let bob_new_balance = bob.view_account().await.unwrap().balance;
+    assert!(alice_balance >= alice_new_balance);
+    assert!(bob_balance >= bob_new_balance);
+    assert!(alice_balance.as_millinear() - alice_new_balance.as_millinear() < 10);
+    assert!(bob_balance.as_millinear() - bob_new_balance.as_millinear() < 10);
 }
