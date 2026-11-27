@@ -76,7 +76,17 @@ impl RunningContractState {
         if !self.process_new_parameters_proposal(proposal, votes)? {
             return Ok(None);
         }
-        let Some(first_domain) = self.domains.get_domain_by_index(0) else {
+        Ok(self.accept_new_parameters(proposal))
+    }
+
+    /// Applies an accepted `proposal`. Returns the resharing state to transition into, or `None`
+    /// if there are no keys to reshare, in which case `self` adopts the proposal directly.
+    pub(super) fn accept_new_parameters(
+        &mut self,
+        proposal: &ProposedGovernanceThresholdParameters,
+    ) -> Option<ResharingContractState> {
+        let resharing = self.resharing_state(self.prospective_epoch_id(), proposal);
+        if resharing.is_none() {
             // New parameters were proposed, but we have no keys, so directly
             // transition into Running state but bump the EpochId. With no
             // domains the per-domain threshold updates have nothing to apply to
@@ -86,9 +96,19 @@ impl RunningContractState {
                 Keyset::new(self.keyset.epoch_id.next(), Vec::new()),
                 proposal.parameters().clone(),
             );
-            return Ok(None);
-        };
-        Ok(Some(ResharingContractState {
+        }
+        resharing
+    }
+
+    /// The state that reshares this state's keys to `proposal` under `prospective_epoch_id`, or
+    /// `None` if there are no keys to reshare.
+    pub(super) fn resharing_state(
+        &self,
+        prospective_epoch_id: EpochId,
+        proposal: &ProposedGovernanceThresholdParameters,
+    ) -> Option<ResharingContractState> {
+        let first_domain = self.domains.get_domain_by_index(0)?;
+        Some(ResharingContractState {
             previous_running_state: RunningContractState::new(
                 self.domains.clone(),
                 self.keyset.clone(),
@@ -96,13 +116,13 @@ impl RunningContractState {
             ),
             reshared_keys: Vec::new(),
             resharing_key: KeyEvent::new(
-                self.prospective_epoch_id(),
+                prospective_epoch_id,
                 first_domain.clone(),
                 proposal.parameters().clone(),
             ),
             cancellation_requests: BTreeSet::new(),
             per_domain_thresholds: proposal.per_domain_thresholds().clone(),
-        }))
+        })
     }
 
     pub fn participants(&self) -> &Participants {
@@ -222,21 +242,31 @@ impl RunningContractState {
         let participant = AuthenticatedParticipantId::new(self.parameters.participants())?;
         if votes.vote(&domains, participant, self.parameters.participants()) {
             votes.clear();
-            let new_domains = self.domains.add_domains(domains.clone())?;
-            Ok(Some(InitializingContractState {
-                generated_keys: self.keyset.domains.clone(),
-                domains: new_domains,
-                epoch_id: self.keyset.epoch_id,
-                generating_key: KeyEvent::new(
-                    self.keyset.epoch_id,
-                    domains[0].clone(),
-                    self.parameters.clone(),
-                ),
-                cancel_votes: BTreeSet::new(),
-            }))
+            self.initializing_state(domains).map(Some)
         } else {
             Ok(None)
         }
+    }
+
+    /// The state that generates keys for `domains` on top of this state's domains.
+    pub(super) fn initializing_state(
+        &self,
+        domains: Vec<DomainConfig>,
+    ) -> Result<InitializingContractState, Error> {
+        let Some(first_domain) = domains.first().cloned() else {
+            return Err(DomainError::AddDomainsMustAddAtLeastOneDomain.into());
+        };
+        Ok(InitializingContractState {
+            generated_keys: self.keyset.domains.clone(),
+            domains: self.domains.add_domains(domains)?,
+            epoch_id: self.keyset.epoch_id,
+            generating_key: KeyEvent::new(
+                self.keyset.epoch_id,
+                first_domain,
+                self.parameters.clone(),
+            ),
+            cancel_votes: BTreeSet::new(),
+        })
     }
 
     pub fn is_participant<K: IdentifiesParticipant>(&self, id: &K) -> bool {

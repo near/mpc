@@ -22,12 +22,12 @@ use mpc_contract::primitives::{
     domain::DomainRegistry,
     key_state::{EpochId, KeyEventId, Keyset},
     participants::{ParticipantId, ParticipantInfo, Participants},
-    thresholds::{GovernanceThreshold, GovernanceThresholdParameters},
+    thresholds::{
+        GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
+    },
 };
 use mpc_contract::state::{
-    ProtocolContractState, initializing::InitializingContractState, key_event::KeyEvent,
-    key_event::tests::Environment, resharing::ResharingContractState,
-    running::RunningContractState,
+    ProtocolContractState, key_event::tests::Environment, running::RunningContractState,
 };
 use near_account_id::AccountId;
 use near_mpc_contract_interface::call_args as contract_args;
@@ -158,9 +158,11 @@ impl FakeMpcContractState {
     /// Mirrors the real contract's recomputation: a whitelisted chain is available
     /// once the max required active signers across ForeignTx domains is reached.
     fn recompute_available_foreign_chains(&mut self) {
-        let parameters = match &self.state {
-            ProtocolContractState::Running(state) => &state.parameters,
-            ProtocolContractState::Resharing(state) => &state.previous_running_state.parameters,
+        let participants = match &self.state {
+            ProtocolContractState::Running(state) => state.participants(),
+            ProtocolContractState::Resharing(state) => {
+                state.previous_running_state().participants()
+            }
             _ => return,
         };
         // TODO(#3973): revisit threshold calculation for several ForeignTx
@@ -182,7 +184,7 @@ impl FakeMpcContractState {
             return;
         };
         let mut supporters_count: BTreeMap<dtos::ForeignChain, u64> = BTreeMap::new();
-        for (_, _, info) in parameters.participants().participants() {
+        for (_, _, info) in participants.participants() {
             let Some(chains) = self.foreign_chains_configs.get(&info.tls_public_key) else {
                 continue;
             };
@@ -210,25 +212,9 @@ impl FakeMpcContractState {
     }
 
     pub fn add_domains(&mut self, domains: Vec<dtos::DomainConfig>) {
-        let state = match &mut self.state {
-            ProtocolContractState::Running(state) => state,
-            _ => panic!("Cannot add domains to non-running state"),
-        };
-        let new_state = InitializingContractState {
-            domains: state
-                .domains
-                .add_domains(domains.clone())
-                .expect("Failed to add domains"),
-            epoch_id: state.keyset.epoch_id,
-            generated_keys: state.keyset.domains.clone(),
-            generating_key: KeyEvent::new(
-                state.keyset.epoch_id,
-                domains[0].clone(),
-                state.parameters.clone(),
-            ),
-            cancel_votes: BTreeSet::new(),
-        };
-        self.state = ProtocolContractState::Initializing(new_state);
+        self.state
+            .add_domains_skipping_votes(domains)
+            .expect("Failed to add domains");
     }
 
     pub fn start_resharing(&mut self, new_participants: ParticipantsConfig) {
@@ -242,35 +228,19 @@ impl FakeMpcContractState {
         new_participants: ParticipantsConfig,
         per_domain_thresholds: BTreeMap<dtos::DomainId, dtos::ReconstructionThreshold>,
     ) {
-        let (previous_running_state, prev_epoch_id) = match &self.state {
-            ProtocolContractState::Running(state) => (state, state.keyset.epoch_id),
-            ProtocolContractState::Resharing(state) => {
-                (&state.previous_running_state, state.prospective_epoch_id())
-            }
-            _ => panic!("Cannot start resharing from non-running state"),
-        };
-        // Mirror the real contract: `resharing_key` keeps the old threshold; the update
-        // travels only in `per_domain_thresholds`, which the node applies itself.
-        let resharing_domain = previous_running_state
-            .domains
-            .get_domain_by_index(0)
-            .unwrap()
-            .clone();
-        self.state = ProtocolContractState::Resharing(ResharingContractState {
-            previous_running_state: RunningContractState::new(
-                previous_running_state.domains.clone(),
-                previous_running_state.keyset.clone(),
-                previous_running_state.parameters.clone(),
-            ),
-            reshared_keys: Vec::new(),
-            resharing_key: KeyEvent::new(
-                prev_epoch_id.next(),
-                resharing_domain,
-                participants_config_to_threshold_parameters(&new_participants),
-            ),
-            cancellation_requests: BTreeSet::new(),
+        let proposal = ProposedGovernanceThresholdParameters::new(
+            participants_config_to_threshold_parameters(&new_participants),
             per_domain_thresholds,
-        });
+        );
+        self.state
+            .accept_new_parameters_skipping_votes(&proposal)
+            .expect("Cannot start resharing outside the running or resharing state");
+        // A running state without keys adopts the proposal without resharing.
+        assert_matches!(
+            self.state,
+            ProtocolContractState::Resharing(_),
+            "Cannot start resharing before any domain has a key"
+        );
     }
 
     pub fn vote_pk(&mut self, account_id: AccountId, key_id: KeyEventId, dto_pk: dtos::PublicKey) {
@@ -390,33 +360,13 @@ impl FakeMpcContractState {
         account_id: AccountId,
         participant_info: ParticipantInfo,
     ) {
-        match &self.state {
-            ProtocolContractState::Running(state) => {
-                let mut new_participants = state.parameters.participants().clone();
-                new_participants
-                    .update_info(account_id, participant_info)
-                    .unwrap();
-                let new_parameters = GovernanceThresholdParameters::new(
-                    new_participants,
-                    state.parameters.threshold(),
-                )
-                .unwrap();
-                let new_state = RunningContractState {
-                    domains: state.domains.clone(),
-                    keyset: state.keyset.clone(),
-                    parameters: new_parameters,
-                    previously_cancelled_resharing_epoch_id: state
-                        .previously_cancelled_resharing_epoch_id,
-                };
-                self.state = ProtocolContractState::Running(new_state);
-                self.recompute_available_foreign_chains();
-            }
-            _ => {
-                panic!(
-                    "update_participant_info  ignored because the contract is not in running state"
-                );
-            }
-        }
+        let ProtocolContractState::Running(state) = &mut self.state else {
+            panic!("update_participant_info ignored because the contract is not in running state");
+        };
+        state
+            .update_participant_info(account_id, participant_info)
+            .unwrap();
+        self.recompute_available_foreign_chains();
     }
 
     pub fn conclude_node_migration(
@@ -429,7 +379,7 @@ impl FakeMpcContractState {
         let ProtocolContractState::Running(running_state) = &self.state else {
             panic!("only allow calling this in `running_state`");
         };
-        let dto_keyset = dtos::Keyset::from(&running_state.keyset);
+        let dto_keyset = dtos::Keyset::from(running_state.keyset());
         if dto_keyset != args.keyset {
             panic!("keyset mismatch");
         }

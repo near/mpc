@@ -294,6 +294,34 @@ impl ProtocolContractState {
     }
 }
 
+#[cfg(any(test, feature = "test-utils"))]
+impl ProtocolContractState {
+    /// Starts key generation for `domains` as if they had been voted in, without validating them.
+    pub fn add_domains_skipping_votes(&mut self, domains: Vec<DomainConfig>) -> Result<(), Error> {
+        let ProtocolContractState::Running(state) = self else {
+            return Err(InvalidState::ProtocolStateNotRunning.into());
+        };
+        *self = ProtocolContractState::Initializing(state.initializing_state(domains)?);
+        Ok(())
+    }
+
+    /// Applies `proposal` as if it had been voted in, without validating it.
+    pub fn accept_new_parameters_skipping_votes(
+        &mut self,
+        proposal: &ProposedGovernanceThresholdParameters,
+    ) -> Result<(), Error> {
+        let resharing = match self {
+            ProtocolContractState::Running(state) => state.accept_new_parameters(proposal),
+            ProtocolContractState::Resharing(state) => Some(state.reproposed_state(proposal)),
+            _ => return Err(InvalidState::ProtocolStateNotRunningNorResharing.into()),
+        };
+        if let Some(resharing) = resharing {
+            *self = ProtocolContractState::Resharing(resharing);
+        }
+        Ok(())
+    }
+}
+
 #[cfg(feature = "bench-contract-methods")]
 impl ProtocolContractState {
     /// Returns mutable reference to active participants for benchmarking.
