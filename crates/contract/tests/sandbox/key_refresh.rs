@@ -105,11 +105,11 @@ async fn trigger_key_refresh__should_fail_before_refresh_is_due() {
     );
 }
 
-/// A contract whose key refresh is due from the start: sandbox block time cannot be advanced.
 async fn setup_with_refresh_due() -> SandboxTestSetup {
     SandboxTestSetup::builder()
         .with_protocols(ALL_PROTOCOLS)
         .with_init_config(InitConfig {
+            // Sandbox block time cannot be advanced.
             key_refresh_period_seconds: Some(0),
             ..InitConfig::default()
         })

@@ -97,7 +97,6 @@ impl RunningContractState {
     }
 
     /// Returns the state that reshares every key onto the current participants and thresholds.
-    /// Fails if the signer is not a participant or there are no keys.
     pub fn key_refresh(&self) -> Result<ResharingContractState, Error> {
         AuthenticatedAccountId::new(self.parameters.participants())?;
         self.resharing_onto(self.parameters.clone(), BTreeMap::new())

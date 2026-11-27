@@ -628,7 +628,7 @@ expression: abi
       },
       {
         "name": "last_reshared_timestamp_seconds",
-        "doc": " Unix time, in seconds, at which a resharing last completed, or at which the contract was\n initialized if none has. A key refresh is due\n [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) later.",
+        "doc": " Unix time, in seconds, at which a resharing last completed, or at which the contract was\n initialized if none has.",
         "kind": "view",
         "result": {
           "serialization_type": "json",
@@ -2207,7 +2207,7 @@ expression: abi
       },
       {
         "name": "trigger_key_refresh",
-        "doc": " Starts a key refresh: a resharing that keeps the participants and all thresholds, so\n that keyshares of earlier epochs stop being useful.\n\n Any single participant can call this once\n [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) have passed since\n the last completed resharing; see [`Self::last_reshared_timestamp_seconds`]. From there\n on, the refresh is an ordinary resharing: it completes through\n [`Self::vote_reshared`] and can be cancelled with [`Self::vote_cancel_resharing`].\n\n Fails if the contract is not Running, has no keys, or any participant's attestation is\n invalid. Pending [`Self::vote_new_parameters`] votes are kept, as the parameters they\n were cast against do not change.",
+        "doc": " Starts a key refresh: a resharing onto the current participants and thresholds.\n\n Any single participant can call this once\n [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) have passed since\n the last completed resharing. Pending [`Self::vote_new_parameters`] votes are kept.",
         "kind": "call",
         "result": {
           "serialization_type": "json",
@@ -3329,7 +3329,7 @@ expression: abi
               ]
             },
             "key_refresh_period_seconds": {
-              "description": "Time after the last completed resharing from which any participant can start a key refresh with `trigger_key_refresh`. A contract that predates key refresh does not report it and reads as [`DEFAULT_KEY_REFRESH_PERIOD_SECONDS`].",
+              "description": "Time after the last completed resharing from which a participant can trigger a key refresh.",
               "default": 2592000,
               "type": "integer",
               "format": "uint64",

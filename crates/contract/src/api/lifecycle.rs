@@ -206,8 +206,7 @@ impl MpcContract {
     }
 
     /// Unix time, in seconds, at which a resharing last completed, or at which the contract was
-    /// initialized if none has. A key refresh is due
-    /// [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) later.
+    /// initialized if none has.
     pub fn last_reshared_timestamp_seconds(&self) -> u64 {
         self.last_reshared_at.as_secs()
     }

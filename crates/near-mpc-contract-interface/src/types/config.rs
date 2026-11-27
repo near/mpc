@@ -127,16 +127,14 @@ pub struct Config {
     pub launcher_hash_unused_ttl_seconds: u64,
     /// Fee, in milliNEAR, for one attestation-storage grant.
     pub attestation_storage_fee_millinear: u64,
-    /// Time after the last completed resharing from which any participant can start a key
-    /// refresh with `trigger_key_refresh`. A contract that predates key refresh does not
-    /// report it and reads as [`DEFAULT_KEY_REFRESH_PERIOD_SECONDS`].
+    /// Time after the last completed resharing from which a participant can trigger a key refresh.
+    // Contracts that predate key refresh do not report this field.
     #[serde(default = "default_key_refresh_period_seconds")]
     pub key_refresh_period_seconds: u64,
     /// Genesis hash that the contract stores when this config is applied, if it has none.
     pub migration_genesis_hash: Option<GenesisHash>,
 }
 
-/// Default for [`Config::key_refresh_period_seconds`].
 pub const DEFAULT_KEY_REFRESH_PERIOD_SECONDS: u64 = 30 * 24 * 60 * 60;
 
 fn default_key_refresh_period_seconds() -> u64 {

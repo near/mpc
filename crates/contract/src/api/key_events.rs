@@ -70,18 +70,11 @@ impl MpcContract {
         Ok(())
     }
 
-    /// Starts a key refresh: a resharing that keeps the participants and all thresholds, so
-    /// that keyshares of earlier epochs stop being useful.
+    /// Starts a key refresh: a resharing onto the current participants and thresholds.
     ///
     /// Any single participant can call this once
     /// [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) have passed since
-    /// the last completed resharing; see [`Self::last_reshared_timestamp_seconds`]. From there
-    /// on, the refresh is an ordinary resharing: it completes through
-    /// [`Self::vote_reshared`] and can be cancelled with [`Self::vote_cancel_resharing`].
-    ///
-    /// Fails if the contract is not Running, has no keys, or any participant's attestation is
-    /// invalid. Pending [`Self::vote_new_parameters`] votes are kept, as the parameters they
-    /// were cast against do not change.
+    /// the last completed resharing. Pending [`Self::vote_new_parameters`] votes are kept.
     #[handle_result]
     pub fn trigger_key_refresh(&mut self) -> Result<(), Error> {
         Self::assert_caller_is_signer();
@@ -518,8 +511,6 @@ mod tests {
         );
     }
 
-    /// A Running contract initialized at [`INITIALIZED_AT_SECONDS`] with one key and three
-    /// attested participants.
     fn running_contract_with_key() -> (MpcContract, Participants) {
         set_block_secs(INITIALIZED_AT_SECONDS);
         let participants = gen_participants(3);
@@ -562,7 +553,6 @@ mod tests {
         );
     }
 
-    /// Like [`call_as`], signing with the account key of the participant's attested node.
     fn call_as_node_of(
         contract: &MpcContract,
         participants: &Participants,

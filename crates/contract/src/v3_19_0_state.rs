@@ -132,8 +132,7 @@ impl From<MpcContract> for crate::MpcContract {
             parameters_votes: old.parameters_votes,
             genesis_hash: genesis_hash_of(&env::chain_id()),
             add_domains_votes: AddDomainsVotes::default(),
-            // The `3.19.0` contract does not store when it last reshared, so the first key
-            // refresh is due a full period after the migration.
+            // The `3.19.0` contract does not store when it last reshared.
             last_reshared_at: Timestamp::now(),
         }
     }

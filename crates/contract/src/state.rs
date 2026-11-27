@@ -137,9 +137,6 @@ impl ProtocolContractState {
         .map(|x| x.map(ProtocolContractState::Resharing))
     }
 
-    /// Returns the Resharing state of a key refresh, which reshares every key onto the current
-    /// participants and thresholds. Fails if the protocol is not Running, the signer is not a
-    /// participant, or there are no keys.
     pub fn key_refresh(&self) -> Result<ProtocolContractState, Error> {
         match self {
             ProtocolContractState::Running(state) => state.key_refresh(),
