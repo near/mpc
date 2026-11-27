@@ -1099,7 +1099,7 @@ mod tests {
     async fn must_create_test_keyshare_storage() -> Arc<RwLock<KeyshareStorage>> {
         let keyshare_storage = KeyStorageConfig {
             home_dir: tempfile::tempdir().unwrap().keep(),
-            local_encryption_key: [0u8; 16],
+            local_encryption_key: [0u8; 16].into(),
         }
         .create()
         .await

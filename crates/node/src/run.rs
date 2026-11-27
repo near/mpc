@@ -360,11 +360,11 @@ where
     let account_public_key =
         Ed25519PublicKey::from(&secrets.persistent_secrets.near_signer_key.verifying_key());
 
-    let secret_db = SecretDB::new(&assets_dir(&home_dir), secrets.local_storage_aes_key)?;
+    let secret_db = SecretDB::new(&assets_dir(&home_dir), &secrets.local_storage_aes_key)?;
 
     let key_storage_config = KeyStorageConfig {
         home_dir: home_dir.clone(),
-        local_encryption_key: secrets.local_storage_aes_key,
+        local_encryption_key: secrets.local_storage_aes_key.clone(),
     };
 
     let submitter = AttestationSubmitter {

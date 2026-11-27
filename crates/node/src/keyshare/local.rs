@@ -1,4 +1,5 @@
 use super::permanent::PermanentKeyStorageBackend;
+use crate::config::AesKey128;
 use crate::db;
 use crate::durable_fs::{rename_durably, sync_dir, sync_parent_dir};
 use crate::home_paths::{permanent_key_link, permanent_keys_dir};
@@ -11,11 +12,11 @@ use tokio::io::AsyncWriteExt;
 pub struct LocalPermanentKeyStorageBackend {
     home_dir: PathBuf,
     permanent_key_dir: PathBuf,
-    encryption_key: [u8; 16],
+    encryption_key: AesKey128,
 }
 
 impl LocalPermanentKeyStorageBackend {
-    pub async fn new(home_dir: PathBuf, key: [u8; 16]) -> anyhow::Result<Self> {
+    pub async fn new(home_dir: PathBuf, key: AesKey128) -> anyhow::Result<Self> {
         let permanent_key_dir = permanent_keys_dir(&home_dir);
         tokio::fs::create_dir_all(&permanent_key_dir).await?;
         Ok(Self {
@@ -36,13 +37,13 @@ impl PermanentKeyStorageBackend for LocalPermanentKeyStorageBackend {
         let data = tokio::fs::read(&keyfile)
             .await
             .context("Failed to read key file")?;
-        let cipher = Aes128Gcm::new(&self.encryption_key.into());
+        let cipher = Aes128Gcm::new(self.encryption_key.as_bytes().into());
         let decrypted = db::decrypt(&cipher, &data).context("Failed to decrypt key file")?;
         Ok(Some(decrypted))
     }
 
     async fn store(&self, data: &[u8], identifier: &str) -> anyhow::Result<()> {
-        let cipher = Aes128Gcm::new(&self.encryption_key.into());
+        let cipher = Aes128Gcm::new(self.encryption_key.as_bytes().into());
         let encrypted = db::encrypt(&cipher, data);
         // Write the new permanent keyshare to a separate file, and then point `key` at it, so
         // that `key` always holds either the old or the new keyshare.
@@ -109,7 +110,7 @@ mod tests {
     #[tokio::test]
     async fn test_local_keyshare_storage_backend() {
         let dir = tempfile::tempdir().unwrap();
-        let encryption_key = [1; 16];
+        let encryption_key = [1; 16].into();
         let storage =
             LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), encryption_key)
                 .await
@@ -126,9 +127,10 @@ mod tests {
     async fn store__should_replace_key_link_even_with_stale_temp_link() {
         // Given
         let dir = tempfile::tempdir().unwrap();
-        let storage = LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16])
-            .await
-            .unwrap();
+        let storage =
+            LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16].into())
+                .await
+                .unwrap();
         storage.store(b"123", "id1").await.unwrap();
         std::fs::write(dir.path().join("key.tmp"), b"stale").unwrap();
 
@@ -150,9 +152,10 @@ mod tests {
     ) {
         // Given
         let dir = tempfile::tempdir().unwrap();
-        let storage = LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16])
-            .await
-            .unwrap();
+        let storage =
+            LocalPermanentKeyStorageBackend::new(dir.path().to_path_buf(), [1; 16].into())
+                .await
+                .unwrap();
         storage.store(b"123", "id1").await.unwrap();
         storage.store(b"456", "id2").await.unwrap();
 

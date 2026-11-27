@@ -628,7 +628,7 @@ mod tests {
     fn triple_storage__should_isolate_per_t_stores() {
         // Given two per-`t` stores backed by the same DB.
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let me = ParticipantId::from_raw(42);
         let participants = vec![me];
         let store_a = new_triple_store(
@@ -663,7 +663,7 @@ mod tests {
     fn triple_storage_add_owned__should_write_to_triple_v2_column() {
         // Given a TripleStorage for `t = 3`.
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let me = ParticipantId::from_raw(42);
         let participants = vec![me];
         let t = ReconstructionThreshold::new(3);
@@ -686,7 +686,7 @@ mod tests {
     fn triple_storage_take_owned__should_delete_from_triple_v2_column() {
         // Given a triple present in the per-`t` TripleV2 column.
         let dir = tempfile::tempdir().unwrap();
-        let db = SecretDB::new(dir.path(), [1; 16]).unwrap();
+        let db = SecretDB::new(dir.path(), &[1; 16].into()).unwrap();
         let me = ParticipantId::from_raw(42);
         let participants = vec![me];
         let t = ReconstructionThreshold::new(3);

@@ -13,7 +13,7 @@ use std::{
 
 use tokio::sync::{RwLock, watch};
 
-use crate::config::{ParticipantsConfig, PersistentSecrets, SecretsConfig};
+use crate::config::{AesKey128, ParticipantsConfig, PersistentSecrets, SecretsConfig};
 use crate::coordinator::Coordinator;
 use crate::db::SecretDB;
 use crate::indexer::IndexerAPI;
@@ -85,7 +85,7 @@ pub struct OneNodeTestConfig {
 
 pub fn make_key_storage_config(
     home_dir: PathBuf,
-    local_encryption_key: [u8; 16],
+    local_encryption_key: AesKey128,
 ) -> KeyStorageConfig {
     KeyStorageConfig {
         home_dir,
@@ -95,7 +95,7 @@ pub fn make_key_storage_config(
 
 pub async fn get_keyshares(
     home_dir: PathBuf,
-    local_encryption_key: [u8; 16],
+    local_encryption_key: AesKey128,
     keyset: &near_mpc_contract_interface::types::Keyset,
 ) -> anyhow::Result<Vec<Keyshare>> {
     let key_storage_config = make_key_storage_config(home_dir, local_encryption_key);
@@ -133,9 +133,11 @@ impl OneNodeTestConfig {
                 .await?;
                 let _web_server = tracking::spawn_checked("web server", web_server);
 
-                let secret_db = SecretDB::new(&self.home_dir, self.secrets.local_storage_aes_key)?;
-                let key_storage_config =
-                    make_key_storage_config(self.home_dir, self.secrets.local_storage_aes_key);
+                let secret_db = SecretDB::new(&self.home_dir, &self.secrets.local_storage_aes_key)?;
+                let key_storage_config = make_key_storage_config(
+                    self.home_dir,
+                    self.secrets.local_storage_aes_key.clone(),
+                );
                 let keystore = Arc::new(RwLock::new(
                     key_storage_config
                         .create()
@@ -246,7 +248,7 @@ impl IntegrationTestSetup {
                     p2p_private_key: p2p_key.clone(),
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                 },
-                local_storage_aes_key: rand::random(),
+                local_storage_aes_key: rand::random::<[u8; 16]>().into(),
                 backup_encryption_key: rand::random::<[u8; 32]>().into(),
             };
             let (indexer_api, task, currently_running_job_name) = indexer_manager.add_indexer_node(
