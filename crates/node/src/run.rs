@@ -1,6 +1,7 @@
 use crate::{
     config::{
-        PersistentSecrets, SecretsConfig, generate_and_write_backup_encryption_key_to_disk,
+        AesKey256, PersistentSecrets, SecretsConfig,
+        generate_and_write_backup_encryption_key_to_disk,
         start::{StartConfigExt, TeeAuthorityImpl as _, read_near_config_json},
     },
     coordinator::Coordinator,
@@ -41,6 +42,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{RwLock, broadcast, mpsc, oneshot, watch};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+use zeroize::Zeroizing;
 
 use crate::tee::{
     AllowedImageHashesFile, monitor_allowed_image_hashes,
@@ -126,8 +128,9 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
-    let backup_encryption_key_hex = match &config.secrets.backup_encryption_key_hex {
-        Some(key) => key.clone(),
+    let backup_encryption_key_hex = config.secrets.backup_encryption_key_hex.take();
+    let backup_encryption_key = match backup_encryption_key_hex.map(Zeroizing::new) {
+        Some(key) => AesKey256::from_hex(&key).context("invalid backup symmetric key hex")?,
         None => generate_and_write_backup_encryption_key_to_disk(&config.home_dir)?,
     };
 
@@ -135,7 +138,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     let secrets = SecretsConfig::from_parts(
         &config.secrets.secret_store_key_hex,
         persistent_secrets.clone(),
-        &backup_encryption_key_hex,
+        backup_encryption_key,
     )?;
 
     // Generate attestation
