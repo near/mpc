@@ -56,7 +56,7 @@ pub fn batch_random_ot_sender_helper(rng: &mut impl CryptoRngCore) -> Scalar {
 
 pub async fn batch_random_ot_sender(
     mut chan: PrivateChannel,
-    y: Scalar,
+    y: &Scalar,
 ) -> Result<BatchRandomOTOutputSender, ProtocolError> {
     // Spec 1
     // let y = Secp256K1ScalarField::random(rng);
@@ -107,8 +107,6 @@ pub async fn batch_random_ot_sender(
     Ok((big_k0, big_k1))
 }
 
-pub type BatchRandomOTOutputReceiver = (BitVector, SquareBitMatrix);
-
 /// Generates the random values needed in `batch_random_ot_receiver`
 pub fn batch_random_ot_receiver_random_helper(
     rng: &mut impl CryptoRngCore,
@@ -121,13 +119,11 @@ pub fn batch_random_ot_receiver_random_helper(
     (random_delta, random_x)
 }
 
-// Fixing this one breaks a test
-#[allow(clippy::large_types_passed_by_value)]
 pub async fn batch_random_ot_receiver(
     mut chan: PrivateChannel,
-    delta: BitVector,
-    x: [Scalar; SEC_PARAM_64 * 64],
-) -> Result<BatchRandomOTOutputReceiver, ProtocolError> {
+    delta: &BitVector,
+    x: &[Scalar; SEC_PARAM_64 * 64],
+) -> Result<SquareBitMatrix, ProtocolError> {
     // Step 3
     let wait0 = chan.next_waitpoint();
     // deserialization prevents receiving the identity
@@ -158,10 +154,9 @@ pub async fn batch_random_ot_receiver(
         chan.yield_point().await;
     }
     let big_k: BitMatrix = out.into_iter().collect();
-    let big_k = big_k
+    big_k
         .try_into()
-        .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
-    Ok((delta, big_k))
+        .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))
 }
 
 #[cfg(test)]

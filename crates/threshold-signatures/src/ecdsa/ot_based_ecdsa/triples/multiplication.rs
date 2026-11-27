@@ -25,11 +25,12 @@ use futures::Future;
 use rand_core::CryptoRngCore;
 use std::pin::Pin;
 use std::sync::Arc;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 use super::mta::{mta_receiver, mta_sender};
 use std::collections::VecDeque;
 
-#[derive(derive_more::Constructor)]
+#[derive(derive_more::Constructor, ZeroizeOnDrop)]
 struct MultiplicationSenderRandomPackage {
     delta: BitVector,
     x: [Scalar; SEC_PARAM_64 * 64],
@@ -39,14 +40,14 @@ struct MultiplicationSenderRandomPackage {
 }
 
 impl MultiplicationSenderRandomPackage {
-    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Self {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Box<Self> {
         let (delta, x) = batch_random_ot_receiver_random_helper(rng);
         let seed = random_ot_extension_sender_helper(rng);
         // this is the `batch_size` from `multiplication_sender`
         let batch_size = BITS + SECURITY_PARAMETER;
         let delta0 = mta_sender_random_helper(batch_size, rng);
         let delta1 = mta_sender_random_helper(batch_size, rng);
-        Self::new(delta, x, seed, delta0, delta1)
+        Box::new(Self::new(delta, x, seed, delta0, delta1))
     }
 }
 
@@ -55,33 +56,36 @@ async fn multiplication_sender(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    precomputed_values: MultiplicationSenderRandomPackage,
+    precomputed_values: Box<MultiplicationSenderRandomPackage>,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let (delta, x) = (precomputed_values.delta, precomputed_values.x);
-    let (delta, k) = batch_random_ot_receiver(chan.child(0), delta, x).await?;
+    let k = batch_random_ot_receiver(
+        chan.child(0),
+        &precomputed_values.delta,
+        &precomputed_values.x,
+    )
+    .await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
-    let seed = precomputed_values.seed;
-    let mut res0 = random_ot_extension_sender(
-        chan.child(1),
-        RandomOtExtensionParams {
-            sid,
-            batch_size: 2 * batch_size,
-        },
-        delta,
-        &k,
-        seed,
-    )
-    .await?;
-    let res1 = res0.split_off(batch_size);
+    let mut res0 = Zeroizing::new(
+        random_ot_extension_sender(
+            chan.child(1),
+            RandomOtExtensionParams {
+                sid,
+                batch_size: 2 * batch_size,
+            },
+            &precomputed_values.delta,
+            &k,
+            &precomputed_values.seed,
+        )
+        .await?,
+    );
+    let res1 = Zeroizing::new(res0.split_off(batch_size));
 
     // Step 2
-    let delta0 = precomputed_values.delta0;
-    let task0 = mta_sender(chan.child(2), res0, *a_i, delta0);
-    let delta1 = precomputed_values.delta1;
-    let task1 = mta_sender(chan.child(3), res1, *b_i, delta1);
+    let task0 = mta_sender(chan.child(2), &res0, *a_i, &precomputed_values.delta0);
+    let task1 = mta_sender(chan.child(3), &res1, *b_i, &precomputed_values.delta1);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;
@@ -89,7 +93,7 @@ async fn multiplication_sender(
     Ok(gamma0? + gamma1?)
 }
 
-#[derive(derive_more::Constructor)]
+#[derive(derive_more::Constructor, ZeroizeOnDrop)]
 struct MultiplicationReceiverRandomPackage {
     y: Scalar,
     b: ChoiceVector,
@@ -98,14 +102,14 @@ struct MultiplicationReceiverRandomPackage {
 }
 
 impl MultiplicationReceiverRandomPackage {
-    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Result<Self, ProtocolError> {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Result<Box<Self>, ProtocolError> {
         let y = batch_random_ot_sender_helper(rng);
         // This value must coincide with params.batch_size in `multiplication_receiver`
         let batch_size = 2 * (BITS + SECURITY_PARAMETER);
         let b = random_ot_extension_receiver_helper(batch_size, rng)?;
         let seed0 = mta_receiver_random_helper(rng);
         let seed1 = mta_receiver_random_helper(rng);
-        Ok(Self::new(y, b, seed0, seed1))
+        Ok(Box::new(Self::new(y, b, seed0, seed1)))
     }
 }
 
@@ -114,15 +118,13 @@ async fn multiplication_receiver(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    precomputed_package: MultiplicationReceiverRandomPackage,
+    precomputed_package: Box<MultiplicationReceiverRandomPackage>,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
-    let y = precomputed_package.y;
-    let (k0, k1) = batch_random_ot_sender(chan.child(0), y).await?;
+    let (k0, k1) = batch_random_ot_sender(chan.child(0), &precomputed_package.y).await?;
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
-    let b = precomputed_package.b;
     let mut res0 = random_ot_extension_receiver(
         chan.child(1),
         RandomOtExtensionParams {
@@ -131,16 +133,14 @@ async fn multiplication_receiver(
         },
         &k0,
         &k1,
-        b,
+        &precomputed_package.b,
     )
     .await?;
     let res1 = res0.split_off(batch_size);
 
     // Step 2
-    let seed0 = precomputed_package.seed0;
-    let task0 = mta_receiver(chan.child(2), res0, *b_i, seed0);
-    let seed1 = precomputed_package.seed1;
-    let task1 = mta_receiver(chan.child(3), res1, *a_i, seed1);
+    let task0 = mta_receiver(chan.child(2), res0, *b_i, &precomputed_package.seed0);
+    let task1 = mta_receiver(chan.child(3), res1, *a_i, &precomputed_package.seed1);
 
     // Step 3
     let (gamma0, gamma1) = futures::future::join(task0, task1).await;
@@ -213,7 +213,6 @@ pub(super) async fn multiplication_many(
                     Box::pin(async move {
                         let (sid_i, av_i, bv_i) =
                             get_multiplication_inputs(&sid_arc, &av_iv_arc, &bv_iv_arc, i)?;
-                        #[allow(clippy::large_futures)]
                         multiplication_sender(
                             chan,
                             sid_i.as_ref(),
