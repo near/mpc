@@ -236,6 +236,7 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use rand::SeedableRng;
     use rand::rngs::StdRng;
+    use rstest::rstest;
 
     const CONFIGURED_FUNDER: &str = "funder.near";
 
@@ -247,39 +248,23 @@ mod tests {
         }
     }
 
-    #[test]
-    fn would_exceed_faucet_cap__should_trip_for_faucet_path_above_cap() {
-        // Given
-        let funding_account = None;
-
+    #[rstest]
+    #[case::trips_for_faucet_path_above_cap(None, 101 * ONE_NEAR, true)]
+    #[case::does_not_trip_when_funding_account_provided(
+        Some(dummy_funding_account()),
+        1_000 * ONE_NEAR,
+        false
+    )]
+    #[case::does_not_trip_below_cap_on_faucet_path(None, 50 * ONE_NEAR, false)]
+    fn would_exceed_faucet_cap__should_trip_only_for_faucet_path_above_cap(
+        #[case] funding_account: Option<NearAccount>,
+        #[case] amount: u128,
+        #[case] expected: bool,
+    ) {
         // When
-        let exceeded = would_exceed_faucet_cap(&funding_account, 101 * ONE_NEAR);
+        let exceeded = would_exceed_faucet_cap(&funding_account, amount);
 
         // Then
-        assert!(exceeded);
-    }
-
-    #[test]
-    fn would_exceed_faucet_cap__should_not_trip_when_funding_account_provided() {
-        // Given
-        let funding_account = Some(dummy_funding_account());
-
-        // When
-        let exceeded = would_exceed_faucet_cap(&funding_account, 1_000 * ONE_NEAR);
-
-        // Then
-        assert!(!exceeded);
-    }
-
-    #[test]
-    fn would_exceed_faucet_cap__should_not_trip_below_cap_on_faucet_path() {
-        // Given
-        let funding_account = None;
-
-        // When
-        let exceeded = would_exceed_faucet_cap(&funding_account, 50 * ONE_NEAR);
-
-        // Then
-        assert!(!exceeded);
+        assert_eq!(exceeded, expected);
     }
 }

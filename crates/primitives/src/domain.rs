@@ -125,28 +125,21 @@ impl Protocol {
 #[expect(non_snake_case)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn from_protocol_for_curve__should_map_cait_sith_to_secp256k1() {
-        assert_eq!(Curve::from(Protocol::CaitSith), Curve::Secp256k1);
-    }
-
-    #[test]
-    fn from_protocol_for_curve__should_map_robust_ecdsa_to_secp256k1() {
-        assert_eq!(Curve::from(Protocol::RobustEcdsa), Curve::Secp256k1);
-    }
-
-    #[test]
-    fn from_protocol_for_curve__should_map_frost_to_edwards25519() {
-        assert_eq!(Curve::from(Protocol::Frost), Curve::Edwards25519);
-    }
-
-    #[test]
-    fn from_protocol_for_curve__should_map_confidential_key_derivation_to_bls12381() {
-        assert_eq!(
-            Curve::from(Protocol::ConfidentialKeyDerivation),
-            Curve::Bls12381
-        );
+    #[rstest]
+    #[case::cait_sith_to_secp256k1(Protocol::CaitSith, Curve::Secp256k1)]
+    #[case::robust_ecdsa_to_secp256k1(Protocol::RobustEcdsa, Curve::Secp256k1)]
+    #[case::frost_to_edwards25519(Protocol::Frost, Curve::Edwards25519)]
+    #[case::confidential_key_derivation_to_bls12381(
+        Protocol::ConfidentialKeyDerivation,
+        Curve::Bls12381
+    )]
+    fn from_protocol_for_curve__should_map_protocol_to_curve(
+        #[case] protocol: Protocol,
+        #[case] expected: Curve,
+    ) {
+        assert_eq!(Curve::from(protocol), expected);
     }
 
     #[test]
@@ -164,27 +157,20 @@ mod tests {
         }
     }
 
-    #[test]
-    fn required_active_signers__should_be_2t_minus_1_for_robust_ecdsa() {
+    #[rstest]
+    #[case::two_t_minus_1(3, 5)]
+    #[case::saturate_on_overflow(u64::MAX, u64::MAX)]
+    fn required_active_signers__should_be_saturating_2t_minus_1_for_robust_ecdsa(
+        #[case] threshold: u64,
+        #[case] expected: u64,
+    ) {
         // Given
-        let t = ReconstructionThreshold::new(3);
+        let t = ReconstructionThreshold::new(threshold);
 
         // When
         let required = Protocol::RobustEcdsa.required_active_signers(t);
 
         // Then
-        assert_eq!(required, 5);
-    }
-
-    #[test]
-    fn required_active_signers__should_saturate_for_robust_ecdsa_on_overflow() {
-        // Given
-        let t = ReconstructionThreshold::new(u64::MAX);
-
-        // When
-        let required = Protocol::RobustEcdsa.required_active_signers(t);
-
-        // Then
-        assert_eq!(required, u64::MAX);
+        assert_eq!(required, expected);
     }
 }
