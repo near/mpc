@@ -411,6 +411,7 @@ pub mod tests {
         distributions::{Alphanumeric, Uniform},
         rngs::{OsRng, StdRng},
     };
+    use rstest::rstest;
     use std::{
         assert_matches,
         net::{Ipv4Addr, SocketAddr},
@@ -841,16 +842,20 @@ cores: 4
         assert_eq!(key.as_bytes(), &expected);
     }
 
-    #[test]
-    fn aes_key_from_hex__should_decode_key_of_expected_length() {
-        // Given
-        let hex_key = "ab".repeat(32);
-
+    #[rstest]
+    #[case::expected_length("ab".repeat(32), Some([0xAB; 32]))]
+    #[case::too_short("ab".repeat(16), None)]
+    #[case::too_long("ab".repeat(33), None)]
+    #[case::not_hex("zz".repeat(32), None)]
+    fn aes_key_from_hex__should_decode_only_keys_of_expected_length(
+        #[case] hex_key: String,
+        #[case] expected: Option<[u8; 32]>,
+    ) {
         // When
-        let key = AesKey256::from_hex(&hex_key).unwrap();
+        let key = AesKey256::from_hex(&hex_key).ok();
 
         // Then
-        assert_eq!(key.as_bytes(), &[0xAB; 32]);
+        assert_eq!(key.map(|key| *key.as_bytes()), expected);
     }
 
     #[test]
@@ -874,18 +879,6 @@ cores: 4
 
         // When
         let result = serde_json::from_str::<AesKey256>(&json);
-
-        // Then
-        assert_matches!(result, Err(_));
-    }
-
-    #[test]
-    fn aes_key_from_hex__should_reject_key_of_wrong_length() {
-        // Given
-        let hex_key = "ab".repeat(16);
-
-        // When
-        let result = AesKey256::from_hex(&hex_key);
 
         // Then
         assert_matches!(result, Err(_));
