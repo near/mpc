@@ -46,6 +46,8 @@ git push origin --delete "$BRANCH" 2>/dev/null || true
 
 sed -i "s|tag = \"$CURRENT_TAG\"|tag = \"$NEW_TAG\"|g" Cargo.toml
 sed -i "/DEFAULT_SANDBOX_VERSION/s|\"$CURRENT_TAG\"|\"$NEW_TAG\"|g" crates/test-utils/src/lib.rs
+sed -i "s|github:near/nearcore/$CURRENT_TAG\"|github:near/nearcore/$NEW_TAG\"|" flake.nix
+nix flake update nearcore
 cargo update nearcore
 
 # Keep the localnet genesis at the new nearcore's protocol version.
@@ -59,7 +61,7 @@ fi
 sed -i "s|^  \"protocol_version\": [0-9]*,|  \"protocol_version\": $PROTOCOL_VERSION,|" deployment/localnet/genesis.json
 
 git checkout -b "$BRANCH"
-git add Cargo.toml Cargo.lock crates/test-utils/src/lib.rs deployment/localnet/genesis.json
+git add Cargo.toml Cargo.lock crates/test-utils/src/lib.rs deployment/localnet/genesis.json flake.nix flake.lock
 git commit -m "chore: bump to nearcore $NEW_TAG"
 git push origin "$BRANCH"
 

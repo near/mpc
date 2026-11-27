@@ -10,16 +10,16 @@
 
 rustPlatform.buildRustPackage rec {
   pname = "near-cli-rs";
-  version = "0.25.1";
+  version = "0.30.1";
 
   src = fetchFromGitHub {
     owner = "near";
     repo = "near-cli-rs";
     rev = "v${version}";
-    hash = "sha256-r/DyZn2eDB94iBT7StRVm5C6BEVJLbSbnjcE/86kYRQ=";
+    hash = "sha256-V6J26TY/nC/xf0Sf13meVq58f2GjJRX2FwgOKeT1Vo4=";
   };
 
-  cargoHash = "sha256-Pl/C8JwCyGRFNH0qYZmYqeindLMtcgEWaVHqqsiQN2Q=";
+  cargoHash = "sha256-KGJvd9x2IpRkGNTnn255HXhT9QDw+QHLdbSjDxBqTYY=";
 
   # nativeBuildInputs: Tools needed on the host to compile the package
   nativeBuildInputs = [
