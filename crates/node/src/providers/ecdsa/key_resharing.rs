@@ -9,6 +9,7 @@ use threshold_signatures::ReconstructionThreshold;
 use threshold_signatures::frost_secp256k1::keys::SigningShare;
 use threshold_signatures::frost_secp256k1::{Secp256K1Sha256, VerifyingKey};
 use threshold_signatures::participants::Participant;
+use zeroize::Zeroizing;
 
 impl EcdsaSignatureProvider {
     pub(crate) async fn run_key_resharing_client_internal(
@@ -23,7 +24,7 @@ impl EcdsaSignatureProvider {
             reconstruction_threshold: new_reconstruction_threshold,
             old_participants: old_participants.participants.iter().map(|p| p.id).collect(),
             old_reconstruction_threshold,
-            my_share,
+            my_share: my_share.map(Zeroizing::new),
             public_key,
         }
         .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
@@ -51,7 +52,7 @@ pub struct KeyResharingComputation {
     reconstruction_threshold: ReconstructionThreshold,
     old_participants: Vec<ParticipantId>,
     old_reconstruction_threshold: ReconstructionThreshold,
-    my_share: Option<SigningShare>,
+    my_share: Option<Zeroizing<SigningShare>>,
     public_key: VerifyingKey,
 }
 
@@ -111,6 +112,7 @@ mod tests {
     use threshold_signatures::frost_secp256k1::Secp256K1Sha256;
     use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
     use tokio::sync::mpsc;
+    use zeroize::Zeroizing;
 
     #[tokio::test]
     async fn test_key_resharing() {
@@ -158,7 +160,7 @@ mod tests {
                         reconstruction_threshold,
                         old_participants,
                         old_reconstruction_threshold: reconstruction_threshold,
-                        my_share: keyshare,
+                        my_share: keyshare.map(Zeroizing::new),
                         public_key: pubkey,
                     }
                     .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))
