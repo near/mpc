@@ -2,6 +2,7 @@ use k256::Scalar;
 use rand_core::CryptoRngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConditionallySelectable;
+use zeroize::Zeroizing;
 
 use crate::{
     crypto::constants::NEAR_BATCH_RANDOM_OT_HASH,
@@ -93,7 +94,8 @@ pub async fn batch_random_ot_sender(
             Ok::<_, ProtocolError>((big_k0, big_k1))
         }
     });
-    let out: Vec<(BitVector, BitVector)> = futures::future::try_join_all(tasks).await?;
+    let out: Zeroizing<Vec<(BitVector, BitVector)>> =
+        Zeroizing::new(futures::future::try_join_all(tasks).await?);
 
     let big_k0: BitMatrix = out.iter().map(|r| r.0).collect();
     let big_k1: BitMatrix = out.iter().map(|r| r.1).collect();
@@ -131,7 +133,7 @@ pub async fn batch_random_ot_receiver(
     let big_y = big_y_verkey.value();
     // let delta = BitVector::random(&mut rng);
 
-    let mut out = Vec::with_capacity(SEC_PARAM_64 * 64);
+    let mut out = Zeroizing::new(Vec::with_capacity(SEC_PARAM_64 * 64));
     for (i, (d_i, &x_i)) in delta.bits().zip(x.iter()).enumerate() {
         let mut sub_chan =
             chan.child(u64::try_from(i).map_err(|_| ProtocolError::IntegerOverflow)?);
@@ -153,7 +155,7 @@ pub async fn batch_random_ot_receiver(
 
         chan.yield_point().await;
     }
-    let big_k: BitMatrix = out.into_iter().collect();
+    let big_k: BitMatrix = out.iter().copied().collect();
     big_k
         .try_into()
         .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))

@@ -17,7 +17,7 @@ use crate::ecdsa::ot::{
 };
 
 use elliptic_curve::ops::Reduce;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::crypto::constants::NEAR_RANDOM_OT_EXTENSION_HASH_CTX;
 
@@ -56,7 +56,13 @@ pub struct RandomOtExtensionParams<'sid> {
 }
 
 /// The result that the sender gets.
-pub type RandomOTExtensionSenderOut = Vec<(Scalar, Scalar)>;
+pub type RandomOTExtensionSenderOut = Zeroizing<Vec<(Scalar, Scalar)>>;
+
+/// The result that the receiver gets.
+#[derive(ZeroizeOnDrop)]
+pub struct RandomOTExtensionReceiverOut(Vec<ReceiverOutEntry>);
+
+impl_secret_debug!(RandomOTExtensionReceiverOut);
 
 #[derive(Zeroize)]
 struct ReceiverOutEntry {
@@ -64,12 +70,6 @@ struct ReceiverOutEntry {
     choice: u8,
     value: Scalar,
 }
-
-/// The result that the receiver gets.
-#[derive(ZeroizeOnDrop)]
-pub struct RandomOTExtensionReceiverOut(Vec<ReceiverOutEntry>);
-
-impl_secret_debug!(RandomOTExtensionReceiverOut);
 
 impl RandomOTExtensionReceiverOut {
     pub fn len(&self) -> usize {
@@ -180,7 +180,7 @@ pub async fn random_ot_extension_sender(
     }
 
     // Step 14
-    let mut out = Vec::with_capacity(params.batch_size);
+    let mut out = Zeroizing::new(Vec::with_capacity(params.batch_size));
 
     for (i, q_i) in q.rows().take(params.batch_size).enumerate() {
         let v0_i = hash_to_scalar(i, q_i);
@@ -264,9 +264,9 @@ pub async fn random_ot_extension_receiver(
     chan.send(wait1, &(small_x, small_t))?;
 
     // Step 15
-    let mut out = Vec::with_capacity(params.batch_size);
+    let mut out = RandomOTExtensionReceiverOut(Vec::with_capacity(params.batch_size));
     for (i, (b_i, t_i)) in b.bits().zip(t.rows()).take(params.batch_size).enumerate() {
-        out.push(ReceiverOutEntry {
+        out.0.push(ReceiverOutEntry {
             choice: b_i.unwrap_u8(),
             value: hash_to_scalar(i, t_i),
         });
@@ -277,7 +277,7 @@ pub async fn random_ot_extension_receiver(
         }
     }
 
-    Ok(RandomOTExtensionReceiverOut(out))
+    Ok(out)
 }
 
 #[cfg(test)]

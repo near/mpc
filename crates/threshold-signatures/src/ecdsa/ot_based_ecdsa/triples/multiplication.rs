@@ -68,19 +68,17 @@ async fn multiplication_sender(
 
     let batch_size = BITS + SECURITY_PARAMETER;
     // Step 1
-    let mut res0 = Zeroizing::new(
-        random_ot_extension_sender(
-            chan.child(1),
-            RandomOtExtensionParams {
-                sid,
-                batch_size: 2 * batch_size,
-            },
-            &precomputed_values.delta,
-            &k,
-            &precomputed_values.seed,
-        )
-        .await?,
-    );
+    let mut res0 = random_ot_extension_sender(
+        chan.child(1),
+        RandomOtExtensionParams {
+            sid,
+            batch_size: 2 * batch_size,
+        },
+        &precomputed_values.delta,
+        &k,
+        &precomputed_values.seed,
+    )
+    .await?;
     let res1 = Zeroizing::new(res0.split_off(batch_size));
 
     // Step 2
