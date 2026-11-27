@@ -16,8 +16,8 @@ impl SignRequestStorage {
         Ok(Self { db, add_sender: tx })
     }
 
-    /// If given request is already in the database, returns false.
-    /// Otherwise, inserts the request and returns true.
+    /// Errors if the request is already in the database or the write fails.
+    /// Otherwise, inserts the request and returns Ok(()).
     pub fn add(&self, request: &SignatureRequest) -> anyhow::Result<(), anyhow::Error> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::SignRequest, &key)?.is_some() {
@@ -59,7 +59,10 @@ impl SignRequestStorage {
                 break;
             }
         }
-        let request_ser = self.db.get(DBCol::SignRequest, &key)?.unwrap();
+        let request_ser = self
+            .db
+            .get(DBCol::SignRequest, &key)?
+            .ok_or_else(|| anyhow::anyhow!("sign request {id:?} missing"))?;
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
@@ -75,8 +78,8 @@ impl CKDRequestStorage {
         Ok(Self { db, add_sender: tx })
     }
 
-    /// If given request is already in the database, returns false.
-    /// Otherwise, inserts the request and returns true.
+    /// Errors if the request is already in the database or the write fails.
+    /// Otherwise, inserts the request and returns Ok(()).
     pub fn add(&self, request: &CKDRequest) -> anyhow::Result<(), anyhow::Error> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::CKDRequest, &key)?.is_some() {
@@ -118,7 +121,10 @@ impl CKDRequestStorage {
                 break;
             }
         }
-        let request_ser = self.db.get(DBCol::CKDRequest, &key)?.unwrap();
+        let request_ser = self
+            .db
+            .get(DBCol::CKDRequest, &key)?
+            .ok_or_else(|| anyhow::anyhow!("ckd request {id:?} missing"))?;
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
@@ -134,8 +140,8 @@ impl VerifyForeignTransactionRequestStorage {
         Ok(Self { db, add_sender: tx })
     }
 
-    /// If given request is already in the database, returns false.
-    /// Otherwise, inserts the request and returns true.
+    /// Errors if the request is already in the database or the write fails.
+    /// Otherwise, inserts the request and returns Ok(()).
     pub fn add(&self, request: &VerifyForeignTxRequest) -> anyhow::Result<(), anyhow::Error> {
         let key = borsh::to_vec(&request.id)?;
         if self.db.get(DBCol::VerifyForeignTxRequest, &key)?.is_some() {
@@ -184,7 +190,10 @@ impl VerifyForeignTransactionRequestStorage {
                 break;
             }
         }
-        let request_ser = self.db.get(DBCol::VerifyForeignTxRequest, &key)?.unwrap();
+        let request_ser = self
+            .db
+            .get(DBCol::VerifyForeignTxRequest, &key)?
+            .ok_or_else(|| anyhow::anyhow!("verify foreign tx request {id:?} missing"))?;
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }

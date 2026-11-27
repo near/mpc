@@ -108,6 +108,7 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
                 "cold queue barrier points past an empty queue; resetting"
             );
             self.cold_available = 0;
+            self.cold_ready = 0;
             return ColdQueueTakeResult::NotTakenAndNoneAvailable;
         };
         self.cold_available -= 1;
@@ -124,15 +125,20 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
 
     /// Try to remove and return an element that *doesn't* satisfy the current condition.
     /// If the element does satisfy it, it will be moved to the front of the queue.
-    pub(self) fn discard(&mut self) -> anyhow::Result<ColdQueueDiscardResult<T>, anyhow::Error> {
+    pub(self) fn discard(&mut self) -> ColdQueueDiscardResult<T> {
         self.update_condition_value_if_due();
         if self.cold_ready == self.cold_queue.len() {
-            return Ok(ColdQueueDiscardResult::NotDiscardedAndNoneAvailable);
+            return ColdQueueDiscardResult::NotDiscardedAndNoneAvailable;
         }
-        let (id, value) = self
-            .cold_queue
-            .pop_back()
-            .ok_or_else(|| anyhow!("Cold queue is empty"))?;
+        let Some((id, value)) = self.cold_queue.pop_back() else {
+            tracing::error!(
+                cold_ready = self.cold_ready,
+                "cold queue ready count points past an empty queue; resetting"
+            );
+            self.cold_ready = 0;
+            self.cold_available = 0;
+            return ColdQueueDiscardResult::NotDiscardedAndNoneAvailable;
+        };
         let condition_satisfied = if self.cold_available > self.cold_queue.len() {
             self.cold_available -= 1;
             (self.condition)(&self.last_condition_value, &value)
@@ -140,12 +146,12 @@ impl<T, CondVal: Default + Eq> ColdQueue<T, CondVal> {
             false
         };
         if !condition_satisfied {
-            return Ok(ColdQueueDiscardResult::Discarded((id, value)));
+            return ColdQueueDiscardResult::Discarded((id, value));
         }
         self.cold_queue.push_front((id, value));
         self.cold_ready += 1;
         self.cold_available += 1;
-        Ok(ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable)
+        ColdQueueDiscardResult::NotDiscardedButSomeMayBeAvailable
     }
 
     /// Adds an element to the cold queue. If the condition is *not* satisfied,
@@ -408,7 +414,7 @@ where
                 .cold_queue
                 .lock()
                 .map_err(|_| anyhow::anyhow!("cold queue lock poisoned"))?
-                .discard()?;
+                .discard();
             match discarded {
                 ColdQueueDiscardResult::Discarded((id, _)) => {
                     removed_from_cold_queue.push(id);
@@ -574,7 +580,7 @@ where
                 participant_id
                     .raw()
                     .checked_add(1)
-                    .ok_or(anyhow!("checked_add overflow"))?,
+                    .ok_or_else(|| anyhow!("no participant id after {}", participant_id.raw()))?,
             ),
         ));
         Ok((start, end))
@@ -607,7 +613,9 @@ where
         &self,
         count: u32,
     ) -> anyhow::Result<UniqueId, anyhow::Error> {
-        assert!(count > 0);
+        let last_offset = count
+            .checked_sub(1)
+            .ok_or_else(|| anyhow!("id range invalid"))?;
         let mut last_id = self
             .last_id
             .lock()
@@ -616,7 +624,7 @@ where
             Some(last_id) => last_id.pick_new_after(),
             None => UniqueId::generate(self.my_participant_id),
         };
-        let end = start.add_to_counter(count - 1)?;
+        let end = start.add_to_counter(last_offset)?;
         *last_id = Some(end);
         Ok(start)
     }
@@ -648,7 +656,6 @@ where
         let mut update = self.db.update();
         update.put(self.col, &key, &value_ser);
         update.commit()?;
-        // Can't fail, because we keep a receiver alive.
         self.owned_queue.add_owned(id, value)
     }
 
@@ -805,7 +812,7 @@ mod tests {
 
         // Operations on empty
         verify_cold_queue_internal_consistency(&queue, 0);
-        queue.discard().unwrap();
+        queue.discard();
         verify_cold_queue_internal_consistency(&queue, 0);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 0);
@@ -821,13 +828,13 @@ mod tests {
         verify_cold_queue_internal_consistency(&queue, 0);
         queue.add_if_condition_satisfied(id1, 1);
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard().unwrap();
+        queue.discard();
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.add_if_condition_not_satisfied(id2, 2);
         verify_cold_queue_internal_consistency(&queue, 2);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard().unwrap();
+        queue.discard();
         verify_cold_queue_internal_consistency(&queue, 0);
 
         // Reset then discard
@@ -836,13 +843,13 @@ mod tests {
         queue.update_condition_value();
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard().unwrap();
+        queue.discard();
         verify_cold_queue_internal_consistency(&queue, 0);
         // Reset then take
         queue.add_if_condition_not_satisfied(id1, 1);
         cond_value.store(1, Ordering::Relaxed);
         queue.update_condition_value();
-        queue.discard().unwrap();
+        queue.discard();
         verify_cold_queue_internal_consistency(&queue, 1);
         queue.take();
         verify_cold_queue_internal_consistency(&queue, 0);
@@ -855,7 +862,7 @@ mod tests {
         // Discard from known non-satisfying
         queue.add_if_condition_not_satisfied(id2, 2);
         verify_cold_queue_internal_consistency(&queue, 1);
-        queue.discard().unwrap();
+        queue.discard();
         verify_cold_queue_internal_consistency(&queue, 0);
     }
 
@@ -1557,8 +1564,10 @@ mod tests {
         for domain_id in [domain_id, other_domain_id] {
             let store = new_cleanup_test_store(&db, domain_id);
             for participants in [&[0, 1, 2, 3][..], &[0, 1, 2], &[1, 2, 3], &[1, 2]] {
-                let id = store.generate_and_reserve_id();
-                store.add_owned(id, ParticipantsWithI32(participant_ids(participants), 0));
+                let id = store.generate_and_reserve_id().unwrap();
+                store
+                    .add_owned(id, ParticipantsWithI32(participant_ids(participants), 0))
+                    .unwrap();
             }
         }
 
@@ -1577,10 +1586,15 @@ mod tests {
 
         // Then
         assert_eq!(
-            new_cleanup_test_store(&db, domain_id).num_owned(),
+            new_cleanup_test_store(&db, domain_id).num_owned().unwrap(),
             expected_num_owned
         );
-        assert_eq!(new_cleanup_test_store(&db, other_domain_id).num_owned(), 4);
+        assert_eq!(
+            new_cleanup_test_store(&db, other_domain_id)
+                .num_owned()
+                .unwrap(),
+            4
+        );
     }
 
     // The standing condition holds for 2 and 3, the supplied one for 3 and 4:

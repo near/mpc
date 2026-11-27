@@ -106,12 +106,13 @@ impl EcdsaSignatureProvider {
             .collect();
 
         loop {
-            let Some(my_triples_count) = triple_store
-                .num_owned()
-                .inspect_err(|err| tracing::error!(?err, "failed to read owned triple count"))
-                .ok()
-            else {
-                continue;
+            let my_triples_count = match triple_store.num_owned() {
+                Ok(count) => count,
+                Err(err) => {
+                    tracing::error!(?err, "failed to read owned triple count.");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
             };
             let should_generate = my_triples_count + in_flight_generations.num_in_flight()
                 < config.desired_triples_to_buffer;
@@ -128,10 +129,7 @@ impl EcdsaSignatureProvider {
                 ) {
                     Ok(participants) => participants,
                     Err(e) => {
-                        tracing::warn!(
-                            "Can't choose active participants for a triple: {}. Sleeping.",
-                            e
-                        );
+                        tracing::warn!("Can't choose active participants for a triple: {}", e);
                         // that should not happen often, so sleeping here is okay
                         tokio::time::sleep(Duration::from_millis(100)).await;
                         continue;
@@ -140,14 +138,13 @@ impl EcdsaSignatureProvider {
 
                 let batch_size = config.batch_size;
                 let count = u32::from(batch_size);
-                let Some(id_start) = triple_store
-                    .generate_and_reserve_id_range(count)
-                    .inspect_err(|err| {
-                        tracing::error!(?err, count, "failed to reserve triple id range")
-                    })
-                    .ok()
-                else {
-                    continue;
+                let id_start = match triple_store.generate_and_reserve_id_range(count) {
+                    Ok(id_start) => id_start,
+                    Err(err) => {
+                        tracing::error!(?err, count, "failed to reserve triple id range");
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
                 };
                 let task_id = EcdsaTaskId::ManyTriples {
                     start: id_start,

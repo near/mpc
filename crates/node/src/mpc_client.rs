@@ -312,7 +312,7 @@ impl MpcClient {
                     // TODO(#3031): add batch request and unify stores
                     for request in &signature_requests.requests {
                         if let Err(err) = self.sign_request_store.add(request) {
-                            tracing::error!(?err, "failed to add sign request");
+                            tracing::warn!(?err, "sign request not stored");
                         }
                     }
 
@@ -327,7 +327,7 @@ impl MpcClient {
                     );
                     for request in &ckd_requests.requests {
                         if let Err(err) = self.ckd_request_store.add(request) {
-                            tracing::error!(?err, "failed to add ckd request");
+                            tracing::warn!(?err, "ckd request not stored");
                         }
                     }
 
@@ -342,7 +342,7 @@ impl MpcClient {
 
                     for request in &verify_foreign_tx_requests.requests {
                         if let Err(err) = self.verify_foreign_tx_request_store.add(request) {
-                            tracing::error!(?err, "failed to add verify foreign tx request");
+                            tracing::warn!(?err, "verify foreign tx request not stored");
                         }
                     }
                     pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
