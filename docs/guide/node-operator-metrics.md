@@ -55,164 +55,149 @@ is left:
 
 ## Foreign chain RPC providers
 
-The node verifies user transactions on other chains through RPC providers you
-configure. Three metric families describe them: what happens during real
-verification traffic, an hourly probe that needs no traffic, and the on-chain
-whitelist and quorum the node must meet to serve a chain.
+The node verifies transactions on other chains through the RPC providers you
+configure under `foreign_chains`. To debug a chain, check in order:
 
-### During traffic
+1. [Whitelist and quorum](#whitelist-and-quorum): does the node serve the chain?
+2. [The hourly probe](#the-hourly-probe): do your providers answer on the right
+   network?
+3. [During traffic](#during-traffic): how do they do on real requests?
 
-Each provider gets three metrics, labeled with the `chain` (the key it is
-configured under, such as `bitcoin`) and a `provider` pseudonym, so the
-public metrics endpoint never shows which RPC vendors you use. The pseudonyms
-are `p0`, `p1`, and so on, assigned alphabetically and case sensitively
-(`Alchemy` sorts before `alchemy`): with providers `alchemy`, `quicknode`, and
-`ankr`, `alchemy` becomes `p0`, `ankr` becomes `p1`, and `quicknode` becomes
-`p2`. Adding, removing, or renaming a provider in the config shifts the labels after it.
-
-| Metric | What it tracks |
-| --- | --- |
-| `mpc_foreign_chain_provider_inspection_seconds` | how long one provider took to return on one check, by `outcome`: `answered` or `failed` |
-| `mpc_foreign_chain_provider_dropped_seconds` | checks the node stopped waiting for before the provider returned, and how long it had waited |
-| `mpc_foreign_chain_provider_errors_total` | checks a provider failed to answer, counted by `kind` |
-
-`kind` is one of:
-
-* `unreachable`: no answer arrived: connection trouble, a 5xx, or rate
-  limiting. Often clears on its own.
-* `rejected`: the provider answered but refused the request. Retrying will not
-  help; this needs a human.
-* `malformed`: the provider answered with something the node could not use.
-  Needs a human.
-* `timed_out`: the provider's RPC client gave up waiting for the answer.
-
-A dropped check is different from an error: the node itself stopped waiting,
-at its deadline or at shutdown, and whether the provider ever answered is
-unknown. Such checks are timed in `mpc_foreign_chain_provider_dropped_seconds`
-and do not appear under any `kind`. The node waits for every provider, so
-outside shutdowns one dropped check fails the whole check for that chain.
-
-Reading the numbers:
-
-* Error counts and dropped counts should stay at zero. Start with `rejected`
-  and `malformed`, then dropped checks and `timed_out`; `unreachable` often
-  clears on its own.
-* For latency, filter on `outcome="answered"` and compare providers of the same
-  chain with each other. To see a whole chain in one graph instead, `sum by
-  (chain)` aggregates over the providers, and keeping `provider` in the `by`
-  clause keeps them separate; the same works for the error counters. The top
-  bucket is the deadline the node enforces, and one observation is a whole
-  check (one to three RPC calls), not a single round trip. A provider drifting
-  toward the top bucket is the one to watch.
-* `outcome="failed"` times the checks that ended in an error, so a provider
-  that fails slowly is visible. Keep it out of latency percentiles.
-* For dropped checks, `rate(..._dropped_seconds_sum[5m]) /
-  rate(..._dropped_seconds_count[5m])` is the average time the node waited
-  before giving up. It sits near the deadline unless checks are dropped at
-  shutdown.
-* An answer is never an error, even when it ends the check: a transaction that
-  is not final yet, has too few confirmations, was reverted, is missing, or
-  sits on a block outside the canonical chain is an answer. Only failure to
-  answer counts as an error.
-* A provider whose answers disagree with its peers also fails the whole check
-  for that chain, and these metrics do not show it: its answers count as
-  answers here. When verify requests fail for a chain while every error
-  counter stays at zero, suspect a disagreeing provider and compare the node
-  logs.
-* Every configured provider's series appears, at zero, as soon as the node
-  serves requests, so an idle node reports zero rather than nothing.
-* With no traffic, all series stay flat whether providers are healthy or down.
-  On a quiet node, the probe below is the health signal.
-* Every participating node checks for itself: one user request produces one
-  observation per provider on each node. Counts are per node, not cluster
-  totals.
-* Probe traffic is not counted here, so it cannot distort these numbers.
-
-### The hourly probe
-
-At startup and then once per hour, whether or not any traffic exists, the node
-asks each configured provider which network it is serving and compares the
-answer with the chain's `expected_network_fingerprint` from your config:
-
-| Metric | What it tracks |
-| --- | --- |
-| `mpc_foreign_chain_rpc_providers_configured` | providers configured for the chain, whitelisted or not |
-| `mpc_foreign_chain_rpc_providers_healthy` | providers that passed the latest probe |
-
-`healthy` should equal `configured`. Anything less is a provider the probe
-could not confirm: unreachable, refusing, too slow, serving a different
-network, or a chain configured without an `expected_network_fingerprint`,
-which the probe cannot check.
-
-After each round the node also compares the configured providers with the
-provider whitelist. A round runs at startup, every hour, and as soon as the
-whitelist is read or changes. So a wrong config is reported until it is fixed.
-
-Each round logs:
-
-* A warning for each unhealthy provider.
-* A line for each difference from the whitelist. A difference you must fix is
-  a warning or an error. Two differences are normal and are logged as info: a
-  chain that is not whitelisted yet, and an extra provider.
-* A warning or an error for each chain that is not healthy, once the whitelist
-  is read.
-* One `foreign chain probe round complete` line at the end, with these fields:
-
-| Field | What it tells you |
-| --- | --- |
-| `healthy` | providers that passed the probe |
-| `probed` | providers of a chain that has a probe |
-| `unchecked` | providers of a chain that has no probe |
-| `unchecked_chains` | the chains that have no probe |
-| `whitelist` | `not read yet`, `matches the local config`, or the number of differences logged above |
-| `healthy_chains` | chains judged healthy |
-| `judged_chains` | chains judged, `0` until the whitelist is read |
-
-The whitelist is `not read yet` until the node has synced and read it from the
-contract.
-
-Once the whitelist is read, each round judges every whitelisted chain in your
-config. First it checks the quorum, which needs no probe:
-
-* A voted quorum the node cannot enforce is logged as an error. The contract
-  rejects such votes, so this should never happen.
-* A chain with fewer whitelisted providers configured than its quorum gets a
-  warning. The node does not serve that chain.
-
-A chain that passes these checks is judged further only when it has a probe and
-sets an `expected_network_fingerprint`. It is healthy when all of these hold:
-
-* All of its whitelisted providers passed the probe.
-* No configured provider serves another network. Such a provider fails every
-  verify request on its chain, whitelisted or not, because the verdicts of all
-  configured providers must agree.
-
-When some whitelisted providers fail the probe, the warning says whether the
-others still reach the quorum. If they do not, every verify request on that
-chain fails.
-
-A configured provider counts for a whitelisted provider only when its URL host,
-scheme, port, path, chain routing and auth all match the voted entry. When two
-configured providers match one whitelisted provider, only the first by name
-counts. The second one cannot stand in when the first one fails.
+Logs name a provider by its config name, metrics by a
+[pseudonym](#provider-labels). Config changes need a restart.
 
 ### Whitelist and quorum
 
-The participants vote, per chain, the RPC providers a node may use and how many
-of them must agree on a verdict. The node registers and serves a chain only
-while its own providers can reach that quorum. Both gauges are labeled with the
-`chain` and updated on every whitelist change while the node is a running
-participant:
+Per chain, the participants vote which RPC providers count (the whitelist) and
+how many must agree (the quorum). Your provider counts when it conforms to a
+whitelisted one: same host, URL, chain routing and auth. The
+[TDX guide](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#whitelist-and-quorum)
+has the exact rules.
 
-| Metric | What it tracks |
+| Metric | What it tracks | When to worry |
+| --- | --- | --- |
+| `mpc_foreign_chain_rpc_quorum_required` | gauge by `chain`: the voted quorum | the reference for the gauge below |
+| `mpc_foreign_chain_rpc_providers_whitelisted` | gauge by `chain`: whitelisted providers yours conform to. Two of yours behind one count once. | below `mpc_foreign_chain_rpc_quorum_required` |
+
+Below the quorum, the node does not register the chain with the contract and
+refuses its requests. The [probe log lines](#probe-log-lines) show what to
+fix. The gauges appear once the node is a participant, for configured chains
+with a whitelist, and follow whitelist changes live.
+
+If registration does not land, the node logs WARN
+`foreign chains registration has not landed, resending; check that the node's access key allows register_foreign_chains_config`.
+
+### The hourly probe
+
+At startup, hourly and on each whitelist change, the node checks that each
+provider serves the network in the chain's
+[`expected_network_fingerprint`](running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#expected-network-fingerprints).
+A provider that fails stays in use. The [chain lines](#probe-log-lines) say
+when that fails requests.
+
+| Metric | What it tracks | When to worry |
+| --- | --- | --- |
+| `mpc_foreign_chain_rpc_providers_configured` | gauge by `chain`: configured providers, whitelisted or not | the reference for the gauge below |
+| `mpc_foreign_chain_rpc_providers_healthy` | gauge by `chain`: providers that passed the latest probe | below `mpc_foreign_chain_rpc_providers_configured` |
+
+A provider fails the probe when it:
+
+* serves another network
+* is unreachable, or silent past `timeout_sec`, in all `max_retries` attempts
+* refuses the request, for example over a wrong API key
+* answers with data the node cannot read
+
+A chain without `expected_network_fingerprint` is not probed, and all its
+providers count as failed.
+
+A token or URL the node cannot use, such as an unset `env` token, fails the
+probe with `AuthTokenUnresolved` or `ClientSetupFailed`. It also stops
+the node from serving any request: the node logs ERROR `[Running] failed:`
+until you fix the config and restart.
+
+#### Probe log lines
+
+Each round logs WARN `foreign-chain RPC provider is unhealthy` for each failed
+provider, with the reason in `status`, such as `WrongNetwork` with both
+fingerprints.
+
+Once the node has read the whitelist, each round logs how your providers differ
+from it:
+
+| Level | Message | What to do |
+| --- | --- | --- |
+| INFO | `foreign chain whitelist: chain is not whitelisted yet` | Nothing. Wait for the vote. |
+| INFO | `foreign chain whitelist: extra provider (its host matches no whitelist entry)` | It never counts toward the quorum, but can fail requests. |
+| WARN | `foreign chain whitelist: provider differs from its whitelist entry` | Fix what the `mismatch` field names: URL, chain routing or auth. One line per difference. |
+| WARN | `foreign chain whitelist: two providers match the same whitelist entry` | Remove the other. Only the first that conforms, by config name, counts. |
+| ERROR | `foreign chain whitelist: entry uses a variant this node version does not know, upgrade the node` | Upgrade the node. |
+| ERROR | `foreign chain whitelist: cannot parse the on chain whitelist entry, contact the NEAR MPC team` | Contact the NEAR MPC team. |
+
+Then it logs each unhealthy whitelisted chain in your config:
+
+| Level | Message | What to do |
+| --- | --- | --- |
+| WARN | `foreign chain is below quorum: ...` | Fix the whitelist differences above, or configure more of the voted providers. |
+| WARN | `foreign chain is unhealthy: an RPC provider serves another network, so every verify request fails` | Fix or remove the `WrongNetwork` provider. |
+| WARN | `foreign chain is unhealthy: too few whitelisted RPC providers passed the probe, so every verify request fails` | Fix the providers that failed. |
+| WARN | `foreign chain is unhealthy: a whitelisted RPC provider did not pass the probe, the others still reach the quorum` | Fix it before another fails. |
+| ERROR | `foreign chain quorum cannot be enforced: the voted quorum is zero or too large, so the node does not serve the chain` | Contact the NEAR MPC team. |
+
+Each round ends with INFO `foreign chain probe round complete`:
+
+| Field | What it tells you |
 | --- | --- |
-| `mpc_foreign_chain_rpc_quorum_required` | the voted quorum |
-| `mpc_foreign_chain_rpc_providers_whitelisted` | distinct whitelisted providers this node's config conforms to |
+| `healthy`, `probed` | providers that passed, out of all configured, across chains |
+| `whitelist` | `not read yet`, `matches the local config`, or the number of differences above, INFO lines included |
+| `healthy_chains`, `judged_chains` | healthy chains, out of whitelisted chains in your config. A chain without `expected_network_fingerprint` that reaches the quorum is not judged, and none is until the whitelist is read. |
 
-`whitelisted` must reach `required`. Anything less means the chain is
-configured but neither registered nor served: a provider's URL or auth differs
-from the voted entry, or you run fewer of the voted providers than the quorum
-asks. The probe logs the differing provider each round, as described above.
+### During traffic
+
+For each verify request it takes part in, the node asks every configured
+provider once, whitelisted or not, and waits at most 5 seconds, with no retries.
+
+| Metric | What it tracks | When to worry |
+| --- | --- | --- |
+| `mpc_foreign_chain_provider_inspection_seconds` | histogram by `chain`, `provider` and `outcome` (`answered` or `failed`): time to return | `answered` latency nearing the top bucket, the 5 second limit |
+| `mpc_foreign_chain_provider_errors_total` | counter by `chain`, `provider` and `kind`: errors returned | any increase |
+| `mpc_foreign_chain_provider_dropped_seconds` | histogram by `chain` and `provider`: time waited on a provider that returned nothing in 5 seconds, a dropped check. `_count` counts them. | any increase |
+
+| `kind` | Meaning | What to do |
+| --- | --- | --- |
+| `unreachable` | connection failure, HTTP 5xx, 408 or 429, or rate limiting | Usually clears on its own. |
+| `rejected` | refused, for example over a wrong, expired or not enabled API key | Fix the provider. |
+| `malformed` | an answer the node cannot use | Fix or replace the provider. |
+| `timed_out` | Aptos and Sui only, when `timeout_sec` is below 5 and the client gives up first | Treat it like `unreachable`. |
+
+An error alone does not fail the request while the whitelisted providers that
+agree still reach the quorum. A dropped check always does. On most chains it
+means a slow provider.
+
+A transaction that is not final, lacks confirmations, failed or does not exist
+gives `outcome="answered"`, not an error.
+
+Two more failures show only in logs:
+
+| Level | Message | What to do |
+| --- | --- | --- |
+| WARN | `fan-out: fewer whitelisted providers reached the verdict than the quorum requires` | Check this chain's errors. |
+| ERROR | `fan-out: inspectors returned mismatching verdicts` | Fix or replace the wrong provider. The line lists providers by config name, split by agreement with the first answer, so it can be on either list. |
+
+Reading the numbers:
+
+* Check dropped checks first, then `rejected` and `malformed`.
+* Keep `outcome="failed"` out of latency percentiles.
+* Series start at zero once the node is a participant, and stay flat on an
+  idle node, so rely on the probe there.
+* Each node counts only the requests it takes part in.
+
+#### Provider labels
+
+The `provider` label is a pseudonym that hides your RPC vendors from the
+public metrics endpoint. Per chain, the node numbers your providers `p0`, `p1` and so on in
+byte order of name, uppercase first: `alchemy`, `ankr` and `quicknode` become
+`p0`, `p1` and `p2`, but `Ankr` would come first. Adding, removing or renaming
+a provider can shift the others. Each node numbers its own.
 
 ## Recommended alerts
 
@@ -256,28 +241,29 @@ histogram_quantile(0.99, sum by (protocol_scheme, le) (
   rate(mpc_led_computation_duration_seconds_bucket{outcome="succeeded", task="triple_generation"}[15m])
 )) > 90  for 15m
 
-# Warn: a provider refuses or garbles answers: a dead API key, the wrong chain,
-# or a broken backend. Needs a human; retrying does not help.
-increase(mpc_foreign_chain_provider_errors_total{kind=~"rejected|malformed"}[5m]) > 0  for 10m
-
-# Warn: a provider is unreachable or rate limited while its peers on the same
-# chain answer. The node tolerates this; the 15m hold rides out a short burst.
-increase(mpc_foreign_chain_provider_errors_total{kind="unreachable"}[5m]) > 0  for 15m
-
-# Page: a provider stops answering, either its RPC client timed out or the node
-# gave up waiting at its deadline. The node waits for every provider, so one
-# silent provider fails the check for that whole chain.
-(increase(mpc_foreign_chain_provider_dropped_seconds_count[5m]) > 0
-  or increase(mpc_foreign_chain_provider_errors_total{kind="timed_out"}[5m]) > 0)  for 5m
+# Warn: a configured chain has a whitelist, but too few of this node's providers
+# conform to it to reach the voted quorum, so the node does not serve the chain.
+mpc_foreign_chain_rpc_providers_whitelisted < mpc_foreign_chain_rpc_quorum_required  for 10m
 
 # Warn: a provider failed the hourly probe, or a chain is configured without an
-# expected_network_fingerprint. Needs no traffic. The probe runs hourly, so the
-# 2h hold waits for two rounds to agree.
+# expected_network_fingerprint. It fires without traffic. The probe runs hourly,
+# so the 2h hold spans at least two rounds.
 mpc_foreign_chain_rpc_providers_healthy < mpc_foreign_chain_rpc_providers_configured  for 2h
 
-# Warn: a configured chain is whitelisted but this node cannot reach the voted
-# quorum, so it neither registers nor serves the chain.
-mpc_foreign_chain_rpc_providers_whitelisted < mpc_foreign_chain_rpc_quorum_required  for 10m
+# Warn: a provider refuses requests or answers with data the node cannot use.
+# Causes: a wrong or expired API key, a key not enabled for the chain, or a
+# broken backend. Fix the provider. Retrying does not help.
+increase(mpc_foreign_chain_provider_errors_total{kind=~"rejected|malformed"}[5m]) > 0  for 10m
+
+# Warn: a provider is unreachable, rate limited or timed out. Requests still
+# succeed while the other whitelisted providers that agree reach the quorum.
+# The 15m hold rides out a short burst.
+increase(mpc_foreign_chain_provider_errors_total{kind=~"unreachable|timed_out"}[5m]) > 0  for 15m
+
+# Page: a provider returned nothing within the node's 5s limit, so the request
+# failed, whatever the other providers answered. A node restart during a
+# request also counts one. See During traffic for what to do.
+increase(mpc_foreign_chain_provider_dropped_seconds_count[5m]) > 0  for 5m
 
 # Warn: no backup for over a day. Only meaningful once backups are being taken
 # against this node. Both backup gauges read 0 after a node restart until the
@@ -307,3 +293,8 @@ mpc_attestation_expiry_timestamp_seconds == 0  for 15m
 
 A `-1` expiry satisfies neither expiry alert, so a node holding an attestation
 without an expiry is covered by the staleness alert alone.
+
+No metric names the two failures that [During traffic](#during-traffic) shows
+only in logs, so alert on those lines if you collect logs.
+`mpc_num_verify_foreign_tx_computations_led{result="failed"}` counts the verify
+requests this node led that failed, whatever the cause.
