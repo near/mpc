@@ -84,8 +84,7 @@ impl MpcContract {
 
         let due_at = self
             .last_reshared_at
-            .checked_add(Duration::from_secs(self.config.key_refresh_period_seconds))
-            .unwrap_or(Timestamp::MAX);
+            .saturating_add(Duration::from_secs(self.config.key_refresh_period_seconds));
         if Timestamp::now() < due_at {
             return Err(InvalidState::KeyRefreshNotDue {
                 due_at_seconds: due_at.as_secs(),
