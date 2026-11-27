@@ -1633,12 +1633,13 @@ and serves a chain only while enough of them conform to reach the quorum:
   itself is not compared. A matched provider that differs does not count, and the log reports it
   each probe round, hourly and on every whitelist change, until it is fixed.
 * Two local providers behind one voted host count once.
-* A provider whose host is not voted is still queried and can veto a verdict, but never counts
-  toward the quorum.
+* A provider whose host is not voted is still queried, and its answer can veto a verdict when it
+  arrives before the inspection deadline, but it never counts toward the quorum.
 
 The presets use the voted URLs. With a full `foreign_chains` block, keep every `rpc_url` as given
 in the examples and add providers only when the vote lists them: an extra provider can only fail a
-verdict, never help reach the quorum.
+verdict, never help reach the quorum. One that hangs also makes every verify request on its chain
+wait until the deadline.
 
 The gauges `mpc_foreign_chain_rpc_quorum_required` and `mpc_foreign_chain_rpc_providers_whitelisted`
 show, per chain, the quorum and how many of your providers count, see

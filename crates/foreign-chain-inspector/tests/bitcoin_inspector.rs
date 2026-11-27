@@ -3,8 +3,8 @@
 pub mod common;
 
 use crate::common::{
-    FixedResponseRpcClient, SequentialResponseMockClientBuilder, any_single_provider, fan_out_of,
-    mock_client_from_fixed_response,
+    FixedResponseRpcClient, INSPECTION_TIMEOUT, SequentialResponseMockClientBuilder,
+    any_single_provider, fan_out_of, mock_client_from_fixed_response,
 };
 use foreign_chain_inspector::Verdict;
 
@@ -213,6 +213,7 @@ async fn fan_out__should_return_mismatch_when_one_provider_fabricates_a_transact
     let response = fan_out
         .extract_with_quorum(
             &any_single_provider(&fan_out),
+            INSPECTION_TIMEOUT,
             tx_id,
             BlockConfirmations::from(1u64),
             vec![BitcoinExtractor::BlockHash],

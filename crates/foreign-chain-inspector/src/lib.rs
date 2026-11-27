@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::hash::Hash;
 use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
@@ -134,18 +134,17 @@ pub trait NetworkFingerprintInspector {
     fn canonical_fingerprint(&self, fingerprint: &str) -> NetworkFingerprint;
 }
 
-/// Combines multiple inspectors that target the same chain into a single inspector.
+/// Combines the inspectors of one chain into one, and queries them concurrently.
 ///
-/// All inner inspectors are queried concurrently. Every [`Verdict`] reached must be identical;
-/// any disagreement returns [`ForeignChainInspectionError::InspectorResponseMismatch`]. Errors
-/// are tolerated as long as the [`RpcQuorum`] is met, so a single unavailable RPC does not take
-/// the whole node out of signing. On the other hand, a provider that answers a different verdict
-/// or different values will cause a mismatch and fail the whole extraction. A hanging one still
-/// stalls the extraction: it waits for every inspector, up to the caller's deadline. When no
-/// inspector reached a verdict, the first error is propagated.
+/// [`FanOut::extract_with_quorum`] judges the answers that arrive before its deadline. Errors and
+/// late providers are tolerated while the [`RpcQuorum`] is met, so one unavailable or hanging RPC
+/// does not take the node out of signing. Any [`Verdict`] that differs, values included, fails
+/// the extraction with [`ForeignChainInspectionError::InspectorResponseMismatch`]. Without a
+/// verdict, the first error is returned, or [`ForeignChainInspectionError::SubQuorum`] when no
+/// provider answered.
 ///
-/// With a recorder set through [`FanOut::measuring`], every provider call is observed once the
-/// provider returns, or by dropping its timer if the future is dropped first.
+/// With a recorder set through [`FanOut::measuring`], each provider call is observed when it
+/// returns, or when its timer drops at the deadline or with the future.
 #[derive(Clone)]
 pub struct FanOut<Inspector, Recorder = ()> {
     inspectors: NonEmptyVec<(ProviderId, Inspector)>,
@@ -217,22 +216,27 @@ where
     Inspector::ExtractedValue: Send + 'static + Clone + PartialEq + Eq + Hash + std::fmt::Debug,
     Recorder: TimeProviderCall + Clone + 'static,
 {
+    /// Waits for every provider until `timeout`, not only until the quorum agrees, so a
+    /// disagreeing answer before the deadline still vetoes. Providers still pending at the
+    /// deadline are dropped and cannot veto.
     pub async fn extract_with_quorum(
         &self,
         quorum: &RpcQuorum,
+        timeout: Duration,
         tx_id: Inspector::TransactionId,
         finality: Inspector::Finality,
         extractors: Vec<Inspector::Extractor>,
     ) -> Result<Verdict<Inspector::ExtractedValue>, ForeignChainInspectionError> {
         let mut join_set = tokio::task::JoinSet::new();
-        for (provider, inspector) in self.inspectors.iter() {
+        let mut pending: HashMap<tokio::task::Id, &ProviderId> = HashMap::new();
+        for (provider_id, inspector) in self.inspectors.iter() {
             let tx_id = tx_id.clone();
             let finality = finality.clone();
             let extractors = extractors.clone();
             let inspector = inspector.clone();
-            let provider = provider.clone();
+            let provider = provider_id.clone();
             let recorder = self.recorder.clone();
-            join_set.spawn(async move {
+            let task = join_set.spawn(async move {
                 // Started inside the task so the clock excludes scheduling delay. A task aborted
                 // before its first poll makes no call and reports nothing.
                 let timer = recorder.start_timer(&provider);
@@ -241,73 +245,113 @@ where
                 recorder.observe(timer, &provider, failure);
                 (provider, result)
             });
+            pending.insert(task.id(), provider_id);
         }
 
         let mut verdicts: Vec<(ProviderId, Verdict<Inspector::ExtractedValue>)> = Vec::new();
         let mut first_error: Option<ForeignChainInspectionError> = None;
 
-        for (provider, result) in join_set.join_all().await {
-            match result {
-                Ok(verdict) => verdicts.push((provider, verdict)),
-                Err(err) => {
-                    if err.provider_failure() == Some(ProviderFailure::Malformed) {
-                        tracing::error!(
-                            %provider,
-                            error = %err,
-                            "fan-out inspector answered with unusable data",
-                        );
-                    } else {
-                        tracing::warn!(
-                            %provider,
-                            error = %err,
-                            "fan-out inspector failed to reach a verdict",
-                        );
+        let all_returned = async {
+            while let Some(joined) = join_set.join_next_with_id().await {
+                let (provider, result) = match joined {
+                    Ok((id, returned)) => {
+                        pending.remove(&id);
+                        returned
                     }
-                    first_error.get_or_insert(err);
+                    Err(join_error) => {
+                        let provider = pending.remove(&join_error.id());
+                        tracing::error!(
+                            provider = provider.map(tracing::field::display),
+                            error = %join_error,
+                            "fan-out inspector task failed",
+                        );
+                        continue;
+                    }
+                };
+                match result {
+                    Ok(verdict) => verdicts.push((provider, verdict)),
+                    Err(err) => {
+                        if err.provider_failure() == Some(ProviderFailure::Malformed) {
+                            tracing::error!(
+                                %provider,
+                                error = %err,
+                                "fan-out inspector answered with unusable data",
+                            );
+                        } else {
+                            tracing::warn!(
+                                %provider,
+                                error = %err,
+                                "fan-out inspector failed to reach a verdict",
+                            );
+                        }
+                        first_error.get_or_insert(err);
+                    }
                 }
             }
-        }
-
-        let Some(verdict) = verdicts.first().map(|(_, verdict)| verdict.clone()) else {
-            return Err(first_error.expect(
-                "inspectors is a `NonEmptyVec`, so with no verdicts at least one error must \
-                 have been recorded",
-            ));
         };
-
-        let (agreeing, disagreeing): (Vec<_>, Vec<_>) = verdicts
-            .into_iter()
-            .partition(|(_, candidate)| *candidate == verdict);
-        if !disagreeing.is_empty() {
-            tracing::error!(
-                ?agreeing,
-                ?disagreeing,
-                "fan-out: inspectors returned mismatching verdicts",
-            );
-            return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+        if tokio::time::timeout(timeout, all_returned).await.is_err() {
+            for provider in pending.values() {
+                tracing::warn!(
+                    %provider,
+                    ?timeout,
+                    "fan-out inspector did not answer before the deadline, its check is dropped",
+                );
+            }
         }
+        join_set.abort_all();
 
-        let whitelisted_agreeing: BTreeSet<&ProviderId> = agreeing
-            .iter()
-            .map(|(provider, _)| provider)
-            .filter(|provider| quorum.whitelisted.contains(provider))
-            .collect();
-        let whitelisted_agreeing = whitelisted_agreeing.len();
-        if whitelisted_agreeing < quorum.required.get() {
-            tracing::warn!(
-                whitelisted_agreeing,
-                required = quorum.required,
-                ?verdict,
-                "fan-out: fewer whitelisted providers reached the verdict than the quorum requires",
-            );
-            return Err(ForeignChainInspectionError::SubQuorum {
-                agreeing: whitelisted_agreeing,
-                required: quorum.required,
-            });
-        }
-
-        Ok(verdict)
+        judge(verdicts, first_error, quorum)
     }
+}
+
+fn judge<Value: Clone + PartialEq + std::fmt::Debug>(
+    verdicts: Vec<(ProviderId, Verdict<Value>)>,
+    first_error: Option<ForeignChainInspectionError>,
+    quorum: &RpcQuorum,
+) -> Result<Verdict<Value>, ForeignChainInspectionError> {
+    let Some(verdict) = verdicts.first().map(|(_, verdict)| verdict.clone()) else {
+        if let Some(err) = first_error {
+            return Err(err);
+        }
+        tracing::warn!(required = quorum.required, "fan-out: no provider answered");
+        return Err(ForeignChainInspectionError::SubQuorum {
+            agreeing: 0,
+            required: quorum.required,
+        });
+    };
+
+    let (agreeing, disagreeing): (Vec<_>, Vec<_>) = verdicts
+        .into_iter()
+        .partition(|(_, candidate)| *candidate == verdict);
+    if !disagreeing.is_empty() {
+        tracing::error!(
+            ?agreeing,
+            ?disagreeing,
+            "fan-out: inspectors returned mismatching verdicts",
+        );
+        return Err(ForeignChainInspectionError::InspectorResponseMismatch);
+    }
+
+    let whitelisted_agreeing: BTreeSet<&ProviderId> = agreeing
+        .iter()
+        .map(|(provider, _)| provider)
+        .filter(|provider| quorum.whitelisted.contains(provider))
+        .collect();
+    let whitelisted_agreeing = whitelisted_agreeing.len();
+    if whitelisted_agreeing < quorum.required.get() {
+        tracing::warn!(
+            whitelisted_agreeing,
+            required = quorum.required,
+            ?verdict,
+            "fan-out: fewer whitelisted providers reached the verdict than the quorum requires",
+        );
+        return Err(ForeignChainInspectionError::SubQuorum {
+            agreeing: whitelisted_agreeing,
+            required: quorum.required,
+        });
+    }
+
+    Ok(verdict)
 }
 
 pub trait ChainInspector: NetworkFingerprintInspector + Clone + Send + Sync + 'static {}
@@ -445,7 +489,8 @@ pub enum ForeignChainInspectionError {
     },
     #[error("inspector clients returned mismatching verdicts")]
     InspectorResponseMismatch,
-    /// The verdict was unanimous but too few whitelisted providers reached it.
+    /// Too few whitelisted providers reached the verdict, which was unanimous, or no provider
+    /// answered at all.
     #[error(
         "quorum not met: {agreeing} whitelisted providers reached the verdict, {required} required"
     )]
