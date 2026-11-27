@@ -10,13 +10,14 @@ use crate::{
 
 use crate::crypto::constants::SECURITY_PARAMETER;
 use crate::ecdsa::ot::{
-    bits::{BitMatrix, BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
+    bits::{BitVector, ChoiceVector, DoubleBitVector, SquareBitMatrix},
     extension::kos15_roy22::correlated::{
         CorrelatedOtParams, correlated_ot_receiver, correlated_ot_sender,
     },
 };
 
 use elliptic_curve::ops::Reduce;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::crypto::constants::NEAR_RANDOM_OT_EXTENSION_HASH_CTX;
 
@@ -29,12 +30,13 @@ fn hash_to_scalar(i: usize, v: &BitVector) -> Scalar {
 
     hasher.update(NEAR_RANDOM_OT_EXTENSION_HASH_CTX);
     hasher.update(i64.to_le_bytes());
-    hasher.update(v.bytes());
-    let seed = hasher.finalize().into();
+    let v_bytes = Zeroizing::new(v.bytes());
+    hasher.update(v_bytes.as_slice());
+    let seed = Zeroizing::new(<[u8; 32]>::from(hasher.finalize()));
 
-    let mut data = [0u8; 64];
-    TranscriptRng::new(&seed).fill_bytes(&mut data);
-    <Scalar as Reduce<U512>>::reduce_bytes(&data.into())
+    let mut data = Zeroizing::new([0u8; 64]);
+    TranscriptRng::new(&seed).fill_bytes(data.as_mut_slice());
+    <Scalar as Reduce<U512>>::reduce_bytes(&(*data).into())
 }
 
 fn adjust_size(size: usize) -> usize {
@@ -55,10 +57,69 @@ pub struct RandomOtExtensionParams<'sid> {
 }
 
 /// The result that the sender gets.
-pub type RandomOTExtensionSenderOut = Vec<(Scalar, Scalar)>;
+#[derive(ZeroizeOnDrop)]
+pub struct RandomOTExtensionSenderOut(Vec<(Scalar, Scalar)>);
+
+impl_secret_debug!(RandomOTExtensionSenderOut);
+
+impl RandomOTExtensionSenderOut {
+    #[must_use]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        Self(self.0.split_off(at))
+    }
+
+    pub fn as_slice(&self) -> &[(Scalar, Scalar)] {
+        &self.0
+    }
+}
 
 /// The result that the receiver gets.
-pub type RandomOTExtensionReceiverOut = Vec<(Choice, Scalar)>;
+#[derive(ZeroizeOnDrop)]
+pub struct RandomOTExtensionReceiverOut(Vec<ReceiverOutEntry>);
+
+impl_secret_debug!(RandomOTExtensionReceiverOut);
+
+#[derive(Zeroize)]
+struct ReceiverOutEntry {
+    // Always 0 or 1. Stored as a byte because `Choice` is not `Zeroize`.
+    choice: u8,
+    value: Scalar,
+}
+
+impl RandomOTExtensionReceiverOut {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    #[must_use]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        Self(self.0.split_off(at))
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (Choice, &Scalar)> {
+        self.0
+            .iter()
+            .map(|entry| (Choice::from(entry.choice), &entry.value))
+    }
+}
+
+#[cfg(test)]
+impl FromIterator<(Choice, Scalar)> for RandomOTExtensionReceiverOut {
+    fn from_iter<I: IntoIterator<Item = (Choice, Scalar)>>(iter: I) -> Self {
+        Self(
+            iter.into_iter()
+                .map(|(b_i, value)| ReceiverOutEntry {
+                    choice: b_i.unwrap_u8(),
+                    value,
+                })
+                .collect(),
+        )
+    }
+}
 
 /// Generates the random values needed in `random_ot_extension_sender`
 pub fn random_ot_extension_sender_helper(rng: &mut impl CryptoRngCore) -> [u8; 32] {
@@ -70,9 +131,9 @@ pub fn random_ot_extension_sender_helper(rng: &mut impl CryptoRngCore) -> [u8; 3
 pub async fn random_ot_extension_sender(
     mut chan: PrivateChannel,
     params: RandomOtExtensionParams<'_>,
-    delta: BitVector,
+    delta: &BitVector,
     k: &SquareBitMatrix,
-    transcript_seed: [u8; 32],
+    transcript_seed: &[u8; 32],
 ) -> Result<RandomOTExtensionSenderOut, ProtocolError> {
     let adjusted_size = adjust_size(params.batch_size);
 
@@ -90,12 +151,12 @@ pub async fn random_ot_extension_sender(
 
     // Step 5
     let wait0 = chan.next_waitpoint();
-    chan.send(wait0, &transcript_seed)?;
+    chan.send(wait0, transcript_seed)?;
 
     let mu = adjusted_size / SECURITY_PARAMETER;
 
     // Step 7
-    let mut prng = TranscriptRng::new(&transcript_seed);
+    let mut prng = TranscriptRng::new(transcript_seed);
     let chi: Vec<BitVector> = (0..mu).map(|_| BitVector::random(&mut prng)).collect();
 
     // Step 11
@@ -134,12 +195,12 @@ pub async fn random_ot_extension_sender(
     }
 
     // Step 14
-    let mut out = Vec::with_capacity(params.batch_size);
+    let mut out = RandomOTExtensionSenderOut(Vec::with_capacity(params.batch_size));
 
     for (i, q_i) in q.rows().take(params.batch_size).enumerate() {
         let v0_i = hash_to_scalar(i, q_i);
-        let v1_i = hash_to_scalar(i, &q_i.xor(&delta));
-        out.push((v0_i, v1_i));
+        let v1_i = hash_to_scalar(i, &q_i.xor(delta));
+        out.0.push((v0_i, v1_i));
 
         // Hashing is cheap; yielding every iteration would be all overhead.
         if (i + 1).is_multiple_of(YIELD_EVERY) {
@@ -165,15 +226,12 @@ pub async fn random_ot_extension_receiver(
     params: RandomOtExtensionParams<'_>,
     k0: &SquareBitMatrix,
     k1: &SquareBitMatrix,
-    b: ChoiceVector,
+    b: &ChoiceVector,
 ) -> Result<RandomOTExtensionReceiverOut, ProtocolError> {
     let adjusted_size = adjust_size(params.batch_size);
 
     // Step 1
-    let x: BitMatrix = b
-        .bits()
-        .map(|b_i| BitVector::conditional_select(&BitVector::zero(), &BitVector::zero().not(), b_i))
-        .collect();
+    let x = b.expand_rows();
 
     // Step 2
     let t = correlated_ot_receiver(
@@ -218,9 +276,12 @@ pub async fn random_ot_extension_receiver(
     chan.send(wait1, &(small_x, small_t))?;
 
     // Step 15
-    let mut out = Vec::with_capacity(params.batch_size);
+    let mut out = RandomOTExtensionReceiverOut(Vec::with_capacity(params.batch_size));
     for (i, (b_i, t_i)) in b.bits().zip(t.rows()).take(params.batch_size).enumerate() {
-        out.push((b_i, hash_to_scalar(i, t_i)));
+        out.0.push(ReceiverOutEntry {
+            choice: b_i.unwrap_u8(),
+            value: hash_to_scalar(i, t_i),
+        });
 
         // Hashing is cheap; yielding every iteration would be all overhead.
         if (i + 1).is_multiple_of(YIELD_EVERY) {
@@ -274,8 +335,14 @@ mod test {
                     sid: &sid_s,
                     batch_size,
                 };
-                random_ot_extension_sender(comms_s.private_channel(s, r), params, delta, &k, seed_s)
-                    .await
+                random_ot_extension_sender(
+                    comms_s.private_channel(s, r),
+                    params,
+                    &delta,
+                    &k,
+                    &seed_s,
+                )
+                .await
             }),
             &mut make_protocol(comms_r.clone(), async move {
                 let params = RandomOtExtensionParams {
@@ -287,7 +354,7 @@ mod test {
                     params,
                     &k0,
                     &k1,
-                    seed_r,
+                    &seed_r,
                 )
                 .await
             }),
@@ -307,10 +374,10 @@ mod test {
             &mut rng,
         )
         .unwrap();
-        assert_eq!(sender_out.len(), batch_size);
+        assert_eq!(sender_out.as_slice().len(), batch_size);
         assert_eq!(receiver_out.len(), batch_size);
-        for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.iter().zip(receiver_out.iter()) {
-            assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, *b_i));
+        for ((v0_i, v1_i), (b_i, vb_i)) in sender_out.as_slice().iter().zip(receiver_out.iter()) {
+            assert_eq!(*vb_i, Scalar::conditional_select(v0_i, v1_i, b_i));
         }
     }
 

@@ -2,13 +2,14 @@ use frost_core::{Field, Group, serialization::SerializableScalar};
 use rand_core::CryptoRngCore;
 use serde::{Deserialize, Serialize};
 use std::slice::Iter;
-use subtle::{Choice, ConditionallySelectable};
+use subtle::ConditionallySelectable;
 
 use crate::{
     crypto::proofs::strobe_transcript::TranscriptRng, errors::ProtocolError,
     protocol::internal::PrivateChannel,
 };
 
+use crate::ecdsa::ot::extension::kos15_roy22::random::RandomOTExtensionReceiverOut;
 use crate::ecdsa::{Scalar, Secp256K1Sha256};
 
 type Secp256 = Secp256K1Sha256;
@@ -36,9 +37,9 @@ pub(super) fn mta_sender_random_helper(size: usize, rng: &mut impl CryptoRngCore
 /// The sender for multiplicative to additive conversion.
 pub async fn mta_sender(
     mut chan: PrivateChannel,
-    v: Vec<(Scalar, Scalar)>,
+    v: &[(Scalar, Scalar)],
     a: Scalar,
-    delta: Vec<Scalar>,
+    delta: &[Scalar],
 ) -> Result<Scalar, ProtocolError> {
     // Step 1
     // `delta` is computed in `mta_sender_random_helper`
@@ -88,9 +89,9 @@ pub(super) fn mta_receiver_random_helper(rng: &mut impl CryptoRngCore) -> [u8; 3
 /// The receiver for multiplicative to additive conversion.
 pub async fn mta_receiver(
     mut chan: PrivateChannel,
-    tv: Vec<(Choice, Scalar)>,
+    tv: RandomOTExtensionReceiverOut,
     b: Scalar,
-    seed: [u8; 32],
+    seed: &[u8; 32],
 ) -> Result<Scalar, ProtocolError> {
     let size = tv.len();
 
@@ -110,22 +111,22 @@ pub async fn mta_receiver(
     let mut m = tv
         .iter()
         .zip(c.iter())
-        .map(|((t_i, v_i), (c0_i, c1_i))| Scalar::conditional_select(&c0_i.0, &c1_i.0, *t_i) - v_i);
+        .map(|((t_i, v_i), (c0_i, c1_i))| Scalar::conditional_select(&c0_i.0, &c1_i.0, t_i) - v_i);
 
     // Step 4
     // `seed` generated in `mta_receiver_random_helper`
-    let mut prng = TranscriptRng::new(&seed);
+    let mut prng = TranscriptRng::new(seed);
     let chi: Vec<Scalar> = (1..size)
         .map(|_| <<Secp256 as frost_core::Ciphersuite>::Group as Group>::Field::random(&mut prng))
         .collect();
 
     let mut chi1 = Scalar::ZERO;
     for ((t_i, _), &chi_i) in tv.iter().skip(1).zip(chi.iter()) {
-        chi1 += Scalar::conditional_select(&chi_i, &(-chi_i), *t_i);
+        chi1 += Scalar::conditional_select(&chi_i, &(-chi_i), t_i);
     }
     chi1 = b - chi1;
     // tv is validated non-empty above
-    let tv0_choice = tv.first().expect("tv validated non-empty above").0;
+    let tv0_choice = tv.iter().next().expect("tv validated non-empty above").0;
     chi1.conditional_assign(&(-chi1), tv0_choice);
 
     // Step 5
@@ -152,6 +153,7 @@ mod test {
     use k256::Scalar;
     use rand::SeedableRng;
     use rand_core::RngCore;
+    use subtle::Choice;
 
     use crate::errors::ProtocolError;
     use crate::participants::Participant;
@@ -161,7 +163,7 @@ mod test {
     /// Run the multiplicative to additive protocol
     fn run_mta(
         (v, a): (Vec<(Scalar, Scalar)>, Scalar),
-        (tv, b): (Vec<(Choice, Scalar)>, Scalar),
+        (tv, b): (RandomOTExtensionReceiverOut, Scalar),
     ) -> Result<(Scalar, Scalar), ProtocolError> {
         let mut rng = MockCryptoRng::seed_from_u64(42);
         let s = Participant::from(0u32);
@@ -174,11 +176,13 @@ mod test {
             r,
             &mut make_protocol(ctx_s.clone(), {
                 let delta = mta_sender_random_helper(v.len(), &mut rng);
-                mta_sender(ctx_s.private_channel(s, r), v, a, delta)
+                let chan = ctx_s.private_channel(s, r);
+                async move { mta_sender(chan, &v, a, &delta).await }
             }),
             &mut make_protocol(ctx_r.clone(), {
                 let seed = mta_receiver_random_helper(&mut rng);
-                mta_receiver(ctx_r.private_channel(r, s), tv, b, seed)
+                let chan = ctx_r.private_channel(r, s);
+                async move { mta_receiver(chan, tv, b, &seed).await }
             }),
         )
     }
@@ -196,7 +200,7 @@ mod test {
                 )
             })
             .collect();
-        let tv: Vec<_> = v
+        let tv: RandomOTExtensionReceiverOut = v
             .iter()
             .map(|(v0, v1)| {
                 let c = Choice::from((rng.next_u64() & 1) as u8);

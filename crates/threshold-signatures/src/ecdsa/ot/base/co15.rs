@@ -2,6 +2,7 @@ use k256::Scalar;
 use rand_core::CryptoRngCore;
 use sha2::{Digest, Sha256};
 use subtle::ConditionallySelectable;
+use zeroize::Zeroizing;
 
 use crate::{
     crypto::constants::NEAR_BATCH_RANDOM_OT_HASH,
@@ -34,15 +35,17 @@ fn hash(
             .serialize()
             .map_err(|_| ProtocolError::PointSerialization)?,
     );
-    hasher.update(
-        &p.serialize()
+    let p_bytes = Zeroizing::new(
+        p.serialize()
             .map_err(|_| ProtocolError::PointSerialization)?,
     );
+    hasher.update(p_bytes.as_slice());
 
-    let bytes: [u8; 32] = hasher.finalize().into();
-    let bytes: [u8; SEC_PARAM_8] = bytes[0..SEC_PARAM_8]
-        .try_into()
-        .expect("the hash output is 256 bits, so it is possible to take the first 128 bits out");
+    let digest = Zeroizing::new(<[u8; 32]>::from(hasher.finalize()));
+    let bytes =
+        Zeroizing::new(*digest.first_chunk::<SEC_PARAM_8>().expect(
+            "the hash output is 256 bits, so it is possible to take the first 128 bits out",
+        ));
 
     Ok(BitVector::from_bytes(&bytes))
 }
@@ -56,7 +59,7 @@ pub fn batch_random_ot_sender_helper(rng: &mut impl CryptoRngCore) -> Scalar {
 
 pub async fn batch_random_ot_sender(
     mut chan: PrivateChannel,
-    y: Scalar,
+    y: &Scalar,
 ) -> Result<BatchRandomOTOutputSender, ProtocolError> {
     // Spec 1
     // let y = Secp256K1ScalarField::random(rng);
@@ -74,29 +77,32 @@ pub async fn batch_random_ot_sender(
         async move {
             let wait0 = chan.next_waitpoint();
             let ser_big_x_i: CoefficientCommitment = chan.recv(wait0).await?;
-
-            let y_big_x_i = ser_big_x_i.value() * y;
-
-            let big_k0 = hash(
-                i,
-                &ser_big_x_i,
-                &ser_big_y,
-                &CoefficientCommitment::new(y_big_x_i),
-            )?;
-            let big_k1 = hash(
-                i,
-                &ser_big_x_i,
-                &ser_big_y,
-                &CoefficientCommitment::new(y_big_x_i - big_z),
-            )?;
-
-            Ok::<_, ProtocolError>((big_k0, big_k1))
+            Ok::<_, ProtocolError>(ser_big_x_i)
         }
     });
-    let out: Vec<(BitVector, BitVector)> = futures::future::try_join_all(tasks).await?;
+    let big_x = futures::future::try_join_all(tasks).await?;
 
-    let big_k0: BitMatrix = out.iter().map(|r| r.0).collect();
-    let big_k1: BitMatrix = out.iter().map(|r| r.1).collect();
+    // `try_join_all` grows its output by reallocating. The keys are derived here instead.
+    let mut big_k0 = Zeroizing::new(Vec::with_capacity(SECURITY_PARAMETER));
+    let mut big_k1 = Zeroizing::new(Vec::with_capacity(SECURITY_PARAMETER));
+    for (i, ser_big_x_i) in big_x.iter().enumerate() {
+        let y_big_x_i = ser_big_x_i.value() * y;
+        big_k0.push(hash(
+            i,
+            ser_big_x_i,
+            &ser_big_y,
+            &CoefficientCommitment::new(y_big_x_i),
+        )?);
+        big_k1.push(hash(
+            i,
+            ser_big_x_i,
+            &ser_big_y,
+            &CoefficientCommitment::new(y_big_x_i - big_z),
+        )?);
+    }
+
+    let big_k0: BitMatrix = big_k0.iter().copied().collect();
+    let big_k1: BitMatrix = big_k1.iter().copied().collect();
 
     let big_k0 = big_k0
         .try_into()
@@ -106,8 +112,6 @@ pub async fn batch_random_ot_sender(
         .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
     Ok((big_k0, big_k1))
 }
-
-pub type BatchRandomOTOutputReceiver = (BitVector, SquareBitMatrix);
 
 /// Generates the random values needed in `batch_random_ot_receiver`
 pub fn batch_random_ot_receiver_random_helper(
@@ -121,13 +125,11 @@ pub fn batch_random_ot_receiver_random_helper(
     (random_delta, random_x)
 }
 
-// Fixing this one breaks a test
-#[allow(clippy::large_types_passed_by_value)]
 pub async fn batch_random_ot_receiver(
     mut chan: PrivateChannel,
-    delta: BitVector,
-    x: [Scalar; SEC_PARAM_64 * 64],
-) -> Result<BatchRandomOTOutputReceiver, ProtocolError> {
+    delta: &BitVector,
+    x: &[Scalar; SEC_PARAM_64 * 64],
+) -> Result<SquareBitMatrix, ProtocolError> {
     // Step 3
     let wait0 = chan.next_waitpoint();
     // deserialization prevents receiving the identity
@@ -135,7 +137,7 @@ pub async fn batch_random_ot_receiver(
     let big_y = big_y_verkey.value();
     // let delta = BitVector::random(&mut rng);
 
-    let mut out = Vec::with_capacity(SEC_PARAM_64 * 64);
+    let mut out = Zeroizing::new(Vec::with_capacity(SEC_PARAM_64 * 64));
     for (i, (d_i, &x_i)) in delta.bits().zip(x.iter()).enumerate() {
         let mut sub_chan =
             chan.child(u64::try_from(i).map_err(|_| ProtocolError::IntegerOverflow)?);
@@ -157,11 +159,10 @@ pub async fn batch_random_ot_receiver(
 
         chan.yield_point().await;
     }
-    let big_k: BitMatrix = out.into_iter().collect();
-    let big_k = big_k
+    let big_k: BitMatrix = out.iter().copied().collect();
+    big_k
         .try_into()
-        .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))?;
-    Ok((delta, big_k))
+        .map_err(|err| ProtocolError::AssertionFailed(format!("{err:?}")))
 }
 
 #[cfg(test)]
