@@ -1280,6 +1280,17 @@ pub mod tests {
         assert_eq!(loaded, vec![key_1, key_2]);
     }
 
+    #[test]
+    #[expect(non_snake_case)]
+    fn aes_gcm_ciphers__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<aes_gcm::Aes128Gcm>();
+        assert_zeroize_on_drop::<aes_gcm::Aes256Gcm>();
+    }
+
     #[tokio::test]
     async fn update_permanent_keyshares__should_delete_keysets_left_by_earlier_versions() {
         // Given
