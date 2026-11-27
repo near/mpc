@@ -82,7 +82,8 @@ impl MpcContract {
     /// [`Self::vote_reshared`] and can be cancelled with [`Self::vote_cancel_resharing`].
     ///
     /// Fails if the contract is not Running, has no keys, or any participant's attestation is
-    /// invalid. Pending [`Self::vote_new_parameters`] votes are dropped.
+    /// invalid. Pending [`Self::vote_new_parameters`] votes are kept, as the parameters they
+    /// were cast against do not change.
     #[handle_result]
     pub fn trigger_key_refresh(&mut self) -> Result<(), Error> {
         Self::assert_caller_is_signer();
@@ -110,7 +111,6 @@ impl MpcContract {
         self.reverify_participants(resharing_state.previous_running_state.participants())?;
 
         self.protocol_state = ProtocolContractState::Resharing(resharing_state);
-        self.parameters_votes.clear();
         Ok(())
     }
 
@@ -151,11 +151,15 @@ impl MpcContract {
 
         self.assert_caller_is_attested_participant_and_protocol_active();
 
+        let previous_parameters = self.protocol_state.threshold_parameters_or_panic().clone();
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
             self.last_reshared_at = Timestamp::now();
-            self.parameters_votes.clear();
+            // Pending votes were cast against the previous parameters.
+            if *self.protocol_state.threshold_parameters_or_panic() != previous_parameters {
+                self.parameters_votes.clear();
+            }
             let participants = self.protocol_state.active_participants();
             self.add_domains_votes
                 .retain_votes(|p| participants.is_participant(p));
@@ -295,7 +299,8 @@ mod tests {
     use crate::errors::{Error, InvalidParameters, InvalidState};
     use crate::primitives::key_state::{AttemptId, EpochId, KeyEventId};
     use crate::primitives::participants::Participants;
-    use crate::primitives::test_utils::gen_participants;
+    use crate::primitives::proposal_hash::ToProposalHash;
+    use crate::primitives::test_utils::{authenticate_account_as, gen_participants};
     use crate::primitives::thresholds::{
         GovernanceThreshold, GovernanceThresholdParameters, ProposedGovernanceThresholdParameters,
     };
@@ -311,7 +316,7 @@ mod tests {
     use near_sdk::testing_env;
     use rstest::rstest;
     use std::assert_matches;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     const INITIALIZED_AT_SECONDS: u64 = 1_000_000;
 
@@ -459,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn trigger_key_refresh__should_drop_pending_parameters_votes() {
+    fn trigger_key_refresh__should_keep_pending_parameters_votes() {
         // Given
         let (mut contract, participants) = running_contract_with_key();
         let signer = first_account(&participants);
@@ -475,7 +480,13 @@ mod tests {
 
         // Then
         assert_eq!(result, Ok(()));
-        assert!(contract.parameters_votes.is_empty());
+        assert_eq!(
+            contract.parameters_votes.all(),
+            BTreeMap::from([(
+                proposal.to_proposal_hash(),
+                BTreeSet::from([authenticate_account_as(&signer, &participants)])
+            )])
+        );
     }
 
     #[test]

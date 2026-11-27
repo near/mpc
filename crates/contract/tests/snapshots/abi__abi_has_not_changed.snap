@@ -2207,7 +2207,7 @@ expression: abi
       },
       {
         "name": "trigger_key_refresh",
-        "doc": " Starts a key refresh: a resharing that keeps the participants and all thresholds, so\n that keyshares of earlier epochs stop being useful.\n\n Any single participant can call this once\n [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) have passed since\n the last completed resharing; see [`Self::last_reshared_timestamp_seconds`]. From there\n on, the refresh is an ordinary resharing: it completes through\n [`Self::vote_reshared`] and can be cancelled with [`Self::vote_cancel_resharing`].\n\n Fails if the contract is not Running, has no keys, or any participant's attestation is\n invalid. Pending [`Self::vote_new_parameters`] votes are dropped.",
+        "doc": " Starts a key refresh: a resharing that keeps the participants and all thresholds, so\n that keyshares of earlier epochs stop being useful.\n\n Any single participant can call this once\n [`key_refresh_period_seconds`](dtos::Config::key_refresh_period_seconds) have passed since\n the last completed resharing; see [`Self::last_reshared_timestamp_seconds`]. From there\n on, the refresh is an ordinary resharing: it completes through\n [`Self::vote_reshared`] and can be cancelled with [`Self::vote_cancel_resharing`].\n\n Fails if the contract is not Running, has no keys, or any participant's attestation is\n invalid. Pending [`Self::vote_new_parameters`] votes are kept, as the parameters they\n were cast against do not change.",
         "kind": "call",
         "result": {
           "serialization_type": "json",

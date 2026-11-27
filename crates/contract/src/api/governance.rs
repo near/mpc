@@ -627,9 +627,12 @@ mod tests {
             .set_pk(must_get_attested_signer_key(contract, &info.tls_public_key));
     }
 
-    /// Drives a 3-participant Running contract with one domain into Resharing: a threshold of
-    /// participants votes `proposal`, a key refresh keeping participants and threshold.
-    fn resharing_contract_with_domain() -> (
+    /// Drives a 3-participant Running contract with one domain and governance threshold 2 into
+    /// Resharing: a threshold of participants votes `proposal`, which keeps the participants and
+    /// sets `new_threshold`.
+    fn resharing_contract_with_domain(
+        new_threshold: GovernanceThreshold,
+    ) -> (
         MpcContract,
         Participants,
         DomainId,
@@ -641,8 +644,7 @@ mod tests {
             ReconstructionThreshold::new(2),
         );
         let proposal = ProposedGovernanceThresholdParameters::new(
-            GovernanceThresholdParameters::new(participants.clone(), GovernanceThreshold::new(2))
-                .unwrap(),
+            GovernanceThresholdParameters::new(participants.clone(), new_threshold).unwrap(),
             BTreeMap::new(),
         );
         vote_into_resharing(&mut contract, &proposal);
@@ -689,7 +691,8 @@ mod tests {
     #[test]
     fn parameters_votes__should_report_re_proposal_votes_while_resharing() {
         // Given
-        let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
+        let (mut contract, participants, _, proposal) =
+            resharing_contract_with_domain(GovernanceThreshold::new(2));
         let (voter, _, _) = &participants.participants()[0];
         Environment::new(Some(0), Some(voter.clone()), None);
 
@@ -791,7 +794,8 @@ mod tests {
     #[test]
     fn vote_new_parameters__should_record_a_re_proposal_vote_while_resharing() {
         // Given
-        let (mut contract, participants, _, proposal) = resharing_contract_with_domain();
+        let (mut contract, participants, _, proposal) =
+            resharing_contract_with_domain(GovernanceThreshold::new(2));
         let (voter, _, _) = &participants.participants()[0];
         Environment::new(Some(0), Some(voter.clone()), None);
 
@@ -808,10 +812,16 @@ mod tests {
         assert!(!contract.parameters_votes.is_empty());
     }
 
-    #[test]
-    fn vote_reshared__should_clear_pending_parameter_votes_on_transition() {
+    #[rstest]
+    #[case::parameters_unchanged(GovernanceThreshold::new(2), false)]
+    #[case::parameters_changed(GovernanceThreshold::new(3), true)]
+    fn vote_reshared__should_clear_pending_parameter_votes_only_when_parameters_change(
+        #[case] new_threshold: GovernanceThreshold,
+        #[case] expect_votes_cleared: bool,
+    ) {
         // Given: a Resharing contract holding a pending re-proposal vote
-        let (mut contract, participants, domain_id, proposal) = resharing_contract_with_domain();
+        let (mut contract, participants, domain_id, proposal) =
+            resharing_contract_with_domain(new_threshold);
         let voter = authenticate_account_as(&participants.participants()[0].0, &participants);
         contract.parameters_votes.vote(
             &proposal,
@@ -839,7 +849,7 @@ mod tests {
 
         // Then
         assert_matches!(&contract.protocol_state, ProtocolContractState::Running(_));
-        assert!(contract.parameters_votes.is_empty());
+        assert_eq!(contract.parameters_votes.is_empty(), expect_votes_cleared);
     }
 
     #[test]
