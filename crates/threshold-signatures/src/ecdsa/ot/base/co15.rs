@@ -42,8 +42,8 @@ fn hash(
     hasher.update(p_bytes.as_slice());
 
     let digest = Zeroizing::new(<[u8; 32]>::from(hasher.finalize()));
-    let bytes: Zeroizing<[u8; SEC_PARAM_8]> =
-        Zeroizing::new(digest[0..SEC_PARAM_8].try_into().expect(
+    let bytes =
+        Zeroizing::new(*digest.first_chunk::<SEC_PARAM_8>().expect(
             "the hash output is 256 bits, so it is possible to take the first 128 bits out",
         ));
 
