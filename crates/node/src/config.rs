@@ -9,12 +9,19 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 pub(crate) mod start;
 
 /// AES key that is zeroized on drop.
-#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, ZeroizeOnDrop)]
+#[serde(
+    transparent,
+    bound(
+        serialize = "[u8; N]: Serialize",
+        deserialize = "[u8; N]: Deserialize<'de>"
+    )
+)]
 pub struct AesKey<const N: usize>([u8; N]);
 
 pub type AesKey256 = AesKey<32>;
@@ -22,15 +29,10 @@ pub type AesKey128 = AesKey<16>;
 
 impl<const N: usize> AesKey<N> {
     pub fn from_hex(hex_key: &str) -> anyhow::Result<Self> {
-        let decoded_key = Zeroizing::new(
-            hex::decode(hex_key)
-                .context(format!("Encryption key must be {} hex characters", N * 2))?,
-        );
-        decoded_key.as_slice().try_into().map(Self).context(format!(
-            "Encryption key must be {} bytes ({} hex characters)",
-            N,
-            N * 2
-        ))
+        let mut key = Self([0; N]);
+        hex::decode_to_slice(hex_key, &mut key.0)
+            .with_context(|| format!("Encryption key must be {} hex characters", N * 2))?;
+        Ok(key)
     }
 
     pub fn as_bytes(&self) -> &[u8; N] {
@@ -41,24 +43,6 @@ impl<const N: usize> AesKey<N> {
 impl<const N: usize> From<[u8; N]> for AesKey<N> {
     fn from(key: [u8; N]) -> Self {
         Self(key)
-    }
-}
-
-// Serializes like `[u8; N]` to keep the on-disk format.
-impl<const N: usize> Serialize for AesKey<N> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.0.as_slice().serialize(serializer)
-    }
-}
-
-impl<'de, const N: usize> Deserialize<'de> for AesKey<N> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let bytes = Zeroizing::new(Vec::<u8>::deserialize(deserializer)?);
-        bytes
-            .as_slice()
-            .try_into()
-            .map(Self)
-            .map_err(|_| serde::de::Error::custom(format!("AES key must be {N} bytes")))
     }
 }
 
@@ -238,27 +222,25 @@ fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
 
 pub fn generate_and_write_backup_encryption_key_to_disk(
     home_dir: &Path,
-) -> anyhow::Result<Zeroizing<String>> {
+) -> anyhow::Result<AesKey256> {
     tracing::info!("generating encryption key");
-    let mut key = Zeroizing::new([0u8; 32]);
-    rand::thread_rng().fill_bytes(key.as_mut_slice());
+    let mut key = AesKey([0u8; 32]);
+    rand::thread_rng().fill_bytes(&mut key.0);
     let key_path = backup_encryption_key_file(home_dir);
-    let key_hex = Zeroizing::new(hex::encode(key.as_slice()));
+    let key_hex = Zeroizing::new(hex::encode(key.as_bytes()));
     write_secret_file(&key_path, key_hex.as_bytes())?;
     tracing::info!("wrote encryption key to disk {:?}", key_path);
-    Ok(key_hex)
+    Ok(key)
 }
 
 impl SecretsConfig {
     pub fn from_parts(
         local_storage_aes_key_hex: &str,
         persistent_secrets: PersistentSecrets,
-        backup_encryption_key_hex: &str,
+        backup_encryption_key: AesKey256,
     ) -> anyhow::Result<Self> {
         let local_storage_aes_key = AesKey::from_hex(local_storage_aes_key_hex)
             .context("invalid local storage aes key hex")?;
-        let backup_encryption_key = AesKey::from_hex(backup_encryption_key_hex)
-            .context("invalid backup symmetric key hex")?;
         Ok(Self {
             persistent_secrets,
             local_storage_aes_key,

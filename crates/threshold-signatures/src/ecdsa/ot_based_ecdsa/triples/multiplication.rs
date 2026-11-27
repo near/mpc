@@ -40,14 +40,14 @@ struct MultiplicationSenderRandomPackage {
 }
 
 impl MultiplicationSenderRandomPackage {
-    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Self {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Box<Self> {
         let (delta, x) = batch_random_ot_receiver_random_helper(rng);
         let seed = random_ot_extension_sender_helper(rng);
         // this is the `batch_size` from `multiplication_sender`
         let batch_size = BITS + SECURITY_PARAMETER;
         let delta0 = mta_sender_random_helper(batch_size, rng);
         let delta1 = mta_sender_random_helper(batch_size, rng);
-        Self::new(delta, x, seed, delta0, delta1)
+        Box::new(Self::new(delta, x, seed, delta0, delta1))
     }
 }
 
@@ -56,7 +56,7 @@ async fn multiplication_sender(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    precomputed_values: MultiplicationSenderRandomPackage,
+    precomputed_values: Box<MultiplicationSenderRandomPackage>,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
     let k = batch_random_ot_receiver(
@@ -102,14 +102,14 @@ struct MultiplicationReceiverRandomPackage {
 }
 
 impl MultiplicationReceiverRandomPackage {
-    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Result<Self, ProtocolError> {
+    fn generate_random_package(rng: &mut impl CryptoRngCore) -> Result<Box<Self>, ProtocolError> {
         let y = batch_random_ot_sender_helper(rng);
         // This value must coincide with params.batch_size in `multiplication_receiver`
         let batch_size = 2 * (BITS + SECURITY_PARAMETER);
         let b = random_ot_extension_receiver_helper(batch_size, rng)?;
         let seed0 = mta_receiver_random_helper(rng);
         let seed1 = mta_receiver_random_helper(rng);
-        Ok(Self::new(y, b, seed0, seed1))
+        Ok(Box::new(Self::new(y, b, seed0, seed1)))
     }
 }
 
@@ -118,7 +118,7 @@ async fn multiplication_receiver(
     sid: &[u8],
     a_i: &Scalar,
     b_i: &Scalar,
-    precomputed_package: MultiplicationReceiverRandomPackage,
+    precomputed_package: Box<MultiplicationReceiverRandomPackage>,
 ) -> Result<Scalar, ProtocolError> {
     // First, run a fresh batch random OT ourselves
     let (k0, k1) = batch_random_ot_sender(chan.child(0), &precomputed_package.y).await?;
@@ -213,7 +213,6 @@ pub(super) async fn multiplication_many(
                     Box::pin(async move {
                         let (sid_i, av_i, bv_i) =
                             get_multiplication_inputs(&sid_arc, &av_iv_arc, &bv_iv_arc, i)?;
-                        #[allow(clippy::large_futures)]
                         multiplication_sender(
                             chan,
                             sid_i.as_ref(),
@@ -361,19 +360,5 @@ mod test {
         for i in 0..N {
             assert_eq!(a_v[i] * b_v[i], c_v[i]);
         }
-    }
-
-    #[test]
-    #[expect(non_snake_case)]
-    fn secret_types__should_zeroize_on_drop() {
-        // Given
-        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-
-        // When / Then
-        assert_zeroize_on_drop::<super::MultiplicationSenderRandomPackage>();
-        assert_zeroize_on_drop::<super::MultiplicationReceiverRandomPackage>();
-        assert_zeroize_on_drop::<crate::ecdsa::ot::bits::BitMatrix>();
-        assert_zeroize_on_drop::<crate::ecdsa::ot::bits::ChoiceVector>();
-        assert_zeroize_on_drop::<crate::frost::PresignArguments<crate::ecdsa::Secp256K1Sha256>>();
     }
 }

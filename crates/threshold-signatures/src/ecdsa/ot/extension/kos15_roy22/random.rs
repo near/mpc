@@ -92,6 +92,7 @@ impl RandomOTExtensionReceiverOut {
     }
 }
 
+#[cfg(test)]
 impl FromIterator<(Choice, Scalar)> for RandomOTExtensionReceiverOut {
     fn from_iter<I: IntoIterator<Item = (Choice, Scalar)>>(iter: I) -> Self {
         Self(
