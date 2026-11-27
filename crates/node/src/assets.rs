@@ -1259,13 +1259,14 @@ mod tests {
     #[test]
     fn test_multiple_domains() {
         let (db, _dir) = new_test_db();
+        let myself = MY_PARTICIPANT_ID;
         let other = ParticipantId::from_raw(43);
 
         for i in 0..4 {
             let store = new_test_store::<u64>(&db, Some(DomainId(i)));
 
             for j in 0..10 {
-                store.add_owned(UniqueId::new(MY_PARTICIPANT_ID, j, 0), 10000 + i * 100 + j);
+                store.add_owned(UniqueId::new(myself, j, 0), 10000 + i * 100 + j);
                 store.add_unowned(UniqueId::new(other, j, 0), 20000 + i * 100 + j);
             }
             for j in 0..10 {
@@ -1279,10 +1280,7 @@ mod tests {
                 );
             }
             for j in 0..10 {
-                store.add_owned(
-                    UniqueId::new(MY_PARTICIPANT_ID, 100 + j, 0),
-                    30000 + i * 100 + j,
-                );
+                store.add_owned(UniqueId::new(myself, 100 + j, 0), 30000 + i * 100 + j);
                 store.add_unowned(UniqueId::new(other, 100 + j, 0), 40000 + i * 100 + j);
             }
         }
@@ -1311,10 +1309,7 @@ mod tests {
         raw.iter().copied().map(ParticipantId::from_raw).collect()
     }
 
-    fn new_test_store<T>(
-        db: &Arc<SecretDB>,
-        domain_id: Option<DomainId>,
-    ) -> DistributedAssetStorage<T>
+    fn new_test_store<T>(db: &Arc<SecretDB>, domain: Option<DomainId>) -> DistributedAssetStorage<T>
     where
         T: Serialize + DeserializeOwned + Send + 'static,
     {
@@ -1322,7 +1317,7 @@ mod tests {
             FakeClock::default().clock(),
             db.clone(),
             DBCol::TripleV2,
-            domain_id_to_prefix(domain_id),
+            domain_id_to_prefix(domain),
             MY_PARTICIPANT_ID,
             |_, _| true,
             Arc::new(Vec::new),

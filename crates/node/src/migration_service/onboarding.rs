@@ -430,10 +430,9 @@ mod tests {
         let (_keyshare_sender, keyshare_receiver) = watch::channel(vec![]);
         let contract_keyset = builder.keyset();
         cancel_import.cancel();
-        let keyshare_storage = Arc::new(RwLock::new(storage));
         wait_for_and_import_keyshares(
             &contract_keyset,
-            keyshare_storage,
+            Arc::new(RwLock::new(storage)),
             keyshare_receiver,
             cancel_import,
         )
@@ -455,10 +454,9 @@ mod tests {
             keyshare_receiver
         };
         let contract_keyset = builder.keyset();
-        let keyshare_storage = Arc::new(RwLock::new(storage));
         let res = wait_for_and_import_keyshares(
             &contract_keyset,
-            keyshare_storage,
+            Arc::new(RwLock::new(storage)),
             keyshare_receiver,
             cancel_import,
         )

@@ -164,11 +164,10 @@ pub fn new_triple_store(
     reconstruction_threshold: ReconstructionThreshold,
     participants: &[ParticipantId],
 ) -> TripleStorage {
-    let client = new_test_client(participants.to_vec(), my_participant_id);
     TripleStorage::new(
         FakeClock::default().clock(),
         db.clone(),
-        client,
+        new_test_client(participants.to_vec(), my_participant_id),
         reconstruction_threshold,
     )
     .unwrap()

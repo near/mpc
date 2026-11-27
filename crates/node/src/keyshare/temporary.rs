@@ -172,9 +172,8 @@ mod tests {
     #[tokio::test]
     async fn test_temporary_key_storage() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
-        let (config, _tempdir) = generate_key_storage_config();
-        let storage =
-            TemporaryKeyStorage::new(config.home_dir, config.local_encryption_key).unwrap();
+        let (cfg, _tempdir) = generate_key_storage_config();
+        let storage = TemporaryKeyStorage::new(cfg.home_dir, cfg.local_encryption_key).unwrap();
 
         let key1 = generate_dummy_keyshare(1, 2, 1, &mut rng);
         let key2 = generate_dummy_keyshare(1, 2, 2, &mut rng);

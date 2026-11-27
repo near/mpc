@@ -805,7 +805,6 @@ mod tests {
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::{assert_matches, collections::BTreeSet};
-    use tempfile::TempDir;
 
     #[rstest::rstest]
     #[tokio::test(start_paused = true)]
@@ -824,12 +823,12 @@ mod tests {
         let txn_sender = CountingTransactionSender::new();
         let txn_sender_handle = txn_sender.clone();
 
-        let (keyshare_storage, _tempdir) = must_create_test_keyshare_storage().await;
+        let (keyshare_storage, _tempdir) = generate_key_storage().await;
 
         // When
         let leader_handle = tokio::spawn(resharing_leader(
             MockKeyEventLeaderClient,
-            keyshare_storage,
+            Arc::new(RwLock::new(keyshare_storage)),
             rx,
             txn_sender,
             make_test_resharing_args(),
@@ -935,7 +934,7 @@ mod tests {
         let (_tx, rx) = watch::channel(make_key_event_instance(key_event_id, true));
         let txn_sender = CountingTransactionSender::new();
         let txn_sender_handle = txn_sender.clone();
-        let (keyshare_storage, _tempdir) = must_create_test_keyshare_storage().await;
+        let (keyshare_storage, _tempdir) = generate_key_storage().await;
         let (channel, _raw_sender) = new_task_channel_for_test(
             MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyGeneration {
                 key_event: key_event_id,
@@ -949,7 +948,7 @@ mod tests {
         let result = keygen_computation(
             rx,
             channel,
-            keyshare_storage,
+            Arc::new(RwLock::new(keyshare_storage)),
             txn_sender,
             key_event_id,
             make_participant_id_set(&[1, 2, 3, 4]),
@@ -976,7 +975,7 @@ mod tests {
         let (_tx, rx) = watch::channel(make_key_event_instance(key_event_id, true));
         let txn_sender = CountingTransactionSender::new();
         let txn_sender_handle = txn_sender.clone();
-        let (keyshare_storage, _tempdir) = must_create_test_keyshare_storage().await;
+        let (keyshare_storage, _tempdir) = generate_key_storage().await;
         let (channel, _raw_sender) = new_task_channel_for_test(
             MpcTaskId::EcdsaTaskId(EcdsaTaskId::KeyResharing {
                 key_event: key_event_id,
@@ -990,7 +989,7 @@ mod tests {
         let result = resharing_computation(
             rx,
             channel,
-            keyshare_storage,
+            Arc::new(RwLock::new(keyshare_storage)),
             txn_sender,
             key_event_id,
             args,
@@ -1098,11 +1097,6 @@ mod tests {
             },
             new_participant_ids: make_participant_id_set(&[1, 2, 3, 4]),
         })
-    }
-
-    async fn must_create_test_keyshare_storage() -> (Arc<RwLock<KeyshareStorage>>, TempDir) {
-        let (keyshare_storage, tempdir) = generate_key_storage().await;
-        (Arc::new(RwLock::new(keyshare_storage)), tempdir)
     }
 
     fn make_participant_ids(ids: &[u32]) -> Vec<ParticipantId> {

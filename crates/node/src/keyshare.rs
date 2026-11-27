@@ -487,10 +487,9 @@ impl KeyStorageConfig {
 #[cfg(any(test, feature = "test-utils"))]
 pub fn generate_key_storage_config() -> (KeyStorageConfig, tempfile::TempDir) {
     let tempdir = tempfile::tempdir().unwrap();
-    let home_dir = tempdir.path().to_path_buf();
     (
         KeyStorageConfig {
-            home_dir,
+            home_dir: tempdir.path().to_path_buf(),
             local_encryption_key: crate::config::TEST_LOCAL_STORAGE_AES_KEY,
         },
         tempdir,
