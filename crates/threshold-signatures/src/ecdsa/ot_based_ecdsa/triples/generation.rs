@@ -898,8 +898,8 @@ mod test {
 
     use super::{
         C, CheckBatchLen, PolynomialCommitmentsMessageMany, ProtocolError, TripleGenerationOutput,
-        TripleGenerationOutputMany, do_generation_many, generate_triple_many,
-        triple_generation_max_incoming_buffer_entries,
+        TripleGenerationOutputMany, TriplePub, TripleShare, do_generation_many,
+        generate_triple_many, triple_generation_max_incoming_buffer_entries,
     };
 
     /// The `[T; N]` const-generic encoding of a batched round that preceded [`Vec`].
@@ -1050,6 +1050,31 @@ mod test {
         assert!(result.is_err(), "{result:?}");
     }
 
+    fn assert_triple_is_valid(
+        participants: [Participant; 3],
+        triple_shares: [&TripleShare; 3],
+        triple_pub: &TriplePub,
+    ) {
+        let p_list = ParticipantList::new(&participants).unwrap();
+
+        let a = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].a
+            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].a
+            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].a;
+        assert_eq!(ProjectivePoint::GENERATOR * a, triple_pub.big_a);
+
+        let b = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].b
+            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].b
+            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].b;
+        assert_eq!(ProjectivePoint::GENERATOR * b, triple_pub.big_b);
+
+        let c = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].c
+            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].c
+            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].c;
+        assert_eq!(ProjectivePoint::GENERATOR * c, triple_pub.big_c);
+
+        assert_eq!(a * b, c);
+    }
+
     #[test]
     fn test_triple_generation() {
         let mut rng = MockCryptoRng::seed_from_u64(42);
@@ -1074,32 +1099,11 @@ mod test {
         assert_eq!(result[0].1.1, result[1].1.1);
         assert_eq!(result[1].1.1, result[2].1.1);
 
-        let triple_pub = result[2].1.1.clone();
-
-        let participants = vec![result[0].0, result[1].0, result[2].0];
-        let triple_shares = [
-            result[0].1.0.clone(),
-            result[1].1.0.clone(),
-            result[2].1.0.clone(),
-        ];
-        let p_list = ParticipantList::new(&participants).unwrap();
-
-        let a = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].a
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].a
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].a;
-        assert_eq!(ProjectivePoint::GENERATOR * a, triple_pub.big_a);
-
-        let b = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].b
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].b
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].b;
-        assert_eq!(ProjectivePoint::GENERATOR * b, triple_pub.big_b);
-
-        let c = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].c
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].c
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].c;
-        assert_eq!(ProjectivePoint::GENERATOR * c, triple_pub.big_c);
-
-        assert_eq!(a * b, c);
+        assert_triple_is_valid(
+            [result[0].0, result[1].0, result[2].0],
+            [&result[0].1.0, &result[1].1.0, &result[2].1.0],
+            &result[2].1.1,
+        );
 
         insta::assert_json_snapshot!(result);
     }
@@ -1157,32 +1161,11 @@ mod test {
         assert_eq!(result[0].1[0].1, result[1].1[0].1);
         assert_eq!(result[1].1[0].1, result[2].1[0].1);
 
-        let triple_pub = result[2].1[0].1.clone();
-
-        let participants = vec![result[0].0, result[1].0, result[2].0];
-        let triple_shares = [
-            result[0].1[0].0.clone(),
-            result[1].1[0].0.clone(),
-            result[2].1[0].0.clone(),
-        ];
-        let p_list = ParticipantList::new(&participants).unwrap();
-
-        let a = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].a
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].a
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].a;
-        assert_eq!(ProjectivePoint::GENERATOR * a, triple_pub.big_a);
-
-        let b = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].b
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].b
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].b;
-        assert_eq!(ProjectivePoint::GENERATOR * b, triple_pub.big_b);
-
-        let c = p_list.lagrange::<C>(participants[0]).unwrap() * triple_shares[0].c
-            + p_list.lagrange::<C>(participants[1]).unwrap() * triple_shares[1].c
-            + p_list.lagrange::<C>(participants[2]).unwrap() * triple_shares[2].c;
-        assert_eq!(ProjectivePoint::GENERATOR * c, triple_pub.big_c);
-
-        assert_eq!(a * b, c);
+        assert_triple_is_valid(
+            [result[0].0, result[1].0, result[2].0],
+            [&result[0].1[0].0, &result[1].1[0].0, &result[2].1[0].0],
+            &result[2].1[0].1,
+        );
 
         insta::assert_json_snapshot!(result);
     }

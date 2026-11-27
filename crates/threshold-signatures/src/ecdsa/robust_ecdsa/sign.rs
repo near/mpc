@@ -263,6 +263,23 @@ mod test {
             VerifyingKey::from(&PublicKey::from_affine(derived).unwrap())
         }
 
+        fn try_sign(
+            &self,
+            coordinator: Participant,
+            args: SignArguments,
+            msg_hash: Scalar,
+        ) -> Result<impl Protocol<Output = SignatureOption>, InitializationError> {
+            sign(
+                &self.participants,
+                coordinator,
+                self.participants[0],
+                args,
+                self.tweak,
+                msg_hash,
+                self.rng_for(0),
+            )
+        }
+
         fn run_sign(&self, coordinator: Participant) -> Vec<(Participant, SignatureOption)> {
             let mut protocols: GenProtocol<SignatureOption> =
                 Vec::with_capacity(self.participants.len());
@@ -333,15 +350,7 @@ mod test {
         let outsider = Participant::from(999u32);
 
         // When
-        let result = sign(
-            &setup.participants,
-            outsider,
-            setup.participants[0],
-            setup.args_for(0),
-            setup.tweak,
-            setup.msg_hash,
-            setup.rng_for(0),
-        );
+        let result = setup.try_sign(outsider, setup.args_for(0), setup.msg_hash);
 
         // Then
         assert_matches!(
@@ -360,15 +369,7 @@ mod test {
         let setup = Setup::new(1, &mut rng);
 
         // When
-        let result = sign(
-            &setup.participants,
-            setup.participants[0],
-            setup.participants[0],
-            setup.args_for(0),
-            setup.tweak,
-            Scalar::ZERO,
-            setup.rng_for(0),
-        );
+        let result = setup.try_sign(setup.participants[0], setup.args_for(0), Scalar::ZERO);
 
         // Then
         assert_matches!(result.err(), Some(InitializationError::BadParameters(_)));
@@ -388,15 +389,7 @@ mod test {
         args.max_malicious = args_max_malicious.into();
 
         // When
-        let result = sign(
-            &setup.participants,
-            setup.participants[0],
-            setup.participants[0],
-            args,
-            setup.tweak,
-            setup.msg_hash,
-            setup.rng_for(0),
-        );
+        let result = setup.try_sign(setup.participants[0], args, setup.msg_hash);
 
         // Then
         assert_matches!(result.err(), Some(InitializationError::BadParameters(_)));

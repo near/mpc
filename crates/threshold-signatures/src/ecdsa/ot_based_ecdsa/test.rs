@@ -95,29 +95,25 @@ fn test_refresh() {
     run_sign_and_verify(&key_packages, threshold, b"hello world", &mut rng);
 }
 
-#[test]
-fn test_reshare_sign_more_participants() {
+fn run_reshare_sign_and_verify(
+    participants: &[Participant],
+    new_participants: &[Participant],
+    threshold: usize,
+    new_threshold: usize,
+) {
     let mut rng = MockCryptoRng::seed_from_u64(42);
-    let participants = generate_participants(5);
-    let threshold = 3;
-    let result0 = run_keygen(&participants, threshold, &mut rng);
+    let result0 = run_keygen(participants, threshold, &mut rng);
     assert_public_key_invariant(&result0);
 
     let pub_key = result0[2].1.public_key;
 
-    // Run heavy reshare
-    let new_threshold = 5;
-    let mut new_participant = participants.clone();
-    new_participant.push(Participant::from(31u32));
-    new_participant.push(Participant::from(32u32));
-    new_participant.push(Participant::from(33u32));
     let key_packages = run_reshare(
-        &participants,
+        participants,
         &pub_key,
         &result0,
         threshold,
         new_threshold,
-        &new_participant,
+        new_participants,
         &mut rng,
     );
     assert_public_key_invariant(&key_packages);
@@ -126,31 +122,37 @@ fn test_reshare_sign_more_participants() {
 }
 
 #[test]
-fn test_reshare_sign_less_participants() {
-    let mut rng = MockCryptoRng::seed_from_u64(42);
+fn test_reshare_sign_more_participants() {
     let participants = generate_participants(5);
-    let threshold = 4;
-    let result0 = run_keygen(&participants, threshold, &mut rng);
-    assert_public_key_invariant(&result0);
+    let mut new_participants = participants.clone();
+    new_participants.extend([31u32, 32, 33].map(Participant::from));
 
-    let pub_key = result0[2].1.public_key;
+    let old_threshold = 3;
+    let new_threshold = 5;
 
-    // Run heavy reshare
-    let new_threshold = 3;
-    let mut new_participant = participants.clone();
-    new_participant.pop();
-    let key_packages = run_reshare(
+    run_reshare_sign_and_verify(
         &participants,
-        &pub_key,
-        &result0,
-        threshold,
+        &new_participants,
+        old_threshold,
         new_threshold,
-        &new_participant,
-        &mut rng,
     );
-    assert_public_key_invariant(&key_packages);
+}
 
-    run_sign_and_verify(&key_packages, new_threshold, b"hello world", &mut rng);
+#[test]
+fn test_reshare_sign_less_participants() {
+    let participants = generate_participants(5);
+    let mut new_participants = participants.clone();
+    new_participants.pop();
+
+    let old_threshold = 4;
+    let new_threshold = 3;
+
+    run_reshare_sign_and_verify(
+        &participants,
+        &new_participants,
+        old_threshold,
+        new_threshold,
+    );
 }
 
 #[test]
