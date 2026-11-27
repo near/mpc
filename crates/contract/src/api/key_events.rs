@@ -152,12 +152,15 @@ impl MpcContract {
         self.assert_caller_is_attested_participant_and_protocol_active();
 
         let previous_parameters = self.protocol_state.threshold_parameters_or_panic().clone();
+        let previous_domains = self.protocol_state.domain_registry().ok().cloned();
         if let Some(new_state) = self.protocol_state.vote_reshared(key_event_id)? {
             // Resharing has concluded, transition to running state
             self.protocol_state = new_state;
             self.last_reshared_at = Timestamp::now();
             // Pending votes were cast against the previous parameters.
-            if *self.protocol_state.threshold_parameters_or_panic() != previous_parameters {
+            if *self.protocol_state.threshold_parameters_or_panic() != previous_parameters
+                || self.protocol_state.domain_registry().ok() != previous_domains.as_ref()
+            {
                 self.parameters_votes.clear();
             }
             let participants = self.protocol_state.active_participants();
