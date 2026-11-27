@@ -8,6 +8,7 @@ use crate::sandbox::{
 use near_mpc_contract_interface::types::{
     EpochId, InitConfig, ProtocolContractState, RunningContractState,
 };
+use std::assert_matches;
 
 #[tokio::test]
 #[expect(non_snake_case)]
@@ -78,10 +79,10 @@ async fn trigger_key_refresh__should_fail_before_refresh_is_due() {
     // Then
     let failure = format!("{:?}", execution.into_result().unwrap_err());
     assert!(failure.contains("Key refresh is not due"), "{failure}");
-    assert!(matches!(
+    assert_matches!(
         get_state(&contract).await,
         ProtocolContractState::Running(_)
-    ));
+    );
 }
 
 async fn running_state(contract: &SandboxMpcContract) -> RunningContractState {
