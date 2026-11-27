@@ -40,9 +40,21 @@ async fn test_changing_participant_set_test_keyshare_import() {
     );
 
     let home_dir_first = setup.configs.first().unwrap().home_dir.clone();
-    let local_encryption_key_first = setup.configs.first().unwrap().secrets.local_storage_aes_key;
+    let local_encryption_key_first = setup
+        .configs
+        .first()
+        .unwrap()
+        .secrets
+        .local_storage_aes_key
+        .clone();
     let home_dir_last = setup.configs.last().unwrap().home_dir.clone();
-    let local_encryption_key_last = setup.configs.last().unwrap().secrets.local_storage_aes_key;
+    let local_encryption_key_last = setup
+        .configs
+        .last()
+        .unwrap()
+        .secrets
+        .local_storage_aes_key
+        .clone();
 
     // Initialize the contract with the first two nodes
     let mut initial_participants = setup.participants.clone();

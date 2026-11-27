@@ -5,6 +5,7 @@ pub mod test_utils;
 
 mod temporary;
 
+use crate::config::AesKey128;
 use anyhow::Context;
 use mpc_primitives::{EpochId, KeyEventId};
 use near_mpc_contract_interface::types::{
@@ -463,18 +464,19 @@ impl KeyshareStorage {
 /// Config for how to construct a KeyshareStorage.
 pub struct KeyStorageConfig {
     pub home_dir: std::path::PathBuf,
-    pub local_encryption_key: [u8; 16],
+    pub local_encryption_key: AesKey128,
 }
 
 impl KeyStorageConfig {
     pub async fn create(&self) -> anyhow::Result<KeyshareStorage> {
         let backend = local::LocalPermanentKeyStorageBackend::new(
             self.home_dir.clone(),
-            self.local_encryption_key,
+            self.local_encryption_key.clone(),
         )
         .await?;
         let permanent = PermanentKeyStorage::new(Box::new(backend)).await?;
-        let temporary = TemporaryKeyStorage::new(self.home_dir.clone(), self.local_encryption_key)?;
+        let temporary =
+            TemporaryKeyStorage::new(self.home_dir.clone(), self.local_encryption_key.clone())?;
         Ok(KeyshareStorage {
             temporary,
             permanent,
@@ -486,7 +488,7 @@ impl KeyStorageConfig {
 pub fn generate_key_storage_config() -> (KeyStorageConfig, tempfile::TempDir) {
     let tempdir = tempfile::tempdir().unwrap();
     let home_dir = tempdir.path().to_path_buf();
-    let local_encryption_key = [3; 16];
+    let local_encryption_key = [3; 16].into();
     (
         KeyStorageConfig {
             home_dir,
@@ -1298,7 +1300,7 @@ pub mod tests {
         let (storage_config, _tempdir) = generate_key_storage_config();
         let backend = LocalPermanentKeyStorageBackend::new(
             storage_config.home_dir.clone(),
-            storage_config.local_encryption_key,
+            storage_config.local_encryption_key.clone(),
         )
         .await
         .unwrap();

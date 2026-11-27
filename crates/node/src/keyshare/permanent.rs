@@ -267,7 +267,7 @@ mod tests {
     async fn test_load_store() {
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let temp = tempfile::tempdir().unwrap();
-        let encryption_key = [2; 16];
+        let encryption_key = [2; 16].into();
         let backend =
             LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), encryption_key)
                 .await
@@ -343,9 +343,10 @@ mod tests {
     async fn permanent_key_storage_new__should_fail_on_legacy_keyshare_format() {
         // Given
         let temp = tempfile::tempdir().unwrap();
-        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
-            .await
-            .unwrap();
+        let backend =
+            LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16].into())
+                .await
+                .unwrap();
         let legacy_keyshare = serde_json::json!({
             "epoch": 1,
             "private_share": Scalar::ONE,
@@ -373,9 +374,10 @@ mod tests {
         // Given
         let (older, latest) = keysets;
         let temp = tempfile::tempdir().unwrap();
-        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
-            .await
-            .unwrap();
+        let backend =
+            LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16].into())
+                .await
+                .unwrap();
         let storage = PermanentKeyStorage::new(Box::new(backend)).await.unwrap();
         storage.store(&older).await.unwrap();
 
@@ -419,9 +421,10 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let temp = tempfile::tempdir().unwrap();
-        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
-            .await
-            .unwrap();
+        let backend =
+            LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16].into())
+                .await
+                .unwrap();
         let older = KeysetBuilder::new_populated(0, 1, &mut rng).permanent_key_data();
         let latest = KeysetBuilder::new_populated(1, 1, &mut rng).permanent_key_data();
         for keyset in [&older, &latest] {
@@ -451,9 +454,10 @@ mod tests {
         // Given
         let mut rng = rand::rngs::StdRng::from_seed([1u8; 32]);
         let temp = tempfile::tempdir().unwrap();
-        let backend = LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16])
-            .await
-            .unwrap();
+        let backend =
+            LocalPermanentKeyStorageBackend::new(temp.path().to_path_buf(), [2; 16].into())
+                .await
+                .unwrap();
         let keyset = KeysetBuilder::new_populated(0, 1, &mut rng).permanent_key_data();
         backend
             .store(
