@@ -1,3 +1,8 @@
+use crate::indexer::configs::IndexerConfigExt;
+use crate::tee::{
+    AllowedImageHashesFile, monitor_allowed_image_hashes,
+    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
+};
 use crate::{
     config::{
         AesKey256, PersistentSecrets, SecretsConfig,
@@ -44,11 +49,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use zeroize::Zeroizing;
 
-use crate::tee::{
-    AllowedImageHashesFile, monitor_allowed_image_hashes,
-    remote_attestation::{AttestationSubmitter, run_periodic_attestation_submission},
-};
-
 pub const FOREIGN_CHAIN_PROBE_INTERVAL: Duration = Duration::from_hours(1);
 
 fn resolve_foreign_chains(config: &StartConfig) -> anyhow::Result<ForeignChainsConfig> {
@@ -68,8 +68,7 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     init_logging(&config.log);
     config.node.foreign_chains = resolve_foreign_chains(&config)?;
 
-    // Must run before `spawn_real_indexer` loads/validates the config, and
-    // after `init_logging` so its logs are emitted. No-op for the `start` path.
+    // Must run after `init_logging` so its logs are emitted. No-op for the `start` path.
     config.ensure_near_initialized()?;
 
     // Log startup info
@@ -123,9 +122,14 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
 
     // Load configuration and initialize persistent secrets
     let node_config = config.node.clone();
+    let mpc_indexer_config = node_config.indexer.clone();
+    let near_indexer_config = mpc_indexer_config.to_near_indexer_config(config.home_dir.clone());
+    let near_config = near_indexer_config
+        .load_near_config()
+        .context("failed to load nearcore config")?;
     let persistent_secrets = PersistentSecrets::generate_or_get_existing(&config.home_dir)?;
 
-    profiler::web_server::start_web_server(node_config.pprof_bind_address).await?;
+    profiler::web_server::start_web_server(config.node.pprof_bind_address).await?;
     root_runtime.spawn(crate::metrics::tokio_task_metrics::run_monitor_loop());
 
     let backup_encryption_key_hex = config.secrets.backup_encryption_key_hex.take();
@@ -149,6 +153,11 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     let tls_public_key = &secrets.persistent_secrets.p2p_private_key.verifying_key();
 
     let account_public_key = &secrets.persistent_secrets.near_signer_key.verifying_key();
+
+    let near_core_network_public_key = match near_config.network_config.node_id().public_key() {
+        near_crypto::PublicKey::ED25519(key) => key.as_ref().try_into().ok().map(Ed25519PublicKey),
+        _ => None,
+    };
 
     let report_data = ReportDataV1::new(
         *Ed25519PublicKey::from(tls_public_key).as_bytes(),
@@ -205,10 +214,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
             root_task_handle.clone(),
             debug_request_sender.clone(),
             node_config.web_ui,
-            static_web_data(&secrets, attestation),
+            static_web_data(&secrets, near_core_network_public_key, attestation),
             protocol_state_receiver,
             migration_state_receiver,
-            config.node.clone(),
+            node_config.clone(),
             read_near_config_json(&config.home_dir),
             recent_transactions.clone(),
         ))
@@ -234,8 +243,10 @@ pub async fn run_mpc_node(mut config: StartConfig) -> anyhow::Result<()> {
     let indexer_shutdown_token = CancellationToken::new();
     let indexer_api = spawn_real_indexer(
         config.home_dir.clone(),
-        node_config.indexer.clone(),
         node_config.my_near_account_id.clone(),
+        mpc_indexer_config,
+        near_indexer_config,
+        near_config,
         persistent_secrets.near_signer_key.clone(),
         indexer_exit_sender,
         protocol_state_sender,

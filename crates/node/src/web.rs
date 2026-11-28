@@ -292,13 +292,14 @@ fn get_public_keys(secrets_config: &SecretsConfig) -> PublicKeys {
 
 pub fn static_web_data(
     value: &SecretsConfig,
+    nearcore_network_public_key: Option<Ed25519PublicKey>,
     tee_participant_info: Option<Attestation>,
 ) -> StaticWebData {
     let public_keys = get_public_keys(value);
-
     StaticWebData {
         near_signer_public_key: public_keys.near_signer_public_key,
         near_p2p_public_key: public_keys.near_p2p_public_key,
+        near_core_network_public_key: nearcore_network_public_key,
         tee_participant_info,
     }
 }
