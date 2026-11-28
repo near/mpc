@@ -5,7 +5,10 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
 use crate::event_subscriber::block_events::BlockContext;
-use crate::event_subscriber::metrics::{MPC_BLOCKS_INDEXED, MPC_FINALIZED_BLOCKS_INDEXED};
+use crate::event_subscriber::metrics::{
+    MPC_BLOCKS_INDEXED, MPC_BLOCKS_INDEXED_WITHOUT_PARENT, MPC_BLOCKS_MADE_NON_CANONICAL,
+    MPC_FINALIZED_BLOCKS_INDEXED,
+};
 use near_contract_transport::{BlockCount, BlockHeight};
 
 #[expect(rustdoc::private_intra_doc_links)]
@@ -175,6 +178,7 @@ impl AtomicBlockStatus {
             );
             return;
         }
+        MPC_BLOCKS_MADE_NON_CANONICAL.inc();
         self.0.store(
             BlockStatus::OptimisticButNotCanonical.into(),
             Ordering::Relaxed,
@@ -327,6 +331,9 @@ impl RecentBlocksTracker {
         }
         MPC_BLOCKS_INDEXED.inc();
         let parent = self.hash_to_node.get(&block.prev_hash).cloned();
+        if parent.is_none() && !self.hash_to_node.is_empty() {
+            MPC_BLOCKS_INDEXED_WITHOUT_PARENT.inc();
+        }
         let node = Arc::new(BlockNode {
             hash: block.hash,
             height: block.height,

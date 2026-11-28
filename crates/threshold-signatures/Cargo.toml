@@ -10,10 +10,9 @@ license.workspace = true
 bench = false
 
 [features]
-test-utils = ["average", "rand", "rand_chacha"]
+test-utils = ["rand", "rand_chacha", "statrs"]
 
 [dependencies]
-average = { workspace = true, optional = true }
 blstrs.workspace = true
 borsh.workspace = true
 derive_more = { workspace = true, features = ["deref_mut"] }
@@ -44,18 +43,19 @@ serde_json.workspace = true
 serde_with.workspace = true
 sha2.workspace = true
 sha3.workspace = true
+statrs = { workspace = true, optional = true }
 subtle.workspace = true
 thiserror.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
-average.workspace = true
 criterion.workspace = true
 hkdf.workspace = true
 insta.workspace = true
 rand.workspace = true
 rand_core = { workspace = true, features = ["getrandom"] }
 rstest.workspace = true
+statrs.workspace = true
 threshold-signatures = { path = ".", features = ["test-utils"] }
 wycheproof.workspace = true
 

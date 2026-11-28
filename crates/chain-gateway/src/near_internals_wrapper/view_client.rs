@@ -46,6 +46,7 @@ impl NearViewClientActorHandle {
                 account_id: to_near_internal(contract_id),
                 method_name: method_name.clone(),
                 args: view_args.args.into(),
+                state_init: None,
             },
         };
 

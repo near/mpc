@@ -140,6 +140,40 @@ impl LocalnetBuilder {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
+        // The validator broadcasts its `AccountData` only after looking up its public IP, which
+        // can be after the observer syncs its first block. A transaction the observer forwards
+        // before that is dropped.
+        let validator_id = "validator.near".parse().unwrap();
+        while !localnet
+            .observer
+            .chain_gateway
+            .knows_producer(&validator_id)
+            .await
+            .unwrap()
+        {
+            localnet.assert_nodes_alive();
+            assert!(
+                Instant::now() < deadline,
+                "Timed out waiting for the observer to receive the validator's AccountData"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+
+        // We wait for the indexer to start and process the first block.
+        // We do this here to avoid a race condition between tests submitting transactions and
+        // the indexer indexing the submitted transactions.
+        // Note: it is important we do this only after starting the validator node.
+        if let Some(block_event_stream) = &localnet.observer.block_event_stream {
+            let mut progress = block_event_stream.progress.clone();
+            tokio::time::timeout_at(
+                deadline.into(),
+                progress.wait_for(|stats| stats.blocks_processed_count > 0),
+            )
+            .await
+            .expect("observer's streamer must process its first block before the deadline")
+            .expect("observer's streamer must stay alive");
+        }
+
         localnet
     }
 }

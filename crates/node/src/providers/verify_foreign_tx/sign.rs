@@ -141,7 +141,7 @@ impl VerifyForeignTxProvider {
         )
         .await;
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
-            VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign {
+            VerifyForeignTxTaskId::VerifyForeignTx {
                 id,
                 paired_triple_id,
             },
@@ -159,7 +159,7 @@ impl VerifyForeignTxProvider {
         Ok(((response_payload, signature), public_key))
     }
 
-    pub(super) async fn make_verify_foreign_tx_online_presign_follower(
+    pub(super) async fn make_verify_foreign_tx_follower(
         &self,
         channel: NetworkTaskChannel,
         id: SignatureId,

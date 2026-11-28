@@ -557,7 +557,7 @@ volumes:
     name: shared-volume
 ```
 
-Given this Docker compose file, the resulting `app-compose.json` might look like this. On the host, the app-compose file can be found in `meta-dstack/build/run/vm/*/shared/app-compose.json` while in the guest it is available at `/tapp/` and `/dstack/`.
+Given this Docker compose file, the resulting `app-compose.json` might look like this. On the host, the app-compose file can be found in `<dstack checkout>/vmm-data/run/vm/*/shared/app-compose.json` while in the guest it is available at `/tapp/` and `/dstack/`.
 
 ```json
 {

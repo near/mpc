@@ -470,6 +470,7 @@ impl IntoInterfaceType<dtos::Config> for &Config {
             resolve_verification_tera_gas: self.resolve_verification_tera_gas,
             launcher_hash_unused_ttl_seconds: self.launcher_hash_unused_ttl_seconds,
             attestation_storage_fee_millinear: self.attestation_storage_fee_millinear,
+            migration_genesis_hash: self.migration_genesis_hash,
         }
     }
 }
@@ -569,6 +570,7 @@ impl From<&Config> for near_mpc_contract_interface::types::Config {
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
             attestation_storage_fee_millinear: value.attestation_storage_fee_millinear,
             launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
+            migration_genesis_hash: value.migration_genesis_hash,
         }
     }
 }
@@ -602,6 +604,7 @@ impl From<near_mpc_contract_interface::types::Config> for Config {
             resolve_verification_tera_gas: value.resolve_verification_tera_gas,
             attestation_storage_fee_millinear: value.attestation_storage_fee_millinear,
             launcher_hash_unused_ttl_seconds: value.launcher_hash_unused_ttl_seconds,
+            migration_genesis_hash: value.migration_genesis_hash,
         }
     }
 }
@@ -951,7 +954,12 @@ impl IntoInterfaceType<dtos::KeyEvent> for &KeyEvent {
             epoch_id: self.epoch_id(),
             domain: self.domain().clone(),
             parameters: self.proposed_parameters().into_dto_type(),
-            instance: self.instance().as_ref().map(|i| i.into_dto_type()),
+            // A timed out instance stays in storage until the next call on this key event.
+            instance: self
+                .instance()
+                .as_ref()
+                .filter(|instance| instance.active())
+                .map(|instance| instance.into_dto_type()),
             next_attempt_id: self.next_attempt_id(),
         }
     }

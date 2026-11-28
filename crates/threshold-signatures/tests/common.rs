@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 use rand::seq::SliceRandom as _;
 use rand_core::OsRng;
+use zeroize::Zeroizing;
 
 use threshold_signatures::{
     self, Ciphersuite, Element, KeygenOutput, ReconstructionThreshold, Scalar,
@@ -139,7 +140,7 @@ where
                 reshare(
                     participants,
                     old_threshold,
-                    out.0,
+                    out.0.map(Zeroizing::new),
                     out.1,
                     new_participants,
                     new_threshold,
