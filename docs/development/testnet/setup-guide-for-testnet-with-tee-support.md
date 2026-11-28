@@ -7,7 +7,7 @@ been removed (#2951, #2952).
 
 ## Prerequisites
 1. One TDX-enabled machine (with 2 external IPs), or two such machines.
-2. dstack installed and configured (`v0.5.5+` for reserved port forwarding).
+2. dstack 0.6.5 installed and configured (`dstack-vmm` and guest image, with `qemu_hotplug_off = false`), see the [TDX operator guide](../../guide/running-an-mpc-node-in-tdx-external-guide/running-an-mpc-node-in-tdx-external-guide.md#2-dstack-setup-and-configuration).
 3. MPC repository cloned.
 4. NEAR CLI installed (`near-cli-rs`).
 
@@ -31,13 +31,12 @@ and `how-to-run-deploy-tee-cluster.md` for the full reference.
 3. Start two TDX CVMs: Running MPC node **frodo** and running MPC node **sam** on the same machine.
 4. Get account and TLS keys from each node.
 5. Initialize the contract with node parameters (keys, accounts, IPs), and prepay attestation storage for each node.
-6. Workaround for port override issue.
-7. Vote for MPC code hash on the contract.
-8. Vote for launcher image hash on the contract.
-9. Vote for OS measurements on the contract.
-10. MPC nodes attestation submission.
-11. Add a domain to the contract.
-12. Submit a signing request to the MPC cluster.
+6. Vote for MPC code hash on the contract.
+7. Vote for launcher image hash on the contract.
+8. Vote for OS measurements on the contract.
+9. MPC nodes attestation submission.
+10. Add a domain to the contract.
+11. Submit a signing request to the MPC cluster.
 
 ---
 
@@ -167,6 +166,12 @@ Define 2 external IPs available on the server that will be used by each MPC node
 ---
 
 ### Replace config placeholders inside the config files
+
+`port_override = 80` is set by default in `deployment/testnet/{frodo,sam}.toml`, as in every testnet
+and mainnet deployment: each node listens on, and dials every peer at, port 80, whatever port the
+participant URL in the contract has. To use another port, change `port_override` (under
+`[mpc_node_config.node.indexer]`) and the matching `port_mappings` entry before rendering, and
+`EXTERNAL_MPC_MAIN_PORT`/`INTERNAL_MPC_MAIN_PORT` in `deployment/testnet/{frodo,sam}.env`.
 
 ```bash
 envsubst < deployment/testnet/frodo.toml > "/tmp/$USER/frodo.toml"
@@ -357,31 +362,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT prepay_attestat
 
 ---
 
-## Step 6: Workaround for Port Override Issue (optional)
-
-**Note:** `port_override = 80` is the default on testnet. The MPC nodes will
-advertise URL port 80 to the contract regardless of the contract's
-`url:` field. If you need a different port (e.g. dstack on this host
-can't forward port 80), change `port_override` post-deploy as follows.
-
-> SSH into the CVM is **not supported on dstack ≥ 0.5.6** unless the
-> launcher's `pre_launch_script` installs a passwordless SSH key (the
-> dstack-dev images stopped exposing SSH by default). On `dstack-0.5.5`
-> and earlier dev images you can SSH with `ssh root@localhost -p
-> <CVM-SSH-port>` (`1220` for frodo, `1221` for sam by default).
-
-Once on the CVM, stop the MPC container, edit the config, restart:
-
-```bash
-docker stop mpc-node
-sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.yaml
-sed -i 's/port_override: 80/port_override: 2080/' /var/lib/docker/volumes/mpc-data/_data/config.json
-docker start mpc-node
-```
-
----
-
-## Step 7: Vote MPC Hash on Contract
+## Step 6: Vote MPC Hash on Contract
 
 Hash format: 00006c1059cc0219005b21956a4df8238b0cc33ad559a578a63169de4e28c81e  (no prefix)
 ```bash
@@ -416,11 +397,11 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  allowed_docker
 
 ---
 
-## Step 8: Vote Launcher Image Hash on Contract
+## Step 7: Vote Launcher Image Hash on Contract
 
 The launcher image hash must also be voted in for compose hashes to be derived and attestation to work.
 
-The previous steps had you set `LAUNCHER_MANIFEST_DIGEST` in `deployment/testnet/*.env` (uncommented in step 6 before running `deploy-launcher.sh`). The `.env` file is sourced by `deploy-launcher.sh` but not by your interactive shell, so re-export the value here. Either re-source the env file, or set the variable directly:
+The previous steps had you set `LAUNCHER_MANIFEST_DIGEST` in `deployment/testnet/*.env` (uncommented in step 3 before running `deploy-launcher.sh`). The `.env` file is sourced by `deploy-launcher.sh` but not by your interactive shell, so re-export the value here. Either re-source the env file, or set the variable directly:
 
 ```bash
 # Option A: pull from the env file you already edited
@@ -458,14 +439,14 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_launcher_
 
 ---
 
-## Step 9: Vote OS Measurements on Contract
+## Step 8: Vote OS Measurements on Contract
 
-OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Both participants must vote for the measurement set of the production OS image, found in `crates/mpc-attestation/assets/tcb_info.json`.
+OS measurements (MRTD, RTMR0-2, key-provider event digest) identify the CVM environment. Both participants must vote for the measurement set of the OS image the CVMs run: `crates/mpc-attestation/assets/tcb_info.json` for dstack 0.6.5, or `crates/mpc-attestation/assets/tcb_info_dstack_0.5.8.json` for dstack 0.5.8.
 
 Extract the measurement values from it:
 
 ```bash
-TCB_FILE=crates/mpc-attestation/assets/tcb_info.json
+TCB_FILE=crates/mpc-attestation/assets/tcb_info.json  # dstack 0.5.8: tcb_info_dstack_0.5.8.json
 MRTD=$(jq -r '.mrtd' $TCB_FILE)
 RTMR0=$(jq -r '.rtmr0' $TCB_FILE)
 RTMR1=$(jq -r '.rtmr1' $TCB_FILE)
@@ -498,7 +479,7 @@ near contract call-function as-read-only $MPC_CONTRACT_ACCOUNT allowed_os_measur
 
 ---
 
-## Step 10: Check Attestation Submission
+## Step 9: Check Attestation Submission
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accounts \
@@ -512,7 +493,7 @@ near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  get_tee_accoun
 
 ---
 
-## Step 11: Add Domain to Contract
+## Step 10: Add Domain to Contract
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  vote_add_domains \
@@ -535,7 +516,7 @@ If the contract is stuck in **Initializing**, this usually means the MPC nodes f
 
 ---
 
-## Step 12: Submit Signing Request
+## Step 11: Submit Signing Request
 
 ```bash
 near contract call-function as-transaction $MPC_CONTRACT_ACCOUNT  sign \

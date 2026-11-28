@@ -3,8 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use aes_gcm::aead::Generate;
-use aes_gcm::{Aes256Gcm, Key};
 use ed25519_dalek::SigningKey;
 use near_mpc_contract_interface::types::BackupServiceInfo;
 use rand::rngs::OsRng;
@@ -33,7 +31,7 @@ pub struct TestSetup {
 }
 
 pub async fn setup(ports: TestPorts) -> TestSetup {
-    let backup_encryption_key = Key::<Aes256Gcm>::generate();
+    let backup_encryption_key: AesKey256 = rand::random::<[u8; 32]>().into();
     let client_key = SigningKey::generate(&mut OsRng);
     let server_key = SigningKey::generate(&mut OsRng);
 
@@ -54,7 +52,7 @@ pub async fn setup(ports: TestPorts) -> TestSetup {
     let web_server_state = Arc::new(WebServerState {
         import_keyshares_sender: import_keyshares_sender.clone(),
         keyshare_storage: keyshare_storage.clone(),
-        backup_encryption_key: backup_encryption_key.into(),
+        backup_encryption_key: backup_encryption_key.clone(),
         onboarded: watch::channel(true).1,
     });
     start_web_server(
@@ -67,7 +65,7 @@ pub async fn setup(ports: TestPorts) -> TestSetup {
     .expect("Web server should start successfully for test setup");
 
     TestSetup {
-        backup_encryption_key: backup_encryption_key.into(),
+        backup_encryption_key,
         client_key,
         server_key,
         target_address,

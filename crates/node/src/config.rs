@@ -9,11 +9,58 @@ use near_account_id::AccountId;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, fs, os::unix::fs::PermissionsExt, path::Path};
+use subtle::ConstantTimeEq;
+use zeroize::{ZeroizeOnDrop, Zeroizing};
 
 pub(crate) mod start;
 
-pub type AesKey256 = [u8; 32];
+/// AES key that is zeroized on drop.
+#[derive(Clone, Serialize, Deserialize, ZeroizeOnDrop)]
+#[serde(
+    transparent,
+    bound(
+        serialize = "[u8; N]: Serialize",
+        deserialize = "[u8; N]: Deserialize<'de>"
+    )
+)]
+pub struct AesKey<const N: usize>([u8; N]);
+
+pub type AesKey256 = AesKey<32>;
 pub type AesKey128 = [u8; 16];
+
+impl<const N: usize> AesKey<N> {
+    pub fn from_hex(hex_key: &str) -> anyhow::Result<Self> {
+        let mut key = Self([0; N]);
+        hex::decode_to_slice(hex_key, &mut key.0)
+            .with_context(|| format!("Encryption key must be {N} hex-encoded bytes"))?;
+        Ok(key)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; N] {
+        &self.0
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for AesKey<N> {
+    fn from(key: [u8; N]) -> Self {
+        Self(key)
+    }
+}
+
+// Constant-time, so comparing keys does not leak through timing.
+impl<const N: usize> PartialEq for AesKey<N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.as_slice().ct_eq(other.0.as_slice()).into()
+    }
+}
+
+impl<const N: usize> Eq for AesKey<N> {}
+
+impl<const N: usize> std::fmt::Debug for AesKey<N> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AesKey(<redacted>)")
+    }
+}
 
 /// Configuration about the MPC protocol. It can come from either the contract
 /// on chain, or static offline config file.
@@ -193,27 +240,27 @@ fn write_secret_file(path: &Path, data: &[u8]) -> anyhow::Result<()> {
         .with_context(|| format!("failed to write secret file {}", path.display()))
 }
 
-pub fn generate_and_write_backup_encryption_key_to_disk(home_dir: &Path) -> anyhow::Result<String> {
+pub fn generate_and_write_backup_encryption_key_to_disk(
+    home_dir: &Path,
+) -> anyhow::Result<AesKey256> {
     tracing::info!("generating encryption key");
-    let mut key = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut key);
+    let mut key = AesKey([0u8; 32]);
+    rand::thread_rng().fill_bytes(&mut key.0);
     let key_path = backup_encryption_key_file(home_dir);
-    let key_hex = hex::encode(key);
+    let key_hex = Zeroizing::new(hex::encode(key.as_bytes()));
     write_secret_file(&key_path, key_hex.as_bytes())?;
     tracing::info!("wrote encryption key to disk {:?}", key_path);
-    Ok(key_hex)
+    Ok(key)
 }
 
 impl SecretsConfig {
     pub fn from_parts(
         local_storage_aes_key_hex: &str,
         persistent_secrets: PersistentSecrets,
-        backup_encryption_key_hex: &str,
+        backup_encryption_key: AesKey256,
     ) -> anyhow::Result<Self> {
         let local_storage_aes_key = hex_to_binary_key(local_storage_aes_key_hex)
             .context("invalid local storage aes key hex")?;
-        let backup_encryption_key = hex_to_binary_key(backup_encryption_key_hex)
-            .context("invalid backup symmetric key hex")?;
         Ok(Self {
             persistent_secrets,
             local_storage_aes_key,
@@ -369,6 +416,7 @@ pub mod tests {
         distributions::{Alphanumeric, Uniform},
         rngs::{OsRng, StdRng},
     };
+    use rstest::rstest;
     use std::{
         assert_matches,
         net::{Ipv4Addr, SocketAddr},
@@ -761,5 +809,69 @@ cores: 4
         assert!(!dir.path().join("config.yaml.tmp").exists());
         let re_read: ConfigFile = serde_yaml::from_str(&content_after).unwrap();
         assert_eq!(config, re_read);
+    }
+
+    #[test]
+    fn aes_gcm_ciphers__should_zeroize_on_drop() {
+        // Given
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+
+        // When / Then
+        assert_zeroize_on_drop::<aes_gcm::Aes128Gcm>();
+        assert_zeroize_on_drop::<aes_gcm::Aes256Gcm>();
+    }
+
+    #[test]
+    fn aes_key__should_redact_debug_output() {
+        // Given
+        let key = AesKey256::from([0xAB; 32]);
+
+        // When
+        let debug = format!("{key:?}");
+
+        // Then
+        assert_eq!(debug, "AesKey(<redacted>)");
+    }
+
+    #[rstest]
+    #[case::expected_length("ab".repeat(32), Some([0xAB; 32]))]
+    #[case::too_short("ab".repeat(16), None)]
+    #[case::too_long("ab".repeat(33), None)]
+    #[case::not_hex("zz".repeat(32), None)]
+    fn aes_key_from_hex__should_decode_only_keys_of_expected_length(
+        #[case] hex_key: String,
+        #[case] expected: Option<[u8; 32]>,
+    ) {
+        // When
+        let key = AesKey256::from_hex(&hex_key).ok();
+
+        // Then
+        assert_eq!(key.map(|key| *key.as_bytes()), expected);
+    }
+
+    #[test]
+    fn aes_key__should_serialize_like_a_byte_array() {
+        // Given
+        let bytes = [0xAB; 32];
+        let key = AesKey256::from(bytes);
+
+        // When
+        let json = serde_json::to_string(&key).unwrap();
+
+        // Then
+        assert_eq!(json, serde_json::to_string(&bytes).unwrap());
+        assert_eq!(serde_json::from_str::<AesKey256>(&json).unwrap(), key);
+    }
+
+    #[test]
+    fn aes_key__should_reject_deserializing_wrong_length() {
+        // Given
+        let json = serde_json::to_string(&[0xAB_u8; 16]).unwrap();
+
+        // When
+        let result = serde_json::from_str::<AesKey256>(&json);
+
+        // Then
+        assert_matches!(result, Err(_));
     }
 }

@@ -24,6 +24,7 @@ pub fn dummy_config(value: u64) -> near_mpc_contract_interface::types::Config {
         fail_attestation_submission_tera_gas: value + 16,
         attestation_storage_fee_millinear: value + 17,
         launcher_hash_unused_ttl_seconds: value + (14 * 24 * 60 * 60),
+        migration_genesis_hash: None,
     }
 }
 

@@ -1951,6 +1951,9 @@ expression: abi
               "type_schema": {
                 "declaration": "Update",
                 "definitions": {
+                  "()": {
+                    "Primitive": 0
+                  },
                   "BlockCount": {
                     "Struct": [
                       "u64"
@@ -2033,8 +2036,34 @@ expression: abi
                       [
                         "attestation_storage_fee_millinear",
                         "u64"
+                      ],
+                      [
+                        "migration_genesis_hash",
+                        "Option<GenesisHash>"
                       ]
                     ]
+                  },
+                  "GenesisHash": {
+                    "Struct": [
+                      "[u8; 32]"
+                    ]
+                  },
+                  "Option<GenesisHash>": {
+                    "Enum": {
+                      "tag_width": 1,
+                      "variants": [
+                        [
+                          0,
+                          "None",
+                          "()"
+                        ],
+                        [
+                          1,
+                          "Some",
+                          "GenesisHash"
+                        ]
+                      ]
+                    }
                   },
                   "Update": {
                     "Enum": {
@@ -2069,6 +2098,16 @@ expression: abi
                       "length_range": {
                         "start": 0,
                         "end": 4294967295
+                      },
+                      "elements": "u8"
+                    }
+                  },
+                  "[u8; 32]": {
+                    "Sequence": {
+                      "length_width": 0,
+                      "length_range": {
+                        "start": 32,
+                        "end": 32
                       },
                       "elements": "u8"
                     }
@@ -3267,6 +3306,17 @@ expression: abi
               "format": "uint64",
               "minimum": 0.0
             },
+            "migration_genesis_hash": {
+              "description": "Genesis hash that the contract stores when this config is applied, if it has none.",
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/GenesisHash"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "remove_non_participant_tee_verifier_votes_tera_gas": {
               "description": "Prepaid gas for a `remove_non_participant_tee_verifier_votes` call.",
               "type": "integer",
@@ -4113,6 +4163,7 @@ expression: abi
               "$ref": "#/definitions/EpochId"
             },
             "instance": {
+              "description": "The attempt active at the queried block height, if any.",
               "anyOf": [
                 {
                   "$ref": "#/definitions/KeyEventInstance"

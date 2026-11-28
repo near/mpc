@@ -18,6 +18,7 @@ use frost_core::{
     Challenge, Element, Error, Field, Group, Scalar, Signature, SigningKey, VerifyingKey,
 };
 use rand_core::CryptoRngCore;
+use zeroize::Zeroizing;
 
 /// This function prevents calling keyshare function with inproper inputs
 fn assert_keyshare_inputs<C: Ciphersuite>(
@@ -350,7 +351,7 @@ async fn do_keyshare<C: Ciphersuite>(
     participants: ParticipantList,
     me: Participant,
     threshold: ReconstructionThreshold,
-    secret: Scalar<C>,
+    secret: Zeroizing<SigningShare<C>>,
     old_reshare_package: Option<(VerifyingKey<C>, ParticipantList)>,
     rng: &mut impl CryptoRngCore,
 ) -> Result<KeygenOutput<C>, ProtocolError> {
@@ -358,7 +359,7 @@ async fn do_keyshare<C: Ciphersuite>(
     let mut domain_separator = DomainSeparator::new();
     // Make sure you do not call do_keyshare with zero as secret on an old participant
     let (old_verification_key, old_participants) =
-        assert_keyshare_inputs(me, &secret, old_reshare_package)?;
+        assert_keyshare_inputs(me, &secret.to_scalar(), old_reshare_package)?;
 
     // Start Round 1
     // Step 1.2
@@ -380,7 +381,8 @@ async fn do_keyshare<C: Ciphersuite>(
         .value()
         .checked_sub(1)
         .ok_or(ProtocolError::IntegerOverflow)?;
-    let secret_coefficients = Polynomial::<C>::generate_polynomial(Some(secret), degree, rng)?;
+    let secret_coefficients =
+        Polynomial::<C>::generate_polynomial(Some(secret.to_scalar()), degree, rng)?;
 
     // Compute the multiplication of every coefficient of p with the generator G
     // Step 2.4
@@ -555,7 +557,9 @@ pub async fn do_keygen<C: Ciphersuite>(
 ) -> Result<KeygenOutput<C>, ProtocolError> {
     let threshold = threshold.into();
     // pick share at random
-    let secret = SigningKey::<C>::new(&mut rng).to_scalar();
+    let secret = Zeroizing::new(SigningShare::new(
+        SigningKey::<C>::new(&mut rng).to_scalar(),
+    ));
     // call keyshare
     let keygen_output =
         do_keyshare::<C>(chan, participants, me, threshold, secret, None, &mut rng).await?;
@@ -611,7 +615,7 @@ pub async fn do_reshare<C: Ciphersuite>(
     participants: ParticipantList,
     me: Participant,
     threshold: impl Into<ReconstructionThreshold>,
-    old_signing_key: Option<SigningShare<C>>,
+    old_signing_key: Option<Zeroizing<SigningShare<C>>>,
     old_public_key: VerifyingKey<C>,
     old_participants: ParticipantList,
     mut rng: impl CryptoRngCore,
@@ -623,10 +627,10 @@ pub async fn do_reshare<C: Ciphersuite>(
         .map(|x_i| {
             intersection
                 .lagrange::<C>(me)
-                .map(|lambda| lambda * x_i.to_scalar())
+                .map(|lambda| Zeroizing::new(SigningShare::new(lambda * x_i.to_scalar())))
         })
         .transpose()?
-        .unwrap_or_else(<C::Group as Group>::Field::zero);
+        .unwrap_or_else(|| Zeroizing::new(SigningShare::new(<C::Group as Group>::Field::zero())));
 
     let old_reshare_package = Some((old_public_key, old_participants));
     let keygen_output = do_keyshare::<C>(
@@ -648,7 +652,7 @@ pub fn assert_reshare_keys_invariants<C: Ciphersuite>(
     participants: &[Participant],
     me: Participant,
     threshold: impl Into<ReconstructionThreshold>,
-    old_signing_key: Option<SigningShare<C>>,
+    old_signing_key: Option<&SigningShare<C>>,
     old_threshold: impl Into<ReconstructionThreshold>,
     old_participants: &[Participant],
 ) -> Result<(ParticipantList, ParticipantList), InitializationError> {
@@ -698,6 +702,7 @@ pub mod test {
     use frost_core::{Field, Group};
     use rand_core::{CryptoRngCore, SeedableRng};
     use rstest::rstest;
+    use zeroize::Zeroizing;
 
     #[test]
     fn test_domain_separate_hash() {
@@ -922,7 +927,7 @@ pub mod test {
                     &new_participants,
                     p,
                     new_threshold,
-                    old_signing_key,
+                    old_signing_key.as_ref(),
                     old_threshold,
                     &participants,
                 )
@@ -932,7 +937,7 @@ pub mod test {
                     participant_list,
                     p,
                     new_threshold,
-                    old_signing_key,
+                    old_signing_key.map(Zeroizing::new),
                     old_public_key,
                     old_participant_list,
                     rng_p,

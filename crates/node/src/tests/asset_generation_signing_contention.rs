@@ -57,13 +57,13 @@ use crate::tests::{
     request_signature_and_await_response,
 };
 use crate::tracking::AutoAbortTask;
-use average::{Estimate, Max, Mean, Quantile};
 use mpc_node_config::{TripleBatchSize, TripleConfig};
 use mpc_primitives::domain::DomainId;
 use near_mpc_contract_interface::types::{
     DomainConfig, DomainPurpose, Protocol, ReconstructionThreshold,
 };
 use near_time::Clock;
+use statrs::statistics::{Data, Max, OrderStatistics, Statistics};
 use std::time::Duration;
 
 const NUM_PARTICIPANTS: usize = 4;
@@ -102,7 +102,7 @@ const MEASURED_SIGNATURES: usize = 8;
 const PER_SIGNATURE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Summary statistics over a batch of signing attempts. Latency stats are computed
-/// with the `average` crate (as in the threshold-signatures benches); timeouts are
+/// with the `statrs` crate (as in the threshold-signatures benches); timeouts are
 /// counted separately since they have no finite latency.
 struct LatencyReport {
     label: &'static str,
@@ -137,24 +137,15 @@ impl LatencyReport {
             };
         }
 
-        let mut mean = Mean::new();
-        let mut p50 = Quantile::new(0.5);
-        let mut p90 = Quantile::new(0.9);
-        let mut max = Max::new();
-        for &seconds in &latencies {
-            mean.add(seconds);
-            p50.add(seconds);
-            p90.add(seconds);
-            max.add(seconds);
-        }
+        let mut latencies = Data::new(latencies);
         Self {
             label,
             n_ok,
             timeouts,
-            mean: Duration::from_secs_f64(mean.mean()),
-            p50: Duration::from_secs_f64(p50.quantile()),
-            p90: Duration::from_secs_f64(p90.quantile()),
-            max: Duration::from_secs_f64(max.max()),
+            mean: Duration::from_secs_f64(latencies.iter().mean()),
+            p50: Duration::from_secs_f64(latencies.percentile(50)),
+            p90: Duration::from_secs_f64(latencies.percentile(90)),
+            max: Duration::from_secs_f64(latencies.max()),
         }
     }
 

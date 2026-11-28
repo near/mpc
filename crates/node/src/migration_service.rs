@@ -24,7 +24,7 @@ pub struct MigrationSecrets {
 impl From<&SecretsConfig> for MigrationSecrets {
     fn from(value: &SecretsConfig) -> Self {
         Self {
-            backup_encryption_key: value.backup_encryption_key,
+            backup_encryption_key: value.backup_encryption_key.clone(),
             p2p_private_key: value.persistent_secrets.p2p_private_key.clone(),
         }
     }

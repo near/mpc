@@ -1,16 +1,15 @@
 use super::ChainSendTransactionRequest::{self, *};
 use super::IndexerState;
-use super::tx_signer::TransactionSigner;
 use crate::metrics;
 use crate::types::{
     LogTransaction, SignerContext, SubmittedTransaction, SubmittedTransactionStatus,
 };
-use chain_gateway::primitives::FetchLatestFinalBlockInfo;
-use chain_gateway::transaction_sender::SubmittedTxMetadata;
+use chain_gateway::transaction_sender::{
+    SubmitFunctionCall, SubmittedTxMetadata, TransactionSigner,
+};
 use ed25519_dalek::SigningKey;
 use near_account_id::AccountId;
-use near_contract_transport::ViewContract;
-use near_indexer_primitives::types::Gas;
+use near_contract_transport::{FunctionCallArgs, NearGas, ViewContract};
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types::Ed25519PublicKey;
 use near_time::Clock;
@@ -112,41 +111,14 @@ async fn submit_tx(
     indexer_state: Arc<IndexerState>,
     method: String,
     params_ser: String,
-    gas: Gas,
+    gas: NearGas,
 ) -> anyhow::Result<SubmittedTxMetadata> {
-    let block = indexer_state
+    // The node signs with a function-call access key, which cannot attach a deposit.
+    let call = FunctionCallArgs::no_deposit(method, params_ser.into_bytes(), gas);
+    Ok(indexer_state
         .gateway
-        .fetch_latest_final_block_info()
-        .await?;
-
-    let transaction = tx_signer.create_and_sign_function_call_tx(
-        indexer_state.mpc_contract_id.clone(),
-        method,
-        params_ser.into(),
-        gas,
-        block.value,
-        block.observed_at.into(),
-    );
-
-    let tx_hash = transaction.get_hash();
-    let nonce = transaction.transaction.nonce().nonce();
-    let signature = transaction.signature.clone();
-    tracing::info!(
-        target = "mpc",
-        "sending tx {:?} with ak={:?} nonce={:?}",
-        tx_hash,
-        tx_signer.public_key(),
-        nonce,
-    );
-
-    indexer_state.rpc_handler.submit_tx(transaction).await?;
-
-    Ok(SubmittedTxMetadata {
-        tx_hash,
-        nonce,
-        signature,
-        block_height: block.observed_at,
-    })
+        .submit_function_call_tx(&tx_signer, indexer_state.mpc_contract_id.clone(), call)
+        .await?)
 }
 
 /// Confirms whether the intended effect of the transaction request has been observed on chain.
