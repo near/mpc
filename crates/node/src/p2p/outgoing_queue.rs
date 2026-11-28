@@ -4,7 +4,7 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 /// Enqueues packets for one peer; the connection's sender task drains them through
 /// [`OutgoingQueueReceiver`] and writes them to the TLS stream.
 ///
-/// Control packets (pings, indexer heights, connected-peers info) skip ahead of queued MPC
+/// Control packets (pings, indexer heights, connected-peers info. liveness) skip ahead of queued MPC
 /// messages. Peers decide whether we are alive from our indexer height, so a backlog of
 /// computation traffic must not delay it. Packets in the same lane keep their order.
 #[derive(Clone)]
@@ -33,9 +33,11 @@ impl OutgoingQueue {
 
     pub(super) fn send(&self, packet: Packet) -> Result<(), ConnectionClosed> {
         let lane = match &packet {
-            Packet::Ping | Packet::IndexerHeight(_) | Packet::ConnectedPeersInfo(_) => {
-                &self.control
-            }
+            Packet::Ping
+            | Packet::IndexerHeight(_)
+            | Packet::ConnectedPeersInfo(_)
+            | Packet::Echo(_)
+            | Packet::EchoAck(_) => &self.control,
             Packet::MpcMessage(_) => &self.mpc,
         };
         lane.send(packet).map_err(|_| ConnectionClosed)
