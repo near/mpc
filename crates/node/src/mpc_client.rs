@@ -157,7 +157,9 @@ impl MpcClient {
             async move {
                 let _clear_on_drop = ClearOwnedAssetGaugesOnDrop;
                 loop {
-                    ecdsa.report_asset_metrics();
+                    if let Err(err) = ecdsa.report_asset_metrics() {
+                        tracing::warn!("failed to report owned-asset metrics: {err:#}");
+                    }
                     tokio::time::sleep(ASSET_METRICS_REPORTING_INTERVAL).await;
                 }
             }
@@ -169,7 +171,6 @@ impl MpcClient {
                 MpcClient::monitor_passive_channels_inner(channel_receiver, self.clone()),
             )
         };
-
         let monitor_chain = {
             let chain_txn_sender = chain_txn_sender.clone();
             tracking::spawn(
@@ -310,7 +311,9 @@ impl MpcClient {
 
                     // TODO(#3031): add batch request and unify stores
                     for request in &signature_requests.requests {
-                        self.sign_request_store.add(request);
+                        if let Err(err) = self.sign_request_store.add(request) {
+                            tracing::warn!(?err, "sign request not stored");
+                        }
                     }
 
                     // TODO(#3032): remove completed & finalized requests from store
@@ -323,7 +326,9 @@ impl MpcClient {
                         block_update.completed_ckds
                     );
                     for request in &ckd_requests.requests {
-                        self.ckd_request_store.add(request);
+                        if let Err(err) = self.ckd_request_store.add(request) {
+                            tracing::warn!(?err, "ckd request not stored");
+                        }
                     }
 
                     pending_ckds.notify_new_block(ckd_requests);
@@ -336,7 +341,9 @@ impl MpcClient {
                     );
 
                     for request in &verify_foreign_tx_requests.requests {
-                        self.verify_foreign_tx_request_store.add(request);
+                        if let Err(err) = self.verify_foreign_tx_request_store.add(request) {
+                            tracing::warn!(?err, "verify foreign tx request not stored");
+                        }
                     }
                     pending_verify_foreign_txs.notify_new_block(verify_foreign_tx_requests);
                 }

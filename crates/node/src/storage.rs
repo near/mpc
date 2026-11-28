@@ -16,26 +16,19 @@ impl SignRequestStorage {
         Ok(Self { db, add_sender: tx })
     }
 
-    /// If given request is already in the database, returns false.
-    /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &SignatureRequest) -> bool {
-        let key = borsh::to_vec(&request.id).unwrap();
-        if self
-            .db
-            .get(DBCol::SignRequest, &key)
-            .expect("Unrecoverable error reading from database")
-            .is_some()
-        {
-            return false;
+    /// Errors if the request is already in the database or the write fails.
+    /// Otherwise, inserts the request and returns Ok(()).
+    pub fn add(&self, request: &SignatureRequest) -> anyhow::Result<(), anyhow::Error> {
+        let key = borsh::to_vec(&request.id)?;
+        if self.db.get(DBCol::SignRequest, &key)?.is_some() {
+            return Err(anyhow::anyhow!("signature request already exists"));
         }
-        let value_ser = serde_json::to_vec(&request).unwrap();
+        let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::SignRequest, &key, &value_ser);
-        update
-            .commit()
-            .expect("Unrecoverable error writing to database");
+        update.commit()?;
         let _ = self.add_sender.send(request.id);
-        true
+        Ok(())
     }
 
     /// Returns when a signature request with given id is present, then returns it.
@@ -66,7 +59,10 @@ impl SignRequestStorage {
                 break;
             }
         }
-        let request_ser = self.db.get(DBCol::SignRequest, &key)?.unwrap();
+        let request_ser = self
+            .db
+            .get(DBCol::SignRequest, &key)?
+            .ok_or_else(|| anyhow::anyhow!("sign request {id:?} missing"))?;
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
@@ -82,26 +78,19 @@ impl CKDRequestStorage {
         Ok(Self { db, add_sender: tx })
     }
 
-    /// If given request is already in the database, returns false.
-    /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &CKDRequest) -> bool {
-        let key = borsh::to_vec(&request.id).unwrap();
-        if self
-            .db
-            .get(DBCol::CKDRequest, &key)
-            .expect("Unrecoverable error reading from database")
-            .is_some()
-        {
-            return false;
+    /// Errors if the request is already in the database or the write fails.
+    /// Otherwise, inserts the request and returns Ok(()).
+    pub fn add(&self, request: &CKDRequest) -> anyhow::Result<(), anyhow::Error> {
+        let key = borsh::to_vec(&request.id)?;
+        if self.db.get(DBCol::CKDRequest, &key)?.is_some() {
+            return Err(anyhow::anyhow!("CKD request already exists"));
         }
-        let value_ser = serde_json::to_vec(&request).unwrap();
+        let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::CKDRequest, &key, &value_ser);
-        update
-            .commit()
-            .expect("Unrecoverable error writing to database");
+        update.commit()?;
         let _ = self.add_sender.send(request.id);
-        true
+        Ok(())
     }
 
     /// Returns when a ckd request with given id is present, then returns it.
@@ -132,7 +121,10 @@ impl CKDRequestStorage {
                 break;
             }
         }
-        let request_ser = self.db.get(DBCol::CKDRequest, &key)?.unwrap();
+        let request_ser = self
+            .db
+            .get(DBCol::CKDRequest, &key)?
+            .ok_or_else(|| anyhow::anyhow!("ckd request {id:?} missing"))?;
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
@@ -148,26 +140,19 @@ impl VerifyForeignTransactionRequestStorage {
         Ok(Self { db, add_sender: tx })
     }
 
-    /// If given request is already in the database, returns false.
-    /// Otherwise, inserts the request and returns true.
-    pub fn add(&self, request: &VerifyForeignTxRequest) -> bool {
-        let key = borsh::to_vec(&request.id).unwrap();
-        if self
-            .db
-            .get(DBCol::VerifyForeignTxRequest, &key)
-            .expect("Unrecoverable error reading from database")
-            .is_some()
-        {
-            return false;
+    /// Errors if the request is already in the database or the write fails.
+    /// Otherwise, inserts the request and returns Ok(()).
+    pub fn add(&self, request: &VerifyForeignTxRequest) -> anyhow::Result<(), anyhow::Error> {
+        let key = borsh::to_vec(&request.id)?;
+        if self.db.get(DBCol::VerifyForeignTxRequest, &key)?.is_some() {
+            return Err(anyhow::anyhow!("verification request already exists"));
         }
-        let value_ser = serde_json::to_vec(&request).unwrap();
+        let value_ser = serde_json::to_vec(&request)?;
         let mut update = self.db.update();
         update.put(DBCol::VerifyForeignTxRequest, &key, &value_ser);
-        update
-            .commit()
-            .expect("Unrecoverable error writing to database");
+        update.commit()?;
         let _ = self.add_sender.send(request.id);
-        true
+        Ok(())
     }
 
     /// Returns when a verify foreign tx request with given id is present, then returns it.
@@ -205,7 +190,10 @@ impl VerifyForeignTransactionRequestStorage {
                 break;
             }
         }
-        let request_ser = self.db.get(DBCol::VerifyForeignTxRequest, &key)?.unwrap();
+        let request_ser = self
+            .db
+            .get(DBCol::VerifyForeignTxRequest, &key)?
+            .ok_or_else(|| anyhow::anyhow!("verify foreign tx request {id:?} missing"))?;
         Ok(serde_json::from_slice(&request_ser)?)
     }
 }
@@ -238,8 +226,9 @@ mod tests {
             tweak: Tweak::new([0; 32]),
             domain: DomainId::legacy_ecdsa_id(),
         };
-        assert!(storage.add(&req1));
-        assert!(!storage.add(&req1));
+        storage.add(&req1).unwrap();
+        let err = storage.add(&req1).unwrap_err();
+        assert_eq!(err.to_string(), "signature request already exists");
         let _ = storage
             .get(req1.id)
             .await
@@ -253,7 +242,7 @@ mod tests {
             tweak: Tweak::new([0; 32]),
             domain: DomainId::legacy_ecdsa_id(),
         };
-        storage.add(&req2);
+        storage.add(&req2).unwrap();
         let _ = storage
             .get(req1.id)
             .await
@@ -283,8 +272,9 @@ mod tests {
             timestamp_nanosec: 0,
             domain_id: DomainId::legacy_ecdsa_id(),
         };
-        assert!(storage.add(&req1));
-        assert!(!storage.add(&req1));
+        storage.add(&req1).unwrap();
+        let err = storage.add(&req1).unwrap_err();
+        assert_eq!(err.to_string(), "CKD request already exists");
         let _ = storage
             .get(req1.id)
             .await
@@ -302,7 +292,7 @@ mod tests {
             timestamp_nanosec: 0,
             domain_id: DomainId::legacy_ecdsa_id(),
         };
-        storage.add(&req2);
+        storage.add(&req2).unwrap();
         let _ = storage
             .get(req1.id)
             .await

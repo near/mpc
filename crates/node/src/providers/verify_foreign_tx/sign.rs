@@ -139,7 +139,7 @@ impl VerifyForeignTxProvider {
                 )
             },
         )
-        .await;
+        .await?;
         let channel = self.ecdsa_signature_provider.new_channel_for_task(
             VerifyForeignTxTaskId::VerifyForeignTx {
                 id,
