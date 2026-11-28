@@ -168,7 +168,8 @@ async fn handle_message(
 
     for shard in streamer_message.shards {
         for outcome in shard.receipt_execution_outcomes {
-            metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES.inc();
+            chain_gateway::event_subscriber::metrics::MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES
+                .inc();
             let receipt = outcome.receipt.clone();
             let execution_outcome = outcome.execution_outcome.clone();
 
@@ -319,7 +320,8 @@ fn try_convert_predecessor_id(receipt: &ReceiptView, method_name: &str) -> Optio
                 "skipping `{method_name}`: predecessor is not a valid account ID for this \
                  workspace's `near-account-id`",
             );
-            metrics::MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS.inc();
+            chain_gateway::event_subscriber::metrics::MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS
+                .inc();
             None
         }
     }

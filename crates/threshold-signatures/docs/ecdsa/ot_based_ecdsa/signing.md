@@ -24,7 +24,8 @@ resp. associated to the (master) Beaver triples $(a, b, c)$ and $(k, d, e)$
 used at most once: in one role of one run of this protocol, aborted runs included.
 Generation guarantees that triples are independent; the caller must guarantee that they are not
 reused. Otherwise the secret key $x$ can be extracted by solving a system of two linear equations,
-and no party can detect this.
+and no party can detect this. Triple shares must also not outlive their epoch, see
+[Proactive Security](../../proactive-security.md).
 
 # Nonce generation
 

@@ -98,7 +98,7 @@ Key properties:
 
 > **Two `dstack-vmm` instances are also a valid alternative.** Run
 > one per CVM (separate working directories, distinct
-> `address`/`port`/`cid_start`, each in its own systemd scope) if
+> `address`/`port`/`cid_start`/`[host_api] port`, each in its own systemd scope) if
 > you want independent control planes — for example, to apply
 > distinct resource limits via systemd cgroup properties, or for
 > symmetry with single-node hosts. The setup is otherwise the same

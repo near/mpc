@@ -141,8 +141,6 @@ pub fn spawn_real_indexer(
 
             let indexer_state = Arc::new(IndexerState::new(
                 gateway,
-                near_node.client,
-                near_node.rpc_handler,
                 mpc_indexer_config.mpc_contract_id.clone(),
             ));
 

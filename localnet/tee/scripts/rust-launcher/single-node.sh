@@ -122,14 +122,12 @@ MAIN_PORT="${MAIN_PORT:-$(find_free_port)}"
 MIGRATION_PORT="${MIGRATION_PORT:-$(find_free_port)}"
 
 # Host-local ports
-SSH_PORT="${SSH_PORT:-$(find_free_port)}"
 AGENT_PORT="${AGENT_PORT:-$(find_free_port)}"
 LOCAL_DEBUG_PORT="${LOCAL_DEBUG_PORT:-$(find_free_port)}"
 
 # dstack
 VMM_RPC="${VMM_RPC:-http://127.0.0.1:10000}"
-# TODO(#5069): the launcher compose template on main needs dstack 0.6+.
-OS_IMAGE="${OS_IMAGE:-dstack-dev-0.5.8}"
+OS_IMAGE="${OS_IMAGE:-dstack-0.6.5}"
 SEALING_KEY_TYPE="${SEALING_KEY_TYPE:-SGX}"
 DISK="${DISK:-500G}"
 
@@ -174,11 +172,9 @@ render_env_and_conf() {
   export LAUNCHER_MANIFEST_DIGEST MPC_MANIFEST_DIGEST
   export USER_CONFIG_FILE_PATH="$CONF_OUT"
 
-  export EXTERNAL_SSH_PORT="127.0.0.1:${SSH_PORT}"
   export EXTERNAL_DSTACK_AGENT_PORT="127.0.0.1:${AGENT_PORT}"
   export EXTERNAL_MPC_LOCAL_DEBUG_PORT="127.0.0.1:${LOCAL_DEBUG_PORT}"
 
-  export INTERNAL_SSH_PORT="${INTERNAL_SSH_PORT:-22}"
   export INTERNAL_DSTACK_AGENT_PORT="${INTERNAL_DSTACK_AGENT_PORT:-8090}"
   export INTERNAL_MPC_LOCAL_DEBUG_PORT="${INTERNAL_MPC_LOCAL_DEBUG_PORT:-3030}"
 

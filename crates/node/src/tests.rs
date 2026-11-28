@@ -1,4 +1,3 @@
-use aes_gcm::{Aes256Gcm, Key};
 use blstrs::{G1Projective, G2Projective, Scalar};
 use elliptic_curve::{Field as _, Group as _};
 use near_mpc_contract_interface::types::ProtocolContractState;
@@ -40,7 +39,6 @@ use crate::tests::common::MockTransactionSender;
 use crate::tracking::{self, AutoAbortTask, start_root_task};
 use crate::web::recent_transactions::SharedRecentTransactions;
 use crate::web::{start_web_server, static_web_data};
-use aes_gcm::aead::Generate;
 use mpc_primitives::domain::{Curve, Protocol};
 use near_account_id::AccountId;
 use near_indexer_primitives::CryptoHash;
@@ -249,7 +247,7 @@ impl IntegrationTestSetup {
                     near_signer_key: ed25519_dalek::SigningKey::generate(&mut OsRng),
                 },
                 local_storage_aes_key: rand::random(),
-                backup_encryption_key: Key::<Aes256Gcm>::generate().into(),
+                backup_encryption_key: rand::random::<[u8; 32]>().into(),
             };
             let (indexer_api, task, currently_running_job_name) = indexer_manager.add_indexer_node(
                 i.into(),

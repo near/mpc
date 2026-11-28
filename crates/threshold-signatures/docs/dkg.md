@@ -19,6 +19,8 @@ The core of the DKG protocol is implemented in a function called `do_keyshare` a
 
 * Key refresh: denoted in the implementation with `refresh`. It is a special case of the key resharing in which the set of participants stays the same before and after the protocol run and with no changes to the crypto. The goal being that each participant would refresh their signing share without modifying the master public key.
 
+Reshare and refresh protect the key only if keyshares and triple shares of past epochs are erased, see [Proactive Security](./proactive-security.md).
+
 ## Types of Thresholds
 
 There are two types of thresholds one has to be aware of: the **asynchronous distributed systems threshold** a.k.a. the **BFT threshold** ($\mathsf{MaxFaulty}$), and the **cryptography threshold** a.k.a. the **reconstruction threshold** ($\mathsf{threshold}$). A detailed discussion of these thresholds can be found in the [Appendix](#appendix-on-the-discussion-of-threshold-types) section.

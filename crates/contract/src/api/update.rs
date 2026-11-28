@@ -12,7 +12,10 @@ use near_mpc_contract_interface::deposits::SUBMIT_CONTRACT_UPDATE_DEPOSIT_YOCTON
 use near_mpc_contract_interface::method_names;
 use near_mpc_contract_interface::types::{self as dtos};
 use near_sdk::{Gas, NearToken, Promise, env, log, near};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 #[near]
 impl MpcContract {
@@ -152,6 +155,15 @@ impl MpcContract {
     #[private]
     pub fn update_config(&mut self, config: dtos::Config) {
         self.config = config.into();
+        if self.genesis_hash.is_none()
+            && let Some(genesis_hash) = self.config.migration_genesis_hash
+        {
+            self.genesis_hash = Some(genesis_hash);
+            self.tee_state.add_compose_hashes(
+                &genesis_hash,
+                Duration::from_secs(self.config.tee_upgrade_deadline_duration_seconds),
+            );
+        }
     }
 }
 
@@ -165,10 +177,12 @@ mod tests {
     };
     use crate::primitives::proposal_hash::ToProposalHash;
     use crate::primitives::test_utils::{
-        authenticate_account_as, gen_account_id, gen_participants,
+        authenticate_account_as, bogus_genesis_hash, gen_account_id, gen_participants,
     };
     use crate::state::ProtocolContractState;
     use crate::state::key_event::tests::Environment;
+    use crate::tee::proposal::get_docker_compose_hash;
+    use mpc_primitives::hash::GenesisHash;
     use near_sdk::mock::MockAction;
     use near_sdk::test_utils::get_created_receipts;
     use near_sdk::{AccountId, env};
@@ -585,5 +599,40 @@ mod tests {
                 expected_votes(&[(1, &all_voters)])
             );
         }
+    }
+
+    #[rstest]
+    fn update_config__should_take_the_migration_genesis_hash_and_allow_its_compose_hashes_only_if_unset(
+        #[values(None, Some(GenesisHash::MAINNET))] genesis_hash: Option<GenesisHash>,
+        #[values(None, Some(bogus_genesis_hash()))] migration_genesis_hash: Option<GenesisHash>,
+    ) {
+        // Given
+        let launcher = dtos::LauncherImageHash::from([1; 32]);
+        let image = dtos::NodeImageHash::from([2; 32]);
+        let forever = Duration::MAX;
+        let mut contract = MpcContract::new_from_protocol_state(running_state());
+        contract.genesis_hash = genesis_hash;
+        let tee_state = &mut contract.tee_state;
+        tee_state.whitelist_tee_proposal(image, genesis_hash.as_ref(), forever);
+        tee_state.add_launcher_image(launcher, genesis_hash.as_ref(), forever, forever);
+        let config = dtos::Config {
+            migration_genesis_hash,
+            ..contract.config()
+        };
+
+        // When
+        contract.update_config(config);
+
+        // Then
+        let expected = genesis_hash.or(migration_genesis_hash);
+        let compose_hash = |hash| get_docker_compose_hash(&launcher, &image, hash);
+        assert_eq!(contract.genesis_hash, expected);
+        assert_eq!(
+            BTreeSet::from_iter(contract.allowed_launcher_compose_hashes()),
+            BTreeSet::from([
+                compose_hash(genesis_hash.as_ref()),
+                compose_hash(expected.as_ref())
+            ]),
+        );
     }
 }

@@ -16,7 +16,7 @@ pub enum NetworkProtocolVersion {
     /// Adds [`EcdsaTaskId::OnlinePresignSignature`](crate::network::wire_format::EcdsaTaskId::OnlinePresignSignature).
     Sep2026 = 9,
     /// Adds [`Packet::ConnectedPeersInfo`](crate::network::wire_format::Packet::ConnectedPeersInfo)
-    /// and [`VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign`](crate::network::wire_format::VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign).
+    /// and [`VerifyForeignTxTaskId::VerifyForeignTx`](crate::network::wire_format::VerifyForeignTxTaskId::VerifyForeignTx).
     /// Also honours the `count` of
     /// [`EcdsaTaskId::ManyTriples`](crate::network::wire_format::EcdsaTaskId::ManyTriples)
     /// instead of requiring it to equal 64.

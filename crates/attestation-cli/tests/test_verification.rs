@@ -196,3 +196,21 @@ fn verify_at_timestamp__should_reject_dev_image_attestation_with_default_measure
         })
     );
 }
+
+#[test]
+#[expect(non_snake_case)]
+fn verify_at_timestamp__should_accept_dstack_0_6_5_attestation_with_default_measurements() {
+    // Given
+    let fixture = &DSTACK_0_6_5;
+    let static_data = make_static_web_data(fixture);
+    let dir = tempfile::tempdir().unwrap();
+    let compose_path = dir.path().join("launcher-compose.yaml");
+    std::fs::write(&compose_path, fixture.launcher_compose).unwrap();
+    let args = make_args(&compose_path, fixture.mpc_image_digest_hex, None);
+
+    // When
+    let result = verify::verify_at_timestamp(&static_data, &args, fixture.valid_timestamp);
+
+    // Then
+    assert_eq!(result.unwrap().measurements, fixture.measurements);
+}

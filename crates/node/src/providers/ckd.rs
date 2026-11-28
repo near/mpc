@@ -13,6 +13,7 @@ use threshold_signatures::confidential_key_derivation::{
 use threshold_signatures::ReconstructionThreshold as TSReconstructionThreshold;
 
 use mpc_node_config::ConfigFile;
+use zeroize::Zeroizing;
 
 use crate::{
     config::{MpcConfig, ParticipantsConfig},
@@ -82,7 +83,7 @@ impl SignatureProvider for CKDProvider {
     async fn run_key_resharing_client(
         new_reconstruction_threshold: TSReconstructionThreshold,
         old_reconstruction_threshold: TSReconstructionThreshold,
-        key_share: Option<SigningShare>,
+        key_share: Option<Zeroizing<SigningShare>>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
