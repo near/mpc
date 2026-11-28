@@ -238,13 +238,8 @@ impl SignatureProvider for EcdsaSignatureProvider {
             ));
         }
 
-        for (i, Err(join_error)) in futures::future::join_all(generate_triples)
-            .await
-            .into_iter()
-            .enumerate()
-        {
+        for Err(join_error) in futures::future::join_all(generate_triples).await {
             tracing::error!(
-                task_index = i,
                 "ecdsa background triple generation task ended unexpectedly: {join_error}"
             );
         }
