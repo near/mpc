@@ -6,13 +6,7 @@ use chain_gateway::ChainGateway;
 use handler::ChainBlockUpdate;
 use mpc_primitives::hash::LauncherDockerComposeHash;
 use near_account_id::AccountId;
-use near_async::{
-    messaging::CanSendAsync, multithread::MultithreadRuntimeHandle, tokio::TokioRuntimeHandle,
-};
-use near_client::{RpcHandlerActor, Status, client_actor::ClientActor};
-use near_indexer::near_primitives::{
-    hash::CryptoHash, transaction::SignedTransaction, views::StatusResponse,
-};
+use near_indexer::near_primitives::hash::CryptoHash;
 use near_mpc_contract_interface::client::MpcContractHandle;
 use near_mpc_contract_interface::types as dtos;
 use participants::ContractState;
@@ -33,7 +27,6 @@ pub mod real;
 pub mod stats;
 pub mod tee;
 pub mod tx_sender;
-pub mod tx_signer;
 pub mod types;
 
 #[cfg(test)]
@@ -42,10 +35,6 @@ pub mod fake;
 pub(crate) struct IndexerState {
     contract: MpcContractHandle<ChainGateway>,
     gateway: ChainGateway,
-    /// For querying blockchain sync status.
-    client: IndexerClient,
-    /// For sending txs to the chain.
-    rpc_handler: IndexerRpcHandler,
     /// AccountId for the mpc contract.
     mpc_contract_id: AccountId,
     /// Stores runtime indexing statistics.
@@ -53,17 +42,10 @@ pub(crate) struct IndexerState {
 }
 
 impl IndexerState {
-    pub fn new(
-        gateway: ChainGateway,
-        client: TokioRuntimeHandle<ClientActor>,
-        rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
-        mpc_contract_id: AccountId,
-    ) -> Self {
+    pub fn new(gateway: ChainGateway, mpc_contract_id: AccountId) -> Self {
         Self {
             contract: MpcContractHandle::new(gateway.clone(), mpc_contract_id.clone()),
             gateway,
-            client: IndexerClient { client },
-            rpc_handler: IndexerRpcHandler { rpc_handler },
             mpc_contract_id,
             stats: Arc::new(Mutex::new(IndexerStats::new())),
         }
@@ -73,59 +55,12 @@ impl IndexerState {
         &self,
         expected_genesis_hash: Option<CryptoHash>,
     ) -> anyhow::Result<()> {
-        let status = self
-            .client
-            .status()
+        let genesis_hash = self
+            .gateway
+            .genesis_hash()
             .await
-            .context("querying nearcore status")?;
-        chain_binding::ensure_chain_matches_contract(expected_genesis_hash, status.genesis_hash)
-    }
-}
-
-#[derive(Clone)]
-struct IndexerClient {
-    client: TokioRuntimeHandle<ClientActor>,
-}
-
-impl IndexerClient {
-    async fn status(&self) -> anyhow::Result<StatusResponse> {
-        let status_request = Status {
-            is_health_check: false,
-            detailed: false,
-        };
-        Ok(self
-            .client
-            .send_async(
-                near_o11y::span_wrapped_msg::SpanWrappedMessageExt::span_wrap(status_request),
-            )
-            .await??)
-    }
-}
-
-// #[derive(Debug)]
-struct IndexerRpcHandler {
-    rpc_handler: MultithreadRuntimeHandle<RpcHandlerActor>,
-}
-
-impl IndexerRpcHandler {
-    /// Creates, signs, and submits a function call with the given method and serialized arguments.
-    async fn submit_tx(&self, transaction: SignedTransaction) -> anyhow::Result<()> {
-        let response = self
-            .rpc_handler
-            .send_async(near_client::ProcessTxRequest {
-                transaction,
-                is_forwarded: false,
-                check_only: false,
-            })
-            .await?;
-
-        match response {
-            // We're not a validator, so we should always be routing the transaction.
-            near_client::ProcessTxResponse::RequestRouted => Ok(()),
-            _ => {
-                anyhow::bail!("unexpected ProcessTxResponse: {:?}", response);
-            }
-        }
+            .context("querying the genesis hash")?;
+        chain_binding::ensure_chain_matches_contract(expected_genesis_hash, genesis_hash)
     }
 }
 

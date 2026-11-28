@@ -313,9 +313,18 @@ impl VerifiedAttestation {
     }
 }
 
-/// Returns the compiled-in TCB measurements of the production OS image.
+/// Returns the compiled-in TCB measurements of the latest production OS image.
 pub fn default_measurements() -> ExpectedMeasurements {
     include_measurements!("assets/tcb_info.json")
+}
+
+/// Returns the compiled-in TCB measurements of every production OS image that nodes may run.
+pub fn production_measurements() -> [ExpectedMeasurements; 2] {
+    [
+        default_measurements(),
+        // TODO(#5237): drop dstack 0.5.8 once every node runs dstack 0.6.
+        include_measurements!("assets/tcb_info_dstack_0.5.8.json"),
+    ]
 }
 
 /// Post-DCAP verification of a dstack [`TcbInfo`] at the `mpc-attestation` layer.

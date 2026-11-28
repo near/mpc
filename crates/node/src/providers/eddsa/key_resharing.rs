@@ -10,12 +10,13 @@ use threshold_signatures::frost::eddsa::KeygenOutput;
 use threshold_signatures::frost_ed25519::keys::SigningShare;
 use threshold_signatures::frost_ed25519::{Ed25519Sha512, VerifyingKey};
 use threshold_signatures::participants::Participant;
+use zeroize::Zeroizing;
 
 impl EddsaSignatureProvider {
     pub(super) async fn run_key_resharing_client_internal(
         new_reconstruction_threshold: ReconstructionThreshold,
         old_reconstruction_threshold: ReconstructionThreshold,
-        my_share: Option<SigningShare>,
+        my_share: Option<Zeroizing<SigningShare>>,
         public_key: VerifyingKey,
         old_participants: &ParticipantsConfig,
         channel: NetworkTaskChannel,
@@ -52,7 +53,7 @@ pub struct KeyResharingComputation {
     reconstruction_threshold: ReconstructionThreshold,
     old_participants: Vec<ParticipantId>,
     old_reconstruction_threshold: ReconstructionThreshold,
-    my_share: Option<SigningShare>,
+    my_share: Option<Zeroizing<SigningShare>>,
     public_key: VerifyingKey,
 }
 
@@ -113,6 +114,7 @@ mod tests {
     use threshold_signatures::frost_ed25519::Ed25519Sha512;
     use threshold_signatures::test_utils::{generate_participants_with_random_ids, run_keygen};
     use tokio::sync::mpsc;
+    use zeroize::Zeroizing;
 
     #[tokio::test]
     async fn test_key_resharing() {
@@ -160,7 +162,7 @@ mod tests {
                         reconstruction_threshold,
                         old_participants,
                         old_reconstruction_threshold: reconstruction_threshold,
-                        my_share: keyshare,
+                        my_share: keyshare.map(Zeroizing::new),
                         public_key: pubkey,
                     }
                     .perform_leader_centric_computation(channel, std::time::Duration::from_mins(1))

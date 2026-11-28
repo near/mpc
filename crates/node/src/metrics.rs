@@ -103,26 +103,6 @@ pub static MPC_OWNED_NUM_TRIPLES_WITH_OFFLINE_PARTICIPANT: LazyLock<prometheus::
         .unwrap()
     });
 
-pub static MPC_INDEXER_NUM_RECEIPT_EXECUTION_OUTCOMES: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_indexer_num_receipt_execution_outcomes",
-            "Number of receipt execution outcomes processed by the near indexer"
-        )
-        .unwrap()
-    });
-
-pub static MPC_INDEXER_NUM_UNCONVERTIBLE_PREDECESSOR_IDS: LazyLock<prometheus::IntCounter> =
-    LazyLock::new(|| {
-        prometheus::register_int_counter!(
-            "mpc_indexer_num_unconvertible_predecessor_ids",
-            "Number of requests dropped because the receipt's predecessor could not be \
-             converted between the two `near-account-id` versions in the dependency graph. \
-             Expected to stay at zero; a non-zero value means those versions have diverged"
-        )
-        .unwrap()
-    });
-
 pub static MPC_NUM_SIGN_REQUESTS_INDEXED: LazyLock<prometheus::IntCounter> = LazyLock::new(|| {
     prometheus::register_int_counter!(
         "mpc_num_signature_requests_indexed",
@@ -485,7 +465,6 @@ pub(crate) const CKD_PROTOCOL_SCHEME_LABEL: &str = "ckd";
 pub(crate) const MAKE_SIGNATURE_TASK_LABEL: &str = "make_signature";
 pub(crate) const MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL: &str = "make_online_presign_signature";
 pub(crate) const TRIPLE_GENERATION_TASK_LABEL: &str = "triple_generation";
-pub(crate) const PRESIGNATURE_GENERATION_TASK_LABEL: &str = "presignature_generation";
 pub(crate) const KEY_GENERATION_TASK_LABEL: &str = "key_generation";
 pub(crate) const KEY_RESHARING_TASK_LABEL: &str = "key_resharing";
 pub(crate) const CKD_TASK_LABEL: &str = "ckd";
@@ -505,8 +484,6 @@ impl MpcTaskId {
                     EcdsaTaskId::KeyGeneration { .. } => KEY_GENERATION_TASK_LABEL,
                     EcdsaTaskId::KeyResharing { .. } => KEY_RESHARING_TASK_LABEL,
                     EcdsaTaskId::ManyTriples { .. } => TRIPLE_GENERATION_TASK_LABEL,
-                    EcdsaTaskId::Presignature { .. } => PRESIGNATURE_GENERATION_TASK_LABEL,
-                    EcdsaTaskId::Signature { .. } => MAKE_SIGNATURE_TASK_LABEL,
                     EcdsaTaskId::OnlinePresignSignature { .. } => {
                         MAKE_ONLINE_PRESIGN_SIGNATURE_TASK_LABEL
                     }
@@ -539,10 +516,7 @@ impl MpcTaskId {
             MpcTaskId::VerifyForeignTxTaskId(task) => (
                 ECDSA_PROTOCOL_SCHEME_LABEL,
                 match task {
-                    VerifyForeignTxTaskId::VerifyForeignTx { .. }
-                    | VerifyForeignTxTaskId::VerifyForeignTxOnlinePresign { .. } => {
-                        VERIFY_FOREIGN_TX_TASK_LABEL
-                    }
+                    VerifyForeignTxTaskId::VerifyForeignTx { .. } => VERIFY_FOREIGN_TX_TASK_LABEL,
                 },
             ),
         };

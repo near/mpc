@@ -150,8 +150,7 @@ impl LocalNodeBuilder {
     /// Set `consensus.min_num_peers` in config.json.
     ///
     /// For multi-node setups, setting this to 1 on the validator ensures it waits
-    /// for at least one peer connection (with full handshake + AccountAnnounce)
-    /// before producing blocks, guaranteeing P2P routing tables are populated.
+    /// for at least one peer connection before producing blocks.
     pub(crate) fn with_consensus_min_peers(self, min_peers: u64) -> Self {
         let mut config = self.config();
         config["consensus"]["min_num_peers"] = serde_json::json!(min_peers);

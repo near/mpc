@@ -222,7 +222,7 @@ for a discarded asset, those copies remain in borrowers' `RocksDB` indefinitely.
 `clean_db()` cannot find them either — it only iterates keys namespaced by
 `my_participant_id`, while unowned assets are keyed by the original owner's
 participant ID. This also means the same-epoch TLS-key-change cleanup
-(`KeepOnly` branch in `delete_stale_triples_and_presignatures()`) misses
+(`KeepOnly` branch in `delete_stale_triples()`) misses
 unowned assets, since it delegates to `clean_db()`. The only event that
 clears them is a full asset wipe on epoch change (resharing). In normal
 operation this constitutes a slow disk storage leak.
@@ -278,10 +278,7 @@ and they sign in one computation.
 
 Source: `crates/node/src/assets/cleanup.rs`
 
-Every time the node enters the Running state,
-`delete_stale_triples_and_presignatures()` deletes every presignature
-still stored, owned or not: no protocol uses stored presignatures any
-more, and these are left over from node versions that did. It also
+Every time the node enters the Running state, `delete_stale_triples()`
 compares the current epoch data with what was stored in `RocksDB`:
 
 | Scenario | Action |
@@ -290,10 +287,6 @@ compares the current epoch data with what was stored in `RocksDB`:
 | **Epoch ID changed** (resharing occurred) | **Delete all** triples |
 | Same epoch, no participant TLS key changes | Keep all assets |
 | Same epoch, some participant changed TLS key | Delete only assets involving changed participants |
-
-Deleting all triples on epoch change is a conservative choice: triples
-are independent of key shares and could theoretically be preserved if
-the participant set remains compatible.
 
 A participant's P2P public key changes when they regenerate their
 `secrets.json` (e.g. the node is redeployed from scratch). The P2P key
