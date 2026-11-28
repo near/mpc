@@ -93,6 +93,7 @@ tower = { workspace = true, features = ["limit"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
+tracing-appender = { workspace = true }
 zeroize = { workspace = true }
 
 # jemalloc heap profiling is only supported on Linux.
